@@ -140,6 +140,34 @@ test("a cancelled reader cannot cancel another split reader's shared geometry", 
   assert.equal(f.calls.filter(method => method === "language/multilineStrings").length, 1);
 });
 
+test("an obsolete hint reply refreshes after the editor can cache its empty result", async t => {
+  const f = fixture(); t.after(() => f.alignment.dispose());
+  const reply = gate();
+  const pending = f.alignment.provide(f.document, f.range, f.token(), async () => {
+    await reply.promise; return [f.hint()];
+  });
+  f.alignment.invalidate();
+  assert.equal(f.calls.filter(value => value === "refresh").length, 1);
+  reply.release();
+  assert.equal(await pending, undefined);
+  assert.equal(f.calls.filter(value => value === "refresh").length, 1);
+  await new Promise(done => setTimeout(done, 0));
+  assert.equal(f.calls.filter(value => value === "refresh").length, 2);
+  assert.deepEqual(await f.provide(), []);
+  assert.equal(f.editors[0].values.length, 3);
+});
+
+test("shutdown retires a refresh queued by an obsolete hint reply", async () => {
+  const f = fixture(), reply = gate();
+  const pending = f.alignment.provide(f.document, f.range, f.token(), async () => {
+    await reply.promise; return [f.hint()];
+  });
+  f.alignment.invalidate(); reply.release(); await pending;
+  f.alignment.dispose();
+  await new Promise(done => setTimeout(done, 0));
+  assert.equal(f.calls.filter(value => value === "refresh").length, 1);
+});
+
 test("nested and preceding argument hints contribute their entire advance to every continuation", async t => {
   const f = fixture(); t.after(() => f.alignment.dispose());
   const outer = f.hint({ position: { line: 0, character: 0 }, label: "Внешний:" }), inner = f.hint();

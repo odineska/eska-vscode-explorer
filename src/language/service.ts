@@ -495,7 +495,11 @@ export class LanguageService implements vscode.Disposable {
         if (JSON.stringify(renewed) !== JSON.stringify(context)) { this.scheduleConfigurationCheck(); return; }
       }
       const middleware = this.readingMiddleware(revision, signal);
-      session.progress = new LanguageProgress(() => this.current(revision, signal), () => this.queryLanguage?.changed());
+      session.progress = new LanguageProgress(() => this.current(revision, signal), () => {
+        this.queryLanguage?.changed();
+        // An early empty hint response can be cached until indexing has finished.
+        if (!session.progress?.busy) session.alignment?.invalidate();
+      });
       middleware.handleWorkDoneProgress = session.progress.handle;
       const client = new EskaLanguageClient("eska-bsl", "BSL Analyzer (ESKA Explorer)", async () => {
         if (!this.current(revision, signal)) throw new ExplorerError("obsolete");
@@ -557,6 +561,7 @@ export class LanguageService implements vscode.Disposable {
           return local === "" || (!isAbsolute(local) && local !== ".." && !local.startsWith(`..${sep}`));
         }) });
       this.tooling.analyzerState("ready", context.limited ? this.text("languageLimited", context.name ?? basename(context.root)) : context.name ?? basename(context.root));
+      session.alignment?.invalidate();
       this.log(JSON.stringify({ event: "language_ready", pid: session.owner?.child.pid, root: context.root, application: context.name,
         fingerprint: lease.fingerprint, capabilities: client.initializeResult.capabilities }));
     } finally { if (!started) await this.cleanup(); }

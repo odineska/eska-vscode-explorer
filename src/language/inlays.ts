@@ -18,6 +18,7 @@ export class InlayAlignment implements vscode.Disposable {
   private scope = new AbortController();
   private epoch = 0;
   private disposed = false;
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly api: typeof vscode, private readonly endpoint: StringEndpoint,
     private readonly valid: () => boolean, private readonly refresh: () => void,
@@ -34,6 +35,21 @@ export class InlayAlignment implements vscode.Disposable {
 
   /** Actionable/resolved hints and calls outside multiline arguments stay with the native provider. */
   async provide(document: vscode.TextDocument, range: vscode.Range, token: vscode.CancellationToken, next: Next): Promise<vscode.InlayHint[] | undefined> {
+    const epoch = this.epoch, version = document.version;
+    try { return await this.read(document, range, token, next); }
+    finally {
+      if (epoch !== this.epoch && !document.isClosed && document.version === version && this.enabled(document)) {
+        // A refresh during an outstanding provider call can be consumed before its empty reply is cached.
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = setTimeout(() => {
+          this.refreshTimer = undefined;
+          if (!this.disposed && this.valid()) this.refresh();
+        }, 0);
+      }
+    }
+  }
+
+  private async read(document: vscode.TextDocument, range: vscode.Range, token: vscode.CancellationToken, next: Next): Promise<vscode.InlayHint[] | undefined> {
     const epoch = this.epoch, version = document.version, context = this.contextEpoch();
     if (!this.enabled(document) || this.resolves(document)) {
       this.displays.delete(document); this.render();
@@ -107,6 +123,7 @@ export class InlayAlignment implements vscode.Disposable {
   /** Any model/setting change retires source positions before it asks the native provider to refresh. */
   invalidate(): void {
     if (this.disposed) return;
+    clearTimeout(this.refreshTimer); this.refreshTimer = undefined;
     ++this.epoch; this.scope.abort(); this.scope = new AbortController();
     this.geometry = new WeakMap(); this.displays.clear(); this.render();
     this.refresh();
@@ -184,6 +201,7 @@ export class InlayAlignment implements vscode.Disposable {
 
   dispose(): void {
     if (this.disposed) return;
+    clearTimeout(this.refreshTimer); this.refreshTimer = undefined;
     this.disposed = true; this.scope.abort(); this.displays.clear(); this.render();
     for (const subscription of this.subscriptions) subscription.dispose();
   }
