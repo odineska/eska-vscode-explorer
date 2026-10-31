@@ -384,8 +384,9 @@ defaultFormatter для BSL/SDBL. Настройки отступов редак
 Основная приёмка — **Linux/VSCodium**. Дополнительно выполнена
 [проверка Windows 11 / Microsoft VS Code](docs/windows-validation.md)
 с установленным VSIX в ru/en. macOS и Remote требуют отдельной приёмки.
-Активность workspace (T151) отдельно проверена на Linux ARM64 / VS Code 1.144
-и bsl-analyzer 0.4.2 в ru/en; Windows, macOS и VSCodium для этой функции ещё
+Активность workspace (T151), библиотеки, группы и подсказки дополнительно
+прошли [повторную native-приёмку Windows в ru/en](docs/windows-review-2026-10-31.md)
+на VS Code 1.144 и bsl-analyzer 0.4.2. macOS и VSCodium для T151 ещё
 не проходили native-приёмку.
 На SSH/WSL/контейнере
 backend должен находиться на машине проекта. Браузерная IDE и виртуальные
