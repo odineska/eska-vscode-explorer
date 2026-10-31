@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { createProjectGroupingSource, descriptor } from './fixture.mjs';
 import { createLanguageSource } from './language-fixture.mjs';
 
@@ -30,9 +30,11 @@ export async function createActivitySource(fixture, owner) {
   await writeFile(apiFile,'Функция Проверка(Значение) Экспорт\n    Возврат Значение;\nКонецФункции\n');
   const manifest="[workspace]\n[analysis]\ndefault_application='app'\n[workspace.members.app]\nconfiguration='members/base'\nextensions=[{path='members/extension-one'},{path='members/extension-two',depends_on=['extension-one']}]\nexternal_objects=['members/report-one','members/processing-one','members/processing-two']\n[workspace.members.other]\nconfiguration='members/base'\nextensions=[{path='members/extension-one'}]\nexternal_objects=['members/report-two']\n[tools.bsl-analyzer.diagnostics.parameters]\nLineLength=false\n";
   await writeFile(join(fixture.root,'eska.toml'),manifest);
-  const instrumented = process.platform !== 'win32';
-  let analyzer = process.env.ESKA_TEST_ANALYZER_BINARY;
-  if (instrumented) {
+  const adapter = process.env.ESKA_HOST_ACTIVITY_ANALYZER;
+  if (adapter && !isAbsolute(adapter)) throw new Error('ESKA_HOST_ACTIVITY_ANALYZER must be absolute.');
+  const instrumented = process.platform !== 'win32' || !!adapter;
+  let analyzer = adapter ?? process.env.ESKA_TEST_ANALYZER_BINARY;
+  if (instrumented && !adapter) {
     analyzer = join(owner,'native-activity-analyzer');
     await writeFile(analyzer,await readFile(new URL('./activity-analyzer.py',import.meta.url)),{mode:0o755});
   }

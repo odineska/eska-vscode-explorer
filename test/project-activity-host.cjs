@@ -12,6 +12,7 @@ exports.run=async()=>{
  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),members=fixture.activity.members;
  const explorer=await vscode.extensions.all.find(value=>value.packageJSON.name==='eska-explorer').activate();
  const cases=[],pids=new Set();let dom;
+ async function recordLsp(pid){pids.add(pid);if(fixture.activity.instrumented&&process.platform==='win32')pids.add(Number(await fs.readFile(path.join(fixture.root,`.activity-lsp-${pid}.child`),'utf8')));}
  const named=name=>explorer.tree.projects.find(project=>project.info.scope.name===name);
  async function roots(){return explorer.getChildren();}
  async function row(name){const project=named(name);const group=explorer.projectGroups.parent(project);return (group?await explorer.getChildren(group):await roots()).find(row=>row.project===project);}
@@ -33,7 +34,7 @@ exports.run=async()=>{
     cases.push('IDE_restart_restores_activity_and_filter','IDE_restart_open_disabled_does_not_activate_or_write_sources');
     const consumer=await vscode.workspace.openTextDocument(members['processing-one'].module);await vscode.window.showTextDocument(consumer,{preview:false});
     await until(()=>explorer.language.session?.owner&&explorer.tooling.states.analyzer.phase==='ready','restored active consumer ready');
-    const pid=explorer.language.session.owner.child.pid;pids.add(pid);
+    const pid=explorer.language.session.owner.child.pid;await recordLsp(pid);
     await activity('processing-two',true);assert.equal(explorer.language.session.owner.child.pid,pid);assert.equal(dirty.getText(),await fs.readFile(saved.dirtyFile,'utf8'));
     await until(()=>explorer.language.session.documents.wireVersion(dirty)!==undefined,'restored dirty native synchronized');
     cases.push('IDE_restart_enable_reuses_shared_lsp');
@@ -56,7 +57,7 @@ exports.run=async()=>{
   await vscode.commands.executeCommand('eska.explorer.projects.focus');
   const consumer=await vscode.workspace.openTextDocument(members['processing-one'].module);await vscode.window.showTextDocument(consumer,{preview:false});
   await until(()=>explorer.tooling.states.analyzer.phase==='ready'&&explorer.language.session?.owner,'LSP ready');
-  const pid=explorer.language.session.owner.child.pid;pids.add(pid);
+  const pid=explorer.language.session.owner.child.pid;await recordLsp(pid);
   await definition(consumer,5,'Проверка',fixture.activity.baseDefinition);await definition(consumer,6,'Проверка',fixture.activity.extensionDefinition);
   cases.push('shared_base_and_extension_definitions');
   const dirty=await vscode.workspace.openTextDocument(members['processing-two'].module);await vscode.window.showTextDocument(dirty,{preview:false});
@@ -102,7 +103,7 @@ exports.run=async()=>{
   cases.push('backend_restart_restores_hidden_inactive_workspace_and_dirty_buffer','all_hidden_keeps_show_action_and_open_does_not_start_lsp');
   await vscode.commands.executeCommand('eska.explorer.showDisabledProjects');await until(()=>!explorer.tree.session.activity.hideDisabled,'show all disabled');
   assert.equal((await roots()).filter(row=>row.projectGroup).length,3);
-  await activity('processing-one',true);await until(()=>explorer.tooling.states.analyzer.phase==='ready'&&explorer.language.session?.owner,'last consumer enabled');pids.add(explorer.language.session.owner.child.pid);
+  await activity('processing-one',true);await until(()=>explorer.tooling.states.analyzer.phase==='ready'&&explorer.language.session?.owner,'last consumer enabled');await recordLsp(explorer.language.session.owner.child.pid);
   await definition(consumer,5,'Проверка',fixture.activity.baseDefinition);assert.equal(named('base').info.activity.enabled,false);assert.ok(named('base').info.activity.requiredBy.length);
   assert.deepEqual(await sourceBytes(fixture),before);
   cases.push('explicit_enable_restores_dependency_context_without_rewriting_sources_or_manifests');

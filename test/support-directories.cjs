@@ -41,7 +41,8 @@ async function until(predicate){const end=Date.now()+5000;while(!predicate()){as
     assert.deepEqual(rules,{},"directories never gain file restrictions");
     // A source invalidation retires the classification, so a new file is checked normally.
     type=1;project.info.generation="1";controller.invalidate();
-    controller.provideFileDecoration(uri(target));await until(()=>calls.length>0&&rules[target]===true);await controller.serial;
+    const pattern=target.replaceAll('\\','/');
+    controller.provideFileDecoration(uri(target));await until(()=>calls.length>0&&rules[pattern]===true);await controller.serial;
     assert.equal(controller.provideFileDecoration(uri(target)).badge,"🔒");
     assert.equal(stats,2,"the former directory is queried again after invalidation");
     console.log(JSON.stringify({passed:true,directory_feedback_stopped:true,file_transition_checked:true}));

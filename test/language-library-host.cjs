@@ -40,7 +40,7 @@ async function run() {
   assert.equal(explorer.language.session.context.sources[0].library.name, "ssl_3_1");
   const character = document.lineAt(1).text.indexOf("Проверка") + 2;
   const definition = async base => (await vscode.commands.executeCommand("vscode.executeDefinitionProvider", document.uri, new vscode.Position(1, character)))
-    ?.some(value => (value.targetUri ?? value.uri).fsPath === base.definition);
+    ?.some(value => path.relative((value.targetUri ?? value.uri).fsPath, base.definition) === "");
   await until(() => definition(library.first), "definition in first named library");
   assert.match(await fs.readFile(config, "utf8"), /LineLength = false/);
 
@@ -62,7 +62,7 @@ async function run() {
   await until(() => explorer.tooling.states.analyzer.phase === "ready" && explorer.language.session?.owner.child.pid !== first, "path change replaces LSP");
   const second = explorer.language.session.owner.child.pid; pids.add(second);
   assert.equal(explorer.connection.child.pid, metadata);
-  assert.equal(explorer.language.session.context.sources[0].source, library.second.source);
+  assert.equal(path.relative(explorer.language.session.context.sources[0].source, library.second.source), "");
   assert.equal(document.getText(), dirty); assert.equal(document.isDirty, true);
   await until(() => definition(library.second), "definition follows selected library path");
   await until(() => vscode.languages.getDiagnostics(document.uri).length > 0, "dirty diagnostics restored in replacement LSP");
@@ -71,7 +71,7 @@ async function run() {
   stage = "invalid-and-recover";
   await fs.writeFile(library.config, "[libraries.ssl_3_1]\nsource=''\n");
   await until(() => explorer.tooling.states.analyzer.phase === "error" && !explorer.language.session, "invalid entry stops old LSP");
-  assert.ok(explorer.tooling.states.analyzer.detail.includes(library.config));
+  assert.ok(explorer.tooling.states.analyzer.detail.includes(library.config.slice(path.parse(library.config).root.length)));
   await fs.writeFile(library.config, catalog(library.first));
   await until(() => explorer.tooling.states.analyzer.phase === "ready", "fixed entry restarts LSP");
   pids.add(explorer.language.session.owner.child.pid);

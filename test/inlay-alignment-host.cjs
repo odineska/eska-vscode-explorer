@@ -57,7 +57,7 @@ exports.run = async () => {
     if (artifacts) await fs.mkdir(artifacts, { recursive: true });
     for (const theme of ['Default Dark Modern','Default Light Modern']) {
       await vscode.workspace.getConfiguration('workbench').update('colorTheme',theme,vscode.ConfigurationTarget.Global);
-      for (const [font,size] of [['DejaVu Sans',12],['monospace',18]]) for (const padding of [false,true]) for (const zoom of [0,1]) {
+      for (const [font,size] of [[process.platform === 'win32' ? 'Segoe UI' : 'DejaVu Sans',12],['monospace',18]]) for (const padding of [false,true]) for (const zoom of [0,1]) {
         stage=`matrix:${theme}:${font}:${padding}:${zoom}`;
         const settings=vscode.workspace.getConfiguration('editor');
         await settings.update('inlayHints.fontFamily',font,vscode.ConfigurationTarget.Global);
@@ -141,10 +141,13 @@ exports.run = async () => {
     await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(result));
     if(artifacts)await fs.writeFile(path.join(artifacts,'result.json'),JSON.stringify(result,null,2));
   }catch(error){
-    const result={passed:false,stage,error:String(error),stack:error?.stack,samples,observation,latest,editor:document?{version:document.version,closed:document.isClosed,dirty:document.isDirty,equal:document.getText()===original,prefix:document.getText().slice(0,120),active:vscode.window.activeTextEditor?.document.uri.toString(),activeVersion:vscode.window.activeTextEditor?.document.version,phase:explorer?.tooling.states.analyzer.phase,display:explorer?.language.session?.alignment?.displays.get(document)?.version}:undefined,control,activeElement:workbench?await workbench.evaluate("({tag:document.activeElement?.tagName,class:document.activeElement?.className})"):undefined,dom:workbench?await workbench.evaluate("[...document.querySelectorAll('.monaco-editor .view-lines')].map(node=>({text:node.textContent,html:node.innerHTML.slice(0,16000),width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))"):undefined};
+    let probe;
+    if(document&&explorer?.language.session){try{const provider=explorer.language.session.client.getFeature('textDocument/inlayHint').getProvider(document);const size=()=>explorer.language.session.alignment.displays.get(document)?.decorations.length??0;const before=size();const hints=await vscode.commands.executeCommand('vscode.executeInlayHintProvider',document.uri,new vscode.Range(0,0,document.lineCount-1,document.lineAt(document.lineCount-1).text.length));probe={provider:!!provider,before,after:size(),hints:hints?.map(hint=>({label:hint.label,kind:hint.kind}))};}catch(failure){probe={error:String(failure)};}}
+    const result={passed:false,stage,error:String(error),stack:error?.stack,probe,samples,observation,latest,editor:document?{version:document.version,closed:document.isClosed,dirty:document.isDirty,equal:document.getText()===original,prefix:document.getText().slice(0,120),active:vscode.window.activeTextEditor?.document.uri.toString(),activeVersion:vscode.window.activeTextEditor?.document.version,phase:explorer?.tooling.states.analyzer.phase,display:explorer?.language.session?.alignment?.displays.get(document)?.version,displays:[...explorer?.language.session?.alignment?.displays??[]].map(([value,display])=>({uri:value.uri.toString(),version:value.version,same:value===document,decorations:display.decorations.length})),indexing:explorer?.language.session?.progress?.busy}:undefined,control,activeElement:workbench?await workbench.evaluate("({tag:document.activeElement?.tagName,class:document.activeElement?.className})"):undefined,dom:workbench?await workbench.evaluate("[...document.querySelectorAll('.monaco-editor .view-lines')].map(node=>({text:node.textContent,html:node.innerHTML.slice(0,16000),width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))"):undefined};
     if(artifacts&&workbench)await workbench.screenshot(path.join(artifacts,'failure.png'));
     await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(result));
     if(artifacts)await fs.writeFile(path.join(artifacts,'result.json'),JSON.stringify(result,null,2));
+    if(artifacts){async function logs(root){for(const entry of await fs.readdir(root,{withFileTypes:true})){const file=path.join(root,entry.name);if(entry.isDirectory())await logs(file);else if(['ESKA Explorer.log','exthost.log'].includes(entry.name))await fs.copyFile(file,path.join(artifacts,entry.name==='exthost.log'?'exthost.log':'explorer.log'));}}await logs(path.join(path.dirname(fixture.root),'profile','logs'));}
     throw error;
   }finally{workbench?.close();}
 };
