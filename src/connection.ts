@@ -1,3 +1,4 @@
+import { stringCapabilities, type StringEndpoint } from "./language/strings.js";
 import { formatCapabilities } from "./formatting/protocol.js";
 import { isAbsolute } from "node:path";
 import { diagnostic, errorContext, type DiagnosticLog } from "./diagnostics.js";
@@ -11,7 +12,7 @@ import { sourceCapabilities, type SourceEndpoint } from "./source-access.js";
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; multilineStrings?: StringEndpoint; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -101,11 +102,11 @@ export class Connection {
 
   /** Analyzer RPCs use their own input schema and lease, without a metadata generation or injected sessionId. */
   async analyzerRequest(method: "analyzer/context" | "analyzer/configStatus" | "analyzer/configPrepare" | "analyzer/migrationPreview"
-    | "analyzer/migrationApply" | "analyzer/acquire" | "analyzer/release", params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    | "analyzer/migrationApply" | "analyzer/acquire" | "analyzer/release" | "analyzer/activityUpdate", params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     const state = this.current;
     if (state.kind !== "ready" || !state.analyzerConfiguration) throw new ExplorerError("incompatible");
     const child = this.sessionChild(state.session.sessionId);
-    const timeout = ["analyzer/configPrepare", "analyzer/migrationPreview", "analyzer/migrationApply"].includes(method) ? 190_000 : 30_000;
+    const timeout = ["analyzer/configPrepare", "analyzer/migrationPreview", "analyzer/migrationApply", "analyzer/activityUpdate"].includes(method) ? 190_000 : 30_000;
     const result = await child.request(method, params, timeout, signal);
     if (child !== this.sessionChild(state.session.sessionId)) throw new ExplorerError("obsolete");
     return result;
@@ -146,7 +147,13 @@ export class Connection {
         const child = this.create({ executable: target.executable, cwd: target.path, log: this.log,
           args: backend === "legacy" ? ["ide", "--stdio"] : ["serve", "--stdio"],
           notification: (method, params) => {
-            if (revision === this.revision) for (const listener of this.listeners) listener(method, params);
+            if (revision !== this.revision) return;
+            if (method === "workspace/activityChanged" && this.current.kind === "ready") {
+              const session = parseWorkspace(params);
+              if (session.sessionId !== this.current.session.sessionId) return;
+              Object.assign(this.current.session, session);
+            }
+            for (const listener of this.listeners) listener(method, params);
           },
           failed: (error) => {
             if (negotiated && revision === this.revision) {
@@ -178,6 +185,7 @@ export class Connection {
         const sessions = backend === "project" ? querySessionCapabilities(response) : undefined;
         const sources = backend === "project" ? sourceCapabilities(response) : undefined;
         const formatting = backend === "project" ? formatCapabilities(response) : undefined;
+        const strings = backend === "project" ? stringCapabilities(response) : undefined;
         negotiated = true;
         if (revision !== this.revision) return;
         const request = async (method: string, params: Record<string, unknown>): Promise<unknown> => {
@@ -210,7 +218,13 @@ export class Connection {
           diagnostic(this.log, "connection_ready", { backendVersion: version, sessionId: session.sessionId,
             projects: session.projects.map((project) => ({ projectId: project.projectId, type: project.type,
               rootPath: project.rootPath, sourcePath: project.sourcePath, generation: project.generation })) });
-          this.set({ kind: "ready", session, version, sourceNavigation: isRecord(response) && isRecord(response.capabilities) && response.capabilities.sourceNavigation === true,
+          this.set({ kind: "ready", session, version,
+            ...(strings ? { multilineStrings: { limits: strings, request: async (method, params, signal) => {
+              if (this.child !== child) throw new ExplorerError("obsolete");
+              const result = await child.request(method, params, 30_000, signal);
+              if (this.child !== child) throw new ExplorerError("obsolete");
+              return result;
+            } } } : {}), sourceNavigation: isRecord(response) && isRecord(response.capabilities) && response.capabilities.sourceNavigation === true,
             supportPolicy: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportPolicy === true,
             supportFiles: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportFiles === true,
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,

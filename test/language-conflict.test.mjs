@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { LSPErrorCodes, ResponseError } from "vscode-languageserver-protocol/node";
+import { ExplorerError } from "../out/protocol.js";
 
 const ID = "elishevkirill.bsl-analyzer-lsp";
 
@@ -12,31 +13,43 @@ const ID = "elishevkirill.bsl-analyzer-lsp";
 function barrier() { let release; const promise = new Promise(done => { release = done; }); return { promise, release }; }
 
 /** Only protocol/UI/process boundaries are mocked; production LanguageService owns all conflict and lease decisions. */
-function fixture({ available = false, enabled = true, hold, outside = false, status, changedLease = false } = {}) {
+function fixture({ available = false, enabled = true, hold, outside = false, status, changedLease = false, library = false, invalidLibrary = false, inactive = false } = {}) {
   const root = resolve(process.env.ESKA_TEST_ROOT ?? "../eska-playground", "conflict-dto"), wire = value => ({ value, encoding: "utf-8" });
   const calls = [], warnings = [], commands = [], owners = [], clients = [], watchers = [], listeners = new Set(), documents = new Set(), notifications = new Set();
   let conflict = available, feature = enabled, reached, held = false, leased = false, changed;
   const waiting = barrier(), pause = barrier();
   const checkpoint = async name => { calls.push(name); if (hold === name && !held) { held = true; reached = name; waiting.release(); await pause.promise; } };
   const ready = { kind: "ready", analyzerConfiguration: true, target: { path: root, backend: "project" },
-    session: { sessionId: "session", projects: [{ projectId: "project", rootPath: wire(root), sourcePath: wire(join(root, "src")) }] } };
+    session: { sessionId: "session", projects: [{ projectId: "project", rootPath: wire(root), sourcePath: wire(join(root, "src")),activity:{enabled:!inactive,requiredBy:[]} }] } };
   const sourceRoot = outside ? join(root, "other") : root;
   const dto = { schema_version: 1, kind: "analyzer-configuration", status: status ?? (hold === "analyzer/configPrepare" ? "missing" : "current"), path: wire(join(root, "bsl-analyzer.toml")),
     preview_token: "a".repeat(64), ownership: { schema_version: 1, generator_version: 1, analyzer_version: "0.4.0", context: outside ? "two" : null,
       input_fingerprint: "b".repeat(64), body_sha256: "c".repeat(64) } };
+  const configPath = join(root, "settings", "config.toml");
+  const contextDto = { schema_version: 1, kind: "project-context", status: "ready", context: {
+    root: wire(root), name: outside ? "two" : null, limited_context: false, sources: [{ root: wire(sourceRoot), source: wire(join(sourceRoot, "src")), descriptor: wire("Configuration.xml"), member: outside ? "other" : null, role: "configuration", project_type: "configuration" }] } };
+  if (library) {
+    Object.assign(contextDto.context.sources[0], { role: "external_object", project_type: "report", descriptor: wire("ExternalReport.xml") });
+    contextDto.context.sources.unshift({ root: wire(join(root, "БСП")), source: wire(join(root, "БСП/src")), descriptor: wire("Configuration.xml"), member: null,
+      role: "configuration", project_type: "configuration", library: { name: "ssl_3_1", configuration: wire(configPath) } });
+  }
+  let contextFailure = invalidLibrary ? { reason: "library_configuration", library: "ssl_3_1", configuration: wire(configPath), cause: "unknown_library" } : undefined;
   const connection = { state: ready, onNotification(listener) { notifications.add(listener); return { dispose() { notifications.delete(listener); } }; }, async analyzerRequest(method, _params, signal) {
     if (method === "analyzer/acquire") { assert.equal(signal, undefined); leased = true; }
     if (method === "analyzer/release") leased = false;
     await checkpoint(method);
+    if (["analyzer/context", "analyzer/configStatus", "analyzer/activityUpdate"].includes(method) && ready.session.projects.every(project => project.activity?.enabled === false)) throw new ExplorerError("requestFailed", "workspace_inactive", {});
+    if (contextFailure && ["analyzer/context", "analyzer/configStatus"].includes(method)) throw new ExplorerError("requestFailed", "analyzer_configuration_failed", { code: "context", data: contextFailure });
     if (method === "analyzer/configPrepare") dto.status = "current";
-    if (method === "analyzer/context") return { schema_version: 1, kind: "project-context", status: "ready", context: {
-      root: wire(root), name: outside ? "two" : null, limited_context: false, sources: [{ root: wire(sourceRoot), source: wire(join(sourceRoot, "src")), descriptor: wire("Configuration.xml"), member: outside ? "other" : null, role: "configuration", project_type: "configuration" }] } };
+    if (method === "analyzer/context") return contextDto;
+    if (method === "analyzer/activityUpdate") return {...dto,leaseId:"d".repeat(64),analysisContext:contextDto};
     return method === "analyzer/acquire" ? { ...dto, leaseId: "d".repeat(64), ...(changedLease ? { preview_token: "e".repeat(64) } : {}) } : dto;
   } };
   const tooling = { states: { analyzer: { phase: "missing" } }, analyzerState(phase, detail) { this.states.analyzer.phase = phase; this.states.analyzer.detail = detail; },
     async ensureAnalyzer(_signal, offer) { await checkpoint(offer ? "ensureAnalyzer" : "inspect-only"); return { path: join(root, "analyzer"), version: "0.4.0" }; } };
   const vscode = {
-    env: { language: "en-US" }, CancellationError: class extends Error {}, RelativePattern: class {},
+    env: { language: "en-US" }, CancellationError: class extends Error {},
+    RelativePattern: class { constructor(baseUri, pattern) { this.baseUri = baseUri; this.pattern = pattern; } },
     CancellationTokenSource: class {
       controller = new AbortController();
       /** Model the public editor cancellation boundary, including listener disposal. */
@@ -50,10 +63,10 @@ function fixture({ available = false, enabled = true, hold, outside = false, sta
       /** No native resource belongs to this test token. */
       dispose() {}
     },
-    workspace: { isTrusted: true, textDocuments: [{ languageId: "bsl", uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false }], getConfiguration() { return { get() { return feature; } }; },
+    workspace: { isTrusted: true, textDocuments: [{ languageId: "bsl", uri: { scheme:"file", fsPath:join(sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false }], getConfiguration() { return { get() { return feature; } }; },
       onDidOpenTextDocument(callback) { documents.add(callback); return { dispose() { documents.delete(callback); } }; },
       onDidChangeTextDocument(callback) { changed = callback; return { dispose() { changed = undefined; } }; },
-      createFileSystemWatcher() { const callbacks = new Set(), watcher = {
+      createFileSystemWatcher(pattern) { const callbacks = new Set(), watcher = { pattern,
         onDidCreate(callback) { callbacks.add(callback); }, onDidChange(callback) { callbacks.add(callback); }, onDidDelete(callback) { callbacks.add(callback); },
         /** Native watcher callbacks always receive a URI and can also see virtual schemes. */
         fire(uri = {}) { for (const callback of callbacks) callback({ scheme: "file", ...uri }); },
@@ -64,7 +77,7 @@ function fixture({ available = false, enabled = true, hold, outside = false, sta
       onDidChange(callback) { listeners.add(callback); return { dispose() { listeners.delete(callback); } }; } },
     window: { showWarningMessage(text, ...actions) { const answer = barrier(); warnings.push({ text, actions, answer }); return answer.promise; },
       async showErrorMessage(text) { calls.push(`error:${text}`); } },
-    commands: { async executeCommand(...args) { commands.push(args); } }, Uri: { file: value => ({ fsPath: value }) },
+    commands: { async executeCommand(...args) { commands.push(args); } }, Uri: { file: value => ({ fsPath: value }), parse: value => ({ scheme: "file", fsPath: join(sourceRoot, "src", "Module.bsl"), toString: () => value }) },
   };
   class FakeClient {
     constructor(_id, _name, start, options) { this.startServer = start; this.clientOptions = options; this.protocol2CodeConverter = {};
@@ -73,6 +86,7 @@ function fixture({ available = false, enabled = true, hold, outside = false, sta
         set(uri, values) { diagnostics.set(uri.toString(), { uri, values }); }, get(uri) { return diagnostics.get(uri.toString())?.values; },
         forEach(callback) { for (const { uri, values } of diagnostics.values()) callback(uri, values); } }; clients.push(this); }
     async start() { await this.startServer(); await checkpoint("client.start"); this.initializeResult = { serverInfo: { name: "bsl-analyzer", version: "0.4.0" }, capabilities: {} }; }
+    isRunning() { return !!this.initializeResult && !this.stopped; }
     async stop() { this.stopped = true; } async dispose() { this.disposed = true; }
   }
   class FakeOwner { constructor() { this.child = { pid: 100 + owners.length, stdout: {}, stdin: {} }; owners.push(this); } async stop() { this.stopped = true; } }
@@ -80,8 +94,16 @@ function fixture({ available = false, enabled = true, hold, outside = false, sta
   const watching = { exports: {} }, watchRequire = createRequire(new URL("../out/watch.js", import.meta.url));
   runInNewContext(`(function(require,module,exports){${readFileSync(new URL("../out/watch.js", import.meta.url), "utf8")}\n})`, { process, setTimeout, clearTimeout })(
     name => name === "vscode" ? vscode : watchRequire(name), watching, watching.exports);
+  const catalogWatchers = new Map();
+  const catalogFiles = {
+    watchFile(path, _options, listener) {
+      const watcher = { pattern: { pattern: "config.toml" }, fire() { if (!this.disposed) listener(); }, dispose() { this.disposed = true; } };
+      watchers.push(watcher); catalogWatchers.set(listener, watcher);
+    },
+    unwatchFile(_path, listener) { catalogWatchers.get(listener)?.dispose(); catalogWatchers.delete(listener); },
+  };
   runInNewContext(`(function(require,module,exports){${readFileSync(new URL("../out/language/service.js", import.meta.url), "utf8")}\n})`, { AbortController, AbortSignal, process, setTimeout, clearTimeout })(
-    name => name === "vscode" ? vscode : name === "vscode-languageclient/node" ? { LanguageClient: FakeClient, CloseAction: {}, ErrorAction: {}, LSPErrorCodes, ResponseError }
+    name => name === "vscode" ? vscode : name === "node:fs" ? catalogFiles : name === "vscode-languageclient/node" ? { LanguageClient: FakeClient, CloseAction: {}, ErrorAction: {}, LSPErrorCodes, ResponseError }
       : name === "./process.js" ? { LanguageProcess: FakeOwner }
         : name === "./edits.js" ? { LanguageEdits: class { middleware() { return {}; } async shutdown() {} } }
           : name === "../watch.js" ? watching.exports : require(name), adapter, adapter.exports);
@@ -89,6 +111,11 @@ function fixture({ available = false, enabled = true, hold, outside = false, sta
   const policyRoots = [];
   const service = new adapter.exports.LanguageService(context, connection, tooling, {}, () => {}, undefined, roots => policyRoots.push([...roots]));
   return { root, sourceRoot, service, tooling, calls, warnings, commands, owners, clients, watchers, policyRoots, dto, pause, waiting, get reached() { return reached; }, get leased() { return leased; },
+    contextDto, configPath,
+    activity(enabled) { ready.session.projects[0].activity = {enabled,requiredBy:[]};for (const listener of notifications) listener("workspace/activityChanged",{sessionId:"session"}); },
+    setContextFailure(value) { contextFailure = value; },
+    libraryWatcher() { return watchers.find(watcher => !watcher.disposed && watcher.pattern.pattern === "config.toml"); },
+    disconnect() { connection.state = { kind: "idle" }; service.connectionChanged(connection.state); },
     /** Give independent callers genuine cancellable subscriptions in the fake editor. */
     cancellation() { return new vscode.CancellationTokenSource(); },
     /** Exercise the actual metadata subscription without a second project parser. */
@@ -326,7 +353,7 @@ test("a shared upstream rejection remains a rejection and does not cache a faile
 test("semantic tokens and symbols remain independent background providers", { timeout: 5000 }, async t => {
   const f = fixture(); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
   const middleware = f.clients[0].clientOptions.middleware, held = barrier(), entered = barrier();
-  const document = { uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false }, params = { textDocument: { uri: document.uri.toString() } };
+  const document = { uri: { scheme:"file", fsPath:join(f.sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false }, params = { textDocument: { uri: document.uri.toString() } };
   const token = { isCancellationRequested: false };
   const symbols = middleware.provideDocumentSymbols(document, token,
     () => middleware.sendRequest("textDocument/documentSymbol", params, undefined, () => { entered.release(); return held.promise; }));
@@ -339,7 +366,7 @@ test("semantic tokens and symbols remain independent background providers", { ti
 test("a cached outline waits for a current configuration instead of publishing an empty startup result", { timeout: 5000 }, async t => {
   const f = fixture(); t.after(() => { f.pause.release(); return f.service.shutdown(); }); f.connect(); await settled(f.service);
   f.holdAt("analyzer/configStatus"); f.watchers[0].fire();
-  const document = { uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
+  const document = { uri: { scheme:"file", fsPath:join(f.sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
   let calls = 0;
   const symbols = f.clients[0].clientOptions.middleware.provideDocumentSymbols(document, f.cancellation().token,
     async () => { calls++; return ["current function"]; });
@@ -353,7 +380,7 @@ test("back-to-back configuration checks cannot cache an outline between their ba
   const f = fixture(); t.after(() => { f.pause.release(); return f.service.shutdown(); }); f.connect(); await settled(f.service);
   f.holdAt("analyzer/configStatus"); f.watchers[0].fire();
   void f.service.configurationReady.then(() => f.watchers[0].fire());
-  const document = { uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
+  const document = { uri: { scheme:"file", fsPath:join(f.sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
   let calls = 0;
   const symbols = f.clients[0].clientOptions.middleware.provideDocumentSymbols(document, f.cancellation().token,
     async () => { calls++; return ["latest function"]; });
@@ -377,7 +404,7 @@ test("Windows drive aliases of a root descriptor hold the same configuration bar
 for (const mode of ["cancel", "stop"]) test(`a ${mode} settles a provider while configuration validation is still blocked`, { timeout: 5000 }, async t => {
   const f = fixture(); t.after(() => { f.pause.release(); return f.service.shutdown(); }); f.connect(); await settled(f.service);
   f.holdAt("analyzer/configStatus"); f.watchers[0].fire();
-  const document = { uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false }, cancellation = f.cancellation();
+  const document = { uri: { scheme:"file", fsPath:join(f.sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false }, cancellation = f.cancellation();
   let calls = 0;
   const symbols = f.clients[0].clientOptions.middleware.provideDocumentSymbols(document, cancellation.token,
     async () => { calls++; return ["must not publish"]; });
@@ -389,7 +416,7 @@ for (const mode of ["cancel", "stop"]) test(`a ${mode} settles a provider while 
 for (const mode of ["edit", "close"]) test(`${mode === "edit" ? "an" : "a"} ${mode} during configuration validation cannot reuse a provider position`, { timeout: 5000 }, async t => {
   const f = fixture(); t.after(() => { f.pause.release(); return f.service.shutdown(); }); f.connect(); await settled(f.service);
   f.holdAt("analyzer/configStatus"); f.watchers[0].fire();
-  const document = { uri: { toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
+  const document = { uri: { scheme:"file", fsPath:join(f.sourceRoot,"src","Module.bsl"), toString: () => "file:///same.bsl" }, version: 1, isClosed: false };
   let calls = 0;
   const symbols = f.clients[0].clientOptions.middleware.provideDocumentSymbols(document, f.cancellation().token,
     async () => { calls++; return ["stale position"]; });
@@ -532,4 +559,130 @@ test("restored native symbols cannot share the in-flight result from a previous 
   const fresh = await middleware.sendRequest("textDocument/documentSymbol", params, undefined, async () => { calls++; return ["current symbols"]; });
   assert.deepEqual(Array.from(fresh), ["current symbols"]); assert.equal(calls, 2);
   held.release(["old symbols"]); await assert.rejects(old, error => error.code === LSPErrorCodes.RequestCancelled);
+});
+
+
+test("unrelated catalog edits retain the same language process and restore diagnostics", async t => {
+  const f = fixture({ library: true }); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
+  const client = f.clients[0], uri = { toString: () => "file:///same.bsl" };
+  client.clientOptions.middleware.handleDiagnostics(uri, ["existing"], (uri, values) => client.diagnostics.set(uri, values));
+  const watcher = f.libraryWatcher(); assert.ok(watcher);
+  for (let n = 0; n < 30; n++) watcher.fire();
+  assert.equal(client.diagnostics.get(uri), undefined);
+  await configurationSettled(f.service);
+  assert.equal(f.owners.length, 1); assert.equal(f.leased, true);
+  assert.deepEqual(client.diagnostics.get(uri), ["existing"]);
+  assert.equal(f.calls.filter(value => value === "analyzer/configStatus").length, 2);
+  assert.equal(f.calls.filter(value => value === "analyzer/configPrepare").length, 0);
+});
+
+test("a changed selected path releases the old lease and selects the new library sources", async t => {
+  const f = fixture({ library: true }); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
+  const next = join(f.root, "Другая БСП"), source = f.contextDto.context.sources[0];
+  source.root.value = next; source.source.value = join(next, "src");
+  f.dto.status = "stale"; f.dto.ownership.input_fingerprint = "e".repeat(64); f.dto.ownership.body_sha256 = "f".repeat(64);
+  const watcher = f.libraryWatcher(); watcher.fire(); await configurationSettled(f.service);
+  assert.equal(f.owners.length, 2); assert.equal(f.owners[0].stopped, true); assert.equal(watcher.disposed, true);
+  assert.equal(f.leased, true); assert.equal(f.service.session.context.sources[0].source, join(next, "src"));
+  assert.equal(f.calls.filter(value => value === "analyzer/release").length, 1);
+  assert.ok(f.calls.indexOf("analyzer/release") < f.calls.indexOf("analyzer/configPrepare"));
+});
+
+for (const initial of [true, false]) {
+  test(`a ${initial ? "startup" : "running"} catalog error retains its observer and recovers after correction`, async t => {
+    const f = fixture({ library: true, invalidLibrary: initial }); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
+    if (!initial) {
+      f.setContextFailure({ reason: "library_source", library: "ssl_3_1", configuration: { value: f.configPath, encoding: "utf-8" }, cause: { reason: "source" } });
+      f.libraryWatcher().fire(); await configurationSettled(f.service);
+    }
+    assert.equal(f.tooling.states.analyzer.phase, "error"); assert.equal(f.service.session, undefined); assert.equal(f.leased, false);
+    assert.match(f.tooling.states.analyzer.detail, /ssl_3_1/); assert.ok(f.tooling.states.analyzer.detail.includes(f.configPath));
+    const watcher = f.libraryWatcher(); assert.ok(watcher);
+    f.setContextFailure(undefined); watcher.fire(); await configurationSettled(f.service);
+    assert.equal(f.tooling.states.analyzer.phase, "ready"); assert.equal(f.leased, true);
+    assert.equal(f.owners.length, initial ? 1 : 2); assert.equal(watcher.disposed, true);
+  });
+}
+
+test("a catalog change during startup cannot launch a process with the earlier source selection", async t => {
+  const f = fixture({ library: true, hold: "analyzer/configStatus" }); t.after(() => f.service.shutdown()); f.connect(); await f.waiting.promise;
+  const next = join(f.root, "next/src"); f.contextDto.context.sources[0].source.value = next;
+  f.dto.ownership.input_fingerprint = "e".repeat(64); f.dto.ownership.body_sha256 = "f".repeat(64);
+  f.libraryWatcher().fire(); f.pause.release(); await settled(f.service); await configurationSettled(f.service);
+  assert.equal(f.owners.length, 1); assert.equal(f.service.session.context.sources[0].source, next);
+  assert.equal(f.calls.filter(value => value === "analyzer/acquire").length, 1);
+});
+
+for (const action of ["stop", "disconnect", "disable", "dispose"]) {
+  test(`${action} retires catalog recovery without reviving a discarded language session`, async t => {
+    const f = fixture({ library: true, invalidLibrary: true }); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
+    const watcher = f.libraryWatcher(), calls = f.calls.length;
+    if (action === "stop") await f.service.stop();
+    if (action === "disconnect") { f.disconnect(); await settled(f.service); }
+    if (action === "disable") { f.setEnabled(false); await f.service.restart(false); }
+    if (action === "dispose") await f.service.shutdown();
+    const after = f.calls.length; assert.ok(after >= calls); assert.equal(watcher.disposed, true);
+    watcher.fire(); await configurationSettled(f.service);
+    assert.equal(f.calls.length, after); assert.equal(f.owners.length, 0); assert.equal(f.libraryWatcher(), undefined);
+  });
+}
+
+
+test("a catalog write before the first observer event cannot bind new ownership to old source selectors", async t => {
+  const f = fixture({ library: true, hold: "ensureAnalyzer" }); t.after(() => f.service.shutdown()); f.connect(); await f.waiting.promise;
+  const next = join(f.root, "updated/src"); f.contextDto.context.sources[0].source.value = next;
+  f.dto.ownership.input_fingerprint = "e".repeat(64); f.dto.ownership.body_sha256 = "f".repeat(64);
+  f.pause.release(); await settled(f.service); await configurationSettled(f.service);
+  assert.equal(f.owners.length, 1); assert.equal(f.service.session.context.sources[0].source, next);
+  assert.equal(f.calls.filter(value => value === "analyzer/release").length, 1);
+});
+
+test("an unchanged startup error performs one recovery read without restarting or repeating its notification", async t => {
+  const f = fixture({ library: true, invalidLibrary: true }); t.after(() => f.service.shutdown()); f.connect(); await settled(f.service);
+  await configurationSettled(f.service);
+  assert.equal(f.calls.filter(value => value === "analyzer/context").length, 1);
+  assert.equal(f.calls.filter(value => value === "analyzer/configStatus").length, 1);
+  assert.equal(f.calls.filter(value => value.startsWith("error:")).length, 1);
+  assert.equal(f.owners.length, 0); assert.ok(f.libraryWatcher());
+});
+
+
+test("activity preflight cancels an unfinished config preparation before the serial activity request", async () => {
+  const f=fixture({hold:"analyzer/configPrepare"});f.connect();await f.waiting.promise;
+  const signal=f.service.scope.signal;assert.equal(signal.aborted,false);
+  f.service.prepareActivityChange();assert.equal(signal.aborted,true);
+  f.activity(false);f.pause.release();await settled(f.service);await f.service.activityChanged();await settled(f.service);
+  assert.equal(f.owners.length,0);assert.equal(f.leased,false);
+  assert.equal(f.tooling.states.analyzer.phase,"suspended");
+  await f.service.shutdown();
+});
+
+test("a rejected activity preference releases the read barrier without restarting a running shared process", async () => {
+  const f=fixture();f.connect();await settled(f.service);
+  const owner=f.owners[0], uri={scheme:"file",fsPath:join(f.root,"src","Module.bsl"),toString:()=>"file:///same.bsl"};
+  f.clients[0].diagnostics.set(uri,[{message:"active diagnostic"}]);
+  f.service.prepareActivityChange();assert.equal(f.service.configurationPending,true);assert.equal(f.clients[0].diagnostics.get(uri),undefined);
+  await f.service.activityChangeFailed();assert.equal(f.service.configurationPending,false);
+  assert.equal(f.owners.length,1);assert.equal(owner.stopped,undefined);assert.equal(f.leased,true);
+  assert.deepEqual(f.clients[0].diagnostics.get(uri),[{message:"active diagnostic"}]);
+  await f.service.shutdown();
+});
+
+
+test("enabling a project after an inactive reconnect resumes its already-open native documents", async () => {
+  const f=fixture({inactive:true});f.connect();await settled(f.service);
+  assert.equal(f.owners.length,0);assert.equal(f.service.wanted,false);
+  f.activity(true);await f.service.activityChanged();await settled(f.service);
+  assert.equal(f.owners.length,1);assert.equal(f.service.wanted,true);assert.equal(f.leased,true);
+  await f.service.shutdown();
+});
+
+
+test("the last consumer releases global catalog observation together with the analyzer and lease", async () => {
+  const f=fixture({library:true});f.connect();await settled(f.service);
+  const watcher=f.libraryWatcher();assert.ok(watcher);
+  f.activity(false);await f.service.activityChanged();await settled(f.service);
+  assert.equal(watcher.disposed,true);assert.equal(f.libraryWatcher(),undefined);
+  assert.equal(f.owners[0].stopped,true);assert.equal(f.leased,false);
+  await f.service.shutdown();
 });

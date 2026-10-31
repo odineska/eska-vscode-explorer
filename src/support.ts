@@ -1,3 +1,4 @@
+import { projectEnabled } from "./protocol.js";
 import * as vscode from 'vscode';
 import { join, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -52,6 +53,7 @@ export class SupportController implements vscode.FileDecorationProvider {
   private available = false;
   private targeted = false;
   private readonly requestedFiles = new Set<string>();
+  private readonly knownDirectories = new Set<string>();
   private readonly requestedEntries = new Set<string>();
   private readonly documentSubscription: vscode.Disposable;
   private readonly editorSubscription: vscode.Disposable;
@@ -109,6 +111,7 @@ export class SupportController implements vscode.FileDecorationProvider {
   /** Coalesce file events; painting and opening never trigger a project scan. */
   invalidate(): void {
     if (this.stopped) return;
+    this.knownDirectories.clear();
     const key = JSON.stringify([this.enabled, this.available, this.pendingFolders, [this.tree, ...this.additional].filter(Boolean).map(tree => [tree?.session.sessionId, tree?.projects.map(project => [project.supportGeneration ?? project.info.generation, project.supportEventSequence ?? project.info.eventSequence])])]);
     if (key === this.requested) {
       // A backend-confirmed BSL-only edit advances metadata tokens without changing support.
@@ -291,6 +294,7 @@ export class SupportController implements vscode.FileDecorationProvider {
   /** Resolve source membership through native path boundaries, including additional workspace folders. */
   private locate(path: string): { tree: MetadataTree; project: ProjectTree; relative: string } | undefined {
     for (const tree of [this.tree, ...this.additional]) if (tree) for (const project of tree.projects) {
+      if (!projectEnabled(project.info)) continue;
       const local = relative(nativePath(project.info.sourcePath), path);
       if (local && !isAbsolute(local) && local !== '..' && !local.startsWith('..' + (process.platform === 'win32' ? '\\' : '/'))) return { tree, project, relative: local };
     }
@@ -299,7 +303,7 @@ export class SupportController implements vscode.FileDecorationProvider {
 
   /** Coalesce only files requested by a visible editor or native file decoration. */
   private queueFile(path: string): void {
-    if (!this.targeted || !this.enabled || this.stopped || !this.locate(path) || this.requestedFiles.has(path)) return;
+    if (!this.targeted || !this.enabled || this.stopped || !this.locate(path) || this.knownDirectories.has(path) || this.requestedFiles.has(path)) return;
     this.requestedFiles.add(path);
     const epoch = this.epoch;
     clearTimeout(this.fileTimer);
@@ -352,6 +356,8 @@ export class SupportController implements vscode.FileDecorationProvider {
   /** A bounded request returns only touched files; no global inventory or giant settings update is needed. */
   private async queryFiles(paths: string[], epoch: number): Promise<void> {
     if (epoch !== this.epoch || this.stopped || !this.enabled) return;
+    paths = paths.filter(path => !this.knownDirectories.has(path));
+    if (!paths.length) return;
     const directories = new Set<string>();
     for (const path of new Set(paths)) {
       try {
@@ -359,6 +365,9 @@ export class SupportController implements vscode.FileDecorationProvider {
       } catch { /* Unavailable files still require the backend's conservative policy. */ }
     }
     if (epoch !== this.epoch || this.stopped || !this.enabled) return;
+    // Native decorations also query parent directories. They have no file policy entry;
+    // publishing that absence repeatedly would enqueue the same directory after every repaint.
+    for (const path of directories) this.knownDirectories.add(path);
     const active = new Set([this.tree, ...this.additional].flatMap(tree => tree?.projects ?? []));
     const snapshots = new Map([...this.snapshots].filter(([project]) => active.has(project)).map(([project, snapshot]) =>
       [project, { ...snapshot, files: snapshot.files.filter(file => !directories.has(file.path)) }]));
@@ -409,10 +418,11 @@ export class SupportController implements vscode.FileDecorationProvider {
       await this.queryFiles(paths, epoch);
       return;
     }
-    const snapshots = new Map<ProjectTree, Snapshot>();
+    const snapshots = new Map<ProjectTree, Snapshot>([...this.snapshots].filter(([project]) => !projectEnabled(project.info)));
     const baselineRules = this.ownedRules();
     let published = false;
     for (const context of [tree, ...this.additional]) for (const project of context.projects) {
+      if (!projectEnabled(project.info)) continue;
       const objects = new Map<string, ObjectPolicy>();
       const files: FilePolicy[] = [];
       const diagnostics: string[] = [];
@@ -576,7 +586,7 @@ export class SupportController implements vscode.FileDecorationProvider {
 
   /** Deactivation awaits cleanup; no writeable-in-session command is ever invoked. */
   async shutdown(): Promise<void> {
-    this.stopped = true; this.epoch++; clearTimeout(this.timer); clearTimeout(this.fileTimer);
+    this.stopped = true; this.epoch++; this.knownDirectories.clear(); clearTimeout(this.timer); clearTimeout(this.fileTimer);
     await this.objectQueue.shutdown();
     await this.serial;
     await this.apply([]);

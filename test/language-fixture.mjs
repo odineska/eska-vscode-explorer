@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { addCommonModules, createTreeProject } from "./fixture.mjs";
 
 export const LANGUAGE_TEXT = "// Возвращает переданное значение.\nФункция Проверка(Значение) Экспорт\n    Возврат Значение;\nКонецФункции\n\nРезультат = Проверка(\"текст\");\n";
@@ -56,4 +56,26 @@ export async function createLanguageParitySource(fixture) {
     await writeFile(file, text + `\nПроцедура ESKAParity${index}() Экспорт\n    ESKAParitySentinel${index} = 1;\nКонецПроцедуры\n`);
   }
   return source;
+}
+
+
+/** Named-library acceptance owns both XML dumps and a private machine catalog outside the consumer. */
+export async function createLibrarySource(fixture, owner) {
+  const first = await createReferenceSource(fixture, owner);
+  const second = await createTreeProject(join(owner, "Другая БСП"));
+  const language = await createLanguageSource(second);
+  await rm(join(second.root, "eska.toml"));
+  await writeFile(join(fixture.root, "eska.toml"), "[project]\ntype='processing'\n[analysis.configuration]\nlibrary='ssl_3_1'\n[tools.bsl-analyzer.diagnostics.parameters]\nLineLength=false\n");
+  const configDir = join(owner, "Настройки с пробелами"), config = join(configDir, "config.toml");
+  await mkdir(configDir);
+  await writeFile(config, "[build]\nrunner='host'\n[libraries.ssl_3_1]\nsource=" + JSON.stringify(relative(configDir, first.source)) + "\n");
+  return { first, second: { ...second, definition: language.file }, configDir, config };
+}
+
+/** Real semantic hints cover the requested builtin, a local function and a nested call. */
+export async function createInlaySource(fixture) {
+  const source = await createLanguageSource(fixture);
+  const text = '\ufeffФункция Собрать(Шаблон, Дополнение)\n    Возврат Шаблон + Дополнение;\nКонецФункции\n\nПроцедура Test()\n    А = СтрШаблон("Найдено кандидатов: %1\n        |Время выполнения: %2\n        |""Кириллица"" 😀", 1, 2);\n    Б = Собрать("Своя строка\n\t|Её продолжение", "два");\n    В = Собрать(СтрШаблон("Вложенный текст\n        |Его продолжение", 1), "два");\n    Г = Собрать("Одиночный текст", "два");\n    Д = Собрать("Первая цепочка\n        |Конец первой", "Начало второй\n        |Конец второй");\nКонецПроцедуры\n'.replaceAll('\n', '\r\n');
+  await writeFile(source.file, text);
+  return { file: source.file, text };
 }

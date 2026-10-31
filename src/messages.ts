@@ -1,6 +1,17 @@
 import type { FailureCode } from "./protocol.js";
 
 const en = {
+  disableProject: "Disable project",
+  enableProject: "Enable project",
+  hideDisabledProjects: "Hide disabled projects",
+  showDisabledProjects: "Show disabled projects",
+  projectDisabled: "Disabled",
+  projectRequiredBy: "Required by active projects: {0}",
+  languageWorkspaceInactive: "No active projects in the application",
+
+  projectExtensions: "Extensions",
+  projectReports: "Reports",
+  projectProcessors: "Data processors",
   formatMissing: "eska-fmt is not installed. Install the formatter component or set its executable path.",
   formatIncompatible: "Formatting requires compatible eska-project and eska-fmt components. Update them or check the configured paths.",
   formatReadonly: "ESKA cannot format this document while it is read-only or owned by another editing session.",
@@ -282,6 +293,7 @@ const en = {
   languageStopped: "Language preparation was cancelled.",
   languageLimited: "Limited standalone context: {0}.",
   languageFailed: "Explorer language service is unavailable ({0}). See ESKA Explorer output.",
+  languageLibraryFailed: "Library {0} is unavailable. Check its entry in {1}; Explorer will retry when that file changes.",
   languageMigrationRequired: "The analyzer configuration needs an explicit migration with preview and backup. See component setup and the project analyzer migration commands.",
   languageManagedConflict: "The generated analyzer configuration was edited outside ESKA. Review the file before preparing it again.",
   toolChecking: "Checking {0} updates",
@@ -457,6 +469,17 @@ const en = {
 } as const;
 
 const ru: Record<keyof typeof en, string> = {
+  disableProject: "Отключить проект",
+  enableProject: "Включить проект",
+  hideDisabledProjects: "Скрыть отключенные",
+  showDisabledProjects: "Показать отключенные",
+  projectDisabled: "Отключён",
+  projectRequiredBy: "Нужен активным проектам: {0}",
+  languageWorkspaceInactive: "В приложении нет активных проектов",
+
+  projectExtensions: "Расширения",
+  projectReports: "Отчеты",
+  projectProcessors: "Обработки",
   formatMissing: "eska-fmt не установлен. Установите компонент форматтера или укажите путь к нему.",
   formatIncompatible: "Для форматирования нужны совместимые eska-project и eska-fmt. Обновите компоненты или проверьте указанные пути.",
   formatReadonly: "ESKA не может форматировать документ, пока он доступен только для чтения или принадлежит другой сессии редактирования.",
@@ -738,6 +761,7 @@ const ru: Record<keyof typeof en, string> = {
   languageStopped: "Подготовка языкового сервиса отменена.",
   languageLimited: "Ограниченный standalone-контекст: {0}.",
   languageFailed: "Языковой сервис Explorer недоступен ({0}). Подробности в выводе ESKA Explorer.",
+  languageLibraryFailed: "Библиотека {0} недоступна. Проверьте запись в {1}; Explorer повторит подключение после изменения этого файла.",
   languageMigrationRequired: "Конфиг анализатора требует явной миграции с preview и сохранением оригинала. Используйте инструкции подготовки компонентов и команды analyzer migration проектного инструмента.",
   languageManagedConflict: "Производный конфиг анализатора изменён вне ESKA. Проверьте файл перед повторной подготовкой.",
   toolChecking: "Проверка обновлений {0}",

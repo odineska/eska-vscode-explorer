@@ -25,12 +25,14 @@ try {
   await writeFile(join(root, "profile", "User", "settings.json"), JSON.stringify({
     "workbench.startupEditor": "none", "onboarding.enabled": false,
   }));
-  const fixture = await createTreeProject(join(root, "project"), basename(suite) === "language-reference-host.cjs" ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
     const fields = Array.from({ length: 48 }, (_, index) => `${index} AS КолонкаРезультата${index}WithLongEnglishName`).join(',\r\n|');
     await writeFile(fixture.module, `\ufeffПроцедура Test()\r\nQ = "SELECT ${fields}\r\n|FROM (SELECT 1 AS NestedValue) AS Child";\r\nКонецПроцедуры\r\n`);
   }
+  if (basename(suite) === "project-activity-host.cjs") fixture.activity = await (await import("./activity-fixture.mjs")).createActivitySource(fixture, root);
+  if (basename(suite) === "project-groups-host.cjs") fixture.grouping = await (await import("./fixture.mjs")).createProjectGroupingSource(fixture);
   if (basename(suite) === "formatting-host.cjs") {
     if (process.env.ESKA_TEST_LANGUAGE === "1") fixture.languageSource = await (await import("./language-fixture.mjs")).createLanguageSource(fixture);
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
@@ -43,6 +45,14 @@ try {
   }
   if (basename(suite) === "language-reference-host.cjs") {
     fixture.reference = await (await import("./language-fixture.mjs")).createReferenceSource(fixture, root);
+  }
+  if (["language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite))) {
+    fixture.library = await (await import("./language-fixture.mjs")).createLibrarySource(fixture, root);
+    if (basename(suite) === "language-add-host.cjs") {
+      await writeFile(join(fixture.root, "eska.toml"), "[project]\ntype='processing'\n[tools.bsl-analyzer.diagnostics.parameters]\nLineLength=false\n");
+    }
+    if (process.env.ESKA_HOST_LIBRARY_MISSING === "1") await rm(fixture.library.config);
+    if (process.env.ESKA_HOST_LIBRARY_MISSING === "directory") await rm(fixture.library.configDir, { recursive: true });
   }
   if (["query-advanced-host.cjs", "query-package-host.cjs", "query-having-host.cjs", "query-total-sections-host.cjs", "query-dcs-host.cjs"].includes(basename(suite))) {
     await (await import("./query-advanced-fixture.mjs")).addQueryRegister(fixture);
@@ -67,8 +77,9 @@ try {
 
   }
   // These scenarios exercise language lifecycle, not concurrent mutation of XML during workspace/open.
-  if (["language-host.cjs", "language-cancellation-host.cjs", "bundle-update-host.cjs"].includes(basename(suite))) {
-    fixture.languageSource = await (await import("./language-fixture.mjs")).createLanguageSource(fixture);
+  if (["language-host.cjs", "language-cancellation-host.cjs", "bundle-update-host.cjs", "inlay-alignment-host.cjs"].includes(basename(suite))) {
+    const source = await import("./language-fixture.mjs");
+    fixture.languageSource = basename(suite) === "inlay-alignment-host.cjs" ? await source.createInlaySource(fixture) : await source.createLanguageSource(fixture);
   }
   // Reload tests need a stable root descriptor before workspaceContains can activate the extension.
   if (process.env.ESKA_HOST_CONFLICT_RELOAD) await (await import("./language-fixture.mjs")).createLanguageSource(fixture);
@@ -88,7 +99,7 @@ try {
   // Configure the binary before activation: a later settings notification deliberately disconnects.
   // The general explorer suite separately exercises discovery through the isolated PATH.
   const explicitBinary = process.env.ESKA_HOST_GLOBAL_BINARY || basename(suite) !== "extension-host.cjs";
-  await writeFile(join(fixture.root, ".vscode/settings.json"), JSON.stringify({ ...nativeUiSettings, "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
+  await writeFile(join(fixture.root, ".vscode/settings.json"), JSON.stringify({ ...nativeUiSettings, "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
     ...(explicitBinary ? { "eska.explorer.executable": binary } : {}),
     ...(process.env.ESKA_HOST_SUPPORT_DISABLED ? { "eska.explorer.supportPolicy": false } : {}) }));
   const executable = process.env.VSCODE_EXECUTABLE ?? "code";
@@ -96,16 +107,23 @@ try {
   const cli = process.env.VSCODE_CLI_JS;
   if (cli && !isAbsolute(cli)) throw new Error("VSCODE_CLI_JS must be absolute.");
   const run = promisify(execFile);
+  const installTimeout = process.platform === "win32" ? 300000 : 120000;
   const runCli = (args, options) => run(executable, cli ? [cli, ...args] : args, {
     ...options, windowsHide: true,
     ...(cli ? { env: { ...process.env, ...options?.env, ELECTRON_RUN_AS_NODE: "1" } } : {}),
   });
   let extensionPath = repository;
+  if (process.env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY) {
+    const source = process.env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY;
+    if (!isAbsolute(source)) throw new Error("ESKA_HOST_LANGUAGE_PACK_DIRECTORY must be absolute.");
+    const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
+    await cp(source, join(root, "extensions", `${manifest.publisher}.${manifest.name}-${manifest.version}`.toLowerCase()), { recursive: true });
+  }
   if (process.env.ESKA_HOST_LANGUAGE_PACK_VSIX) {
     const languagePack = process.env.ESKA_HOST_LANGUAGE_PACK_VSIX;
     if (!isAbsolute(languagePack)) throw new Error("ESKA_HOST_LANGUAGE_PACK_VSIX must be absolute.");
     await runCli([`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`,
-      "--install-extension", languagePack, "--force"], { timeout: 120000 });
+      "--install-extension", languagePack, "--force"], { timeout: installTimeout });
   }
   const conflictFixture = process.env.ESKA_HOST_CONFLICT_FIXTURE ? await (await import("./conflict-fixture.mjs")).createConflictFixture(root) : undefined;
   if (conflictFixture && process.env.ESKA_HOST_CONFLICT_FIXTURE === "initial") {
@@ -119,7 +137,7 @@ try {
     await cp(process.env.ESKA_BSL_EXTENSION, join(root, "extensions", `${analyzer.publisher}.${analyzer.name}-${analyzer.version}`), { recursive: true });
     await mkdir(join(fixture.root, ".vscode"), { recursive: true });
     await writeFile(join(fixture.root, ".vscode", "settings.json"), JSON.stringify({
-      "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
+      "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
       "bsl-analyzer-lsp.server.path": process.env.ESKA_BSL_BINARY,
       "[bsl]": { "editor.defaultFormatter": `${analyzer.publisher}.${analyzer.name}` },
       ...(process.env.ESKA_HOST_SUPPORT_DISABLED ? { "eska.explorer.supportPolicy": false } : {})
@@ -129,7 +147,7 @@ try {
   if (process.env.ESKA_TEST_VSIX) {
     if (!isAbsolute(process.env.ESKA_TEST_VSIX)) throw new Error("ESKA_TEST_VSIX must be absolute.");
     const directories = [`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`];
-    await runCli([...directories, "--install-extension", process.env.ESKA_TEST_VSIX], { timeout: 120000 });
+    await runCli([...directories, "--install-extension", process.env.ESKA_TEST_VSIX], { timeout: installTimeout });
     const { stdout } = await runCli([...directories, "--list-extensions", "--show-versions"], { timeout: 30000 });
     const installed = stdout.split(/\r?\n/).find(line => line.startsWith("1c-tooling.eska-explorer@"));
     if (!installed) throw new Error(`VSIX was not installed: ${stdout}`);
@@ -148,12 +166,12 @@ try {
   if (process.env.ESKA_HOST_MULTI_ROOT) {
     secondFixture = await createTreeProject(join(root, "second"));
     workspace = join(root, "support.code-workspace");
-    await writeFile(workspace, JSON.stringify({ folders: [{ path: fixture.root }, { path: secondFixture.root }], settings: { "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend } }));
+    await writeFile(workspace, JSON.stringify({ folders: [{ path: fixture.root }, { path: secondFixture.root }], settings: { "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend } }));
   }
   if (process.env.ESKA_PERF_PROJECT) {
     if (!isAbsolute(process.env.ESKA_PERF_PROJECT)) throw new Error("ESKA_PERF_PROJECT must be absolute.");
     workspace = join(root, "performance.code-workspace");
-    await writeFile(workspace, JSON.stringify({ folders: [{ path: process.env.ESKA_PERF_PROJECT }], settings: { "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend, "eska.explorer.executable": binary,
+    await writeFile(workspace, JSON.stringify({ folders: [{ path: process.env.ESKA_PERF_PROJECT }], settings: { "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend, "eska.explorer.executable": binary,
       ...(process.env.ESKA_HOST_SUPPORT_DISABLED ? { "eska.explorer.supportPolicy": false } : {}) } }));
   }
   // A second process reuses the same profile and workspace to test restored editors.
@@ -171,7 +189,7 @@ try {
   };\n`);
   const hostArguments = [`--extensionTestsPath=${hostSuite}`];
   let languageWarmup;
-  if (process.env.ESKA_HOST_LANGUAGE_PACK_VSIX) {
+  if (process.env.ESKA_HOST_LANGUAGE_PACK_VSIX || process.env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY) {
     // A fresh profile registers installed language packs during its first normal startup.
     // Passing --locale before that registration still resolves to English.
     languageWarmup = join(root, "language-pack-registration");
@@ -213,13 +231,13 @@ exports.activate = async function () {
       await run(process.execPath, [join(repository, "node_modules/@vscode/vsce/vsce"), "package", "--no-dependencies",
         "--allow-missing-repository", "--skip-license", "--out", probeVsix], { cwd: probe });
       await runCli([`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`,
-        "--install-extension", probeVsix, "--force"]);
+        "--install-extension", probeVsix, "--force"], { timeout: installTimeout });
       hostArguments.splice(0, 1);
       installedStartupProbe = true;
     } else hostArguments.splice(0, 1, `--extensionDevelopmentPath=${probe}`);
   }
   let languageAttempts = 0;
-  const runs = process.env.ESKA_HOST_CONFLICT_RELOAD ? 3 : process.env.ESKA_HOST_RESTART || process.env.ESKA_HOST_QUERY_RESTART ? 2 : 1;
+  const runs = process.env.ESKA_HOST_CONFLICT_RELOAD ? 3 : process.env.ESKA_HOST_RESTART || process.env.ESKA_HOST_QUERY_RESTART || process.env.ESKA_HOST_ACTIVITY_RESTART ? 2 : 1;
   for (let run = languageWarmup ? -1 : 0; run < runs; run++) {
     await rm(join(fixture.root, "host-result.json"), { force: true });
     const child = spawn(executable, ["--verbose", "--skip-welcome", "--skip-release-notes", ...(locale ? [`--locale=${locale}`] : []), ...(process.env.ESKA_HOST_DEBUG_PORT ? [`--remote-debugging-port=${process.env.ESKA_HOST_DEBUG_PORT}`] : []),
@@ -229,6 +247,8 @@ exports.activate = async function () {
       ...(process.env.ESKA_BSL_DISABLED || process.env.ESKA_HOST_CONFLICT_RELOAD && run === 1 ? ["--disable-extension=elishevkirill.bsl-analyzer-lsp"] : []), "--disable-gpu", "--new-window", workspace],
     { env: { ...process.env, PATH: bin + (process.platform === "win32" ? ";" : ":") + (process.env.PATH ?? ""), ESKA_HOST_RUN: String(run),
       ...(conflictFixture ? { ESKA_HOST_CONFLICT_VSIX: conflictFixture.vsix } : {}),
+      ...(fixture.library ? { ESKA_CONFIG_DIR: fixture.library.configDir } : {}),
+      ...(fixture.activity ? { ESKA_CONFIG_DIR: fixture.activity.configDir } : {}),
       ESKA_HOST_FIXTURE: JSON.stringify(fixture), ESKA_HOST_SECOND_FIXTURE: JSON.stringify(secondFixture) }, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     const fullLog = process.env.ESKA_HOST_FULL_LOG ? createWriteStream(process.env.ESKA_HOST_FULL_LOG) : undefined;

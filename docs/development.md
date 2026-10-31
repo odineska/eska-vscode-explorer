@@ -57,9 +57,15 @@ node test/run-host.mjs test/extension-host.cjs
 `VSCODE_EXECUTABLE` должен указывать на executable, а не на `code.cmd`.
 Для `ru` нужен `ESKA_HOST_LANGUAGE_PACK_VSIX` с русским language pack:
 runner установит его в приватный профиль и проверит фактическую локаль IDE.
+Можно также задать абсолютный `ESKA_HOST_LANGUAGE_PACK_DIRECTORY` уже
+распакованного официального language pack: runner копирует его в свой профиль.
 Для webview-сценариев задайте свободный локальный `ESKA_HOST_DEBUG_PORT`.
 Файловые алиасы проверяются через directory junction без прав на создание symlink.
 Освобождение backend предшествует удалению его временных каталогов.
+`test/inlay-alignment-host.cjs` проверяет реальные позиции текста, копирование,
+Undo/Redo, split, прокрутку, закрытие и перезапуск LSP. В Linux для клавиатурных
+сценариев окно должно получать настоящий native-фокус; при проверке VS Code
+1.144 использован XWayland (`--ozone-platform=x11`).
 Нативные UI-профили запускайте последовательно: окна разделяют OS focus,
 поэтому параллельный запуск нарушает проверки QuickPick и dirty-close.
 Регистрация language pack подтверждается отдельным read-only startup probe;
@@ -67,8 +73,8 @@ runner установит его в приватный профиль и про�
 
 Клиент query RPC находится в `src/query/`: планы исходников используют API 1.13,
 общее восстановление — API 1.14, устойчивые сессии — API 1.16. Рабочий адаптер
-запрашивает 1.33. После явного ответа о поддержке более ранней версии из диапазона
-1.12–1.32 подключение согласует доступные capabilities. Пакетная индикация
+запрашивает 1.34. После явного ответа о поддержке более ранней версии из диапазона
+1.12–1.33 подключение согласует доступные capabilities. Пакетная индикация
 поддержки использует `supportObjects` из 1.25; без неё сохраняется прежняя
 адресная проверка. Обратная навигация и
 поиск BSL-владельца требуют `sourceNavigation` из 1.24; клиентского обхода
@@ -502,3 +508,76 @@ validator тестовым wrapper. `conflict-fixture.mjs` создаёт и л�
 и хранилище редактора не используются. Последний профиль отдельно проверяет
 реальное стороннее расширение и его процесс; учёт PID использует Linux `/proc`.
 `ESKA_TEST_VSIX` включает проверку установленного пакета.
+
+## Проверка глобальной библиотеки
+
+`test/language-library-host.cjs` использует собственный глобальный каталог и две
+Designer XML-выгрузки вне проекта. Проверяет переход в библиотечный модуль,
+диагностику dirty BSL, смену пути без перезапуска метаданных, сохранение
+`LineLength=false`, исправление ошибочной записи и завершение процессов.
+Настройки пользователя не меняются. Нужен реальный совместимый analyzer app:
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+ESKA_TEST_ANALYZER_BINARY=/path/to/bsl-analyzer-app \
+ESKA_TEST_LANGUAGE=1 ESKA_HOST_SUPPORT_DISABLED=1 VSCODE_EXECUTABLE=codium \
+node test/run-host.mjs test/language-library-host.cjs
+```
+
+`ESKA_HOST_LIBRARY_MISSING=1` проверяет восстановление после отсутствующего
+глобального файла при первом подключении; `directory` также удаляет его каталог. Автоматические тесты
+`language-conflict.test.mjs` проверяют coalescing событий, смену пути во время
+старта и освобождение recovery-наблюдателя при отключении.
+
+
+Проверка T145 от 2026-10-31: Linux ARM64, VS Code 1.144.0, реальный
+bsl-analyzer 0.4.2 из одноимённого upstream tag. Для локальной ARM-сборки
+отключены LTO и неподдерживаемые SME-варианты numkong его штатными переменными;
+исходники не менялись. Сценарий глобальной библиотеки прошёл со сменой пути,
+dirty-диагностикой, definition, восстановлением без файла и без каталога.
+Windows native в этой проверке не запускалась; пути дисков и UNC покрыты тестами.
+
+Отдельный `language-reference-host.cjs` доходит до definition по прямой ссылке,
+но немедленная запись `eska.toml` не обновляет конфиг на этой среде. Сбой
+воспроизводится и на исходном Explorer `b4a1512` до T145. Эта проверка целиком
+не считается прошедшей; обновление manifest-наблюдения нужно проверить в T148
+вместе с `eska add`. Проверки глобального каталога от этого события не зависят.
+
+`project-groups.test.mjs` проверяет независимые пороги, видимый состав и
+стабильные идентификаторы виртуальных групп. `project-groups-host.cjs` создаёт
+собственный workspace с семью подготовленными проектами; проверяет переходы
+1↔2, native labels, поиск, переход от файла, выбор и раскрытие после refresh
+и изменения manifest, включая workspace, в котором сгруппированы все корни.
+
+## Проверка активности workspace
+
+`activity.test.mjs` и `language-documents.test.mjs` проверяют отмену запросов
+отдельного проекта, запоздалые ответы и wire-документы при сохранении native-буфера.
+`language-conflict.test.mjs` проверяет отмену подготовки до команды активности,
+возврат диагностик при отказе сохранения, включение после отключённого reconnect
+и освобождение глобального наблюдателя последнего потребителя.
+
+Native-набор `project-activity-host.cjs` создаёт семь проектов в двух приложениях,
+свой каталог настроек и изолированный профиль. Проверяет общие definition,
+освобождение VFS/наблюдателей, dirty BSL и Undo/Redo, зависимости, фильтр и пороги
+T150, последнего потребителя, перезапуск backend и отдельный запуск IDE:
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+ESKA_TEST_ANALYZER_BINARY=/path/to/bsl-analyzer-app \
+ESKA_TEST_LANGUAGE=1 ESKA_HOST_ACTIVITY_RESTART=1 ESKA_HOST_ACTIVITY_CANCEL=1 \
+ESKA_HOST_LOCALE=en VSCODE_EXECUTABLE=code \
+node test/run-host.mjs test/project-activity-host.cjs
+```
+
+На Unix приватный `activity-analyzer.py` только задерживает собственный
+`check-config` для проверки отмены, включает штатный `BSL_LOG_FILE` и затем
+заменяет себя настоящим бинарником с тем же PID. Нужен Python 3 только на
+тестовом стенде. Исходники анализатора не меняются. На Windows эта instrumentation
+не применяется. `ESKA_HOST_ACTIVITY_RESTART` выполняет два запуска test host
+с теми же настройками; test host не восстанавливает native hot-exit backups,
+поэтому dirty-буфер проверяется при отключении, включении и перезапуске backend.
+`ESKA_HOST_LOCALE=ru` и обычные параметры language pack runner повторяют приёмку
+на русском. Для нативного ввода на проверенном Linux использован XWayland.
