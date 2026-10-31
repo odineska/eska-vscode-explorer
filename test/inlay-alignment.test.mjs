@@ -156,6 +156,18 @@ test("nested and preceding argument hints contribute their entire advance to eve
   assert.equal(f.editors[0].values.length, 0);
 });
 
+test("an oversized multiline display falls back before allocating attachments beyond its budget", async t => {
+  const f = fixture(); t.after(() => f.alignment.dispose());
+  f.document.text = 'F("one' + '\n  |next'.repeat(1024) + '");';
+  let characters = 0;
+  const attachment = f.alignment.attachment.bind(f.alignment);
+  f.alignment.attachment = (...args) => { characters += args[2].length; return attachment(...args); };
+  const hint = f.hint({ label: 'P'.repeat(2048) });
+  assert.deepEqual(await f.provide([hint]), [hint]);
+  assert.equal(f.editors[0].values.length, 0);
+  assert.ok(characters <= 131_072, `allocated ${characters} attachment characters`);
+});
+
 test("a projection epoch change discards a late result even when native text and version stay equal", async t => {
   const f = fixture(); t.after(() => f.alignment.dispose());
   f.endpoint.wait = gate(); f.endpoint.reached = gate();

@@ -5,6 +5,7 @@ type Next = (document: vscode.TextDocument, range: vscode.Range, token: vscode.C
 interface Geometry { version: number; epoch: number; value: Promise<MultilineString[]>; controller: AbortController }
 interface Display { version: number; decorations: vscode.DecorationOptions[] }
 interface Advance { offset: number; text: string; margins: number }
+interface Alignment { decorations: vscode.DecorationOptions[]; replaced: Set<vscode.InlayHint> }
 const MAX_DECORATION_CHARACTERS = 131_072;
 
 /** One renderer gives a multiline parameter label and every continuation exactly the same advance. */
@@ -56,6 +57,17 @@ export class InlayAlignment implements vscode.Disposable {
       return visible(hints);
     }
     if (!this.current(document, version, epoch, token, context) || !this.enabled(document)) return undefined;
+    const padding = this.api.workspace.getConfiguration("editor", document).get<boolean>("inlayHints.padding", false);
+    const alignment = this.align(document, hints, strings, padding);
+    if (!alignment) {
+      this.displays.delete(document); this.render(); return visible(hints);
+    }
+    if (!this.api.window.visibleTextEditors.some(editor => editor.document === document)) return visible(hints);
+    this.displays.set(document, { version, decorations: alignment.decorations }); this.render();
+    return visible(hints.filter(hint => !alignment.replaced.has(hint)));
+  }
+
+  private align(document: vscode.TextDocument, hints: readonly vscode.InlayHint[], strings: readonly MultilineString[], padding: boolean): Alignment | undefined {
     const byLine = new Map<number, { hint: vscode.InlayHint; offset: number }[]>();
     const counts = new Map<number, number>();
     for (const hint of hints) {
@@ -64,7 +76,6 @@ export class InlayAlignment implements vscode.Disposable {
     }
     for (const line of byLine.values()) line.sort((one, two) => one.offset - two.offset);
     const advances = new Map<number, Advance>(), replaced = new Set<vscode.InlayHint>(), decorations: vscode.DecorationOptions[] = [];
-    const padding = this.api.workspace.getConfiguration("editor", document).get<boolean>("inlayHints.padding", false);
     let characters = 0;
     for (const string of strings) {
       const position = document.positionAt(string.start);
@@ -75,24 +86,22 @@ export class InlayAlignment implements vscode.Disposable {
       let margins = previous && previous.offset < string.start ? previous.margins : 0;
       for (const { hint, offset } of prefix) {
         const label = `${hint.paddingLeft ? "\u00a0" : ""}${hint.label}${hint.paddingRight ? "\u00a0" : ""}`;
+        if (text.length + label.length > MAX_DECORATION_CHARACTERS) return undefined;
         text += label; margins++;
         if (!replaced.has(hint)) {
-          decorations.push(this.attachment(document, offset, label, padding ? 1 : 0, false));
-          characters += label.length; replaced.add(hint);
+          if (characters + label.length > MAX_DECORATION_CHARACTERS) return undefined;
+          characters += label.length;
+          decorations.push(this.attachment(document, offset, label, padding ? 1 : 0, false)); replaced.add(hint);
         }
       }
       for (const continuation of string.continuations) {
+        if (characters + text.length > MAX_DECORATION_CHARACTERS) return undefined;
+        characters += text.length;
         decorations.push(this.attachment(document, continuation, text, padding ? margins : 0, true));
         advances.set(document.positionAt(continuation).line, { offset: continuation, text, margins });
-        characters += text.length;
-      }
-      if (characters > MAX_DECORATION_CHARACTERS) {
-        this.displays.delete(document); this.render(); return visible(hints);
       }
     }
-    if (!this.api.window.visibleTextEditors.some(editor => editor.document === document)) return visible(hints);
-    this.displays.set(document, { version, decorations }); this.render();
-    return visible(hints.filter(hint => !replaced.has(hint)));
+    return { decorations, replaced };
   }
 
   /** Any model/setting change retires source positions before it asks the native provider to refresh. */
