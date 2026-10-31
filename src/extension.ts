@@ -32,7 +32,7 @@ import { queryBranches, queryLabel, queryLeaf, type QueryEntry } from "./query/t
 import { WorkspaceFiles, fileName, type WorkspaceEntry } from "./workspace-files.js";
 import { ProjectWatcher, watchManifests, watchDirectory } from "./watch.js";
 import { basename } from "node:path";
-import { projectEnabled, parseWorkspace } from "./protocol.js";
+import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
@@ -551,6 +551,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Native lazy reads can temporarily hide either a root or one of its descendants. */
   private async revealInView(tree: MetadataTree, entry: Element, options: { select: boolean; focus: boolean; expand?: boolean }): Promise<void> {
+    if (options.select && "node" in entry) {
+      const ancestors: TreeEntry[] = [];
+      for (let parent = tree.parent(entry); parent; parent = tree.parent(parent)) ancestors.unshift(parent);
+      // Native caches may still be loading a collapsed intermediate ancestor.
+      for (const parent of ancestors) {
+        this.expanded.set(parent.key, true);
+        await this.getChildren(parent);
+        await this.revealInView(tree, parent, { expand: true, select: false, focus: false });
+      }
+    }
     const retryUntil = performance.now() + 5000;
     for (;;) {
       if (this.tree !== tree || this.disposed) throw new ExplorerError("obsolete");
@@ -559,7 +569,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         return;
       } catch (error) {
         // Retry only the native cold-view miss; source lookup and mutations are never replayed.
-        if (performance.now() >= retryUntil || !(error instanceof Error) || !(error.message.startsWith("TreeError [eska.explorer.projects] Tree element not found:")
+        if (performance.now() >= retryUntil || (!isRecord(error) || typeof error.message !== "string") || !(error.message.startsWith("TreeError [eska.explorer.projects] Tree element not found:")
           || (error.message.startsWith("Cannot resolve tree item for element ")
             && error.message.endsWith(" from extension 1c-tooling.eska-explorer")))) throw error;
         // The workbench cannot resolve the next ancestor until its pending provider reads return.
