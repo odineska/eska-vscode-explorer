@@ -524,7 +524,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       if (owner) {
         await this.expandRootForReveal(tree, owner.project);
       }
-      if (this.tree === tree && !this.disposed) await this.view.reveal(entry, { select: true, focus: true });
+      if (this.tree === tree && !this.disposed) await this.revealInView(tree, entry, { select: true, focus: true });
     } catch (error) {
       if (this.tree === tree && !this.disposed) this.showError(error instanceof ExplorerError ? error : new ExplorerError("sourceMissing"));
     }
@@ -541,23 +541,28 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     // A default-expanded native root loads these rows before it becomes revealable.
     // Read only this shallow level; a collapsed root must not wait for a future native expansion.
     await this.getChildren(root);
+    const group = this.projectGroups?.parent(project);
+    if (group) {
+      await this.getChildren(group);
+      this.expanded.set(group.key, true);
+    }
+    await this.revealInView(tree, root, { expand: true, select: false, focus: false });
+  }
+
+  /** Native lazy reads can temporarily hide either a root or one of its descendants. */
+  private async revealInView(tree: MetadataTree, entry: Element, options: { select: boolean; focus: boolean; expand?: boolean }): Promise<void> {
     const retryUntil = performance.now() + 5000;
     for (;;) {
       if (this.tree !== tree || this.disposed) throw new ExplorerError("obsolete");
       try {
-        const group = this.projectGroups?.parent(project);
-        if (group) {
-          await this.getChildren(group);
-          this.expanded.set(group.key, true);
-        }
-        await this.view.reveal(root, { expand: true, select: false, focus: false });
+        await this.view.reveal(entry, options);
         return;
       } catch (error) {
-        // Retry only the native cold-view miss, never the source lookup, selection or mutations.
+        // Retry only the native cold-view miss; source lookup and mutations are never replayed.
         if (performance.now() >= retryUntil || !(error instanceof Error) || !(error.message.startsWith("TreeError [eska.explorer.projects] Tree element not found:")
           || (error.message.startsWith("Cannot resolve tree item for element ")
             && error.message.endsWith(" from extension 1c-tooling.eska-explorer")))) throw error;
-        // The workbench has cached the root but cannot reveal it until its pending provider reads return.
+        // The workbench cannot resolve the next ancestor until its pending provider reads return.
         await Promise.allSettled(this.treeReads);
         await new Promise<void>(resolve => setTimeout(resolve, 50));
       }
@@ -587,7 +592,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         if (this.tree !== tree || this.disposed) throw new ExplorerError("obsolete");
         // Support updates can repaint ancestors before native expansion events reach the extension host.
         for (let parent = tree.parent(entry); parent; parent = tree.parent(parent)) this.expanded.set(parent.key, true);
-        await this.view.reveal(entry, { select: true, focus: true });
+        await this.revealInView(tree, entry, { select: true, focus: true });
       } catch (error) { this.showError(error instanceof ExplorerError ? error : new ExplorerError("sourceMissing")); }
     }, () => { this.searchView = undefined; });
   }
@@ -719,6 +724,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private async refresh(entry?: Element): Promise<void> {
     const tree = this.tree;
     if (!tree) return;
+    const selected = this.view.selection[0];
     this.files?.refresh();
     this.changed.fire(undefined);
     if (entry && "fileKind" in entry) return;
@@ -737,6 +743,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       catch (error) {
         if (tree === this.tree) this.showError(error instanceof ExplorerError ? error : new ExplorerError("branchInvalid"));
       } finally { this.recovering.delete(project); }
+    }
+    const current = this.view.selection[0];
+    if (this.tree === tree && selected && "node" in selected && (!current || current === selected)
+      && selected.project.nodes.get(nodeKey(selected.node.id)) === selected) {
+      try {
+        await this.expandRootForReveal(tree, selected.project);
+        const target = this.hiddenAncestor(selected, tree, this.hideEmptyGroups(selected.project)) ? await tree.root(selected.project) : selected;
+        const current = this.view.selection[0];
+        if (!current || current === selected) await this.revealInView(tree, target, { select: true, focus: false });
+      } catch (error) { this.output.info(`refresh_selection_error code=${error instanceof ExplorerError ? error.code : "requestFailed"}`); }
     }
   }
 
@@ -760,7 +776,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         if (!child) break;
         target = child;
       }
-      if (this.tree === tree && !this.disposed) await this.view.reveal(target, { select: true, focus: false });
+      if (this.tree === tree && !this.disposed) await this.revealInView(tree, target, { select: true, focus: false });
     } catch (error) { this.output.info(`group_selection_error code=${error instanceof ExplorerError ? error.code : "requestFailed"}`); }
   }
 
