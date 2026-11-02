@@ -37,7 +37,7 @@ export function itemTable(entries, context) {
     const td=element('td'); td.append(tick); tr.append(td);
     for (const key of ['expression','alias','aggregate']) {
       const cell=element('td'), cellValue=key==='expression'?(value?.expression ?? value?.table ?? item.preview):value?.[key];
-      const display=element('button', key==='aggregate'&&cellValue?l[cellValue]:String(cellValue??''),'cell-value'); display.type='button'; display.title=String(cellValue??''); display.setAttribute('aria-label',`${l[key]} ${item.index+1}`);
+      const display=element('button', key==='aggregate'&&cellValue?l[cellValue]:String(cellValue??''),'cell-value eska-cell-button'); display.type='button'; display.title=String(cellValue??''); display.setAttribute('aria-label',`${l[key]} ${item.index+1}`);
       const openCell=()=> {
         if (!writable || busy || item.unavailable.replace) return;
         if (!value || !(key in value) || typeof value[key]==='boolean') { edit(row); return; }

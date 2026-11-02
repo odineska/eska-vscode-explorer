@@ -1,14 +1,3 @@
-:root {
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-}
-
-* { box-sizing: border-box; }
-
-body { margin: 0; }
-
 .page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -17,7 +6,6 @@ body { margin: 0; }
   padding: 32px clamp(20px, 5vw, 64px) 64px;
 }
 
-[hidden] { display: none !important; }
 .page.with-picture { grid-template-columns: minmax(0, 1fr) 160px; column-gap: 24px; }
 .heading { grid-column: 1; grid-row: 1; min-width: 0; }
 .toolbar { grid-column: 1; grid-row: 2; min-width: 0; align-self: end; }
@@ -68,19 +56,6 @@ h1 { font-size: 1.65em; font-weight: 600; line-height: 1.3; margin: 8px 0 0; ove
 
 .toolbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 1;
   padding: 12px 0; background: var(--vscode-editor-background); }
-input[type="search"] {
-  flex: 1; min-width: 0; height: 30px; padding: 0 10px;
-  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px;
-  font: inherit;
-}
-input[type="search"]:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-button { font: inherit; cursor: pointer; }
-#refresh { height: 30px; padding: 0 12px; color: var(--vscode-button-secondaryForeground);
-  background: var(--vscode-button-secondaryBackground); border: 0; border-radius: 2px; }
-#refresh:hover { background: var(--vscode-button-secondaryHoverBackground); }
-button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
-
 .count { margin: 8px 0 4px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
 .notice { margin: 12px 0; color: var(--vscode-descriptionForeground); }
 .notice:empty { display: none; }
@@ -92,33 +67,6 @@ button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-fo
 .property-name, .field-name { display: flex; align-items: center; gap: 9px; }
 .name-text { min-width: 0; display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .caption { overflow-wrap: break-word; }
-.boolean-checkbox {
-  appearance: none;
-  position: relative;
-  flex: none;
-  width: 25px;
-  height: 25px;
-  margin: 0;
-  border: 1px solid var(--vscode-checkbox-border, var(--vscode-descriptionForeground));
-  border-radius: 4px;
-  background: transparent;
-  opacity: 1;
-  pointer-events: none;
-}
-.boolean-checkbox:checked::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 4px;
-  width: 7px;
-  height: 12px;
-  border: solid var(--vscode-checkbox-foreground, var(--vscode-foreground));
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-}
-.source-button { flex: none; padding: 3px 0; color: var(--vscode-textLink-foreground);
-  background: transparent; border: 0; }
-.source-button:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
 .value { color: var(--vscode-foreground); }
 .text-value { white-space: pre-wrap; overflow-wrap: anywhere; }
 .unsupported { color: var(--vscode-descriptionForeground); font-style: italic; }
@@ -189,25 +137,23 @@ button:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-fo
 /* Editing controls follow native Settings spacing and theme colors. */
 .lock-button { background: transparent; cursor: pointer; }
 .lock-button[aria-pressed="true"] { color: var(--vscode-foreground); border-color: var(--vscode-focusBorder); }
-.history-button, .draft-save { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground);
-  border: 0; border-radius: 3px; padding: 5px 9px; }
 .history-button { margin-top: 8px; }
-button:disabled { cursor: default; opacity: .6; }
 .property-editors { display: grid; gap: 14px; margin-top: 2px; }
 .property-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; max-width: 700px; }
 .property-constraint { grid-column: 1; grid-row: 3; color: var(--vscode-descriptionForeground); }
 .property-restriction { margin: 8px 0 0; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
 .property-editor > label { grid-column: 1 / -1; color: var(--vscode-descriptionForeground); }
-.property-input { grid-column: 1; width: 100%; min-width: 0; min-height: 30px; padding: 5px 8px; font: inherit;
-  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, var(--vscode-settings-textInputBorder, transparent)); border-radius: 2px; }
-.property-input:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
 textarea.property-input { resize: vertical; line-height: 1.5; }
 button.property-input { text-align: start; }
 .property-editor.boolean-editor { display: flex; align-items: center; gap: 9px; }
 .boolean-editor label { color: var(--vscode-foreground); cursor: pointer; }
 .boolean-editor .boolean-checkbox { cursor: pointer; pointer-events: auto; }
-.boolean-editor .boolean-checkbox:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
 .draft-save { align-self: start; }
 .draft-actions { display: flex; flex-wrap: wrap; gap: 5px; }
 .property-editors + details { margin-top: 12px; }
+
+/* Screen geometry; control appearance belongs to shared/ui.css. */
+.toolbar input[type=search] { flex: 1; min-width: 0; }
+.boolean-checkbox { pointer-events: none; }
+.source-button { flex: none; }
+.property-input { grid-column: 1; width: 100%; }

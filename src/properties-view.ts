@@ -59,7 +59,7 @@ class PropertyTab implements vscode.Disposable {
     private readonly openReference: (tree: MetadataTree, entry: TreeEntry) => Promise<void>,
     private readonly closed: () => void) {
     const roots = [vscode.Uri.joinPath(context.extensionUri, "resources", "properties"),
-      vscode.Uri.joinPath(context.extensionUri, "resources", "icons")];
+      vscode.Uri.joinPath(context.extensionUri, "resources", "icons"), vscode.Uri.joinPath(context.extensionUri, "resources", "shared")];
     const label = entry.node.label.kind === "name" ? entry.node.label.text : entry.node.label.translations[language()];
     const title = `${label} · ${message(vscode.env.language, "properties")}`;
     this.panel = vscode.window.createWebviewPanel("eska.explorer.properties", title, vscode.ViewColumn.Active,
@@ -638,13 +638,14 @@ class PropertyTab implements vscode.Disposable {
   /** Package local CSS/JS with a strict CSP; workspace text reaches the DOM only via textContent. */
   private html(): string {
     const webview = this.panel.webview;
+    const common = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared", "ui.css"));
     const css = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "resources", "properties", "view.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "resources", "properties", "view.js"));
     const lang = vscode.env.language.toLowerCase().startsWith("ru") ? "ru" : "en";
     return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${webview.cspSource}; style-src ${webview.cspSource}; script-src ${webview.cspSource};">
-      <link rel="stylesheet" href="${css}"><title>ESKA Properties</title></head>
+      <link rel="stylesheet" href="${common}"><link rel="stylesheet" href="${css}"><title>ESKA Properties</title></head>
       <body><main class="page"><header class="heading"><div id="breadcrumb" class="breadcrumb"></div>
       <div class="title-row"><h1 id="title"></h1><button id="read-only" class="badge lock-button" type="button"></button><button id="undo" class="history-button" type="button" hidden></button><button id="redo" class="history-button" type="button" hidden></button></div></header>
       <div class="toolbar"><label class="visually-hidden" for="search"></label>

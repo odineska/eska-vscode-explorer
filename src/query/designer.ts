@@ -44,7 +44,7 @@ export class QueryDesigner implements vscode.Disposable {
   private async open(uri: vscode.Uri): Promise<void> {
     const document = await vscode.workspace.openTextDocument(uri), binding = await this.tabs.beginConstructor(document);
     if (this.disposed) { await binding.abandon(); return; }
-    const roots = [vscode.Uri.joinPath(this.context.extensionUri, "resources", "query")];
+    const roots = [vscode.Uri.joinPath(this.context.extensionUri, "resources", "query"), vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared")];
     const panel = vscode.window.createWebviewPanel("eska.queryConstructor", this.text("constructorTitle"), vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: roots });
     const view: View = { panel, binding, busy: false, ending: false, failedApply: false, statement: 0, locationSerial:0, browsed: new Map() }; this.views.set(uri.toString(), view);
@@ -226,8 +226,9 @@ export class QueryDesigner implements vscode.Disposable {
   /** A small local resource page receives all model text through postMessage and renders it with textContent. */
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString("hex"), root = vscode.Uri.joinPath(this.context.extensionUri, "resources", "query");
+    const common = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared", "ui.css"));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(root, "designer.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(root, "designer.css"));
-    return `<!doctype html><html lang="${vscode.env.language === "ru" ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}"><link rel="stylesheet" href="${style}"></head><body><main id="root"></main><script type="module" nonce="${nonce}" src="${script}"></script></body></html>`;
+    return `<!doctype html><html lang="${vscode.env.language === "ru" ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}"><link rel="stylesheet" href="${common}"><link rel="stylesheet" href="${style}"></head><body><main id="root"></main><script type="module" nonce="${nonce}" src="${script}"></script></body></html>`;
   }
 
   /** Unknown syntax and resource limits are distinct from normal read-only restrictions. */

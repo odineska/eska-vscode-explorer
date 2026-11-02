@@ -11,13 +11,14 @@ export function reviewRename(api: typeof vscode, context: vscode.ExtensionContex
   language: "ru-RU" | "en-US", signal: AbortSignal): Promise<boolean> {
   const resources = api.Uri.joinPath(context.extensionUri, "resources", "rename");
   const panel = api.window.createWebviewPanel("eska.rename", message(language, "renamePreviewTitle"), api.ViewColumn.Active,
-    { enableScripts: true, localResourceRoots: [resources] });
+    { enableScripts: true, localResourceRoots: [resources, api.Uri.joinPath(context.extensionUri, "resources", "shared")] });
+  const common = panel.webview.asWebviewUri(api.Uri.joinPath(context.extensionUri, "resources", "shared", "ui.css"));
   const css = panel.webview.asWebviewUri(api.Uri.joinPath(resources, "view.css"));
   const script = panel.webview.asWebviewUri(api.Uri.joinPath(resources, "view.js"));
   panel.webview.html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${panel.webview.cspSource}; script-src ${panel.webview.cspSource}">
-    <link rel="stylesheet" href="${css}"></head><body><main><h1 id="title"></h1><p id="summary"></p><p id="notice" role="status"></p>
-    <div class="actions"><label><input id="reviewed" type="checkbox"><span id="review-label"></span></label><button id="apply" disabled></button><button id="cancel"></button></div>
+    <link rel="stylesheet" href="${common}"><link rel="stylesheet" href="${css}"></head><body><main><h1 id="title"></h1><p id="summary"></p><p id="notice" role="status"></p>
+    <div class="actions"><label><input id="reviewed" type="checkbox"><span id="review-label"></span></label><button id="apply" class="primary" disabled></button><button id="cancel"></button></div>
     <section id="issues"></section><section id="moves"></section><section id="files"></section></main><script src="${script}"></script></body></html>`;
   return new Promise(resolve => {
     let settled = false;

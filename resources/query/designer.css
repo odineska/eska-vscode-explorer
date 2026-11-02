@@ -1,19 +1,10 @@
-body { color: var(--vscode-foreground); background: var(--vscode-editor-background); font: var(--vscode-font-size)/1.35 var(--vscode-font-family); margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
 main { padding: 6px 8px; height: 100dvh; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 header { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; min-height: 30px; min-width: 0; }
 .header-actions { flex-shrink: 0; min-width: 0; max-width: 100%; }
 .header-actions button { min-width: 0; max-width: calc((100vw - 24px) / 2); overflow: hidden; text-overflow: ellipsis; }
 .constructor-status { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: .9em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .header-actions, .controls, .search, .section-title { display: flex; align-items: center; gap: 6px; }
-button, select, textarea, input { font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 2px; padding: 3px 6px; }
-button { cursor: pointer; }
-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
-button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-button:disabled { opacity: .5; cursor: default; }
-button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
 header select { min-width: 50px; flex: 1; max-width: 280px; }
 header button { white-space: nowrap; }
 .section-bar { display: flex; flex: 0 0 auto; gap: 4px; border-bottom: 1px solid var(--vscode-panel-border); min-width: 0; }
@@ -46,9 +37,8 @@ summary { cursor: pointer; padding: 4px 0; }
 .all-fields { display: block; margin: 6px 0; font-size: .9em; }
 .row, .source-properties { border-bottom: 1px solid var(--vscode-panel-border); padding: 2px 0; min-height: 26px; display: flex; align-items: center; gap: 6px; }
 .row > pre, .source-properties > pre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); margin: 4px 0 7px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 7px; }
 .controls { flex: 0 0 auto; gap: 2px; }
-.controls button { font-size: .85em; padding: 1px 3px; }
 .notice, .empty, small { color: var(--vscode-descriptionForeground); }
 .error { color: var(--vscode-errorForeground); border-left: 3px solid var(--vscode-errorForeground); padding-left: 10px; }
 .expression { border: 1px solid var(--vscode-focusBorder); padding: 6px; margin: 0; flex: 0 1 auto; max-height: 45vh; overflow: auto; display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
@@ -87,14 +77,13 @@ body.vscode-high-contrast [role=separator], body.vscode-high-contrast-light [rol
 .item-toolbar.controls { max-width: none; flex-wrap: nowrap; overflow-x: auto; }
 .item-toolbar button { flex: 0 0 auto; }
 .item-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.item-table th, .item-table td { height: 26px; border-bottom: 1px solid var(--vscode-panel-border); text-align: left; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-table th, .item-table td { height: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-table th:first-child { width: 26px; }
 .item-table th:nth-child(2) { width: 44%; }
 .item-table th:nth-child(4) { width: 90px; }
 .item-table th:last-child { width: 72px; }
 .item-table tr[aria-selected=true] { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 .item-table tr:focus-within { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-.cell-value { display: block; background: transparent; color: inherit; border: 0; padding: 0; text-align: left; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-table td > input:not([type=checkbox]), .item-table td > select { width: 100%; padding: 0; }
 .add-source-field { display: block; margin-left: 24px; max-width: calc(100% - 24px); text-align: left; }
 

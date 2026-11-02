@@ -43,7 +43,7 @@ window.addEventListener("message", event => {
         const row = text("div", "", "change");
         row.append(text("pre", isUncertain ? item.text : item.before, isUncertain ? "uncertain" : "before"));
         if (!isUncertain) row.append(text("pre", item.after, "after"));
-        const button = text("button", labels.renameOpenLocation); button.type = "button";
+        const button = text("button", labels.renameOpenLocation, "eska-link-button"); button.type = "button";
         button.addEventListener("click", () => api.postMessage({ type: "open", file: fileIndex, index, uncertain: isUncertain }));
         row.append(button); section.append(row);
       });
