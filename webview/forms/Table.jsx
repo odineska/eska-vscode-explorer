@@ -1,51 +1,50 @@
-import { For, Show, createMemo } from 'solid-js';
-import { scalar, flag, number, caption, fieldValue, fieldWidth, font, color } from './model.mjs';
-import { CommandButton, Icon } from './Preview.jsx';
+import { For, Show, Switch, Match, createMemo } from 'solid-js';
+import { scalar, flag, caption, font, color, text } from './model.mjs';
+import { tableLayout } from './table-model.mjs';
+import { CommandButton } from './Preview.jsx';
 
-/** Header geometry is view state; column identities and effective properties remain backend-owned. */
-export function tableColumns(root) {
-  const leaves = [], rows = [];
-  function visit(node, depth) {
-    if (!flag(node, 'Visible')) return 0;
-    if (!rows[depth]) rows[depth] = [];
-    const children = node.children.filter(node => node.kind === 'ColumnGroup' || node.kind?.endsWith('Field'));
-    if (node.kind === 'ColumnGroup' && children.length) {
-      const cell = { node, span: 0, depth, leaf: false }; rows[depth].push(cell);
-      cell.span = children.reduce((sum, child) => sum + visit(child, depth + 1), 0); return cell.span;
-    }
-    leaves.push(node); rows[depth].push({ node, span: 1, depth, leaf: true }); return 1;
-  }
-  for (const node of root.children.filter(node => node.kind === 'ColumnGroup' || node.kind?.endsWith('Field'))) visit(node, 0);
-  return { leaves, rows };
+function Header(props) {
+  const state = props.controller.state, model = () => props.model, node = () => model().node;
+  const select = (event, item = node()) => { event.stopPropagation(); props.controller.select(item); };
+  const cell = (item, extra = {}) => ({ ...font(item.presentation.titleFont, state.os), color: color(item.presentation.titleColor), 'text-align': scalar(item, 'HeaderHorizontalAlign', 'Left').toLowerCase(), ...extra });
+  const title = item => flag(item, 'ShowInHeader') ? caption(item, state) : '';
+  return <Switch>
+    <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} classList={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}>{title(node())}</div></Match>
+    <Match when={model().mode === 'horizontal'}><div class="taxi-table-header-horizontal" style={{ 'grid-column': `span ${model().columns.length}`, height: `${props.height}px`, 'grid-template-rows': model().show ? '30px minmax(0, 1fr)' : 'minmax(0, 1fr)' }}>
+      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell taxi-table-header-title" style={cell(node())} onClick={select}>{caption(node(), state)}</div></Show>
+      <div class="taxi-table-header-children"><For each={model().children}>{child => <Header model={child} controller={props.controller} height={props.height - (model().show ? 30 : 0)}/>}</For></div>
+    </div></Match>
+    <Match when={model().mode === 'vertical' || model().mode === 'inCell'}><div class="taxi-table-header-vertical" style={{ height: `${props.height}px` }}>
+      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell" style={cell(node(), { height: '30px' })} onClick={select}>{caption(node(), state)}</div></Show>
+      <Show when={model().mode === 'vertical'} fallback={<div role="columnheader" class="taxi-table-header-cell" style={cell(node(), { flex: 1 })}><For each={model().columns[0].fields}>{(item, index) => <><Show when={index() > 0}>, </Show><span data-column={item.key} onClick={event => select(event, item)}>{title(item)}</span></>}</For></div>}>
+        <For each={model().children}>{(child, index) => <Header model={child} controller={props.controller} height={child.depth * 30 + (index() === model().children.length - 1 ? props.height - model().depth * 30 : 0)}/>}</For>
+      </Show>
+    </div></Match>
+  </Switch>;
 }
+
+/** Empty design-time collections do not fabricate runtime rows or values. */
 export function Table(props) {
-  const node = () => props.node, state = props.controller.state;
-  const columns = createMemo(() => tableColumns(node()));
-  const rows = createMemo(() => Array.from({ length: Math.max(1, Math.min(40, number(node(), 'Height', 8))) }, (_, index) => index));
-  const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
-  const selectColumn = (event, column) => { event.stopPropagation(); props.controller.select(column); };
-  return <div class="taxi-table-field" style={{ width: number(node(), 'Width') ? `${number(node(), 'Width') * 8 + 4}px` : '100%' }}>
-    <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && (!bar() || flag(bar(), 'Autofill') || bar().children.length)}><div class="taxi-table-command-bar">
-      <Show when={!bar() || flag(bar(), 'Autofill')}><For each={['Add', 'Copy', 'Delete', 'MoveUp', 'MoveDown']}>
-        {name => <CommandButton controller={props.controller} picture={`StdPicture.${name}`} label={state.strings[`command.${name}`] ?? name} bar/>}
-      </For></Show>
-      <For each={bar()?.children ?? []}>{child => <CommandButton node={child} controller={props.controller} bar/>}</For>
-      <span class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown bar/>
+  const state = props.controller.state, node = () => props.node, layout = createMemo(() => tableLayout(node()));
+  const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
+  const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
+  return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>
+    <Show when={layout().toolbar}><div class="taxi-table-command-bar">
+      <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)}/>}</For>
+      <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} iconOnly/>}</For></span></Show>
+      <For each={layout().bar?.children.filter(item => item.presentation.displayed) ?? []}>{item => <CommandButton node={item} controller={props.controller}/>}</For>
+      <span class="taxi-command-spacer"/>
+      <Show when={layout().search}><div class="taxi-table-search" data-element={layout().search.key} onClick={event => select(event, layout().search)}><input readOnly tabIndex="-1" placeholder={state.strings.searchShortcut} aria-label={state.strings.search}/><span>×</span></div></Show>
+      <CommandButton controller={props.controller} label={state.strings.more} dropdown/>
     </div></Show>
-    <div class="taxi-table-scroll" style={{ height: `${Math.max(2, number(node(), 'Height', 8)) * 22 + 24}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
-      <table class="taxi-table" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
-        <colgroup><col style={{ width: '20px' }}/><For each={columns().leaves}>{column => <col style={{ width: `${number(column, 'Width') ? number(column, 'Width') * 8 + 4 : Math.min(220, fieldWidth(column))}px` }}/>}</For></colgroup>
-        <Show when={flag(node(), 'Header')}><thead><For each={columns().rows}>{(row, depth) => <tr><Show when={depth() === 0}><th rowspan={columns().rows.length} class="taxi-table-selector"/></Show>
-          <For each={row}>{cell => <th colspan={cell.span} rowspan={cell.leaf ? columns().rows.length - depth() : 1} data-column={cell.node.key} classList={{ selected: state.selected === cell.node.key }}
-            onClick={event => selectColumn(event, cell.node)} style={{ ...font(cell.node.presentation.titleFont, state.os), 'text-align': scalar(cell.node, 'HeaderHorizontalAlign', 'Left').toLowerCase() }}>{caption(cell.node, state)}</th>}</For>
-        </tr>}</For></thead></Show>
-        <tbody><For each={rows()}>{index => <tr><td class="taxi-table-selector">{index === 0 ? '▸' : ''}</td><For each={columns().leaves}>{column => <td onClick={event => selectColumn(event, column)}
-          classList={{ 'taxi-table-cell--active': index === 0 && state.selected === column.key }} style={{ 'text-align': scalar(column, 'HorizontalAlign', column.presentation.valueType.kind === 'number' ? 'Right' : 'Left').toLowerCase() }}>
-          <Show when={index === 0}><Show when={column.kind === 'CheckBoxField'} fallback={fieldValue(column)}><span class="taxi-checkbox"/></Show></Show>
-        </td>}</For></tr>}</For></tbody>
-        <Show when={flag(node(), 'Footer', false)}><tfoot><tr><td/><For each={columns().leaves}>{column => <td>{scalar(column, 'FooterText')}</td>}</For></tr></tfoot></Show>
-      </table>
+    <Show when={layout().chips}><div class="taxi-table-search-controls" data-element={layout().chips.key} onClick={event => select(event, layout().chips)}><For each={[1, 2]}>{value => <span>{state.strings.sampleFilter.replaceAll('{0}', value)}<i>×</i></span>}</For></div></Show>
+    <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
+      <div class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
+        <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': layout().tracks }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
+        <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
+        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ 'grid-template-columns': layout().tracks }}><For each={layout().columns}>{column => <div role="cell" onClick={event => select(event, column.node)} style={{ 'text-align': scalar(column.node, 'FooterHorizontalAlign', 'Left').toLowerCase() }}><For each={column.fields}>{(item, index) => <><Show when={index() > 0}>, </Show>{text(item.presentation.footerText, state.locale, state.strings)}</>}</For></div>}</For></div></Show>
+      </div>
+      <div class="taxi-table-scrollbar" aria-hidden="true"><span/><span/></div>
     </div>
-    <Show when={node().auxiliary.some(node => node.kind === 'ViewStatusAddition')}><div class="taxi-table-status"/></Show>
   </div>;
 }

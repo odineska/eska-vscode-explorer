@@ -104,6 +104,8 @@ test('native tree hides helper nodes while preserving full identity lookup and u
   assert.equal(find(root,'tooltip').kind,'ExtendedTooltip');
   root.auxiliary[0].children.push(node('Button','command'));
   assert.deepEqual(treeChildren(root).map(node=>node.key),['bar','field']);
+  const table=node('Table','table');table.auxiliary.push(node('AutoCommandBar','tableBar'));
+  assert.deepEqual(treeChildren(table).map(node=>node.key),['tableBar']);
 });
 
 test('form image assets require checked source ownership, bounded image MIME and resolved references', () => {

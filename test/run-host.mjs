@@ -33,6 +33,7 @@ try {
   }
   if (basename(suite) === "form-preview-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
+  if (basename(suite) === "form-tables-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableGallery(fixture);
   if (basename(suite) === "form-pictures-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createPictureFormSource(fixture);
   if (basename(suite) === "project-activity-host.cjs") fixture.activity = await (await import("./activity-fixture.mjs")).createActivitySource(fixture, root);
   if (basename(suite) === "project-groups-host.cjs") fixture.grouping = await (await import("./fixture.mjs")).createProjectGroupingSource(fixture);

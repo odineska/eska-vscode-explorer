@@ -9,6 +9,8 @@ export function Icon(props) {
     <Match when={/Delete|Remove/.test(props.name)}><path d="M4 4l8 8M12 4l-8 8" stroke="#c64b34" stroke-width="2"/></Match>
     <Match when={/Write|Save/.test(props.name)}><path d="M2 2h11l1 1v11H2z" fill="#67a4bf" stroke="#567d90"/><path d="M4 2h6v4H4zM4 9h8v5H4z" fill="#fff" stroke="#83979f"/></Match>
     <Match when={/Refresh/.test(props.name)}><path d="M13 7a5 5 0 1 0-1 5" fill="none" stroke="#618741" stroke-width="2"/><path d="M9 6h5V2" fill="none" stroke="#618741" stroke-width="2"/></Match>
+    <Match when={/MoveUp/.test(props.name)}><path d="M8 2L3 7h3v6h4V7h3z" fill="#3ea4d1" stroke="#257dab" stroke-width=".7"/></Match>
+    <Match when={/MoveDown/.test(props.name)}><path d="M6 3v6H3l5 5 5-5h-3V3z" fill="#3ea4d1" stroke="#257dab" stroke-width=".7"/></Match>
     <Match when={/Up|Back/.test(props.name)}><path d="M12 3L4 8l8 5z" fill="#729ab0"/></Match>
     <Match when={/Down|Forward/.test(props.name)}><path d="M4 3l8 5-8 5z" fill="#729ab0"/></Match>
     <Match when={/Copy/.test(props.name)}><rect x="2" y="2" width="9" height="10" fill="#fff" stroke="#829fb0"/><rect x="5" y="5" width="9" height="10" fill="#fff" stroke="#829fb0"/></Match>
@@ -25,10 +27,10 @@ function Picture(props) {
 export function CommandButton(props) {
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
-  const representation = () => props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
+  const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
   const picture = () => props.picture ?? props.node?.presentation.picture;
   return <button type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
-    'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
+    'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
     style={props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : undefined } : {}}
     title={label()} aria-label={label()} aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
