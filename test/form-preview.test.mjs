@@ -48,6 +48,8 @@ test('a form snapshot rejects duplicate identities and missing input ownership',
   assert.throws(() => parseFormSnapshot(foreign));
   const badSize = structuredClone(snapshot); badSize.model.root.presentation.font.points = Infinity;
   assert.throws(() => parseFormSnapshot(badSize));
+  const badMark = structuredClone(snapshot); badMark.model.root.presentation.markIncomplete = 'true';
+  assert.throws(() => parseFormSnapshot(badMark));
 });
 
 test('renderer preparation preserves identity across new models and localizes literal titles', () => {

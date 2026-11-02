@@ -99,7 +99,7 @@ function Input(props) {
   const node = () => props.node, state = props.controller.state;
   const kind = () => node().presentation.valueType.kind;
   const multiline = () => flag(node(), 'MultiLine', false);
-  return <div class="taxi-input" style={{ ...fieldStyle(node()), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : undefined,
+  return <div class="taxi-input" classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true }} style={{ ...fieldStyle(node()), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : undefined,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border) }}>
     <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node())} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
       <Match when={true}><input readOnly value={fieldValue(node())} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/></Match></Switch>

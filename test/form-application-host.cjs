@@ -23,7 +23,7 @@ exports.run=async function(){
     await until(async()=>await ui.evaluate("!!document.querySelector('.taxi-form-frame')"),'application form DOM');
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-picture-resource')].every(image=>image.complete&&image.naturalWidth>0)"),'application form images');
-    const rendered=await ui.evaluate("({elements:document.querySelectorAll('[data-element]').length,unsupported:document.querySelectorAll('.taxi-unsupported').length,pictures:document.querySelectorAll('.taxi-picture-resource').length,commandButtons:document.querySelectorAll('.taxi-root-commands button').length,scrollWidth:document.querySelector('.taxi-form-frame').scrollWidth,scrollHeight:document.querySelector('.taxi-form-frame').scrollHeight})");
+    const rendered=await ui.evaluate("({elements:document.querySelectorAll('[data-element]').length,unsupported:document.querySelectorAll('.taxi-unsupported').length,pictures:document.querySelectorAll('.taxi-picture-resource').length,incompleteFields:document.querySelectorAll('.taxi-input--incomplete').length,commandButtons:document.querySelectorAll('.taxi-root-commands button').length,scrollWidth:document.querySelector('.taxi-form-frame').scrollWidth,scrollHeight:document.querySelector('.taxi-form-frame').scrollHeight})");
     assert.equal(rendered.unsupported,0);
     const elapsed=Math.round(performance.now()-started);
     await ui.screenshot(`application-form-${index}-${vscode.env.language}.png`);

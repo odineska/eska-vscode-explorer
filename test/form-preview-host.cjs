@@ -9,7 +9,7 @@ async function replace(document, from, to) {
   const edit = new vscode.WorkspaceEdit(); edit.replace(document.uri, new vscode.Range(document.positionAt(offset), document.positionAt(offset + from.length)), to);
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
-exports.run = async function () {
+async function run() {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), form = fixture.form;
   assert.ok(form);
   const extension = vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer'); assert.ok(extension);
@@ -26,6 +26,11 @@ exports.run = async function () {
   const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
   assert.ok(geometry.frame.width > 400); assert.equal(geometry.input.width, 164); assert.equal(geometry.script, true);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
+  assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length"), 1);
+  await replace(document, '<AutoMarkIncomplete>true</AutoMarkIncomplete>', '<AutoMarkIncomplete>false</AutoMarkIncomplete>');
+  await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length===0"), 'dirty XML disables the incomplete mark');
+  await replace(document, '<AutoMarkIncomplete>false</AutoMarkIncomplete>', '<AutoMarkIncomplete>true</AutoMarkIncomplete>');
+  await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length===1"), 'dirty XML restores the incomplete mark');
   const initialLabel = await ui.evaluate("document.querySelector('.taxi-field-label').textContent.replace(/:$/, '')");
   await replace(document, `<v8:content>${initialLabel}</v8:content>`, '<v8:content>Изменение без сохранения</v8:content>');
   await until(() => view.phase === 'ready' && JSON.stringify(view.snapshot.model).includes('Изменение без сохранения'), 'dirty model');
@@ -104,5 +109,14 @@ exports.run = async function () {
   await Promise.all([...service.closing]);
   await assert.rejects(()=>explorer.connection.request(view.tree.session.sessionId,'form/get',{projectId:view.entry.project.info.projectId,generation:view.entry.project.info.generation,formSessionId:sessionId}), error=>error.details?.reason==='unknown_form_session');
   await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, dirty: true, detached: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, dirty: true, incompleteMarkDirtyXml: true, detached: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
+}
+
+exports.run = async function () {
+  try { await run(); }
+  catch (error) {
+    const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
+    await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, error: String(error?.stack ?? error?.message ?? error), code: error?.code ?? null }));
+    throw error;
+  }
 };
