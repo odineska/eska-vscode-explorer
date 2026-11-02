@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from "node:path";
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
 const result = await build({ entryPoints: ["src/extension.ts"], outfile: "out/extension.js", bundle: true,
   platform: "node", target: "node22", format: "cjs", external: ["vscode"], metafile: true, legalComments: "inline" });
-const browser = await build({ entryPoints: ["webview/query/index.jsx"], outfile: "out/query-designer.js", bundle: true,
+const browser = await build({ entryPoints: { "query-designer": "webview/query/index.jsx", "form-preview": "webview/forms/index.jsx" }, outdir: "out", bundle: true,
   platform: "browser", target: "chrome140", format: "iife", metafile: true, legalComments: "inline",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "solid-jsx", setup(builder) {

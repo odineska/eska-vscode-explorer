@@ -102,6 +102,18 @@ async function frame(tab) {
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result?.value;
     },
+    /** Bring only the task's main workbench to the foreground for native editor commands. */
+    async focusWorkbench() { await send('Page.bringToFront'); },
+    /** Capture a specific floating workbench from this task's debugging endpoint. */
+    async captureTarget(targetId, name) {
+      if (!process.env.ESKA_SCREENSHOT_DIR) return;
+      const {sessionId} = await send('Target.attachToTarget', {targetId,flatten:true});
+      try { const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
+        await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
+      } finally { await send('Target.detachFromTarget',{sessionId}); }
+    },
+    /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
+    async targets() { return (await send('Target.getTargets')).targetInfos; },
     /** Observe the native QuickPick outside the property iframe before sending keyboard commands. */
     async workbench(expression) {
       const result = await send('Runtime.evaluate', { expression, returnByValue: true });

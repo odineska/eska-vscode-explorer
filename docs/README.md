@@ -14,6 +14,7 @@
 | Установить, обновить, восстановить компоненты | [Компоненты](component-setup.md), [выбор backend](cli-management.md) |
 | Работать с BSL, контекстом и подсказками | [Языковой сервис](language-service.md) |
 | Редактировать запросы и использовать конструктор | [Запросы XML и BSL](query-editing.md) |
+| Просматривать управляемые формы | [Просмотр форм](form-preview.md) |
 | Понять ограничения записи и защищённые вкладки | [Правила поддержки](support-policy.md) |
 | Изменить свойства или имя объекта | [Пользовательский маршрут](https://odineska.github.io/eska/docs/#properties), [точный контракт](https://github.com/odineska/eska/blob/main/docs/metadata-editing.md) |
 | Разработать и проверить расширение | [Разработка](development.md), [VSIX](packaging.md), [Windows](windows-validation.md) |

@@ -1,0 +1,168 @@
+:root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground, #333); background: var(--vscode-editor-background, #fff); }
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+button, select { font: inherit; color: inherit; }
+button { cursor: default; }
+.form-shell { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.form-toolbar { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, #ccc); flex: 0 0 auto; }
+.form-toolbar #title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.form-toolbar-spacer { flex: 1; }
+.form-toolbar button, .form-property-actions button, .form-detached-placeholder button { border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #e7e7e7); color: var(--vscode-button-secondaryForeground, #333); padding: 3px 8px; white-space: nowrap; }
+.form-toolbar button:hover, .form-property-actions button:hover { background: var(--vscode-button-secondaryHoverBackground, #d7d7d7); }
+.form-toolbar button:focus-visible, .form-tabs button:focus-visible, .form-tree:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
+.form-zoom { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.form-zoom select { background: var(--vscode-dropdown-background, #fff); border: 1px solid var(--vscode-dropdown-border, #aaa); }
+.form-inspectors { display: grid; flex: 0 0 auto; min-height: 100px; overflow: hidden; }
+.form-pane { display: flex; flex-direction: column; overflow: hidden; min-width: 0; border: 1px solid var(--vscode-panel-border, #bbb); }
+.form-pane-title { display: flex; align-items: center; gap: 8px; padding: 3px 6px; min-height: 24px; background: var(--vscode-sideBarSectionHeader-background, #eee); font-weight: 600; flex: 0 0 auto; }
+.form-pane-title span { font-size: 90%; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-splitter { height: 5px; min-height: 5px; background: var(--vscode-editorGroup-border, #ccc); cursor: row-resize; flex: 0 0 5px; touch-action: none; }
+.form-splitter--vertical { height: auto; min-height: 0; width: 4px; cursor: col-resize; }
+.form-splitter:hover, .form-splitter:focus { background: var(--vscode-sash-hoverBorder, #007acc); }
+.form-tabs { display: flex; flex: 0 0 auto; overflow: auto; min-height: 26px; border-top: 1px solid var(--vscode-panel-border, #ccc); background: var(--vscode-editorGroupHeader-tabsBackground, #eee); }
+.form-tabs button { border: none; border-right: 1px solid var(--vscode-panel-border, #ccc); padding: 4px 9px; background: transparent; white-space: nowrap; }
+.form-tabs button.active { background: var(--vscode-tab-activeBackground, #fff); border-bottom: 2px solid var(--vscode-tab-activeBorderTop, #007acc); }
+.form-tree { flex: 1; min-height: 0; overflow: auto; outline: none; }
+.form-tree-row { display: flex; align-items: center; position: absolute; left: 0; right: 0; height: 22px; gap: 4px; white-space: nowrap; padding-right: 8px; }
+.form-tree-row.selected { background: var(--vscode-list-inactiveSelectionBackground, #d6e8f8); color: var(--vscode-list-inactiveSelectionForeground, inherit); }
+.form-tree:focus .form-tree-row.selected { background: var(--vscode-list-activeSelectionBackground, #007acc); color: var(--vscode-list-activeSelectionForeground, #fff); }
+.form-tree-expander { width: 14px; flex: 0 0 14px; padding: 0; border: none; background: transparent; }
+.form-node-icon { display: inline-block; height: 8px; width: 13px; border: 1px solid #b74730; background: #fff; border-radius: 1px; flex: 0 0 auto; }
+.form-node-icon--Form { height: 13px; border-color: #6c96af; box-shadow: inset 0 3px #9fc5db; }
+.form-node-icon--Table { height: 12px; border-color: #698da1; background: repeating-linear-gradient(90deg, transparent 0 3px, #a0b6c3 3px 4px), repeating-linear-gradient(transparent 0 3px, #a0b6c3 3px 4px); }
+.form-node-icon--UsualGroup, .form-node-icon--Page, .form-node-icon--Pages { height: 11px; border-color: #599441; background: #d9e9b4; }
+.form-node-icon--AutoCommandBar, .form-node-icon--CommandBar { height: 5px; border-color: #8c8c8c; background: repeating-linear-gradient(90deg, #fff 0 2px, #9b9b9b 2px 3px); }
+.form-node-icon--ContextMenu, .form-node-icon--ExtendedTooltip { border-color: #aaa; opacity: .6; }
+.form-table-scroll { min-height: 0; flex: 1; overflow: auto; }
+.form-definitions, .form-properties { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
+.form-definitions td, .form-definitions th, .form-properties td, .form-properties th { text-align: left; vertical-align: top; border-bottom: 1px solid var(--vscode-panel-border, #ddd); border-right: 1px solid var(--vscode-panel-border, #ddd); padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.form-definitions th { position: sticky; top: 0; background: var(--vscode-editorGroupHeader-tabsBackground, #eee); }
+.form-properties th { width: 45%; background: var(--vscode-sideBar-background, #f5f5f5); }
+.form-properties td { white-space: normal; overflow-wrap: anywhere; }
+.form-property-actions { display: flex; gap: 4px; padding: 4px; flex: 0 0 auto; }
+.form-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 23px; padding: 3px 8px; border-top: 1px solid var(--vscode-panel-border, #ccc); font-size: 11px; }
+.form-status--stale { color: var(--vscode-editorWarning-foreground, #bf8803); }
+.form-status span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-status span:last-child { white-space: nowrap; }
+.form-empty, .form-detached-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.preview-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; background: #fff; padding: 8px; }
+/* The form profile is isolated from the VS Code theme and from the inspector's typography. */
+.taxi-preview { color-scheme: light; color: #555; font: 13.333333px/1.2 Arial, sans-serif; width: max-content; min-width: 100%;
+  --taxi-TextColor: #000; --taxi-FormTextColor: #555; --taxi-BackColor: #fff; --taxi-FormBackColor: #fff; --taxi-BorderColor: #a0a0a0;
+  --taxi-ButtonTextColor: #555; --taxi-ButtonBackColor: #f7f7f7; --taxi-ButtonBorderColor: #aaa; --taxi-FieldTextColor: #555; --taxi-FieldBackColor: #fff;
+  --taxi-FieldBorderColor: #a0a0a0; --taxi-HyperlinkTextColor: #0066a3; --taxi-AccentColor: #fadd00; --taxi-ImportantTextColor: #a00000;
+  --taxi-SpecialTextColor: #888; --taxi-GroupTitleTextColor: #009646; --taxi-SelectionBackColor: #d9eaf5; --taxi-SelectionTextColor: #000;
+  --taxi-FieldSelectionBackColor: #cce8ff; --taxi-TooltipBackColor: #ffffe1; --taxi-ToolTipBackColor: #ffffe1; --taxi-TooltipTextColor: #000;
+  --taxi-LinesColor: #d7d7d7; --taxi-HeaderBackColor: #fff; --taxi-HeaderTextColor: #555; --taxi-TableFooterBackColor: #f0f0f0; }
+.taxi-preview[data-os=linux] { font-family: 'Liberation Sans', Arial, sans-serif; }
+.taxi-preview * { box-sizing: border-box; }
+.taxi-preview button, .taxi-preview input, .taxi-preview textarea { font: inherit; color: inherit; }
+.taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 100px; background: #fff; box-sizing: content-box; }
+.taxi-form-title { height: 24px; background: #f4f4f4; color: #fff; font-size: 12px; padding-left: 1px; line-height: 20px; }
+.taxi-form-content { padding: 12px 10px 10px; }
+.taxi-form-content--commands { padding-top: 4px; }
+.taxi-items { min-width: 0; }
+.taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 8px; align-items: start; }
+.taxi-items--horizontal { display: flex; align-items: center; gap: 8px; }
+.taxi-items--wrap { flex-wrap: wrap; }
+.taxi-element { grid-column: 1 / -1; min-width: 0; max-width: 100%; position: relative; }
+.taxi-element--field { display: grid; grid-template-columns: subgrid; }
+.taxi-items--horizontal > .taxi-element { flex: 0 1 auto; }
+.taxi-items--horizontal > .taxi-element--field { display: block; }
+.taxi-element--stretch { width: 100%; flex: 1 1 auto !important; }
+.taxi-selected { outline: 1px solid #1695f3; outline-offset: 0; }
+.taxi-disabled { color: #a0a0a0 !important; }
+.taxi-disabled .taxi-input { background: #f4f4f4 !important; }
+.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 22px; gap: 0 8px; }
+.taxi-items--horizontal .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
+.taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 18px; }
+.taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
+.taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
+.taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.taxi-field-row[data-title-location=Top] > *, .taxi-field-row[data-title-location=Bottom] > * { grid-column: 1; }
+.taxi-field-row[data-title-location=Bottom] .taxi-field-label { order: 1; }
+.taxi-field-row--check { grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
+.taxi-field-row--check[data-title-location=Right] .taxi-field-label { grid-column: 2; grid-row: 1; }
+.taxi-field-row--check[data-title-location=Right] .taxi-field-control { grid-column: 1; grid-row: 1; }
+.taxi-field-row--large .taxi-field-label { align-self: start; }
+.taxi-input { display: flex; align-items: stretch; height: 23px; min-width: 20px; max-width: 100%; border: 1px solid #a0a0a0; border-radius: 2px; background: #fff; overflow: hidden; }
+.taxi-input input, .taxi-input textarea { width: 0; flex: 1; border: none; background: transparent; padding: 2px 4px; outline: none; box-shadow: none; border-radius: 0; line-height: 17px; resize: none; min-width: 0; }
+.taxi-input-button { display: flex; align-items: center; justify-content: center; width: 21px; flex: 0 0 21px; border-left: 1px solid #aaa; color: #555; font-size: 11px; line-height: 12px; }
+.taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
+.taxi-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 26px; padding: 3px 13px; margin: 0; border: 1px solid #a8a8a8; border-radius: 2px; box-shadow: 0 1px #bbb; color: #555; background: linear-gradient(#fff, #fdfdfd 60%, #eee); white-space: nowrap; line-height: 18px; }
+.taxi-button--default { background: linear-gradient(#ffeb35, #ffe000); border-color: #c9b700; color: #554c00; font-weight: 700; }
+.taxi-button--bar { background: none; border-color: transparent; box-shadow: none; min-height: 24px; padding: 2px 5px; }
+.taxi-button--picture { padding: 3px; min-width: 26px; }
+.taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; color: #0066a3 !important; text-decoration: underline; }
+.taxi-button:active { background-color: #efefef; }
+.taxi-down { margin-left: 5px; font-size: 10px; }
+.taxi-icon { display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; vertical-align: middle; }
+.taxi-root-commands { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; min-height: 26px; }
+.taxi-command-spacer { flex: 1 1 auto; min-width: 12px; }
+.taxi-command-bar, .taxi-table-command-bar { display: flex; align-items: center; gap: 2px; min-height: 27px; }
+.taxi-group-title { margin-bottom: 4px; line-height: 1.2; }
+.taxi-group-title button { padding: 0 5px 0 0; border: none; background: none; font-size: 13px; color: inherit; }
+.taxi-group--border { border-top: 1px solid #ccc; padding-top: 5px; }
+.taxi-group--border .taxi-group-title { margin-top: -15px; background: #fff; width: fit-content; padding-right: 6px; }
+.taxi-pages { width: 100%; }
+.taxi-tabs { display: flex; gap: 2px; align-items: flex-end; border-bottom: 1px solid #b4b4b4; min-height: 27px; }
+.taxi-tabs button { padding: 4px 9px; border: 1px solid #c2c2c2; border-radius: 2px 2px 0 0; background: #f5f5f5; line-height: 18px; color: #777; position: relative; bottom: -1px; }
+.taxi-tabs button.active { border-bottom-color: #fff; color: #555; background: #fff; }
+.taxi-page { padding-top: 10px; }
+.taxi-pages[data-representation=TabsOnBottom] { display: flex; flex-direction: column-reverse; }
+.taxi-pages[data-representation=TabsOnBottom] .taxi-tabs { border-top: 1px solid #bbb; border-bottom: none; }
+.taxi-pages[data-representation=TabsOnLeft], .taxi-pages[data-representation=TabsOnRight] { display: flex; gap: 10px; }
+.taxi-pages[data-representation=TabsOnRight] { flex-direction: row-reverse; }
+.taxi-pages[data-representation=TabsOnLeft] .taxi-tabs, .taxi-pages[data-representation=TabsOnRight] .taxi-tabs { flex-direction: column; border: none; align-items: stretch; }
+.taxi-checkbox { display: inline-block; width: 14px; height: 14px; border: 1px solid #a0a0a0; border-radius: 2px; background: linear-gradient(#fff, #fafafa); vertical-align: middle; }
+.taxi-radios { display: inline-flex; gap: 10px; align-items: flex-start; min-height: 20px; }
+.taxi-radios > span { display: inline-flex; align-items: center; gap: 6px; min-height: 20px; }
+.taxi-radio { display: inline-block; width: 15px; height: 15px; border: 1px solid #aaa; border-radius: 50%; background: #fff; }
+.taxi-radio.checked::after { content: ''; display: block; margin: 4px; width: 5px; height: 5px; border-radius: 50%; background: #008941; }
+.taxi-progress { display: inline-block; height: 20px; max-width: 100%; border: 1px solid #bbb; background: #f3f3f3; }
+.taxi-track { display: inline-block; height: 24px; max-width: 100%; position: relative; }
+.taxi-track i { height: 4px; border: 1px solid #aaa; background: #ddd; position: absolute; left: 0; right: 0; top: 10px; }
+.taxi-track b { position: absolute; left: 0; width: 11px; height: 22px; background: linear-gradient(#fff, #ddd); border: 1px solid #aaa; border-radius: 2px; }
+.taxi-period { display: inline-flex; gap: 8px; align-items: center; }
+.taxi-period .taxi-input { width: 130px !important; }
+.taxi-picture-field { display: block; border: 1px solid #aaa; background: #fff; max-width: 100%; }
+.taxi-picture-decoration { display: inline-block; min-width: 16px; min-height: 16px; }
+.taxi-hyperlink { text-decoration: underline; color: #0066a3 !important; }
+.taxi-table-field { min-width: 100px; max-width: 100%; }
+.taxi-table-scroll { overflow: auto; border: 1px solid #aaa; max-width: 100%; }
+.taxi-table { border-collapse: collapse; table-layout: fixed; width: 100%; min-width: 100%; color: #555; }
+.taxi-table th { position: sticky; top: 0; background: var(--taxi-HeaderBackColor); font-weight: 400; }
+.taxi-table td, .taxi-table th { border-bottom: 1px solid #d4d4d4; border-right: 1px solid #d4d4d4; height: 22px; min-width: 35px; padding: 2px 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.taxi-table th { height: 25px; }
+.taxi-table .taxi-table-selector { width: 20px; min-width: 20px; padding: 0; text-align: center; background: #f4f4f4; }
+.taxi-table th.selected, .taxi-table-cell--active { outline: 1px solid #1695f3; outline-offset: -1px; }
+.taxi-table tfoot { background: var(--taxi-TableFooterBackColor); }
+.taxi-table-status { height: 20px; border: 1px solid #ddd; border-top: none; }
+.taxi-special { display: flex; flex-direction: column; max-width: 100%; border: 1px solid #aaa; overflow: hidden; background: #fff; }
+.taxi-document-surface { flex: 1; min-height: 0; background: #fff; }
+.taxi-document-toolbar { display: flex; align-items: center; gap: 8px; height: 28px; flex: 0 0 28px; padding: 3px; border-bottom: 1px solid #bbb; background: #f8f8f8; }
+.taxi-format-face { padding: 1px 4px; border: 1px solid #aaa; background: #fff; width: 130px; }
+.taxi-pdf { background: #b5b5b5; }
+.taxi-calendar { width: 100%; max-width: 220px; padding: 4px; background: #fff; color: #555; }
+.taxi-calendar-title { display: flex; justify-content: space-between; align-items: center; height: 26px; text-transform: capitalize; }
+.taxi-calendar-title strong { font-weight: 400; }
+.taxi-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+.taxi-calendar-grid > * { height: 23px; padding: 3px 0; font-weight: 400; }
+.taxi-calendar-grid b { color: #888; border-bottom: 1px solid #ccc; }
+.taxi-calendar-grid .today { outline: 1px solid #a8a8a8; outline-offset: -1px; }
+.taxi-calendar-grid .weekend { color: #b55858; }
+.taxi-sheet { width: 100%; height: 100%; overflow: auto; }
+.taxi-sheet table { border-collapse: collapse; table-layout: fixed; }
+.taxi-sheet td { width: 68px; min-width: 68px; height: 20px; border: 1px solid #ddd; }
+.taxi-sheet th { height: 20px; min-width: 24px; background: #f3f3f3; border: 1px solid #bbb; font-weight: 400; text-align: center; }
+.taxi-sheet--no-grid td { border-color: transparent; }
+.taxi-planner { overflow: auto; height: 100%; }
+.taxi-planner table { border-collapse: collapse; width: 100%; }
+.taxi-planner td { border: 1px solid #ddd; height: 32px; }
+.taxi-planner th { border: 1px solid #ccc; background: #f5f5f5; font-weight: 400; padding: 4px; }
+.taxi-addition input { height: 22px; border: 1px solid #aaa; border-radius: 2px; width: 180px; padding: 2px 5px; background: #fff; }
+.taxi-unsupported { padding: 8px; border: 1px dashed #d49342; color: #8b5b1d; }
+.taxi-preview ::-webkit-scrollbar { width: 17px; height: 17px; }
+.taxi-preview ::-webkit-scrollbar-track { border: 1px solid #ccc; background: #f5f5f5; }
+.taxi-preview ::-webkit-scrollbar-thumb { border: 1px solid #b5b5b5; background: linear-gradient(90deg, #eee, #ddd); }
+@media (forced-colors: active) { .form-splitter { background: CanvasText; } }

@@ -25,7 +25,8 @@
     "onView:eska.explorer.projects",
     "workspaceContains:**/eska.toml",
     "onLanguage:bsl",
-    "onLanguage:sdbl"
+    "onLanguage:sdbl",
+    "onWebviewPanel:eska.formViewer"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -280,6 +281,17 @@
         "title": "%showDisabledProjects%",
         "category": "ESKA",
         "icon": "$(eye)"
+      },
+      {
+        "command": "eska.explorer.previewForm",
+        "title": "%previewForm%",
+        "category": "ESKA",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "eska.explorer.openFormXml",
+        "title": "%openFormXml%",
+        "category": "ESKA"
       }
     ],
     "views": {
@@ -318,6 +330,11 @@
           "command": "eska.explorer.queryConstructor",
           "when": "resourceScheme == eska-query && resourceExtname == .sdbl",
           "group": "navigation@5"
+        },
+        {
+          "command": "eska.explorer.previewForm",
+          "when": "resourceFilename == Form.xml && resourceScheme == file",
+          "group": "navigation@0"
         }
       ],
       "view/title": [
@@ -417,6 +434,16 @@
           "command": "eska.explorer.disableProject",
           "when": "view == eska.explorer.projects && eska.explorer.workspaceActivity && viewItem =~ /^eskaRoot/",
           "group": "activity@1"
+        },
+        {
+          "command": "eska.explorer.previewForm",
+          "when": "view == eska.explorer.projects && (viewItem == eskaForm || viewItem == eskaFormSource)",
+          "group": "navigation@0"
+        },
+        {
+          "command": "eska.explorer.openFormXml",
+          "when": "view == eska.explorer.projects && (viewItem == eskaForm || viewItem == eskaFormSource)",
+          "group": "navigation@3"
         }
       ],
       "commandPalette": [
@@ -483,6 +510,10 @@
         {
           "command": "eska.explorer.disableProject",
           "when": "eska.explorer.workspaceActivity"
+        },
+        {
+          "command": "eska.explorer.openFormXml",
+          "when": "false"
         }
       ],
       "editor/context": [

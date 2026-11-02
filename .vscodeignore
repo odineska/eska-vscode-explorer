@@ -22,3 +22,5 @@
 !resources/icons/support/NOTICE.md
 !resources/query/*.css
 !resources/shared/*.css
+
+!out/form-preview.css
