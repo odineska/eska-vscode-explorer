@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const vscode = require('vscode');
 const {connect,connectWorkbench} = require('./query-constructor-dom.cjs');
 const {until,openQuery} = require('./query-modal-host.cjs');
@@ -8,10 +10,25 @@ const {ready} = require('./query-builder-host.cjs');
 
 /** Read only process identities allocated by this installed test extension and its backend. */
 async function memory(explorer,client) {
-  const processes={};
-  for(const [name,pid] of Object.entries({extensionHost:process.pid,backend:explorer.connection.child.pid})){
-    const stat=await fs.readFile(`/proc/${pid}/smaps_rollup`,'utf8');
-    processes[name]={pid,rssBytes:Number(/^Rss:\s+(\d+)/m.exec(stat)[1])*1024,pssBytes:Number(/^Pss:\s+(\d+)/m.exec(stat)[1])*1024};
+  const owners = Object.entries({ extensionHost: process.pid, backend: explorer.connection.child.pid });
+  const processes = {};
+  if (process.platform === 'win32') {
+    // WorkingSet64 measures resident bytes. The Linux-only PSS field stays absent.
+    const { stdout } = await promisify(execFile)('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      'Get-Process -Id ([int[]]($env:ESKA_MEMORY_PIDS -split ",")) -ErrorAction Stop | Select-Object Id,WorkingSet64 | ConvertTo-Json -Compress',
+    ], { windowsHide: true, timeout: 15000, env: { ...process.env, ESKA_MEMORY_PIDS: owners.map(([, pid]) => pid).join(',') } });
+    const samples = JSON.parse(stdout.trim());
+    for (const [name, pid] of owners) {
+      const sample = samples.find(value => value.Id === pid);
+      assert.ok(sample?.WorkingSet64 > 0, `Missing working set for ${name} (${pid})`);
+      processes[name] = { pid, rssBytes: sample.WorkingSet64 };
+    }
+  } else {
+    for (const [name,pid] of owners) {
+      const stat=await fs.readFile(`/proc/${pid}/smaps_rollup`,'utf8');
+      processes[name]={pid,rssBytes:Number(/^Rss:\s+(\d+)/m.exec(stat)[1])*1024,pssBytes:Number(/^Pss:\s+(\d+)/m.exec(stat)[1])*1024};
+    }
   }
   return {processes,extensionHeap:process.memoryUsage(),rendererHeap:await client.memory()};
 }
