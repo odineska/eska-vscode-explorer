@@ -27,7 +27,10 @@ export function color(value) {
   return `var(--taxi-${value.value}, var(--taxi-TextColor))`;
 }
 export function find(root, identity) { const id = typeof identity === 'string' ? identity : key({ identity }); if (root?.key === id) return root; for (const child of [...root?.children ?? [], ...root?.auxiliary ?? []]) { const found = find(child, id); if (found) return found; } }
-export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of [...node.auxiliary, ...node.children]) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
+export function treeChildren(node) {
+  return [...node.auxiliary, ...node.children].filter(child => !['ContextMenu', 'ExtendedTooltip'].includes(child.kind) && (child.kind !== 'AutoCommandBar' || child.children.length));
+}
+export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
 export function fieldWidth(node) {
   const width = number(node, 'Width'); if (width > 0) return Math.max(20, width * 8 + 4);
   const type = node.presentation.valueType;

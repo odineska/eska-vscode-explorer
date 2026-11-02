@@ -1,6 +1,6 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
-import { flatten, find, caption, localizedProperty } from './model.mjs';
+import { flatten, treeChildren, find, caption, localizedProperty } from './model.mjs';
 
 function Splitter(props) {
   let start, initial;
@@ -27,16 +27,16 @@ function ElementTree(props) {
     if (event.key === 'ArrowUp') next = rows()[Math.max(0, index - 1)];
     if (event.key === 'Home') next = rows()[0]; if (event.key === 'End') next = rows().at(-1);
     if (event.key === 'ArrowRight' && row && state.ui.folded[row.node.key]) fold(row.node);
-    if (event.key === 'ArrowLeft' && row) { if (!state.ui.folded[row.node.key] && (row.node.children.length || row.node.auxiliary.length)) fold(row.node); else next = rows().slice(0, index).reverse().find(parent => parent.depth < row.depth); }
+    if (event.key === 'ArrowLeft' && row) { if (!state.ui.folded[row.node.key] && treeChildren(row.node).length) fold(row.node); else next = rows().slice(0, index).reverse().find(parent => parent.depth < row.depth); }
     if (event.key === 'F12' && row) c.post({ type: 'locate', target: { kind: event.ctrlKey ? 'binding' : 'element', identity: row.node.identity } });
     if (next) c.select(next.node); if (next || ['ArrowLeft', 'ArrowRight', 'F12'].includes(event.key)) event.preventDefault();
   }
   return <div ref={list} role="tree" tabindex="0" class="form-tree" aria-label={state.strings.elements} aria-activedescendant={`form-row-${state.selected}`} onScroll={event => setScroll(event.currentTarget.scrollTop)} onKeyDown={keyboard}>
     <div style={{ height: `${rows().length * 22}px`, position: 'relative', 'min-width': 'max-content' }}><For each={visible()}>{(row, index) => <div role="treeitem" id={`form-row-${row.node.key}`} aria-level={row.depth + 1} aria-selected={state.selected === row.node.key}
-      aria-expanded={row.node.children.length + row.node.auxiliary.length ? !state.ui.folded[row.node.key] : undefined} classList={{ 'form-tree-row': true, selected: state.selected === row.node.key }}
+      aria-expanded={treeChildren(row.node).length ? !state.ui.folded[row.node.key] : undefined} classList={{ 'form-tree-row': true, selected: state.selected === row.node.key }}
       style={{ top: `${(start() + index()) * 22}px`, 'padding-left': `${row.depth * 16 + 4}px` }} onClick={() => c.select(row.node)} onDblClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: row.node.identity } })}>
-      <button type="button" tabindex="-1" class="form-tree-expander" aria-label={state.strings.expand} onClick={event => { event.stopPropagation(); fold(row.node); }}>{row.node.children.length + row.node.auxiliary.length ? state.ui.folded[row.node.key] ? '›' : '⌄' : ''}</button>
-      <span class={`form-node-icon form-node-icon--${row.node.kind ?? 'unknown'}`} aria-hidden="true"/><span>{row.node.kind === 'Form' ? state.strings.form : row.node.name || row.node.kind}</span>
+      <button type="button" tabindex="-1" class="form-tree-expander" aria-label={state.strings.expand} onClick={event => { event.stopPropagation(); fold(row.node); }}>{treeChildren(row.node).length ? state.ui.folded[row.node.key] ? '›' : '⌄' : ''}</button>
+      <span class={`form-node-icon form-node-icon--${row.node.kind ?? 'unknown'}`} aria-hidden="true"/><span>{row.node.kind === 'Form' ? state.strings.form : row.node.kind === 'AutoCommandBar' ? state.strings.commandBar : row.node.name || row.node.kind}</span>
     </div>}</For></div>
   </div>;
 }

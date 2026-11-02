@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, text, font, color } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
 const source = 'a'.repeat(64);
@@ -74,4 +74,17 @@ test('Linux profile ships exact unmodified reference fonts and their license off
   const files = await readdir(new URL('../out/form-fonts/', import.meta.url));
   for (const file of manifest.files) assert.ok(files.some(name => name.startsWith(file.file.replace('.ttf','-')) && css.includes(name)), file.file);
   assert.match(await readFile(new URL('../out/THIRD-PARTY-NOTICES.txt', import.meta.url), 'utf8'), /Liberation Fonts 2.1.5/);
+});
+
+
+test('native tree hides helper nodes while preserving full identity lookup and unbound fields', () => {
+  const model = prepare(fixture().model), root=model.root;
+  const node=(kind,id)=>({...structuredClone(root),kind,key:id,children:[],auxiliary:[]});
+  const field=node('InputField','field');field.presentation.displayed=false;
+  field.auxiliary.push(node('ContextMenu','menu'),node('ExtendedTooltip','tooltip'));
+  root.children.push(field);root.auxiliary.push(node('AutoCommandBar','bar'));
+  assert.deepEqual(flatten(root).map(row=>row.node.key),[root.key,'field']);
+  assert.equal(find(root,'tooltip').kind,'ExtendedTooltip');
+  root.auxiliary[0].children.push(node('Button','command'));
+  assert.deepEqual(treeChildren(root).map(node=>node.key),['bar','field']);
 });
