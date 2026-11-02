@@ -25,8 +25,8 @@ export function Table(props) {
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
   const selectColumn = (event, column) => { event.stopPropagation(); props.controller.select(column); };
   return <div class="taxi-table-field" style={{ width: number(node(), 'Width') ? `${number(node(), 'Width') * 8 + 4}px` : '100%' }}>
-    <Show when={scalar(node(), 'CommandBarLocation') !== 'None'}><div class="taxi-table-command-bar">
-      <Show when={!bar() || flag(bar(), 'AutoFill')}><For each={['Add', 'Copy', 'Delete', 'MoveUp', 'MoveDown']}>
+    <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && (!bar() || flag(bar(), 'Autofill') || bar().children.length)}><div class="taxi-table-command-bar">
+      <Show when={!bar() || flag(bar(), 'Autofill')}><For each={['Add', 'Copy', 'Delete', 'MoveUp', 'MoveDown']}>
         {name => <CommandButton controller={props.controller} picture={`StdPicture.${name}`} label={state.strings[`command.${name}`] ?? name} bar/>}
       </For></Show>
       <For each={bar()?.children ?? []}>{child => <CommandButton node={child} controller={props.controller} bar/>}</For>
