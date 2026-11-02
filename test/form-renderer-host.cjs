@@ -1,0 +1,47 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const vscode = require('vscode');
+const { until, frame } = require('./webview-host.cjs');
+
+exports.run = async function () {
+  const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
+  const extension = vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer');
+  const explorer = await extension.activate(); await vscode.commands.executeCommand('eska.explorer.connect');
+  await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+  const results = [];
+  for (const form of fixture.formGallery) {
+    const before = await fs.readFile(form.path);
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
+    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
+    await vscode.commands.executeCommand('eska.explorer.previewForm');
+    const service = explorer.formPreview;
+    await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
+    const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+    const ui = await frame({ state: { title: panel.panel.title } });
+    await until(async () => await ui.evaluate(`!!document.querySelector('[data-kind="${form.kind}"]')`), `render ${form.kind}`);
+    await ui.evaluate('document.fonts.ready.then(()=>true)');
+    const geometry = await ui.evaluate(`(() => { const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}; const control=document.querySelector('.taxi-field-control').firstElementChild;return {frame:rect(document.querySelector('.taxi-form-frame')),control:rect(control),title:document.querySelector('.taxi-field-row').dataset.titleLocation,font:getComputedStyle(control).fontFamily}; })()`);
+    if (form.kind === 'InputField') assert.equal(geometry.control.width, 161);
+    if (form.kind === 'InputField') {
+      const inspect = `(() => { const node=document.querySelector('.taxi-input'),css=getComputedStyle(node),label=getComputedStyle(document.querySelector('.taxi-field-label'));return {width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height,color:css.color,background:css.backgroundColor,border:css.borderColor,font:label.font}; })()`;
+      const beforeTheme = await ui.evaluate(inspect), shellBefore = await ui.evaluate("getComputedStyle(document.querySelector('.form-shell')).color");
+      const configuration = vscode.workspace.getConfiguration('workbench'), theme = configuration.get('colorTheme');
+      await configuration.update('colorTheme', /light/i.test(theme ?? '') ? 'Default Dark Modern' : 'Default Light Modern', vscode.ConfigurationTarget.Global);
+      await until(async()=>await ui.evaluate("getComputedStyle(document.querySelector('.form-shell')).color") !== shellBefore,'native theme changed');
+      assert.deepEqual(await ui.evaluate(inspect),beforeTheme,'form profile is isolated from the IDE theme');
+      await ui.screenshot(`renderer-theme-${vscode.env.language}.png`);
+      await configuration.update('colorTheme',theme,vscode.ConfigurationTarget.Global);
+    }
+    if (form.kind === 'CalendarField') { assert.equal(geometry.control.width,338); assert.equal(geometry.control.height,300); assert.equal(geometry.title,'Top'); }
+    if (['ChartField','HTMLDocumentField','FormattedDocumentField'].includes(form.kind)) {assert.equal(geometry.control.width,500);assert.equal(geometry.control.height,243);assert.equal(geometry.title,'Top');}
+    if (form.kind === 'FormattedDocumentField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-document-toolbar').length"),0);
+    if (form.kind === 'ChartField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-chart rect').length"),20);
+    await ui.screenshot(`renderer-${form.kind}-${vscode.env.language}.png`);
+    assert.deepEqual(await fs.readFile(form.path),before);
+    results.push({kind:form.kind,...geometry}); panel.panel.dispose();
+    await until(()=>service.views.size===0,'release gallery form');await Promise.all([...service.closing]);
+  }
+  await explorer.shutdown();
+  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formRenderer:true,locale:vscode.env.language,results}));
+};

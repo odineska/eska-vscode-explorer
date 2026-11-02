@@ -48,7 +48,7 @@ export function Preview(props) {
   const width = () => number(root(), 'Width');
   return <div class="preview-scroll" aria-label={state.strings.preview}>
     <div class="taxi-preview" data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
-      <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '100px', 'min-height': '100px' }}
+      <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '28px' }}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-title">{caption(root(), state)}</div>
         <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && (root().presentation.autoCommands.length || root().auxiliary.some(node => node.kind === "AutoCommandBar" && node.children.length)) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
@@ -66,7 +66,7 @@ export function Items(props) {
 }
 function Pages(props) {
   const node = () => props.node, state = props.controller.state;
-  const pages = () => node().children.filter(node => flag(node, 'Visible'));
+  const pages = () => node().children.filter(node => node.presentation.displayed);
   const selected = () => state.ui.pages[node().key] ?? pages()[0]?.key;
   const page = createMemo(() => pages().find(page => page.key === selected()) ?? pages()[0]);
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
@@ -104,27 +104,27 @@ function Input(props) {
 }
 function Field(props) {
   const node = () => props.node, state = props.controller.state;
-  const titleLocation = () => scalar(node(), 'TitleLocation', node().kind === 'CheckBoxField' ? 'Right' : 'Left');
+  const titleLocation = () => node().presentation.titleLocation;
   const title = () => caption(node(), state);
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
     <Match when={node().kind === 'InputField'}><Input {...props}/></Match>
     <Match when={node().kind === 'CheckBoxField'}><span role="checkbox" aria-checked="false" class="taxi-checkbox"/></Match>
     <Match when={node().kind === 'RadioButtonField'}><span class="taxi-radios" style={{ 'flex-direction': scalar(node(), 'Orientation', 'Horizontal') === 'Vertical' ? 'column' : 'row' }}><For each={node().presentation.choices}>{(choice, index) => <span><i classList={{ 'taxi-radio': true, checked: index() === 0 }}/>{text(choice, state.locale, state.strings)}</span>}</For></span></Match>
-    <Match when={node().kind === 'LabelField'}><span class="taxi-label-field">{fieldValue(node())}</span></Match>
+    <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node())}</span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${Math.max(10, number(node(), 'Width', 30)) * 8}px`, height: `${Math.max(2, number(node(), 'Height', 10)) * 20}px` }}/></Match>
     <Match when={node().kind === 'PeriodField'}><span class="taxi-period"><Input {...props}/><span>—</span><Input {...props}/></span></Match>
   </Switch>;
-  return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
-    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>{title()}{title() && !['CheckBoxField'].includes(node().kind) ? ':' : ''}</label></Show>
+  return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
+    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>{title()}{title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : ''}</label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }
 export function Element(props) {
   const node = () => props.node, state = props.controller.state;
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
-  return <Show when={flag(node(), 'Visible')}><div data-element={node().key} data-kind={node().kind} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={node().presentation.displayed}><div data-element={node().key} data-kind={node().kind} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>

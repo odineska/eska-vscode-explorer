@@ -24,3 +24,4 @@
 !resources/shared/*.css
 
 !out/form-preview.css
+!out/form-fonts/*.ttf

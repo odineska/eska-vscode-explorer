@@ -1,3 +1,15 @@
+@font-face { font-family: "ESKA Taxi Sans"; src: url("../../resources/forms/fonts/LiberationSans-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Sans"; src: url("../../resources/forms/fonts/LiberationSans-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Sans"; src: url("../../resources/forms/fonts/LiberationSans-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: block; }
+@font-face { font-family: "ESKA Taxi Sans"; src: url("../../resources/forms/fonts/LiberationSans-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: block; }
+@font-face { font-family: "ESKA Taxi Serif"; src: url("../../resources/forms/fonts/LiberationSerif-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Serif"; src: url("../../resources/forms/fonts/LiberationSerif-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Serif"; src: url("../../resources/forms/fonts/LiberationSerif-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: block; }
+@font-face { font-family: "ESKA Taxi Serif"; src: url("../../resources/forms/fonts/LiberationSerif-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: block; }
+@font-face { font-family: "ESKA Taxi Mono"; src: url("../../resources/forms/fonts/LiberationMono-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Mono"; src: url("../../resources/forms/fonts/LiberationMono-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: block; }
+@font-face { font-family: "ESKA Taxi Mono"; src: url("../../resources/forms/fonts/LiberationMono-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: block; }
+@font-face { font-family: "ESKA Taxi Mono"; src: url("../../resources/forms/fonts/LiberationMono-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: block; }
 :root { color-scheme: light dark; font-family: var(--vscode-font-family, sans-serif); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground, #333); background: var(--vscode-editor-background, #fff); }
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
@@ -54,15 +66,15 @@ button { cursor: default; }
   --taxi-SpecialTextColor: #888; --taxi-GroupTitleTextColor: #009646; --taxi-SelectionBackColor: #d9eaf5; --taxi-SelectionTextColor: #000;
   --taxi-FieldSelectionBackColor: #cce8ff; --taxi-TooltipBackColor: #ffffe1; --taxi-ToolTipBackColor: #ffffe1; --taxi-TooltipTextColor: #000;
   --taxi-LinesColor: #d7d7d7; --taxi-HeaderBackColor: #fff; --taxi-HeaderTextColor: #555; --taxi-TableFooterBackColor: #f0f0f0; }
-.taxi-preview[data-os=linux] { font-family: 'Liberation Sans', Arial, sans-serif; }
+.taxi-preview[data-os=linux] { font-family: 'ESKA Taxi Sans', Arial, sans-serif; }
 .taxi-preview * { box-sizing: border-box; }
 .taxi-preview button, .taxi-preview input, .taxi-preview textarea { font: inherit; color: inherit; }
-.taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 100px; background: #fff; box-sizing: content-box; }
-.taxi-form-title { height: 24px; background: #f4f4f4; color: #fff; font-size: 12px; padding-left: 1px; line-height: 20px; }
-.taxi-form-content { padding: 12px 10px 10px; }
+.taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 28px; background: #fff; box-sizing: content-box; }
+.taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #fff; font-size: 12px; padding-left: 1px; line-height: 20px; }
+.taxi-form-content { padding: 12px 19px 10px 11px; }
 .taxi-form-content--commands { padding-top: 4px; }
 .taxi-items { min-width: 0; }
-.taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 8px; align-items: start; }
+.taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 9px 4px; align-items: start; }
 .taxi-items--horizontal { display: flex; align-items: center; gap: 8px; }
 .taxi-items--wrap { flex-wrap: wrap; }
 .taxi-element { grid-column: 1 / -1; min-width: 0; max-width: 100%; position: relative; }
@@ -73,9 +85,9 @@ button { cursor: default; }
 .taxi-selected { outline: 1px solid #1695f3; outline-offset: 0; }
 .taxi-disabled { color: #a0a0a0 !important; }
 .taxi-disabled .taxi-input { background: #f4f4f4 !important; }
-.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 22px; gap: 0 8px; }
+.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 22px; gap: 0 4px; }
 .taxi-items--horizontal .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
-.taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 18px; }
+.taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
@@ -143,14 +155,21 @@ button { cursor: default; }
 .taxi-document-toolbar { display: flex; align-items: center; gap: 8px; height: 28px; flex: 0 0 28px; padding: 3px; border-bottom: 1px solid #bbb; background: #f8f8f8; }
 .taxi-format-face { padding: 1px 4px; border: 1px solid #aaa; background: #fff; width: 130px; }
 .taxi-pdf { background: #b5b5b5; }
-.taxi-calendar { width: 100%; max-width: 220px; padding: 4px; background: #fff; color: #555; }
-.taxi-calendar-title { display: flex; justify-content: space-between; align-items: center; height: 26px; text-transform: capitalize; }
-.taxi-calendar-title strong { font-weight: 400; }
-.taxi-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
-.taxi-calendar-grid > * { height: 23px; padding: 3px 0; font-weight: 400; }
-.taxi-calendar-grid b { color: #888; border-bottom: 1px solid #ccc; }
-.taxi-calendar-grid .today { outline: 1px solid #a8a8a8; outline-offset: -1px; }
-.taxi-calendar-grid .weekend { color: #b55858; }
+.taxi-calendar { width: 100%; height: 100%; padding: 11px 21px 19px; background: #fff; color: #555; }
+.taxi-calendar-title { display: grid; grid-template-columns: 2fr 3fr 1fr 1fr; height: 30px; text-transform: capitalize; border: 1px solid #ddd; border-bottom: none; }
+.taxi-calendar-title span { position: relative; padding: 6px 8px; border-right: 1px solid #ddd; }
+.taxi-calendar-title span:last-child { border-right: none; }
+.taxi-calendar-title span:nth-last-child(-n+2) { text-align: center; font-size: 18px; line-height: 16px; color: #777; }
+.taxi-calendar-title i { font-size: 8px; position: absolute; right: 2px; bottom: 1px; color: #888; font-style: normal; }
+.taxi-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; border-left: 1px solid #ddd; }
+.taxi-calendar-grid > * { height: 30px; padding: 6px 0; font-weight: 400; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+.taxi-calendar-grid .today { color: #fff; background: #666; box-shadow: inset 0 0 0 1px #fff; outline: 1px solid #009646; outline-offset: -1px; }
+.taxi-calendar-grid .weekend { color: #ff5015; }
+.taxi-calendar-grid .adjacent { color: #aaa; }
+.taxi-calendar-today { padding: 10px 8px 0; white-space: nowrap; }
+.taxi-calendar-today span { color: #2899f5; border-bottom: 1px dashed #2899f5; }
+.taxi-chart { display: block; flex: 1; overflow: hidden; }
+.taxi-chart text { fill: #222; font-family: inherit; font-size: 13.333333px; }
 .taxi-sheet { width: 100%; height: 100%; overflow: auto; }
 .taxi-sheet table { border-collapse: collapse; table-layout: fixed; }
 .taxi-sheet td { width: 68px; min-width: 68px; height: 20px; border: 1px solid #ddd; }
@@ -166,3 +185,5 @@ button { cursor: default; }
 .taxi-preview ::-webkit-scrollbar-track { border: 1px solid #ccc; background: #f5f5f5; }
 .taxi-preview ::-webkit-scrollbar-thumb { border: 1px solid #b5b5b5; background: linear-gradient(90deg, #eee, #ddd); }
 @media (forced-colors: active) { .form-splitter { background: CanvasText; } }
+
+.taxi-label-field { display: inline-block; min-height: 16px; }

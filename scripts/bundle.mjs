@@ -9,6 +9,7 @@ const result = await build({ entryPoints: ["src/extension.ts"], outfile: "out/ex
   platform: "node", target: "node22", format: "cjs", external: ["vscode"], metafile: true, legalComments: "inline" });
 const browser = await build({ entryPoints: { "query-designer": "webview/query/index.jsx", "form-preview": "webview/forms/index.jsx" }, outdir: "out", bundle: true,
   platform: "browser", target: "chrome140", format: "iife", metafile: true, legalComments: "inline",
+  loader: { ".ttf": "file" }, assetNames: "form-fonts/[name]-[hash]",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "solid-jsx", setup(builder) {
     builder.onLoad({ filter: /\.jsx$/ }, async args => {
@@ -37,6 +38,7 @@ for (const input of Object.keys({ ...result.metafile.inputs, ...browser.metafile
   if (!found) throw new Error(`Missing bundled dependency metadata: ${input}`);
 }
 const notices = [];
+notices.push(`Liberation Fonts 2.1.5 (SIL Open Font License 1.1)\n${"=".repeat(72)}\n${await readFile("resources/forms/fonts/LICENSE", "utf8")}\n`);
 for (const [name, { folder, value }] of [...packages].sort(([a], [b]) => a.localeCompare(b, "en"))) {
   const files = (await readdir(folder)).filter(file => /^(licen[cs]e|copying|notice)(\.|$)/i.test(file)).sort();
   if (!files.length) throw new Error(`Missing bundled dependency license: ${name}`);

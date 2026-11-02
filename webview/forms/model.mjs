@@ -14,8 +14,8 @@ export function text(value, locale, strings) {
 }
 export function caption(node, state) { return text(node?.presentation?.caption, state.locale, state.strings); }
 export function font(value, os) {
-  const aliases = { Arial: 'Liberation Sans', 'Times New Roman': 'Liberation Serif', 'Courier New': 'Liberation Mono' };
-  const face = value?.face ? os === 'linux' ? aliases[value.face] ?? value.face : value.face : os === 'linux' ? 'Liberation Sans' : 'Arial';
+  const aliases = { Arial: 'ESKA Taxi Sans', 'Liberation Sans': 'ESKA Taxi Sans', 'Times New Roman': 'ESKA Taxi Serif', 'Liberation Serif': 'ESKA Taxi Serif', 'Courier New': 'ESKA Taxi Mono', 'Liberation Mono': 'ESKA Taxi Mono' };
+  const face = value?.face ? os === 'linux' ? aliases[value.face] ?? value.face : value.face : os === 'linux' ? 'ESKA Taxi Sans' : 'Arial';
   return { 'font-family': `${JSON.stringify(face)}, Arial, sans-serif`, 'font-size': `${(value?.points ?? 10) * 4 / 3}px`, 'font-weight': value?.weight ?? 400,
     'font-style': value?.italic ? 'italic' : 'normal', 'text-decoration': [value?.underline && 'underline', value?.strikeout && 'line-through'].filter(Boolean).join(' ') || 'none' };
 }
@@ -32,6 +32,7 @@ export function fieldWidth(node) {
   const width = number(node, 'Width'); if (width > 0) return Math.max(20, width * 8 + 4);
   const type = node.presentation.valueType;
   if (type.kind === 'number') return Math.max(80, Math.min(24, (type.digits ?? 12) + 2) * 8 + 4);
+  if (type.kind === 'reference') return 411;
   if (type.kind === 'date') return type.dateParts === 'Time' ? 92 : type.dateParts === 'Date' ? 116 : 180;
   if (type.kind === 'string') return type.length ? Math.max(100, Math.min(50, type.length) * 8 + 11) : 161;
   return 161;

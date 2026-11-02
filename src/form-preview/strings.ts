@@ -1,4 +1,5 @@
 const en = {
+  today: "Today", chartPoint: "Point", chartSeries: "Series",
   title: "Form", preview: "Form preview", open: "Open form preview", loading: "Loading form…", updating: "Updating…", readOnly: "View only",
   stale: "The source is incomplete. Showing the last valid form.", disconnected: "The backend is disconnected. Showing the last loaded form.",
   incomplete: "Some form inputs or appearance references could not be resolved.", unavailable: "The form or its application context is unavailable.",
@@ -19,6 +20,7 @@ const en = {
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
 const ru: Record<keyof typeof en, string> = {
+  today: "Сегодня", chartPoint: "Точка", chartSeries: "Серия",
   title: "Форма", preview: "Предпросмотр формы", open: "Открыть просмотр формы", loading: "Загрузка формы…", updating: "Обновление…", readOnly: "Только просмотр",
   stale: "Исходник пока некорректен. Показана последняя корректная форма.", disconnected: "Backend отключён. Показана последняя загруженная форма.",
   incomplete: "Часть входов формы или ссылок оформления не удалось разрешить.", unavailable: "Форма или её контекст приложения недоступны.",

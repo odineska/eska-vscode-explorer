@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { readFile, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, text, font, color } from '../webview/forms/model.mjs';
@@ -9,7 +11,7 @@ function fixture() {
   const origin = { source, range: { start: 0, end: 200 } };
   const font = { face: null, points: 10, weight: 400, italic: false, underline: false, strikeout: false, origins: [] };
   const role = { kind: 'role', value: 'TextColor' };
-  const presentation = { grouping: 'Vertical', caption: { kind: 'name', text: 'Форма' }, tooltip: null, font, titleFont: font,
+  const presentation = { titleLocation: 'Left', displayed: true, grouping: 'Vertical', caption: { kind: 'name', text: 'Форма' }, tooltip: null, font, titleFont: font,
     foreground: role, background: role, border: role, titleColor: role, valueType: { kind: 'string', length: null, digits: null, fraction: null, dateParts: null, types: [] },
     binding: null, choices: [], autoCommands: [] };
   const root = { identity: { source, part: 'current', key: { kind: 'root' } }, origin, kind: 'Form', name: null,
@@ -52,9 +54,24 @@ test('renderer preparation preserves identity across new models and localizes li
   const title = { kind: 'literal', items: [{ language: 'ru', content: 'Наименование' }, { language: 'en', content: 'Name' }] };
   assert.equal(text(title, 'ru-RU', {}), 'Наименование'); assert.equal(text(title, 'en-US', {}), 'Name');
   assert.equal(fieldWidth(before.root), 161); assert.equal(color({ kind: 'rgb', value: '#009646' }), '#009646');
-  assert.match(font({ face: 'Arial', points: 10 }, 'linux')['font-family'], /Liberation Sans/);
+  assert.match(font({ face: 'Arial', points: 10 }, 'linux')['font-family'], /ESKA Taxi Sans/);
 });
 
 test('form viewer UI strings have identical ru/en keys', () => {
   assert.deepEqual(Object.keys(formStrings('ru-RU')).sort(), Object.keys(formStrings('en-US')).sort());
+});
+
+
+test('Linux profile ships exact unmodified reference fonts and their license offline', async () => {
+  const root = new URL('../resources/forms/fonts/', import.meta.url), manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
+  assert.equal(manifest.unmodified, true); assert.equal(manifest.files.length, 12);
+  assert.match(await readFile(new URL('LICENSE', root), 'utf8'), /SIL OPEN FONT LICENSE Version 1.1/);
+  for (const file of manifest.files) {
+    const bytes = await readFile(new URL(file.file, root));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256);
+  }
+  const css = await readFile(new URL('../out/form-preview.css', import.meta.url), 'utf8');
+  const files = await readdir(new URL('../out/form-fonts/', import.meta.url));
+  for (const file of manifest.files) assert.ok(files.some(name => name.startsWith(file.file.replace('.ttf','-')) && css.includes(name)), file.file);
+  assert.match(await readFile(new URL('../out/THIRD-PARTY-NOTICES.txt', import.meta.url), 'utf8'), /Liberation Fonts 2.1.5/);
 });
