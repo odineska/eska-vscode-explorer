@@ -1,4 +1,5 @@
 /* This renderer owns presentation only. ESKA supplies metadata, bindings, syntax and every accepted model. */
+import { iconElement } from '../../webview/ui/icons.mjs';
 import { ConstructorLayout } from './layout.mjs';
 import { itemTable } from './items.mjs';
 import { expressionTools } from './expression.mjs';
@@ -6,16 +7,23 @@ import { predicateForm, emptyPredicate } from './predicates.mjs';
 import { modifierForm } from './modifiers.mjs';
 import { markedText, mountDialog, textEditor } from './text.mjs';
 
-(() => {
-  const api = acquireVsCodeApi(), root = document.getElementById("root");
+export function createDesignerController(api, root, changed) {
   const layout = new ConstructorLayout(api, root);
-  const basePages = ["tablesFields", "joins", "group", "conditions", "order"];
+  let errorText = "", renderingPane = false, localRevision = 0, activeSource = "", chosenTable;
+  layout.transfer = transfer;
+  const basePages = ["tablesFields", "joins", "group", "conditions"];
   let state, totalSection = 0, totalScope = -1, selected = 0, page = layout.page(0), editing, pendingEdit, search = "", chosenField = "";
   let locationSerial=-1;
   const expanded = new Set(layout.preferences.expanded), itemSelections = new Map(), cellDrafts = new Map(), matrixSelections = new Map();
 
   /** Every intention is bound to the revision actually displayed in this webview. */
-  function post(message){api.postMessage({revision:state?.model.revision,...message});}
+  function post(message) {
+    const revision=state?.model.revision;
+    if (state) {
+      layout.capture(); state={...state,busy:true}; root.setAttribute('aria-busy','true'); render(false);
+    }
+    api.postMessage({revision,...message});
+  }
 
   /** Untrusted names and expressions are always text nodes, never markup. */
   function element(tag, text, className) {
@@ -46,8 +54,10 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
     const node = element("button", label, className); node.type = "button";
     const accessible = label === "↑" ? state.labels.up : label === "↓" ? state.labels.down : label === "+" ? state.labels.add : label;
     node.title = accessible; node.setAttribute("aria-label", accessible);
+    const glyph = label === state.labels.editPredicate ? 'edit' : label === state.labels.showInText ? 'locate' : label === state.labels.nested ? 'nested' : label === '+' || label === state.labels.add ? 'add' : label === state.labels.edit ? 'edit' : label === state.labels.remove ? 'remove' : label === '↑' ? 'up' : label === '↓' ? 'down' : label === state.labels.copy ? 'copy' : null;
+    if (glyph) { node.replaceChildren(iconElement(glyph)); node.classList.add('eska-icon-button', 'eska-button--quiet'); }
     const child=!!state.preview||!!state.diff||!!editing?.textBuffer,childButton=/^(preview-|text-|diff-)/.test(className??'');
-    node.disabled=!!reason||state.busy||state.paused&&!['preview-cancel','text-cancel','diff-close','comments-close'].includes(className)||child&&!childButton;
+    node.disabled=!!reason||!renderingPane&&(state.busy||state.paused&&!['preview-cancel','text-cancel','diff-close','comments-close'].includes(className)||child&&!childButton);
     if (reason) node.title = `${accessible}: ${state.reasons[reason] ?? reason}`;
     const revision=state.model.revision;node.addEventListener("click",()=>{if(revision===state.model.revision)action();}); return node;
   }
@@ -130,33 +140,79 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
     if (kind === "joins" && state.features.nestedQueries) node.querySelector(".section-title").append(button(l.nested, () => begin({ kind: "append", statement: selected, clause: kind }, { kind: "subqueryJoin", alias: "", join: "left", left: chosenField, comparison: "equal", right: "" }), unavailable(kind), "add-nested"));
     if(state.features.predicates&&['conditions','having'].includes(kind))node.querySelector('.section-title').append(button(l.editPredicate,()=>{const clause=statement(kind).clauses.find(clause=>clause.kind===kind);editing={predicate:structuredClone(clause?.predicate??emptyPredicate()),action:{kind:'setPredicate',statement:statement(kind).index,clause:kind,selection:null}};render();},unavailable(kind),'edit-predicate'));
     const entries = rows(kind).filter(row => !filter || filter(row.item));
-    if (state.features.bulkItems && !["joins", "conditions", "having"].includes(kind)) { node.append(table(entries)); return node; }
+    if (state.features.bulkItems && !["joins", "conditions", "having"].includes(kind)) { node.append(table(entries, kind)); return node; }
+    const tabular = ['joins','conditions','having'].includes(kind);
+    const grid = tabular ? element('table',undefined,'clause-table') : undefined, body = tabular ? element('tbody') : node;
+    if (grid) {
+      grid.setAttribute('aria-label',title);
+      const head=element('thead'), line=element('tr');
+      for (const label of kind==='joins' ? [l.leftTable,l.rightTable,l.joinKind,l.expression,l.edit] : [l.leftField,l.comparison,l.rightValue,l.edit]) line.append(element('th',label));
+      head.append(line);grid.append(head,body);node.append(grid);
+    }
     for (const row of entries) {
-      const item = element("div", undefined, "row"), text = element("pre", row.item.preview); text.title = row.item.preview;
-      item.append(text, controls(row));
-      if(state.features.predicates&&kind==='joins'){
+      const item = element(tabular?'tr':'div',undefined,tabular?'clause-row':'row'), text=element('pre',row.item.preview), commands=controls(row);
+      text.title=row.item.preview;
+      if (kind==='joins') {
         const relation=row.clause.join;
-        if(relation){item.prepend(element('small',`${relation.left.join(', ')} → ${relation.right}`));const picker=select(item,l.joins,'joinKind',{joinKind:relation.kind},['inner','left','right','full'].map(kind=>[kind,l[kind]]));picker.disabled||=!state.model.writable||state.paused;picker.addEventListener('change',()=>send({kind:'setJoinKind',selection:row.selection,join:picker.value}));}
-        item.append(button(l.editPredicate,()=>{editing={predicate:structuredClone(row.clause.predicate??emptyPredicate()),action:{kind:'setPredicate',statement:row.selection.statement,clause:'joins',selection:row.selection}};render();},row.item.unavailable.replace,'edit-predicate'));
-      }
-      if(state.features.predicates&&['conditions','having'].includes(kind))item.append(button(kind==='conditions'?l.moveHaving:l.moveWhere,()=>send({kind:'movePredicate',selection:row.selection,target:kind==='conditions'?'having':'conditions'}),row.item.unavailable.remove,'move-predicate'));
-      node.append(item);
+        item.append(element('td',relation?.left.join(', ')??''),element('td',relation?.right??''));
+        const type=element('td');
+        if (relation) {
+          const picker=element('select');picker.name='joinKind';picker.setAttribute('aria-label',l.joinKind);
+          for (const kind of ['inner','left','right','full']) { const option=element('option',l[kind]);option.value=kind;picker.append(option); }
+          picker.value=relation.kind;picker.disabled=!state.model.writable;
+          picker.addEventListener('change',()=>send({kind:'setJoinKind',selection:row.selection,join:picker.value}));type.append(picker);
+        }
+        const preview=element('td');preview.append(text);item.append(type,preview);
+        if(state.features.predicates)commands.append(button(l.editPredicate,()=>{editing={predicate:structuredClone(row.clause.predicate??emptyPredicate()),action:{kind:'setPredicate',statement:row.selection.statement,clause:'joins',selection:row.selection}};render();},row.item.unavailable.replace,'edit-predicate'));
+      } else if (tabular) {
+        const value=row.item.visual;
+        if (value && ['condition','having'].includes(value.kind)) {
+          for (const valueText of [value.left,new Map(comparisonOptions()).get(value.comparison),value.right]) item.append(element('td',valueText,'eska-code'));
+        } else { const preview=element('td');preview.colSpan=3;preview.append(text);item.append(preview); }
+        if(state.features.predicates)commands.append(button(kind==='conditions'?l.moveHaving:l.moveWhere,()=>send({kind:'movePredicate',selection:row.selection,target:kind==='conditions'?'having':'conditions'}),row.item.unavailable.remove,'move-predicate'));
+      } else item.append(text);
+      const actions=tabular?element('td'):item;actions.append(commands);if(tabular)item.append(actions);body.append(item);
     }
     if (!entries.length) node.append(element("p", l.noRows, "empty"));
     return node;
   }
 
   /** This component stores selection only; the backend returns the resulting identities. */
-  function table(entries) {
+  function table(entries, kind) {
     const key = entries.length ? `${entries[0].selection.statement}:${entries[0].selection.clause}` : '', selection = itemSelections.get(key) ?? { items: [], anchor: -1 };
-    return itemTable(entries, { element, button, cells: cellDrafts, labels: state.labels, selected: selection.items, anchor: selection.anchor,
-      writable: state.model.writable && !state.paused, busy: state.busy,
-      choose: (items, anchor = selection.anchor, redraw = true) => { itemSelections.set(key, {items, anchor}); if(redraw)render();const row=entries.find(row=>row.item.index===anchor);if(row&&layout.preferences.previewOpen&&state.features.linkedText)post({type:'locate',target:{kind:'item',selection:row.selection},navigate:false}); },
+    return itemTable(entries, { element, button, cells: cellDrafts, reasonLabel: reason => state.reasons[reason] ?? reason, labels: state.labels, selected: selection.items, anchor: selection.anchor,
+      writable: state.model.writable && !state.paused, busy: state.busy, simple: page === "tablesFields" && state.features.unions, kind,
+      choose: (items, anchor = selection.anchor, redraw = true) => { itemSelections.set(key, {items, anchor}); if(redraw)render();else layout.grid();const row=entries.find(row=>row.item.index===anchor);if(row&&layout.preferences.previewOpen&&state.features.linkedText)post({type:'locate',target:{kind:'item',selection:row.selection},navigate:false}); },
       locate: row => post({type:'locate',target:{kind:'item',selection:row.selection},navigate:false}),
       comments: row => post({type:'comments',selection:row.selection}), linkedText:state.features.linkedText,
       run: (operation, items = selection.items) => { if(entries.length)send({kind:'editItems', statement:entries[0].selection.statement, clause:entries[0].selection.clause, items, operation}); },
       edit: row => begin({kind:'replace',selection:row.selection},row.item.visual,row.item.expression??''), compose,
       navigate: child => navigate(state.model.scopes[child].branches[0]) });
+  }
+
+  /** Transfer strips reuse checked actions; table/field highlights are presentation state only. */
+  function transfer(left, right) {
+    if (page !== 'tablesFields') return undefined;
+    const l = state.labels, strip = element('div', undefined, 'pane-transfer eska-toolbar');
+    strip.setAttribute('role', 'toolbar'); strip.setAttribute('aria-label', l.selection);
+    if (left.classList.contains('database')) {
+      strip.append(button('›', () => chooseTable(chosenTable), !chosenTable ? 'single_item' : unavailable('sources'), 'transfer-add-table'));
+      const row = [...rows('sources'), ...rows('joins')].find(row => `${row.selection.clause}:${row.selection.item}` === activeSource);
+      strip.append(button('‹', () => send({kind:'remove',selection:row.selection}), row?.item.unavailable.remove ?? (!row ? 'single_item' : null), 'transfer-remove-table'));
+    } else if (right.dataset.section === 'fields') {
+      strip.append(button('›', () => compose(blank('fields')), !chosenField ? 'single_item' : unavailable('fields'), 'transfer-add-field'));
+      const source = state.metadata.fields.find(source => `${source.clause}:${source.item}` === activeSource);
+      if (source?.fields.length) strip.append(button('»', () => send({kind:'appendFields',statement:selected,fields:source.fields.map(name)}), source.fields.length > 512 ? 'model_limit' : unavailable('fields'), 'transfer-add-fields'));
+      const entries = rows('fields'), key = entries.length ? `${entries[0].selection.statement}:${entries[0].selection.clause}` : '', items = itemSelections.get(key)?.items ?? [];
+      const reason = !items.length ? 'single_item' : entries.filter(row => items.includes(row.item.index)).map(row => row.item.unavailable.remove).find(Boolean);
+      strip.append(button('‹', () => send({kind:'editItems',statement:entries[0].selection.statement,clause:entries[0].selection.clause,items,operation:{kind:'remove'}}), reason, 'transfer-remove-field'));
+    }
+    for (const control of strip.children) {
+      const remove = control.textContent === '‹';
+      control.setAttribute('aria-label', remove ? l.remove : control.textContent === '»' ? l.allFields : l.add);
+      control.title = control.getAttribute('aria-label');
+    }
+    return strip.children.length ? strip : undefined;
   }
 
   /** A virtual table selection opens positional value controls; ESKA builds the eventual call. */
@@ -192,7 +248,11 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
           else { expanded.add(path); if (!details.has(path)) post({ type: "catalog", table: path }); else render(); }
           layout.preferences.expanded = [...expanded]; layout.save();
         }); expand.title = `${l.toggleTable} ${table.name}`; expand.setAttribute("aria-label", expand.title);
-        const label = button(table.name, () => {}, null, "table-name"); label.title = path;
+        const label = button(table.name, () => { chosenTable = table;
+          for (const other of node.querySelectorAll(".table-name")) other.setAttribute("aria-selected", String(other === label));
+          layout.grid();
+        }, null, "table-name eska-tree-item");
+        label.setAttribute("aria-selected", String(chosenTable && name(chosenTable) === path)); label.title = path;
         label.addEventListener("dblclick", () => { if (!label.disabled && !unavailable("sources")) chooseTable(table); });
         const add = button("+", () => chooseTable(table), unavailable("sources"), "table-add"); add.setAttribute("aria-label", `${l.add} ${table.name}`);
         row.append(expand, label, add); group.append(row);
@@ -227,7 +287,11 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
           source.fields.length > 512 ? "model_limit" : unavailable("fields"), "all-fields"));
       }
       for (const field of source.fields) {
-        const value = name(field), pick = button(value, () => { chosenField = value; }, unavailable(choose === "fields" ? "fields" : choose), "field-choice");
+        const value = name(field), pick = button(value, () => { chosenField = value;
+          for (const other of root.querySelectorAll(".field-choice")) other.setAttribute("aria-selected", String(other === pick));
+          layout.grid();
+        }, unavailable(choose === "fields" ? "fields" : choose), "field-choice eska-tree-item");
+        pick.setAttribute("aria-selected", String(chosenField === value));
         pick.addEventListener("dblclick", () => {
           if (pick.disabled) return;
           chosenField = value;
@@ -244,12 +308,36 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
 
   /** Table properties and metadata field trees stay together, as in a query wizard's middle pane. */
   function sources() {
-    const node = sourceFields("fields"), l = state.labels;
-    node.querySelector(".section-title").append(button(l.add, () => begin({ kind: "append", statement: selected, clause: "sources" }, blank("sources")), unavailable("sources")));
-    if (state.features.nestedQueries) node.querySelector(".section-title").append(button(l.nested, () => compose({ kind: "subquerySource", alias: "" }), unavailable("sources"), "add-nested"));
-    if (state.features.bulkItems) { node.append(table(rows("sources"))); return node; }
-    for (const row of rows("sources")) {
-      const properties = element("div", undefined, "source-properties"); properties.append(element("pre", row.item.preview), controls(row)); node.append(properties);
+    const node = sourceFields('fields'), l = state.labels, choices = [...rows('sources'), ...rows('joins')];
+    const key = row => `${row.selection.clause}:${row.selection.item}`;
+    if (!choices.some(row => key(row) === activeSource)) activeSource = choices[0] ? key(choices[0]) : '';
+    const selectedRow = () => choices.find(row => key(row) === activeSource);
+    const toolbar = element('div', undefined, 'source-toolbar eska-toolbar');
+    const editable = operation => !selectedRow() ? 'single_item' : selectedRow().item.unavailable[operation];
+    const edit = button(l.edit, () => { const row = selectedRow(); begin({kind:'replace',selection:row.selection},row.item.visual,row.item.expression??''); }, editable('replace'));
+    const remove = button(l.remove, () => send({kind:'remove',selection:selectedRow().selection}), editable('remove'));
+    toolbar.append(edit, remove,
+      button(l.add, () => begin({kind:'append',statement:selected,clause:'sources'},blank('sources')),unavailable('sources')));
+    if (state.features.nestedQueries) toolbar.append(button(l.nested, () => compose({kind:'subquerySource',alias:''}),unavailable('sources'),'add-nested'));
+    node.querySelector('.section-title').append(toolbar);
+    for (const row of choices) {
+      const represented = state.metadata.fields.some(source => source.clause === row.selection.clause && source.item === row.selection.item);
+      if (represented) continue;
+      const tree = element('details', undefined, 'source-tree'); tree.dataset.clause = String(row.selection.clause); tree.dataset.item = String(row.selection.item);
+      tree.append(element('summary',row.item.preview)); node.append(tree);
+    }
+    for (const tree of node.querySelectorAll('.source-tree')) {
+      const source = state.metadata.fields.find(source => source.alias === tree.dataset.source);
+      const row = choices.find(row => source ? row.selection.clause === source.clause && row.selection.item === source.item : String(row.selection.clause) === tree.dataset.clause && String(row.selection.item) === tree.dataset.item);
+      if (!row) continue;
+      for (const child of row.item.children ?? []) tree.append(button(l.editNested, () => navigate(state.model.scopes[child].branches[0]), null, 'edit-nested'));
+      const summary = tree.querySelector('summary'); summary.classList.toggle('source-selected', key(row) === activeSource);
+      summary.addEventListener('click', () => {
+        activeSource = key(row); layout.grid();
+        for (const other of node.querySelectorAll('summary')) other.classList.toggle('source-selected', other === summary);
+        edit.disabled = !!editable('replace'); remove.disabled = !!editable('remove');
+      });
+      summary.addEventListener('dblclick', () => { if (!editable('replace')) { activeSource = key(row); begin({kind:'replace',selection:row.selection},row.item.visual,row.item.expression??''); } });
     }
     return node;
   }
@@ -258,7 +346,11 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
   function resultFields(kind) {
     const l = state.labels, node = panel(l.selectedFields, "result-fields");
     for (const field of state.metadata.resultFields) {
-      const value = name(field), pick = button(value, () => { chosenField = value; }, unavailable(kind), "field-choice");
+      const value = name(field), pick = button(value, () => { chosenField = value;
+          for (const other of root.querySelectorAll(".field-choice")) other.setAttribute("aria-selected", String(other === pick));
+          layout.grid();
+        }, unavailable(kind), "field-choice eska-tree-item");
+        pick.setAttribute("aria-selected", String(chosenField === value));
       pick.addEventListener("dblclick", () => { if (!pick.disabled) begin({ kind: "append", statement: statement(kind).index, clause: kind }, blank(kind, value)); }); node.append(pick);
     }
     if (!state.metadata.resultFields.length) node.append(element("p", l.noFields, "empty"));
@@ -422,9 +514,10 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
     else if (page === "tablesFields") {
       container.classList.add("three-panes"); container.append(database(), sources(), list("fields", l.selectedFields));
     } else if (page === "joins") {
-      container.classList.add("two-panes"); container.append(sourceFields("joins"), list("joins", l.joins));
+      container.append(list("joins", l.joins));
     } else if (page === "group") {
-      container.classList.add("two-panes"); container.append(list("group", l.groupFields), list("fields", l.aggregateFields, item => !!item.visual?.aggregate));
+      container.classList.add("two-panes"); const groups = element("div", undefined, "group-settings"); groups.append(list("group", l.groupFields), list("fields", l.aggregateFields, item => !!item.visual?.aggregate));
+      container.append(sourceFields("group"), groups);
     } else if (page === "conditions") {
       const filters = element("div", undefined, "filter-settings"); filters.append(list("conditions", l.conditions));
       if (state.features.having) filters.append(list("having", l.having));
@@ -500,12 +593,17 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
     }
   }
 
+  /** Display labels for typed operators are shared by the grid and the input form. */
+  function comparisonOptions() {
+    const l=state.labels;
+    return [['equal','='],['notEqual','<>'],['less','<'],['lessOrEqual','<='],['greater','>'],['greaterOrEqual','>='],['like',l.comparisonLike],['in',l.comparisonIn],['inHierarchy',l.comparisonInHierarchy]];
+  }
+
   /** A condition editor separates operands and operator without assembling any SQL in JavaScript. */
   function condition(form, expression, join) {
     const l = state.labels;
     input(form, l.leftField, "left", expression, { list: "query-fields" });
-    select(form, l.comparison, "comparison", expression, [["equal", "="], ["notEqual", "<>"], ["less", "<"], ["lessOrEqual", "<="],
-      ["greater", ">"], ["greaterOrEqual", ">="], ["like", l.comparisonLike], ["in", l.comparisonIn], ["inHierarchy", l.comparisonInHierarchy]]);
+    select(form, l.comparison, "comparison", expression, comparisonOptions());
     input(form, join ? l.rightField : l.rightValue, "right", expression, { list: join ? "query-join-fields" : "query-fields" });
   }
 
@@ -580,76 +678,70 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
     root.append(form);
   }
 
-  /** Render acknowledged state with tab navigation and a complete, readonly text preview. */
-  function render() {
-    layout.capture();
-    root.replaceChildren(); if (!state) return;
-    const l = state.labels, header = element("header"), actions = element("div", undefined, "header-actions");
-    actions.append(button(l.apply, () => post({ type: "apply" }), state.model.issues?.length ? "union_field_count" : null, "primary"));
-    const cancel = button(l.cancel, () => post({ type: "cancel" })); cancel.disabled = state.busy || !!state.preview || !!state.diff || !!editing?.textBuffer; actions.append(cancel); header.append(actions);
+  /** The backend snapshot remains the sole query model; Solid owns the persistent frame. */
+  function pages() {
+    return [...basePages, ...((state.features.modifiers || state.features.dcs) ? ['settings'] : []),
+      ...(state.features.unions ? ['unions'] : []), 'order',
+      ...(state.features.packages ? ['index'] : []), ...(state.features.totals ? ['totals'] : []),
+      ...(state.features.packages && !statement()?.nested ? ['packages'] : []), 'text'];
+  }
+
+  function activate(target) {
+    if (!pages().includes(target)) return;
+    layout.select(selected, target); page = target; editing = undefined; render();
+  }
+
+  function render(local = true) {
+    if (local) localRevision++;
+    if (!state) return;
     const previous = selected;
     selected = Math.min(state.statement ?? selected, Math.max(0, state.model.statements.length - 1));
-    if (selected !== previous) page = layout.page(selected, state.model.scopes?.[statement()?.scope]?.parent != null ? "tablesFields" : page);
-    navigation(header); root.append(header);
-    if(state.features.modifiers)header.append(button(l.settings,()=>{editing={modifiers:structuredClone(statement().modifiers)};render();},statement()?.modifiers?.editable?null:'unsupported','query-settings'));
-    if(state.features.linkedText){
-      const menu=element('details',undefined,'text-tools');menu.append(element('summary',l.textTools));const commands=element('div',undefined,'text-tools-commands');
-      commands.append(button(l.editText,()=>{editing={textBuffer:{text:state.model.text,revision:state.model.revision}};render();},state.model.writable?null:'read_only','edit-query-text'),button(l.diff,()=>post({type:'textDiff'}),null,'query-diff'),button(l.comments,()=>post({type:'comments'}),null,'query-comments'));menu.append(commands);header.append(menu);
+    if (selected !== previous) page = layout.page(selected, state.model.scopes?.[statement()?.scope]?.parent != null ? 'tablesFields' : page);
+    if (page === 'dcs') page = 'settings';
+    if (statement()?.package?.operation === 'destroy') page = 'packages';
+    if (!pages().includes(page)) page = 'tablesFields';
+    changed({ state, page, selected, pages: pages(), error: errorText, editing: !!editing,
+      child: !!state.preview || !!state.diff || !!editing, scope: statement(),
+      bodyKey: [state.model.revision, state.metadataRevision, selected, page, state.model.writable, state.paused, localRevision].join(':') });
+  }
+
+  function settings() {
+    const l = state.labels, pane = panel(l.settings, 'query-settings-pane');
+    if (state.features.modifiers && statement()?.modifiers) {
+      const form = element('form', undefined, 'query-modifiers');
+      modifierForm(form, structuredClone(statement().modifiers), { element, button, labels:l,
+        close: () => activate('tablesFields'),
+        submit: modifiers => post({ type:'preview', action:{kind:'setModifiers',statement:selected,modifiers} }) });
+      pane.append(form);
     }
-    const catalogToggle = button(l.database, () => { layout.preferences.catalogCollapsed = !layout.collapsed(); layout.grid(); layout.save(); }, null, "catalog-toggle");
-    catalogToggle.setAttribute("aria-label", l.toggleCatalog); header.append(catalogToggle);
-    const status = element("span", state.busy ? l.working : state.paused ? state.pausedText : !state.model.writable ? state.reasons.read_only : l.opened, "constructor-status");
-    status.setAttribute("role", "status"); header.append(status);
-    if (statement()?.package?.operation === "destroy") page = "packages";
-    if (state.paused) root.append(element("p", state.pausedText, "error"));
-    for (const issue of state.model.issues ?? []) root.append(element("p", issue.code === "union_field_count" ? l.unionMismatch : `${l.packageIssue}: ${issue.table}${issue.column ? `.${issue.column}` : ""}`, "error"));
-    const pages = [...basePages, ...(state.features.unions ? ["unions"] : []), ...(state.features.totals ? ["totals"] : []), ...(state.features.packages && !statement()?.nested ? ["packages"] : []), ...(state.features.dcs ? ["dcs"] : [])];
-    if (!pages.includes(page)) page = "tablesFields";
-    const scope = state.model.scopes?.[statement()?.scope];
-    const used = { unions: scope?.branches.length > 1, totals: rows("totals").length > 0 || rows("totalGroups").length > 0,
-      packages: state.model.scopes?.filter(scope => scope.parent === null).length > 1 || !!statement()?.package?.destination || statement()?.package?.operation === "destroy",
-      dcs: statement()?.dcs?.nodes.some(node => node.enabled) };
-    const tabs = element("nav", undefined, "tabs"); tabs.setAttribute("role", "tablist");
-    tabs.setAttribute("aria-label", l.sections);
-    const activate = target => { layout.select(selected, target); page = target; editing = undefined; render(); document.getElementById(`tab-${target}`)?.focus(); };
-    const visiblePages = pages.filter(value => basePages.includes(value) || used[value] || layout.preferences.extra.includes(value) || value === page);
-    for (const value of pages) {
-      const tab = button(l[value], () => activate(value)); tab.setAttribute("role", "tab"); tab.tabIndex = page === value ? 0 : -1;
-      tab.hidden = !visiblePages.includes(value);
-      tab.addEventListener("keydown", event => {
-        const index = visiblePages.indexOf(value);
-        const next = event.key === "ArrowRight" ? visiblePages[(index + 1) % visiblePages.length] : event.key === "ArrowLeft" ? visiblePages[(index + visiblePages.length - 1) % visiblePages.length]
-          : event.key === "Home" ? visiblePages[0] : event.key === "End" ? visiblePages[visiblePages.length - 1] : undefined;
-        if (next && !state.busy) { event.preventDefault(); activate(next); }
-      });
-      tab.setAttribute("aria-selected", String(page === value)); tab.id = `tab-${value}`; tab.setAttribute("aria-controls", "query-page"); tabs.append(tab);
+    if (state.features.dcs) {
+      const details = element('details', undefined, 'query-dcs-settings');
+      details.append(element('summary', l.dcs), dcs()); pane.append(details);
     }
-    const sectionBar = element("div", undefined, "section-bar"); sectionBar.append(tabs);
-    const optional = pages.filter(value => !visiblePages.includes(value));
-    if (optional.length) {
-      const more = element("select"); more.setAttribute("aria-label", l.addSection); more.className = "add-section"; more.disabled = state.busy || state.paused;
-      for (const value of ["", ...optional]) { const option = element("option", value ? l[value] : l.addSection); option.value = value; more.append(option); }
-      more.addEventListener("change", () => { if (optional.includes(more.value)) activate(more.value); }); sectionBar.append(more);
-    }
-    root.append(sectionBar);
-    const owner = statement(), content = element("div", undefined, "sections"); content.id = "query-page"; content.setAttribute("role", "tabpanel"); content.setAttribute("aria-labelledby", `tab-${page}`);
-    if (!owner) content.append(element("p", l.empty));
-    else if (owner.unavailable && page !== "dcs") content.append(element("p", state.reasons[owner.unavailable] ?? l.empty, "notice"));
-    else renderPage(content);
-    root.append(content); if (editing) renderEditor();
-    const preview = element("details", undefined, "query-preview"), text = element("pre");text.id='query-text';
-    markedText(text,state.model.text,state.location?.utf16);
-    text.tabIndex = 0; text.setAttribute("aria-label", l.text); preview.append(element("summary", l.text), text); root.append(preview);
-    if(state.features.linkedText){
-      const toolbar=element('div',undefined,'text-navigation');
-      const jump=()=>{const selection=window.getSelection();if(!selection?.focusNode||!text.contains(selection.focusNode))return;const range=document.createRange();range.setStart(text,0);range.setEnd(selection.focusNode,selection.focusOffset);post({type:'locate',target:{kind:'offset',offset:range.cloneContents().textContent.length},navigate:true});};
-      toolbar.append(button(l.findInModel,jump,null,'locate-query-text'));text.addEventListener('dblclick',jump);
-      const selections=state.model.statements.flatMap(owner=>owner.clauses.flatMap(clause=>clause.items.map(item=>({statement:owner.index,clause:clause.index,item:item.index,range:item.range})))).sort((a,b)=>a.range.start-b.range.start);
-      for(const [label,direction]of [[l.previousFragment,-1],[l.nextFragment,1]])toolbar.append(button(label,()=>{const at=selections.findIndex(selection=>selection.range.start===state.location?.range.start);const selection=selections[(at+direction+selections.length)%selections.length];post({type:'locate',target:{kind:'item',selection:{statement:selection.statement,clause:selection.clause,item:selection.item}},navigate:true});},selections.length?null:'unsupported','text-fragment'));
-      preview.insertBefore(toolbar,text);
-    }
+    return pane;
+  }
+
+  function panes() {
+    renderingPane = true;
+    try {
+    const container = element('div');
+    if (!statement()) container.append(element('p', state.labels.empty));
+    else if (statement().unavailable && !['settings','text'].includes(page)) container.append(element('p', state.reasons[statement().unavailable] ?? state.labels.empty, 'notice'));
+    else if (page === 'settings') container.append(settings());
+    else if (page === 'index') container.append(sourceFields('index'), list('index', state.labels.index));
+    else if (page !== 'text') renderPage(container);
+    return [...container.children];
+    } finally { renderingPane = false; }
+  }
+
+  /** Dialogs reuse the checked command adapters and retain pending form values after a rejection. */
+  function overlays() {
+    const l = state.labels;
+    for (const child of [...root.children]) if (!child.classList.contains('constructor-shell')) child.remove();
+    const shell = root.querySelector('.constructor-shell'); if (shell) shell.inert = false;
+    if (editing) renderEditor();
     if(state.comments){
-      const comments=element('section',undefined,'comment-list');comments.append(element('h2',l.comments));
+      const comments=element('section',undefined,'comment-list eska-dialog');comments.setAttribute('role','region');comments.setAttribute('aria-label',l.comments);comments.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();post({type:'closeComments'});}});comments.append(element('h2',l.comments));
       for(const comment of state.comments.comments)comments.append(button(state.model.text.slice(comment.utf16.start,comment.utf16.end),()=>post({type:'locate',target:{kind:'range',range:comment.range},navigate:true}),comment.statement===null?'unsupported':null,'query-comment'));
       if(state.comments.offset)comments.append(button(l.previousFragment,()=>post({type:'comments',offset:Math.max(0,state.comments.offset-128),selection:state.comments.selection})));
       if(state.comments.nextOffset!==null)comments.append(button(l.more,()=>post({type:'comments',offset:state.comments.nextOffset,selection:state.comments.selection})));
@@ -662,32 +754,15 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
       if(state.preview)dialog.append(button(l.acceptChanges,()=>{pendingEdit=editing?structuredClone(editing):undefined;editing=undefined;post({type:'applyPreview'});},null,'preview-accept'));
       const close=()=>post({type:state.preview?'cancelPreview':'cancelDiff'});dialog.append(button(l.close,close,null,state.preview?'preview-cancel':'diff-close'));mountDialog(root,dialog,close);
     }
-    root.setAttribute("aria-busy", String(state.busy));
-    layout.mount(selected, page, l);
+
+    for (const dialog of root.querySelectorAll(':scope > .expression, :scope > .text-editor, :scope > .action-preview')) dialog.classList.add('eska-dialog');
+    const form = root.querySelector(':scope > .expression');
+    if (form) { mountDialog(root, form, () => { editing = undefined; render(); }); }
   }
 
-  /** While a child scope is open, parent selectors are replaced with one explicit return control. */
-  function navigation(header) {
-    const l = state.labels, scope = state.model.scopes?.[statement()?.scope];
-    if (scope?.parent !== null && scope?.parent !== undefined) {
-      header.append(button(l.backParent, () => navigate(scope.parent), null, "back-parent"));
-    } else {
-      const picker = element("select"); picker.setAttribute("aria-label", l.statement); picker.disabled = state.busy || state.paused;
-      const statements = state.model.scopes ? state.model.scopes.filter(scope => scope.parent === null).map(scope => state.model.statements[scope.branches[0]]) : state.model.statements;
-      for (const value of statements) { const option = element("option", `${l.statement} ${value.index + 1} · ${value.preview.slice(0, 50)}`); option.value = String(value.index); picker.append(option); }
-      picker.value = String(scope ? scope.branches[0] : selected); picker.addEventListener("change", () => navigate(Number(picker.value))); header.append(picker);
-    }
-    if(state.features.packageTree&&statement()?.path?.length>1){const path=element('nav',undefined,'scope-path');path.setAttribute('aria-label',l.scopePath);for(const id of statement().path)path.append(button(`${state.model.statements[id].preview.slice(0,24)}`,()=>navigate(id),id===selected?'single_item':null,'scope-crumb'));header.append(path);}
-    if (scope?.branches.length > 1) {
-      const picker = element("select"); picker.setAttribute("aria-label", l.branch); picker.disabled = state.busy || state.paused;
-      for (const [index, id] of scope.branches.entries()) { const option = element("option", `${l.branch} ${index + 1}`); option.value = String(id); picker.append(option); }
-      picker.value = String(selected); picker.addEventListener("change", () => navigate(Number(picker.value))); header.append(picker);
-    }
-  }
-
-  /** Backend errors retain pending form input and never replace the last acknowledged query text. */
-  window.addEventListener("message", event => {
+  function receive(event) {
     if (event.data?.type === "model") {
+      if (event.data.busy && !state?.busy) layout.capture();
       if (state && state.model.revision !== event.data.model.revision) {
         locationSerial=-1;
         pendingEdit = undefined;
@@ -701,17 +776,30 @@ import { markedText, mountDialog, textEditor } from './text.mjs';
       if(state?.preview&&!event.data.preview&&!editing)pendingEdit=undefined;
       state = event.data;
       if(state.location&&state.location.serial!==locationSerial){
+        localRevision++;
         locationSerial=state.location.serial;layout.preferences.previewOpen=true;const preview=root.querySelector('.query-preview');if(preview)preview.open=true;
         if(state.location.navigate&&state.location.selection){const selection=state.location.selection,kind=state.model.statements[selection.statement].clauses[selection.clause].kind;
-          const target={fields:'tablesFields',sources:'tablesFields',joins:'joins',conditions:'conditions',having:'conditions',group:'group',order:'order',totals:'totals',totalGroups:'totals',index:'packages',into:'packages',destroy:'packages'}[kind]??'tablesFields';
+          const target={fields:'tablesFields',sources:'tablesFields',joins:'joins',conditions:'conditions',having:'conditions',group:'group',order:'order',totals:'totals',totalGroups:'totals',index:'index',into:'packages',destroy:'packages'}[kind]??'tablesFields';
           layout.select(state.statement,target);page=target;itemSelections.set(`${selection.statement}:${selection.clause}`,{items:[selection.item],anchor:selection.item});
         }
       }
-      render();
+      root.setAttribute("aria-busy", String(state.busy));
+      render(false);
     } else if (event.data?.type === "error") {
+      if (state) { state={...state,busy:false}; root.setAttribute("aria-busy","false"); }
       if (pendingEdit) { editing = pendingEdit; render(); }
-      const error = element("p", event.data.text, "error"); error.setAttribute("role", "alert"); root.prepend(error);
+      errorText = event.data.text; render();
     }
-  });
-  post({ type: "ready" });
-})();
+  }
+  return {
+    layout, panes, overlays, name, statement, rows, unavailable, chooseTable, send, begin, blank,
+    element, button, table, sourceFields, resultFields,
+    activate, navigate, post,
+    paintText(node) { markedText(node, state.model.text, state.location?.utf16); },
+    editText() { editing = {textBuffer:{text:state.model.text,revision:state.model.revision}}; render(); },
+    clearError() { errorText = ''; render(); },
+    selectField(value) { chosenField = value; },
+    start() { window.addEventListener('message', receive); post({type:'ready'}); },
+    dispose() { window.removeEventListener('message', receive); }
+  };
+}

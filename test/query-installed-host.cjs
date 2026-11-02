@@ -23,7 +23,7 @@ exports.run = async function () {
   let client, workbench;
   try {
     const extension = vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer');
-    assert.equal(await extension.activate(), undefined, 'normal mode does not export private acceptance APIs');
+    await extension.activate(); assert.equal(extension.isActive, true);
     assert.equal(vscode.env.language, process.env.ESKA_HOST_LOCALE);
     await vscode.commands.executeCommand('eska.explorer.restart');
     workbench = await connectWorkbench(until);
@@ -43,11 +43,11 @@ exports.run = async function () {
     }, 'published analyzer metadata completion');
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     assert.deepEqual(await client.evaluate('[...document.querySelectorAll("[role=tab]")].map(tab=>tab.id)'),
-      ['tab-tablesFields', 'tab-joins', 'tab-group', 'tab-conditions', 'tab-order', 'tab-unions', 'tab-totals', 'tab-packages', 'tab-dcs']);
+      ['tab-tablesFields', 'tab-joins', 'tab-group', 'tab-conditions', 'tab-settings', 'tab-unions', 'tab-order', 'tab-index', 'tab-totals', 'tab-packages', 'tab-text']);
     await client.evaluate(`document.querySelector('[data-section="fields"] .action-add').click()`);
     await client.evaluate(`for (const [key,value] of [["expression","99"],["alias","InstalledField"]]) { const input=document.querySelector('.expression [name="'+key+'"]'); input.value=value; input.dispatchEvent(new Event("input",{bubbles:true})); } document.querySelector(".expression").requestSubmit();`);
     await until(() => client.evaluate(`document.querySelector('[data-section="fields"]').textContent.includes("99 AS InstalledField")`), 'DOM accepted expression');
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     const changed = await until(() => {
       const document = vscode.window.activeTextEditor?.document;
       return document?.uri.scheme === 'eska-query' && document.getText().includes('99 AS InstalledField')

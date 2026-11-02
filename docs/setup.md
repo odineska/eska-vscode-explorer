@@ -1,58 +1,94 @@
 # Connect a project to ESKA Explorer
 
-The default backend is `eska-project serve --stdio`, Metadata API 1.12.
-Build `cargo build -p eska-project` in an ESKA checkout containing that package,
-then set `eska.explorer.executable` to its absolute binary path on the workspace
-host. Default discovery checks `~/.eska/bin` first, then absolute PATH directories. The metadata tree works without the full CLI, Git, a 1C platform
-or an analyzer. [Backend selection](cli-management.md).
+## Install components
 
-Use **Prepare project and language components** for component setup. The current public ESKA release has no project ZIP; configure a local binary or install a local T97 package. The latest stable Analyzer app release can be installed independently. See [component setup](component-setup.md).
+Install the VSIX through **Extensions → Install from VSIX…**. Its extension ID is
+`1c-tooling.eska-explorer`; the minimum VS Code API version is **1.109.0**.
+The project repositories and downloads belong to **odineska**.
+[Packaging](packaging.md) · [ESKA installation](https://odineska.github.io/eska/).
 
-For the documented older `eska ide`, explicitly choose
-`eska.explorer.backend = "legacy"` and your `eska` executable. Its path is kept;
-Explorer shows a Legacy indicator and warning. An incompatible component is
-never replaced by a different executable automatically.
+The default backend is `eska-project serve --stdio`. The tree needs only Explorer
+and `eska-project`. Git, the full facade, the 1C platform and Analyzer are optional.
+Install a compatible `bsl-analyzer-app` for language services and `eska-fmt` for
+formatting. Use **Prepare project, formatter and language components** to check
+and prepare these tools. Available assets depend on the selected release and
+host architecture. [Component setup](component-setup.md).
 
-If an existing Designer XML export has no `eska.toml`, run `eska-project init`
-at its root. Use `--source` for a directory other than the root or `src`.
-Types `configuration`, `extension`, `processing` and `report` are supported.
-This command does not initialize Git or start a platform. In legacy mode you
-can use `eska init` with that CLI's options instead.
+For a local ESKA checkout, build `cargo build -p eska-project` and select the
+resulting executable. The three paths are independent:
 
-Review the manifest, then run **ESKA Explorer: Restart Connection**.
-The extension does not initialize a project or build a 1C configuration automatically.
+```json
+{
+  "eska.explorer.executable": "/path/to/eska-project",
+  "eska.explorer.analyzerExecutable": "/path/to/bsl-analyzer-app",
+  "eska.explorer.formatterExecutable": "/path/to/eska-fmt"
+}
+```
 
-## Install the extension
+Use absolute paths on the workspace host. Default discovery checks the managed
+installation first, then absolute PATH entries. An explicit path has no fallback.
+For Remote SSH, WSL and Dev Containers, tools run on the workspace host.
+Virtual workspaces, browser-only hosts and untrusted workspaces are unsupported.
 
-Install the VSIX using **Extensions → Install from VSIX…**. The extension ID is
-`1c-tooling.eska-explorer`. [Packaging instructions](packaging.md).
+## Connect existing Designer XML
 
-## Standalone formatting
+When an existing export has no manifest:
 
-Install `eska-fmt` for its CLI, add `eska` for the `eska fmt` facade, or add
-`eska-project` API 1.33 for Explorer. The analyzer is independent. Managed archives
-use `designer-xml-4`; keep the installed ESKA component contracts compatible.
-The single ESKA status item opens the component list with versions, paths, update and recovery actions for the project backend, formatter and analyzer.
-`eska.explorer.formatterExecutable` selects an explicit executable or the default
-managed/PATH lookup. `eska.explorer.formatOnSave` is disabled by default.
-Set formatting rules in `[format]` in `eska.toml`; native indentation settings do
-not override them. Missing/incompatible formatters never fall back to the analyzer.
-For offline operation disable `checkForFormatterUpdates` as well as other update checks.
+```sh
+eska-project init ./my-project --source src
+eska-project --project-dir ./my-project validate --format json
+```
 
-## Multiline parameter hints
+Use `--source .` when XML is at the root. Supported project types are configuration,
+extension, processing and report; the root XML normally determines the type.
+This init command does not initialize Git, start 1C or generate XML/forms.
+Do not run it over an existing manifest. For an external report/data processor,
+`eska add ssl_3_1` links BSP; its user-wide installation lives in `~/.eska/lib`.
+[Projects and applications](https://odineska.github.io/eska/docs/#workspace).
 
-With `eska-project` API 1.34, continuation lines of multiline string arguments
-receive the same visual advance as the first line. Related parameter labels and
-invisible offsets use the editor font for an exact match; independent single-line
-calls keep their native hints. This changes neither source text nor font settings.
-Alignment requires `editor.inlayHints.enabled = "on"`. Conditional modifier-key
-modes, explicit accessibility support, and actionable/resolvable hints retain
-native rendering without alignment. [Details](language-service.md).
+Open the manifest folder and expand **ESKA: 1C Explorer**. With multiple independent
+folders, use **Select Project and Connect**. Restart the connection after changing
+the backend executable. Manifest changes are watched automatically.
 
-## Workspace project groups
+## Language and formatting
 
-Two or more visible extensions, reports or data processors of the same type
-form a virtual group. The threshold is independent for each type. A single member
-and configuration projects stay at the original level. Labels follow the tree
-language. Search and reveal-from-file expand the right group; membership changes
-retain surviving metadata selections and expansion without rewriting sources.
+BSL/SDBL syntax highlighting works without Analyzer. Opening BSL starts Explorer's
+language client. Set `eska.explorer.languageFeatures = false` to disable that client
+while keeping the tree. Resolve conflicts with other BSL extensions explicitly.
+[Language service, config and leases](language-service.md).
+
+Use Format Document / Format Selection and ESKA as the formatter. Configure style
+in `[format]` in `eska.toml`; editor indentation does not override it.
+`eska.explorer.formatOnSave` is disabled by default. A missing `eska-fmt` is never
+replaced with Analyzer formatting. [All options](https://odineska.github.io/eska/docs/formatting/).
+
+API 1.34 aligns multiline string argument continuations using the editor font
+for related parameter labels and transparent offsets. Independent single-line
+hints keep their usual appearance. Alignment requires `editor.inlayHints.enabled = "on"`.
+Conditional modes, explicit accessibility support and actionable hints use native
+rendering. [Alignment details](language-service.md#многострочные-аргументы-и-подсказки-параметров).
+
+## Capabilities and workspace activity
+
+The current Metadata API is **1.35**, while the minimum tree contract is **1.12**.
+Query sessions, BSL literals, advanced constructor operations, formatting,
+alignment and project activity require their respective negotiated capabilities.
+An older tree connection does not provide every current feature.
+[Capability matrix](cli-management.md#версии-пользовательских-возможностей).
+
+Disable unused workspace projects to release their indexes and watchers.
+A disabled dependency stays in the semantic context while an active consumer
+needs its sources. The single
+selected language context stays alive while it has an active consumer; the
+show/hide inactive filter affects presentation independently.
+[Activity](usage.md#активность-подпроектов).
+
+## Offline use and troubleshooting
+
+Installed compatible tools work without network access. Disable `checkForUpdates`,
+`checkForAnalyzerUpdates` and `checkForFormatterUpdates` to stop background checks.
+Clicking the ESKA status item updates all managed components; use **Manage Components**
+for individual actions. Connection errors appear in the connection log, language
+errors in Output. Legacy `eska ide` must be selected explicitly using
+`backend = "legacy"` and an `eska` executable.
+[Updates and recovery](component-setup.md) · [Backend selection](cli-management.md).

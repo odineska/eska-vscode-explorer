@@ -8,6 +8,7 @@ import { QUERY_SCHEME, type QueryTabs } from "./tabs.js";
 
 interface View {
   panel: vscode.WebviewPanel; binding: NativeQueryConstructor; busy: boolean; ending: boolean; failedApply: boolean;
+  metadataRevision?: number; metadataValues?: unknown[];
   statement: number; catalog?: CatalogPage; search?: string; browsed: Map<string, CatalogPage>;
   catalogKey?: string; fieldsKey?: string; fields?: (ConstructorSource & { fields: CatalogField[]; signature?: CatalogParameter[]; found: boolean; loaded: boolean })[]; metadataFailed?: boolean;
   locationSerial:number; location?:TextLocation & {serial:number;revision:string;navigate:boolean};
@@ -44,7 +45,7 @@ export class QueryDesigner implements vscode.Disposable {
   private async open(uri: vscode.Uri): Promise<void> {
     const document = await vscode.workspace.openTextDocument(uri), binding = await this.tabs.beginConstructor(document);
     if (this.disposed) { await binding.abandon(); return; }
-    const roots = [vscode.Uri.joinPath(this.context.extensionUri, "resources", "query")];
+    const roots = [vscode.Uri.joinPath(this.context.extensionUri, "resources", "query"), vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared"), vscode.Uri.joinPath(this.context.extensionUri, "out")];
     const panel = vscode.window.createWebviewPanel("eska.queryConstructor", this.text("constructorTitle"), vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: roots });
     const view: View = { panel, binding, busy: false, ending: false, failedApply: false, statement: 0, locationSerial:0, browsed: new Map() }; this.views.set(uri.toString(), view);
@@ -189,6 +190,12 @@ export class QueryDesigner implements vscode.Disposable {
     if(view.location&&view.location.revision!==view.binding.core.model.revision)delete view.location;
     if(view.comments&&view.commentsRevision!==view.binding.core.model.revision)delete view.comments;
     if(view.diff&&view.diffRevision!==view.binding.core.model.revision)delete view.diff;
+    const metadataValues: unknown[] = [view.catalog, view.fields, view.resultFields, view.metadataFailed,
+      ...(view.fields ?? []).flatMap(source => [source.loaded, source.fields, source.found]),
+      ...[...view.browsed].flatMap(([key, value]) => [key, value])];
+    if (!view.metadataValues || metadataValues.length !== view.metadataValues.length || metadataValues.some((value, index) => value !== view.metadataValues![index])) {
+      view.metadataRevision = (view.metadataRevision ?? 0) + 1; view.metadataValues = metadataValues;
+    }
     const labels: Record<string, string> = {};
     for (const [name, key] of Object.entries({ apply: "constructorApply", cancel: "constructorCancel", add: "constructorAdd", edit: "constructorEdit",
       remove: "constructorRemove", up: "constructorUp", down: "constructorDown", text: "constructorText", expression: "constructorExpression", submit: "constructorSubmit",
@@ -202,13 +209,13 @@ export class QueryDesigner implements vscode.Disposable {
     for (const name of ["unions", "totals", "totalGroups", "overall", "autoTotals", "nested", "editNested", "backParent", "branch", "unionAll", "unionDistinct", "addUnion", "unionMismatch", "parameters", "noParameters", "hierarchy", "onlyHierarchy", "noHierarchy", "periods", "noPeriods", "periodBegin", "periodEnd", "second", "minute", "hour", "day", "week", "tenDays", "month", "quarter", "halfYear", "year", "parameterPeriod", "parameterBeginPeriod", "parameterEndPeriod", "parameterPeriodicity", "parameterComplementMethod", "parameterCondition", "parameterAccountCondition", "parameterExtraDimensions", "parameterCorrespondingAccountCondition", "parameterCorrespondingExtraDimensions", "parameterDebitAccountCondition", "parameterDebitExtraDimensions", "parameterCreditAccountCondition", "parameterCreditExtraDimensions", "parameterOrder", "parameterTop", "parameterMainDimensions", "parameterBaseDimensions", "parameterSlices"] as const) {
       labels[name] = this.text(`constructor${name[0]!.toUpperCase()}${name.slice(1)}` as MessageKey);
     }
-    for (const name of ["textTools","editText","diff","showInText","findInModel","previousFragment","nextFragment","textLimit","settings","distinct","allowed","top","autoOrder","forUpdate","lockSources","lockAllHint","openDefinition", "scopePath", "alignUnion","previewChanges","acceptChanges","beforeChanges","afterChanges","editPredicate","booleanAll","booleanAny","booleanNot","between","isNull","conditionKind","rangeBegin","rangeEnd","moveHaving","moveWhere","insertField", "copy", "selection", "selectAll", "comments", "addSourceField", "working", "opened", "toggleCatalog", "toggleTable", "sections", "resizePanes", "resizeText", "addSection", "dcs", "dcsSelect", "dcsWhere", "dcsOptionalSource", "dcsParameter", "dcsVirtualFilter", "dcsOpaque", "dcsChildren", "dcsEnabled", "dcsNotice", "totalSection", "addTotalSection", "having", "packages", "temporaryTable", "destination", "setDestination", "addStatement", "destroyTable", "packageIssue", "index", "categoryTemporaryTable"] as const) {
+    for (const name of ["leftTable","rightTable","joinKind","ok","query","dismiss","previous","next","indexes","textTools","editText","diff","showInText","findInModel","previousFragment","nextFragment","textLimit","settings","distinct","allowed","top","autoOrder","forUpdate","lockSources","lockAllHint","openDefinition", "scopePath", "alignUnion","previewChanges","acceptChanges","beforeChanges","afterChanges","editPredicate","booleanAll","booleanAny","booleanNot","between","isNull","conditionKind","rangeBegin","rangeEnd","moveHaving","moveWhere","insertField", "copy", "selection", "selectAll", "comments", "addSourceField", "working", "opened", "toggleCatalog", "toggleTable", "sections", "resizePanes", "resizeText", "addSection", "dcs", "dcsSelect", "dcsWhere", "dcsOptionalSource", "dcsParameter", "dcsVirtualFilter", "dcsOpaque", "dcsChildren", "dcsEnabled", "dcsNotice", "totalSection", "addTotalSection", "having", "packages", "temporaryTable", "destination", "setDestination", "addStatement", "destroyTable", "packageIssue", "index", "categoryTemporaryTable"] as const) {
       labels[name] = this.text(`constructor${name[0]!.toUpperCase()}${name.slice(1)}` as MessageKey);
     }
     const reasons = Object.fromEntries(["unsupported_statement", "unsupported_construct", "invalid_syntax", "model_limit", "read_only", "required_item", "source_required",
       "join_order_dependency", "single_item", "expression_too_large", "unsupported"].map(reason => [reason, this.reason(reason)]));
     reasons.union_field_count = this.text("constructorUnionMismatch");
-    await view.panel.webview.postMessage({ location:view.location??null, comments:view.comments?{...view.comments,offset:view.commentsOffset,selection:view.commentSelection}:null,diff:view.diff??null, preview:view.preview?{text:view.preview.model.text,baseRevision:view.preview.baseRevision}:null, type: "model", model: view.binding.core.model, labels, reasons, maxExpression: view.binding.core.limits.maxExpression,
+    await view.panel.webview.postMessage({ metadataRevision:view.metadataRevision, location:view.location??null, comments:view.comments?{...view.comments,offset:view.commentsOffset,selection:view.commentSelection}:null,diff:view.diff??null, preview:view.preview?{text:view.preview.model.text,baseRevision:view.preview.baseRevision}:null, type: "model", model: view.binding.core.model, labels, reasons, maxExpression: view.binding.core.limits.maxExpression,
       visual: view.binding.core.limits.visual === true, features: view.binding.core.limits, statement: view.statement,
       metadata: { catalog: view.catalog, details: [...view.browsed], fields: view.fields ?? [], resultFields: view.resultFields ?? [], failed: view.metadataFailed === true },
       busy: view.busy, paused: !view.binding.current || view.failedApply, pausedText: this.text(view.failedApply ? "constructorReceiptFailed" : "constructorChanged") });
@@ -226,8 +233,9 @@ export class QueryDesigner implements vscode.Disposable {
   /** A small local resource page receives all model text through postMessage and renders it with textContent. */
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString("hex"), root = vscode.Uri.joinPath(this.context.extensionUri, "resources", "query");
-    const script = webview.asWebviewUri(vscode.Uri.joinPath(root, "designer.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(root, "designer.css"));
-    return `<!doctype html><html lang="${vscode.env.language === "ru" ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}"><link rel="stylesheet" href="${style}"></head><body><main id="root"></main><script type="module" nonce="${nonce}" src="${script}"></script></body></html>`;
+    const common = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared", "ui.css"));
+    const script = webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, "out", "query-designer.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(root, "designer.css"));
+    return `<!doctype html><html lang="${vscode.env.language === "ru" ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}"><link rel="stylesheet" href="${common}"><link rel="stylesheet" href="${style}"></head><body><main id="root"></main><script type="module" nonce="${nonce}" src="${script}"></script></body></html>`;
   }
 
   /** Unknown syntax and resource limits are distinct from normal read-only restrictions. */

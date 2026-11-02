@@ -212,7 +212,7 @@ function propertyView(property, path, query) {
   const checked = editors.length ? undefined : booleanValue(property.value);
   if (checked !== undefined) card.classList.add("boolean-property");
   const head = element("div", "property-head");
-  const button = element("button", "source-button", snapshot.labels.openXml);
+  const button = element("button", "source-button eska-link-button", snapshot.labels.openXml);
   button.type = "button";
   button.addEventListener("click", () => vscode.postMessage({ type: "openXml", revision, index: property.index }));
   const title = editors.length ? element("h2", "property-name", translated(property, snapshot.language, property.key.name)) : propertyName("h2", "property-name", property);
@@ -222,7 +222,7 @@ function propertyView(property, path, query) {
     card.classList.add("boolean-property");
   }
   if (property.key.name === "Name" && snapshot.editing?.unlocked && snapshot.editing.schema?.renameAvailable) {
-    const rename = element("button", "source-button", snapshot.labels.rename); rename.type = "button";
+    const rename = element("button", "source-button eska-link-button", snapshot.labels.rename); rename.type = "button";
     rename.disabled = snapshot.editing.busy || snapshot.editing.blocked;
     rename.addEventListener("click", () => vscode.postMessage({ type: "rename", revision }));
     title.append(document.createTextNode(" "), rename);

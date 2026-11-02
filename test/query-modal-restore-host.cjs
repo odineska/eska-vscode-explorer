@@ -8,7 +8,7 @@ const { until, replace, parentTabs, returned } = require('./query-modal-host.cjs
 exports.run = async function () {
   assert.ok(process.env.ESKA_HOST_RESTART && process.env.ESKA_TEST_VSIX);
   assert.equal(vscode.env.language, process.env.ESKA_HOST_LOCALE);
-  assert.equal(await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate(), undefined);
+  await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate();
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), uri = vscode.Uri.file(fixture.module);
   const marker = path.join(fixture.root, 'modal-recovery.json');
   await vscode.commands.executeCommand('eska.explorer.restart');

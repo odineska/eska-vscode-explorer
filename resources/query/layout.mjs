@@ -1,4 +1,4 @@
-const pages = new Set(['tablesFields', 'joins', 'group', 'conditions', 'order', 'unions', 'totals', 'packages', 'dcs']);
+const pages = new Set(['tablesFields', 'joins', 'group', 'conditions', 'order', 'unions', 'totals', 'packages', 'dcs', 'settings', 'index', 'text']);
 
 /** Stored webview state contains bounded presentation preferences, never a query or a second draft. */
 export function layoutPreferences(value) {
@@ -48,7 +48,7 @@ function keyFor(node, root) {
 export class ConstructorLayout {
   constructor(api, root) {
     this.api = api; this.root = root; this.preferences = layoutPreferences(api.getState());
-    this.focus = undefined; this.context = undefined;
+    this.focus = undefined; this.context = undefined; this.observed = new WeakSet();
     window.addEventListener('resize', () => { this.grid(); this.previewSize(); });
   }
 
@@ -71,7 +71,7 @@ export class ConstructorLayout {
     const preview = this.root.querySelector('.query-preview');
     if (preview) this.preferences.previewOpen = preview.open;
     const view = { scroll: {}, details: {} };
-    for (const node of this.root.querySelectorAll('.query-pane, .query-preview pre, .expression, .tabs')) {
+    for (const node of this.root.querySelectorAll('.query-pane, .item-table, .query-preview pre, .expression, .tabs')) {
       const key = keyFor(node, this.root); view.scroll[key] = node.scrollTop; view.scroll[`${key}/left`] = node.scrollLeft;
     }
     for (const node of this.root.querySelectorAll('.sections details')) view.details[keyFor(node, this.root)] = node.open;
@@ -90,36 +90,42 @@ export class ConstructorLayout {
     this.context = context; this.labels = labels;
     this.preferences.page[statement] = page;
     this.content = this.root.querySelector('.sections');
-    for (const node of this.content.children) node.classList.add('query-pane');
+    for (const node of this.content.children) if (!node.classList.contains('pane-connector')) node.classList.add('query-pane');
     this.grid();
     const preview = this.root.querySelector('.query-preview');
     preview.open = this.preferences.previewOpen;
-    preview.addEventListener('toggle', () => {
-      if (!preview.isConnected) return;
-      this.preferences.previewOpen = preview.open; this.previewSize(); this.save();
-    });
-    const handle = this.separator('horizontal', labels.resizeText);
-    handle.classList.add('preview-separator'); handle.setAttribute('aria-controls', 'query-text');
-    preview.prepend(handle);
-    this.drag(handle, event => {
-      const initial = this.preferences.previewHeight;
-      return move => this.resizePreview(initial + event.clientY - move.clientY);
-    });
-    handle.addEventListener('keydown', event => {
-      const change = event.key === 'ArrowUp' ? 16 : event.key === 'ArrowDown' ? -16 : 0;
-      if (!change && !['Home', 'End'].includes(event.key)) return;
-      event.preventDefault(); this.resizePreview(event.key === 'Home' ? 64 : event.key === 'End' ? innerHeight / 2 : this.preferences.previewHeight + change); this.save();
-    });
+    if (this.preview !== preview) {
+      this.preview = preview;
+      preview.addEventListener('toggle', () => {
+        if (!preview.isConnected) return;
+        this.preferences.previewOpen = preview.open; this.previewSize(); this.save();
+      });
+      const handle = this.separator('horizontal', labels.resizeText);
+      handle.classList.add('preview-separator'); handle.setAttribute('aria-controls', 'query-text');
+      preview.prepend(handle);
+      this.drag(handle, event => {
+        const initial = this.preferences.previewHeight;
+        return move => this.resizePreview(initial + event.clientY - move.clientY);
+      });
+      handle.addEventListener('keydown', event => {
+        const change = event.key === 'ArrowUp' ? 16 : event.key === 'ArrowDown' ? -16 : 0;
+        if (!change && !['Home', 'End'].includes(event.key)) return;
+        event.preventDefault(); this.resizePreview(event.key === 'Home' ? 64 : event.key === 'End' ? innerHeight / 2 : this.preferences.previewHeight + change); this.save();
+      });
+    }
     this.previewSize();
     const view = this.preferences.views[context];
     for (const node of this.root.querySelectorAll('.sections details')) {
       const open = view?.details[keyFor(node, this.root)]; if (open !== undefined) node.open = open;
       node.addEventListener('toggle', () => { if (node.isConnected) { this.capture(); } });
     }
-    for (const node of this.root.querySelectorAll('.query-pane, .query-preview pre, .expression, .tabs')) {
+    for (const node of this.root.querySelectorAll('.query-pane, .item-table, .query-preview pre, .expression, .tabs')) {
       const key = keyFor(node, this.root);
       node.scrollTop = view?.scroll[key] ?? 0; node.scrollLeft = view?.scroll[`${key}/left`] ?? 0;
-      node.addEventListener('scroll', () => { if (node.isConnected) this.capture(); }, { passive: true });
+      if (!this.observed.has(node)) {
+        this.observed.add(node);
+        node.addEventListener('scroll', () => { if (node.isConnected) this.capture(); }, { passive: true });
+      }
     }
     const tabs = this.root.querySelector('.tabs'), activeTab = tabs.querySelector('[aria-selected=true]');
     if (activeTab) {
@@ -138,20 +144,22 @@ export class ConstructorLayout {
   }
 
   /** Narrow windows hide only the catalogue by default; its explicit toggle always wins. */
-  collapsed() { return this.preferences.catalogCollapsed ?? innerWidth < 850; }
+  collapsed() { return this.preferences.catalogCollapsed ?? innerWidth < 700; }
 
   /** Reflow existing pane nodes without replacing inputs when the window size changes. */
   grid() {
     if (!this.content) return;
-    for (const handle of this.content.querySelectorAll(':scope > .pane-separator')) handle.remove();
+    for (const handle of this.content.querySelectorAll(':scope > .pane-connector')) handle.remove();
     const database = this.content.querySelector(':scope > .database');
     if (database) database.hidden = this.collapsed();
     const toggle = this.root.querySelector('.catalog-toggle');
     if (toggle) { toggle.hidden = !database; toggle.setAttribute('aria-expanded', String(!this.collapsed())); }
     const panes = [...this.content.children].filter(node => !node.hidden);
+    const transfers = panes.slice(0, -1).map((pane,index) => this.transfer?.(pane, panes[index + 1]));
+    const columns = values => values.map((value,index) => `minmax(0, ${value}fr)${index < values.length - 1 ? transfers[index] ? ' 34px' : ' 6px' : ''}`).join(' ');
     if (panes.length < 2) { this.content.style.gridTemplateColumns = 'minmax(0, 1fr)'; return; }
     const widths = this.preferences.widths[panes.length] ?? Array(panes.length).fill(1 / panes.length);
-    this.content.style.gridTemplateColumns = widths.map(value => `minmax(0, ${value}fr)`).join(' 6px ');
+    this.content.style.gridTemplateColumns = columns(widths);
     for (let index = 0; index < panes.length - 1; index++) {
       const handle = this.separator('vertical', this.labels.resizePanes); handle.classList.add('pane-separator');
       handle.setAttribute('aria-valuemin', '10'); handle.setAttribute('aria-valuemax', String(Math.round((widths[index] + widths[index + 1] - .1) * 100)));
@@ -159,8 +167,8 @@ export class ConstructorLayout {
       const move = change => {
         this.preferences.widths[panes.length] = moveDivider(this.preferences.widths[panes.length] ?? widths, index, change);
         const next = this.preferences.widths[panes.length];
-        this.content.style.gridTemplateColumns = next.map(value => `minmax(0, ${value}fr)`).join(' 6px ');
-        for (const [at, node] of this.content.querySelectorAll(':scope > .pane-separator').entries()) node.setAttribute('aria-valuenow', String(Math.round(next[at] * 100)));
+        this.content.style.gridTemplateColumns = columns(next);
+        for (const [at, node] of this.content.querySelectorAll(':scope > .pane-connector > .pane-separator').entries()) node.setAttribute('aria-valuenow', String(Math.round(next[at] * 100)));
       };
       this.drag(handle, event => { const initial = this.preferences.widths[panes.length] ?? widths; return next => {
         this.preferences.widths[panes.length] = initial; move((next.clientX - event.clientX) / this.content.clientWidth);
@@ -169,7 +177,9 @@ export class ConstructorLayout {
         const change = event.key === 'ArrowLeft' ? -.03 : event.key === 'ArrowRight' ? .03 : event.key === 'Home' ? -1 : event.key === 'End' ? 1 : 0;
         if (!change) return; event.preventDefault(); move(change); this.save();
       });
-      panes[index].after(handle);
+      const connector = document.createElement('div'); connector.className = 'pane-connector'; connector.append(handle);
+      if (transfers[index]) connector.append(transfers[index]);
+      panes[index].after(connector);
     }
   }
 

@@ -11,6 +11,7 @@ def check(archive, source=None):
     """Reject missing runtime assets, accidental source/dependency inclusion and mismatched identity."""
     root = (source or Path(__file__).resolve().parents[1]).resolve()
     manifest = json.loads((root / 'package.json').read_text(encoding='utf-8'))
+    assert (root / 'out/query-designer.js').is_file(), 'Missing bundled query webview'
     with zipfile.ZipFile(archive) as package:
         names = package.namelist()
         assert len(names) == len(set(names)), 'Duplicate ZIP entries'
@@ -24,7 +25,7 @@ def check(archive, source=None):
         required = ['package.json', 'package.nls.json', 'package.nls.ru.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'resources/icons/support/LICENSE', 'resources/icons/support/NOTICE.md']
         if manifest.get('icon'):
             required.append(manifest['icon'])
-        required += [path.relative_to(root).as_posix() for pattern in ['out/*.js', 'out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/query/*.css', 'resources/query/*.js', 'resources/query/*.mjs', 'docs/*.md', 'docs/images/*.png', 'docs/measurements/*.json'] for path in root.glob(pattern)]
+        required += [path.relative_to(root).as_posix() for pattern in ['out/*.js', 'out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/shared/*.css', 'resources/query/*.css', 'docs/*.md', 'docs/images/*.png', 'docs/measurements/*.json'] for path in root.glob(pattern)]
         # vsce publishes a LICENSE without an extension as LICENSE.txt.
         packaged = {name: 'extension/' + ('LICENSE.txt' if name == 'LICENSE' else name) for name in required}
         expected = set(packaged.values()) | {'extension.vsixmanifest', '[Content_Types].xml'}

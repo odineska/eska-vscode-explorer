@@ -273,7 +273,9 @@ class VsixPayloadTests(unittest.TestCase):
         self.files = {'package.json': json.dumps(manifest), 'package.nls.json': '{}', 'package.nls.ru.json': '{}',
                       'README.md': 'Tagged README', 'CHANGELOG.md': 'Tagged changes', 'LICENSE': 'License',
                       'resources/icons/support/LICENSE': 'Icon license', 'resources/icons/support/NOTICE.md': 'Icon notices',
-                      'out/extension.js': 'exports.activate = () => {};', 'resources/query/expression.mjs': 'export const value = 1;'}
+                      'out/extension.js': 'exports.activate = () => {};',
+                      'out/query-designer.js': 'document.body.replaceChildren();',
+                      'resources/shared/ui.css': '.eska-control { display: flex; }'}
         for name, content in self.files.items():
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -290,26 +292,28 @@ class VsixPayloadTests(unittest.TestCase):
                 if name != removed:
                     archive.writestr('extension/' + ('LICENSE.txt' if name == 'LICENSE' else name), content)
 
-    def test_query_modules_are_verified_against_tagged_sources(self):
-        """The six constructor modules use .mjs and belong in the runtime payload."""
+    def test_query_bundle_is_verified_against_the_tagged_build(self):
+        """The compiled constructor and shared styles belong in the runtime payload."""
         self.package()
         self.module.check(self.archive, self.source)
 
-    def test_missing_or_changed_query_module_stops_publication(self):
-        """Allowing .mjs must not weaken completeness or byte verification."""
-        name = 'resources/query/expression.mjs'
+    def test_missing_or_changed_query_bundle_stops_publication(self):
+        """Omitting or replacing the compiled constructor must fail verification."""
+        name = 'out/query-designer.js'
         self.package(removed=name)
-        with self.assertRaisesRegex(AssertionError, 'missing archive files:.*expression.mjs'):
+        with self.assertRaisesRegex(AssertionError, r'missing archive files:.*out/query-designer\.js'):
             self.module.check(self.archive, self.source)
         self.package(changed={name: 'different bytes'})
-        with self.assertRaisesRegex(AssertionError, 'expression.mjs'):
+        with self.assertRaisesRegex(AssertionError, r'out/query-designer\.js'):
             self.module.check(self.archive, self.source)
 
     def test_unexpected_sources_are_reported_by_name(self):
         """A precise file diff makes packaging failures actionable before a release exists."""
-        self.package(extra={'src/extension.ts': 'source must not ship'})
-        with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*src/extension.ts'):
-            self.module.check(self.archive, self.source)
+        for name in ('src/extension.ts', 'resources/query/expression.mjs'):
+            with self.subTest(name=name):
+                self.package(extra={name: 'source must not ship'})
+                with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*' + name):
+                    self.module.check(self.archive, self.source)
 
 
 if __name__ == "__main__":

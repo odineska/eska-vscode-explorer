@@ -1,0 +1,87 @@
+/* Shared webview controls. Every color and font follows the active VS Code theme. */
+:root {
+  color-scheme: light dark;
+  --eska-border: var(--vscode-widget-border, var(--vscode-panel-border));
+  --eska-control-height: calc(1.4em + 6px);
+  --eska-control-radius: 2px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  font-weight: var(--vscode-font-weight, normal);
+  line-height: 1.4;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; }
+button, input:not([type=checkbox]), select, textarea {
+  min-height: var(--eska-control-height);
+  border: 1px solid var(--eska-border);
+  border-radius: var(--eska-control-radius);
+  padding: 2px 7px;
+}
+button {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+button.primary, .eska-button--primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-contrastBorder, transparent);
+}
+button.primary:hover:not(:disabled), .eska-button--primary:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .5; cursor: default; }
+input:not([type=checkbox]), select, textarea, .property-input {
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border-color: var(--vscode-input-border, var(--eska-border));
+  min-width: 0;
+}
+textarea { line-height: 1.5; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+summary:focus-visible, [tabindex]:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+.eska-button--quiet { background: transparent; border-color: transparent; color: inherit; }
+.eska-button--quiet:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.eska-icon-button { width: var(--eska-control-height); padding: 3px; flex: 0 0 auto; display: inline-grid; place-items: center; }
+.eska-icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.eska-link-button { color: var(--vscode-textLink-foreground); background: transparent; border-color: transparent; padding-inline: 0; }
+.eska-link-button:hover:not(:disabled) { color: var(--vscode-textLink-activeForeground); background: transparent; text-decoration: underline; }
+.eska-toolbar { display: flex; align-items: center; gap: 4px; min-width: 0; }
+input[type=checkbox] {
+  appearance: none; position: relative; flex: 0 0 auto; width: 16px; height: 16px; margin: 0;
+  border: 1px solid var(--vscode-checkbox-border, var(--eska-border)); border-radius: 2px;
+  background: var(--vscode-checkbox-background); vertical-align: middle;
+}
+input[type=checkbox]:checked::after {
+  content: ''; position: absolute; width: 9px; height: 5px; left: 2px; top: 3px;
+  border-left: 2px solid var(--vscode-checkbox-foreground); border-bottom: 2px solid var(--vscode-checkbox-foreground);
+  transform: rotate(-45deg);
+}
+input[type=checkbox]:indeterminate::after { content: ''; position: absolute; inset: 6px 3px; background: var(--vscode-checkbox-foreground); }
+table { width: 100%; border-collapse: collapse; text-align: start; }
+th, td { padding: 3px 6px; border-bottom: 1px solid var(--eska-border); text-align: start; vertical-align: middle; }
+th { font-weight: 600; background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background)); }
+tr[aria-selected=true] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+tbody tr:hover:not([aria-selected=true]) { background: var(--vscode-list-hoverBackground); }
+pre, code, .eska-code {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  font-weight: var(--vscode-editor-font-weight, normal);
+}
+.eska-dialog { background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); border: 1px solid var(--eska-border); box-shadow: 0 4px 16px var(--vscode-widget-shadow); }
+.eska-empty { color: var(--vscode-descriptionForeground); }
+
+body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
+body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
+.eska-cell-button { width: 100%; min-height: 0; padding: 0; text-align: start; color: inherit; background: transparent; border-color: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eska-cell-button:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+
+.eska-tree-item { border-color: transparent; background: transparent; color: inherit; text-align: start; }
+.eska-tree-item[aria-selected=true] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+.eska-tree-item:hover:not(:disabled):not([aria-selected=true]) { background: var(--vscode-list-hoverBackground); }

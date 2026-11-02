@@ -9,7 +9,8 @@ export function markedText(node,text,range){
 /** A child dialog prevents interactive parent edits and has keyboard close/focus containment. */
 export function mountDialog(root,dialog,close){
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
-  for(const child of root.querySelectorAll(':scope > *'))child.inert=true;
+  for(const child of root.querySelectorAll(':scope > *'))if(child!==dialog)child.inert=true;
+  dialog.inert=false;
   root.append(dialog);
   dialog.addEventListener('keydown',event=>{
     if(event.key==='Escape'){event.preventDefault();close();}
@@ -19,7 +20,7 @@ export function mountDialog(root,dialog,close){
       if(next){event.preventDefault();next.focus();}
     }
   });
-  queueMicrotask(()=>{if(!dialog.inert&&!dialog.contains(document.activeElement))dialog.querySelector('textarea,button:not(:disabled),[tabindex="0"]')?.focus();});
+  queueMicrotask(()=>{if(!dialog.inert&&!dialog.contains(document.activeElement))dialog.querySelector('textarea,input:not(:disabled),select:not(:disabled),button:not(:disabled),[tabindex="0"]')?.focus();});
 }
 
 /** The editable buffer is private input; only an explicit core preview can turn it into a model. */

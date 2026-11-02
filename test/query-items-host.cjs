@@ -20,7 +20,10 @@ exports.run = async function () {
     const layoutReview = {};
     await client.evaluate('document.querySelector("[data-section=fields] thead input").click()');
     layoutReview.selectAll = await client.evaluate('[...document.querySelectorAll("[data-section=fields] tbody tr")].map(row=>({selected:row.getAttribute("aria-selected"),checked:row.querySelector("input").checked}))');
-    await client.evaluate('document.querySelector("[data-section=fields] thead input").click();document.querySelector("[data-section=fields] tbody input").click();document.querySelector("[data-section=fields] .edit-selected").click();{const input=document.querySelector(".expression [name=expression]");input.value="999";input.dispatchEvent(new Event("input",{bubbles:true}));}');
+    await client.evaluate('document.querySelector("[data-section=fields] thead input").click();document.querySelector("[data-section=fields] tbody input").click();document.querySelector("[data-section=fields] .edit-selected").click()');
+    await until(() => client.evaluate('!!document.querySelector(".expression")'),'first row dialog mounted');
+    await client.evaluate('{const input=document.querySelector(".expression [name=expression]");input.value="999";input.dispatchEvent(new Event("input",{bubbles:true}));}document.querySelector(".expression [data-action=submit] + button").click()');
+    await until(() => client.evaluate('!document.querySelector(".expression")'),'row dialog cancelled');
     await client.evaluate('document.querySelectorAll("[data-section=fields] tbody input")[0].click();document.querySelectorAll("[data-section=fields] tbody input")[1].click();document.querySelector("[data-section=fields] .edit-selected").click()');
     layoutReview.otherExpression = await client.evaluate('document.querySelector(".expression [name=expression]").value');
     await fs.writeFile(path.join(fixture.root,'layout-review.json'),JSON.stringify(layoutReview));
@@ -42,7 +45,7 @@ exports.run = async function () {
     await client.evaluate('document.querySelector("[data-section=fields] .remove-selected").click()');await ready(client);
     await until(()=>client.evaluate('!!document.querySelector("[role=alert]")'),'required fields rejected');
     assert.equal(await client.evaluate('document.getElementById("query-text").textContent'),snapshot);
-    await client.evaluate('document.querySelector("header button").click()');client.close();client=undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()');client.close();client=undefined;
     await until(()=>vscode.window.activeTextEditor?.document.uri.toString()===draft.uri.toString() && draft.getText()===snapshot,'applied same draft');
     assert.equal(draft.getText(),snapshot);await vscode.commands.executeCommand('undo');assert.equal(draft.getText(),before);
     await vscode.commands.executeCommand('redo');assert.equal(draft.getText(),snapshot);

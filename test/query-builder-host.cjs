@@ -43,7 +43,8 @@ exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [];
   let client;
   try {
-    assert.equal(await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate(), undefined);
+    const extension = vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer');
+    await extension.activate(); assert.equal(extension.isActive, true);
     await vscode.commands.executeCommand('eska.explorer.restart');
     const uri = vscode.Uri.file(fixture.module), disk = await fs.readFile(fixture.module);
     const owner = await vscode.workspace.openTextDocument(uri), original = owner.getText();
@@ -52,13 +53,13 @@ exports.run = async function () {
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query' && vscode.window.activeTextEditor.document, 'query');
     const before = draft.getText(); await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     if(process.env.ESKA_EXPECT_CONSTRUCTOR_LEGACY_TOOLS==='1')assert.equal(await client.evaluate('document.querySelectorAll(".query-settings,.text-tools,.item-table").length'),0);
-    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 9));
+    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 11));
     assert.equal(await client.evaluate('document.querySelector("[role=tab]").textContent'), vscode.env.language === 'ru' ? 'Таблицы и поля' : 'Tables and fields');
     await pick(client);
     await client.evaluate('document.querySelector(".all-fields").click()');
     await until(() => client.evaluate('document.querySelector(".query-preview pre").textContent.includes("Товары.Ref")'), 'Add All acknowledged'); await ready(client);
     assert.equal(await client.evaluate('(document.querySelector(".query-preview pre").textContent.match(/Товары\\.Артикул/g)||[]).length'), 1);
-    await client.evaluate('document.querySelectorAll("header button")[1].click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview))
       && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString(), 'Cancel returns same draft');
     assert.equal(vscode.window.activeTextEditor.document.getText(), before);
@@ -85,15 +86,16 @@ exports.run = async function () {
       await client.evaluate('document.getElementById("tab-tablesFields").click()');
       await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-builder-${vscode.env.language}.png`));
     }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     const changed = await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString()
       && vscode.window.activeTextEditor.document.getText().includes('Counted') && vscode.window.activeTextEditor.document, 'Apply returns same query');
+    await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.includes('queryConstructor'))), 'constructor disposed before Undo');
     assert.equal(changed.getText(), text); assert.equal(parentTabs(uri).length, 0);
-    await vscode.commands.executeCommand('undo'); assert.equal(changed.getText(), before);
-    await vscode.commands.executeCommand('redo'); assert.equal(changed.getText(), text);
+    await vscode.commands.executeCommand('undo'); await until(() => changed.getText() === before, 'native draft Undo');
+    await vscode.commands.executeCommand('redo'); await until(() => changed.getText() === text, 'native draft Redo');
     await vscode.commands.executeCommand('eska.explorer.applyQuery', changed.uri);
     const updated = await returned(uri); assert.ok(updated.getText().includes('Counted')); assert.equal(updated.isDirty, true);
-    assert.deepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
+    assert.deepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); await until(() => updated.getText() === original, 'native module Undo');
     accepted.push('same_draft_native_undo_redo_modal_return_and_unsaved_owner_single_undo');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-builder', locale: vscode.env.language, accepted }));
   } catch (error) {

@@ -8,7 +8,7 @@ const {ready} = require('./query-builder-host.cjs');
 
 /** Use the public renderer's text menu and native input events throughout the private edit lifecycle. */
 async function edit(client, text) {
-  await client.evaluate('document.querySelector(".text-tools").open=true;document.querySelector(".edit-query-text").click()');
+  await client.evaluate('document.getElementById("tab-text").click();document.querySelector(".edit-query-text").click()');
   if (text !== undefined) await client.evaluate(`{const input=document.querySelector('[name=queryTextBuffer]');input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));}`);
 }
 
@@ -22,20 +22,26 @@ exports.run = async function () {
     const disk = await fs.readFile(fixture.module), draft = await openQuery(vscode.Uri.file(fixture.module)), before = draft.getText();
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri);
     client = await connect(until); await ready(client);
-    assert.equal(await client.evaluate('getComputedStyle(document.getElementById("root")).display'), 'flex');
+    assert.equal(await client.evaluate('getComputedStyle(document.querySelector(".constructor-shell")).display'), 'flex');
     await client.evaluate('document.querySelector("[data-section=fields] tbody input").click();globalThis.previousCopy=document.querySelector("[data-section=fields] .copy-selected");document.querySelector("[data-section=fields] .show-in-text").click()');
     await until(() => client.evaluate('!!document.querySelector("#query-text mark")'), 'selected item highlighted'); await ready(client);
     assert.match(await client.evaluate('document.querySelector("#query-text mark").textContent'), /1 AS A/);
     await client.evaluate('{const text=document.getElementById("query-text"),node=text.lastChild,offset=node.textContent.indexOf("2 AS B");window.getSelection().collapse(node,offset);text.dispatchEvent(new MouseEvent("dblclick",{bubbles:true}));}');
     await until(() => client.evaluate('document.querySelector("[data-section=fields] tr[aria-selected=true]")?.dataset.item==="1"'), 'raw UTF-16 offset selects model row'); await ready(client);
     assert.match(await client.evaluate('document.querySelector("#query-text mark").textContent'), /2 AS B/);
-    await client.evaluate('document.querySelector(".text-tools").open=true;document.querySelector(".query-comments").click()');
+    await client.evaluate('document.getElementById("tab-text").click();document.querySelector(".query-comments").click()');
     await until(() => client.evaluate('!!document.querySelector(".query-comment")'), 'core comment list'); await ready(client);
     assert.match(await client.evaluate('document.querySelector(".query-comment").textContent'), /field B 😀/);
+    assert.equal(await client.evaluate('(()=>{const r=document.querySelector(".comment-list").getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight;})()'),true,'comments remain visible above the footer');
     await client.evaluate('document.querySelector(".query-comment").click()');
     await until(() => client.evaluate('document.querySelector("#query-text mark")?.textContent.includes("field B 😀")'), 'comment range highlighted'); await ready(client);
+    await client.evaluate('document.getElementById("tab-tablesFields").click()');
     assert.equal(await client.evaluate('document.querySelector("[data-section=fields] tr[aria-selected=true]").dataset.item'), '1');
     await client.evaluate('document.querySelector(".comments-close").click()'); await ready(client);
+    const navigationText=await client.evaluate('document.getElementById("query-text").textContent');
+    await client.evaluate('document.querySelectorAll(".query-preview .text-fragment")[1].click()');
+    await until(() => client.evaluate('document.querySelector("#query-text mark")?.textContent==="1 AS A"&&document.getElementById("root").getAttribute("aria-busy")==="false"'), 'fragment navigation acknowledged');
+    assert.equal(await client.evaluate('document.getElementById("query-text").textContent'),navigationText,'fragment navigation does not change the query');
     accepted.push('core-item-comment-and-unicode-ranges');
 
     await edit(client, 'SELECT 1 +');
@@ -63,14 +69,14 @@ exports.run = async function () {
     assert.equal(await client.evaluate('document.getElementById("query-text").textContent'), changed);
     accepted.push('invalid-buffer-kept-preview-cancel-parent-inert-accept-stale-button');
 
-    await client.evaluate('document.querySelector(".text-tools").open=true;document.querySelector(".query-diff").click()');
+    await client.evaluate('document.getElementById("tab-text").click();document.querySelector(".query-diff").click()');
     await until(() => client.evaluate('!!document.querySelector(".action-preview")'), 'diff from constructor opening'); await ready(client);
     assert.deepEqual(await client.evaluate('[...document.querySelectorAll(".preview-diff mark")].map(node=>node.textContent)'), ['2', '3']);
     await client.evaluate('document.querySelector(".diff-close").click()');
     await until(() => client.evaluate('!document.querySelector(".action-preview")'), 'diff closed'); await ready(client);
     await edit(client); await client.evaluate('document.querySelector(".text-cancel").click()');
     assert.equal(await client.evaluate('document.getElementById("query-text").textContent'), changed);
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => draft.getText() === changed, 'one text edit returned to native draft');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), changed);
