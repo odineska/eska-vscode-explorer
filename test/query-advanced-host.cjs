@@ -17,14 +17,14 @@ exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [];
   let client;
   try {
-    assert.equal(await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate(), undefined);
+    await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate();
     await vscode.commands.executeCommand('eska.explorer.restart');
     const uri = vscode.Uri.file(fixture.module), disk = await fs.readFile(fixture.module), owner = await vscode.workspace.openTextDocument(uri), original = owner.getText();
     const editor = await vscode.window.showTextDocument(owner, { preview: false }), at = owner.positionAt(original.indexOf('SELECT ') + 3);
     editor.selection = new vscode.Selection(at, at); await vscode.commands.executeCommand('eska.explorer.editBslQuery');
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query' && vscode.window.activeTextEditor.document, 'query');
     const before = draft.getText(); await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
-    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 9));
+    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 11));
     await client.evaluate(`const row=[...document.querySelectorAll('.metadata-table')].find(row=>row.querySelector('.table-name').textContent==='Stock');
       if(!row)throw Error('Stock');row.querySelector('button').click();`);
     await until(() => client.evaluate(`!!document.querySelector('[data-table="AccumulationRegister.Stock.BalanceAndTurnovers"]')`), 'virtual catalog'); await ready(client);
@@ -37,7 +37,7 @@ exports.run = async function () {
     await until(() => client.evaluate('!!document.querySelector(".edit-nested")'), 'nested source'); await ready(client);
     await client.evaluate('document.querySelector(".edit-nested").click()');
     await until(() => client.evaluate('!!document.querySelector(".back-parent")'), 'child scope'); await ready(client);
-    assert.equal(await client.evaluate('document.querySelectorAll("header select").length'), 0, 'parent cannot be selected interactively inside child scope');
+    assert.equal(await client.evaluate('document.querySelectorAll(".constructor-context select").length'), 0, 'parent cannot be selected interactively inside child scope');
     await editFirstField(client); await form(client, { expression: '2', alias: 'Inner' });
     await textContains(client, '2 AS Inner'); await client.evaluate('document.querySelector(".back-parent").click()');
     await until(() => client.evaluate('!document.querySelector(".back-parent")'), 'parent restored'); await ready(client);
@@ -50,7 +50,7 @@ exports.run = async function () {
     await client.evaluate(`const policy=document.querySelector('.union-branches select');policy.value='no';policy.dispatchEvent(new Event('change',{bubbles:true}));`);
     await until(() => client.evaluate(`!document.querySelector('.query-preview pre').textContent.includes('UNION ALL')`), 'distinct union'); await ready(client);
     await client.evaluate(`document.querySelector('[data-branch="1"] button').click()`);
-    await until(() => client.evaluate(`document.querySelectorAll('header select')[1]?.value === '1'`), 'selected union branch'); await ready(client);
+    await until(() => client.evaluate(`document.querySelectorAll('.constructor-context select')[1]?.value === '1'`), 'selected union branch'); await ready(client);
     await client.evaluate('document.getElementById("tab-order").click();document.querySelector("[data-section=order] .action-add").click()');
     await form(client, { expression: 'Value', descending: 'yes' }); await textContains(client, 'ORDER BY Value DESC');
     await client.evaluate('document.getElementById("tab-totals").click();document.querySelector("[data-section=totals] .action-add").click()');
@@ -71,7 +71,7 @@ exports.run = async function () {
       await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true });
       await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-advanced-${vscode.env.language}.png`));
     }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     const changed = await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString()
       && vscode.window.activeTextEditor.document.getText().includes('PERIODS') && vscode.window.activeTextEditor.document, 'accepted same query');
     assert.equal(changed.getText(), text); await vscode.commands.executeCommand('undo'); assert.equal(changed.getText(), before);

@@ -54,7 +54,7 @@ exports.run = async function(){
         row.profile={before:profileBefore,after:metrics,file:profileOutput};
       }
       row.memory=await memory(explorer,client);
-      await client.evaluate('document.querySelectorAll("header button")[1].click()');client.close();client=undefined;
+      await client.evaluate('document.querySelector(".constructor-cancel").click()');client.close();client=undefined;
       await until(()=>!explorer.queryDesigner.views.size&&vscode.window.activeTextEditor?.document.uri.toString()===draft.uri.toString(),'cancel returns draft');
       assert.equal(draft.getText(),original);rounds.push(row);
     }

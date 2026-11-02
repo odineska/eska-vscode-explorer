@@ -25,7 +25,7 @@ exports.run = async function () {
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query' && vscode.window.activeTextEditor.document, 'draft'), before = draft.getText();
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     await addFilter(client, 'having', { left: 'SUM(1)', comparison: 'greater', right: '0' });
-    await client.evaluate('document.querySelectorAll("header button")[1].click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview)) && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString(), 'HAVING cancel');
     assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
@@ -38,7 +38,7 @@ exports.run = async function () {
     assert.equal(await client.evaluate('document.querySelector("[data-section=having] h2").textContent'), vscode.env.language === 'ru' ? 'Отбор по агрегатам (ИМЕЮЩИЕ)' : 'Aggregate filters (HAVING)');
     assert.equal(draft.getText(), before); assert.equal(parentTabs(uri).length, 0);
     if (process.env.ESKA_HOST_DOM_ARTIFACTS) { await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true }); await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-having-${vscode.env.language}.png`)); }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'HAVING apply');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before); await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);
     await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri); const updated = await returned(uri);

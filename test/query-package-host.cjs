@@ -27,7 +27,7 @@ exports.run = async function () {
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query' && vscode.window.activeTextEditor.document, 'query'), before = draft.getText();
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     await destination(client, 'Cancelled');
-    await client.evaluate('document.querySelectorAll("header button")[1].click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview))
       && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString(), 'cancel closes panel and returns draft');
     assert.equal(draft.getText(), before); accepted.push('package_cancel_keeps_same_draft');
@@ -58,7 +58,7 @@ exports.run = async function () {
       await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true });
       await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-package-${vscode.env.language}.png`));
     }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'package applied');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);

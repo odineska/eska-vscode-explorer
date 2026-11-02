@@ -100,8 +100,8 @@ exports.connect = async function (until) {
 exports.exercise = async function ({ explorer, view, until, locale }) {
   const client = await exports.connect(until);
   try {
-    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 9));
-    assert.equal(await client.evaluate('document.querySelector("header button").textContent'), locale === 'ru' ? 'Применить к черновику' : 'Apply to draft');
+    assert.equal(await client.evaluate('document.querySelectorAll("[role=tab]").length'), Number(process.env.ESKA_EXPECT_CONSTRUCTOR_PAGES ?? 11));
+    assert.equal(await client.evaluate('document.querySelector(".constructor-apply").textContent'), locale === 'ru' ? 'Применить к черновику' : 'Apply to draft');
     assert.equal(await client.evaluate('document.querySelectorAll("#root img, #root script").length'), 0);
     assert.equal(await client.evaluate('globalThis.queryExecuted === true'), false);
     assert.equal(await client.evaluate('document.body.scrollWidth <= innerWidth'), true);
@@ -113,7 +113,7 @@ exports.exercise = async function ({ explorer, view, until, locale }) {
     assert.equal(await client.evaluate('document.querySelectorAll("#root img").length'), 0);
     const stand = process.env.ESKA_HOST_DOM_ARTIFACTS;
     if (stand) { await fs.mkdir(stand, { recursive: true }); await client.screenshot(path.join(stand, `constructor-${locale}.png`)); }
-    await client.evaluate('document.querySelectorAll("header button")[1].click()');
+    await client.evaluate('document.querySelector(".constructor-cancel").click()');
     await until(() => view.ending && !explorer.queryDesigner.views.size, 'DOM cancellation returned to draft');
     return 'installed_webview_dom_eight_tabs_translated_labels_text_only_rendering_expression_submission_and_cancel';
   } finally { client.close(); }

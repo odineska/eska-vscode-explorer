@@ -8,7 +8,7 @@ const { ready, form } = require('./query-builder-host.cjs');
 
 /** Type only a field value; ESKA owns braces, keywords and alias validation. */
 async function addProjection(client) {
-  await client.evaluate("document.getElementById('tab-dcs').click();document.querySelector('.dcs-add-select').click()");
+  await client.evaluate("document.getElementById('tab-settings').click();document.querySelector('.query-dcs-settings').open=true;document.querySelector('.dcs-add-select').click()");
   await form(client, { expression: 'Value' });
 }
 
@@ -29,25 +29,27 @@ exports.run = async function () {
     const before = draft.getText();
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     await addProjection(client);
-    await client.evaluate('document.querySelectorAll("header button")[1].click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview)) && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString(), 'DCS cancel');
     assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     await addProjection(client);
     await client.evaluate("document.querySelector('.dcs-add-where').click()");
     await form(client, { expression: 'T.Ref' });
-    await client.evaluate("document.querySelector('[data-kind=where] .dcs-edit').click();document.querySelector('.dcs-add-condition').click()");
+    await client.evaluate("document.querySelector('[data-kind=where] .dcs-edit').click()");
+    await until(() => client.evaluate('!!document.querySelector(".dcs-add-condition")'), 'DCS child editor mounted');
+    await client.evaluate("document.querySelector('.dcs-add-condition').click()");
     await form(client, { left: 'T.Ref', comparison: 'equal', right: '&Item' });
     const text = await client.evaluate('document.querySelector(".query-preview pre").textContent');
     expectedPreview = text;
     const appliedText = text.replace(/\r?\n/g, draft.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n');
     assert.ok(text.includes('{SELECT Value}')); assert.ok(text.includes('{WHERE T.Ref, T.Ref = &Item}'));
     assert.equal(await client.evaluate('document.querySelector(".dcs-settings h2").textContent'), vscode.env.language === 'ru' ? 'СКД' : 'Data composition');
-    const tab = await client.evaluate('{const r=document.getElementById("tab-dcs").getBoundingClientRect(),p=document.querySelector(".tabs").getBoundingClientRect();({left:r.left,right:r.right,parentLeft:p.left,parentRight:p.right})}');
+    const tab = await client.evaluate('{const r=document.getElementById("tab-settings").getBoundingClientRect(),p=document.querySelector(".tabs").getBoundingClientRect();({left:r.left,right:r.right,parentLeft:p.left,parentRight:p.right})}');
     assert.ok(tab.left >= tab.parentLeft - 1 && tab.right <= tab.parentRight + 1, JSON.stringify(tab));
     assert.equal(draft.getText(), before); assert.equal(parentTabs(uri).length, 0);
     if (process.env.ESKA_HOST_DOM_ARTIFACTS) { await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true }); await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-dcs-${vscode.env.language}.png`)); }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === appliedText, 'DCS apply');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before); await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), appliedText);
     const session = [...explorer.queries.sessions.values()].find(session => explorer.queries.uri(session.record).toString() === draft.uri.toString());

@@ -81,3 +81,7 @@ body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
 body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
 .eska-cell-button { width: 100%; min-height: 0; padding: 0; text-align: start; color: inherit; background: transparent; border-color: transparent; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eska-cell-button:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+
+.eska-tree-item { border-color: transparent; background: transparent; color: inherit; text-align: start; }
+.eska-tree-item[aria-selected=true] { color: var(--vscode-list-activeSelectionForeground); background: var(--vscode-list-activeSelectionBackground); }
+.eska-tree-item:hover:not(:disabled):not([aria-selected=true]) { background: var(--vscode-list-hoverBackground); }

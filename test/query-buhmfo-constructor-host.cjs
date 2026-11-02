@@ -18,11 +18,11 @@ exports.run=async function(){
     await editFirstField(client);await form(client,{expression:'Орг.ИНН',alias:'ИНН'});
     await until(()=>client.evaluate('document.getElementById("query-text").textContent.includes("Орг.ИНН AS ИНН")'),'large application field edit');await ready(client);
     const changed=await client.evaluate('document.getElementById("query-text").textContent');
-    await client.evaluate('document.querySelector(".text-tools").open=true;document.querySelector(".query-diff").click()');
+    await client.evaluate('document.getElementById("tab-text").click();document.querySelector(".query-diff").click()');
     await until(()=>client.evaluate('!!document.querySelector(".action-preview")'),'large application diff');await ready(client);
     assert.equal(await client.evaluate('document.querySelector(".preview-diff").textContent.includes("Орг.ИНН")'),true);
     await client.evaluate('document.querySelector(".diff-close").click()');await until(()=>client.evaluate('!document.querySelector(".action-preview")'),'diff closed');await ready(client);
-    await client.evaluate('document.querySelectorAll("header button")[1].click()');client.close();client=undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()');client.close();client=undefined;
     await until(()=>vscode.window.activeTextEditor?.document.uri.toString()===draft.uri.toString(),'cancel large constructor');
     assert.equal(vscode.window.activeTextEditor.document.getText(),before);assert.notEqual(changed,before);assert.deepEqual(await fs.readFile(module),disk);
     assert.equal(vscode.workspace.getConfiguration('eska.explorer').get('languageFeatures'),true);

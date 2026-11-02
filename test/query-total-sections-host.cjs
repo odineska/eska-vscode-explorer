@@ -28,7 +28,7 @@ exports.run = async function () {
     editor.selection = new vscode.Selection(at, at); await vscode.commands.executeCommand('eska.explorer.editBslQuery');
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query' && vscode.window.activeTextEditor.document, 'draft'), before = draft.getText();
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until); await addSection(client, 1);
-    await client.evaluate('document.querySelectorAll("header button")[1].click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-cancel").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview)) && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString(), 'totals cancel'); assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('eska.explorer.queryConstructor', draft.uri); client = await connect(until);
     await addSection(client, 1); await totalField(client, 'sum');
@@ -46,7 +46,7 @@ exports.run = async function () {
     assert.equal(await client.evaluate('document.querySelector(".add-total-section").disabled'), true);
     assert.equal(draft.getText(), before); assert.equal(parentTabs(uri).length, 0); assert.deepEqual(await fs.readFile(fixture.module), disk);
     if (process.env.ESKA_HOST_DOM_ARTIFACTS) { await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true }); await client.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `query-total-sections-${vscode.env.language}.png`)); }
-    await client.evaluate('document.querySelector("header button").click()'); client.close(); client = undefined;
+    await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview)) && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'totals receipt and panel disposal');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before); await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);
     await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri); const updated = await returned(uri); assert.ok(updated.getText().includes('SUM('));

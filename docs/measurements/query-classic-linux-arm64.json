@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-02",
+  "platform": "Linux ARM64, XWayland",
+  "editor": "Visual Studio Code 1.109.0",
+  "extensionVersion": "0.1.6",
+  "suite": "test/query-compact-performance-host.cjs",
+  "fixture": "48 result columns and one nested source",
+  "rounds": [
+    {
+      "round": 0,
+      "temperature": "first",
+      "openMs": 152.33395799999994,
+      "addFieldMs": 34.24077199999988,
+      "inputFrameMs": 3.900000002235174,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 1,
+      "temperature": "warm",
+      "openMs": 119.39638999999988,
+      "addFieldMs": 34.09352200000012,
+      "inputFrameMs": 2.699999999254942,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 2,
+      "temperature": "warm",
+      "openMs": 95.20021300000008,
+      "addFieldMs": 33.54810700000007,
+      "inputFrameMs": 6,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 3,
+      "temperature": "warm",
+      "openMs": 142.26911299999983,
+      "addFieldMs": 32.65873499999998,
+      "inputFrameMs": 3,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 4,
+      "temperature": "warm",
+      "openMs": 98.06199599999991,
+      "addFieldMs": 32.49156900000003,
+      "inputFrameMs": 3.5,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 5,
+      "temperature": "warm",
+      "openMs": 80.23738300000014,
+      "addFieldMs": 62.653977999999825,
+      "inputFrameMs": 3.800000000745058,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    },
+    {
+      "round": 6,
+      "temperature": "warm",
+      "openMs": 87.01252899999963,
+      "addFieldMs": 43.266662,
+      "inputFrameMs": 3.100000001490116,
+      "layout": {
+        "viewport": [
+          1232,
+          708
+        ],
+        "visibleRows": 18
+      }
+    }
+  ],
+  "sourceAndDraftUnchanged": true,
+  "analyzer": false
+}
