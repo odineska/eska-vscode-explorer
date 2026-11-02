@@ -35,3 +35,18 @@ export async function createFormGallery(fixture) {
   await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + kinds.map(kind => `<CommonForm>Gallery${kind}</CommonForm>`).join('')));
   return forms;
 }
+
+export async function createPictureFormSource(fixture) {
+  const form = await createFormSource(fixture), root = join(fixture.source,'Configuration.xml');
+  await writeFile(root,(await readFile(root,'utf8')).replace('<ChildObjects>','<ChildObjects><CommonPicture>Icon</CommonPicture>'));
+  const folder=join(fixture.source,'CommonPictures','Icon','Ext'), imageFolder=join(folder,'Picture');
+  await mkdir(imageFolder,{recursive:true});
+  await writeFile(join(fixture.source,'CommonPictures','Icon.xml'),descriptor('CommonPicture','Icon'));
+  const pictureXml=join(folder,'Picture.xml');
+  await writeFile(pictureXml,'<ExtPicture xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"><Picture><xr:Abs>One.svg</xr:Abs></Picture></ExtPicture>');
+  const svg=color=>`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="${color}"/></svg>`;
+  const one=join(imageFolder,'One.svg'),two=join(imageFolder,'Two.svg');
+  await writeFile(one,svg('red'));await writeFile(two,svg('blue'));
+  await writeFile(form.path,form.text.replace('<ChildItems>','<ChildItems><PictureDecoration name="Logo" id="99"><Picture xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"><xr:Ref>CommonPicture.Icon</xr:Ref><xr:LoadTransparent>false</xr:LoadTransparent></Picture></PictureDecoration>'));
+  return {...form,pictureXml,one,two};
+}

@@ -1,5 +1,6 @@
 import { ExplorerError, isRecord, isToken, isWirePath, type WirePath } from "../protocol.js";
 import type { PropertyField, PropertyKey } from "../properties.js";
+import { picturePreview, type PicturePreview } from "../picture.js";
 
 export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number }
 export interface ElementIdentity { source: string; part: "current"; key: { kind: "root" } | { kind: "xml"; value: string } }
@@ -9,14 +10,15 @@ export type FormText = { kind: "literal"; items: { language: string; content: st
 export interface Font { face: string | null; points: number; weight: number; italic: boolean; underline: boolean; strikeout: boolean }
 export interface Color { kind: "rgb" | "role" | "web" | "system"; value: string }
 export interface Presentation {
+  picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
   valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
 }
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[] }
-export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" }
-export interface FormModel { root: FormNode; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
+export interface FormModel { root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -53,15 +55,17 @@ function font(value: unknown): boolean { return isRecord(value) && (value.face =
   && value.points > 0 && typeof value.weight === "number" && ["italic", "underline", "strikeout"].every(key => typeof value[key] === "boolean"); }
 function color(value: unknown): boolean { return isRecord(value) && ["rgb", "role", "web", "system"].includes(String(value.kind)) && typeof value.value === "string"; }
 function presentation(value: unknown): boolean {
-  return isRecord(value) && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
+  return isRecord(value) && (value.picture === null || isRecord(value.picture) && (value.picture.kind === "standard" && typeof value.picture.name === "string" || value.picture.kind === "common" && hash(value.picture.source) || value.picture.kind === "missing" && typeof value.picture.reference === "string"))
+    && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
     && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string");
 }
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;
   const data = value.capabilities.formPreview;
-  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 36
-    || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.uploads !== "queryBuffers") invalid();
+  if (isRecord(value.apiVersion) && value.apiVersion.major === 1 && typeof value.apiVersion.minor === "number" && value.apiVersion.minor < 37) return undefined;
+  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 37
+    || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072) };
 }
@@ -72,8 +76,14 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
   const ids = new Set<string>();
   for (const dependency of value.dependencies) {
     if (!isRecord(dependency) || !hash(dependency.id) || ids.has(dependency.id) || !isWirePath(dependency.root) || !isWirePath(dependency.path) || !hash(dependency.snapshot)
-      || !(dependency.version === null || typeof dependency.version === "string") || !["form", "metadata"].includes(String(dependency.role))) invalid();
+      || !(dependency.version === null || typeof dependency.version === "string") || !["form", "metadata", "picture"].includes(String(dependency.role))) invalid();
     ids.add(dependency.id);
+  }
+  if (!Array.isArray(value.model.assets) || value.model.assets.length > 256) invalid();
+  const assets = new Set<string>();
+  for (const asset of value.model.assets) {
+    if (!isRecord(asset) || !hash(asset.id) || !value.dependencies.some(input => isRecord(input) && input.id === asset.id && input.role === "metadata") || assets.has(asset.id) || picturePreview(asset.picture)?.status !== "ready") invalid();
+    assets.add(asset.id);
   }
   let nodes = 0; const identities = new Set<string>();
   function node(value: unknown, depth: number): void {
@@ -82,6 +92,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
       || !Array.isArray(value.properties) || !value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)) || !presentation(value.presentation)
       || !Array.isArray(value.children) || !Array.isArray(value.auxiliary)) invalid();
     identities.add(identityKey(value.identity)); value.children.forEach(value => node(value, depth + 1)); value.auxiliary.forEach(value => node(value, depth + 1));
+    if (isRecord(value.presentation) && isRecord(value.presentation.picture) && value.presentation.picture.kind === "common" && !assets.has(String(value.presentation.picture.source))) invalid();
   }
   node(value.model.root, 0);
   for (const name of ["attributes", "commands", "parameters"]) if (!Array.isArray(value.model[name]) || !(value.model[name] as unknown[]).every(value => isRecord(value)

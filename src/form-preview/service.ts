@@ -176,16 +176,17 @@ export class FormPreviewService implements vscode.Disposable {
   private async watch(view: View, snapshot: FormSnapshot): Promise<void> {
     const key = JSON.stringify(snapshot.dependencies.map(dependency => [dependency.id, dependency.root, dependency.path]));
     if (view.watchKey === key) return;
-    const inputs = new Map<string, string>(), roots = new Map<string, vscode.Uri>();
+    const inputs = new Map<string, string>(), watched = new Set<string>(), roots = new Map<string, vscode.Uri>();
     for (const dependency of snapshot.dependencies) {
-      const path = await existingSource(dependency.root, dependency.path); inputs.set(normalized(await realpath(path)), dependency.id);
+      const path = normalized(await realpath(await existingSource(dependency.root, dependency.path))); watched.add(path);
+      if (dependency.role !== "picture") inputs.set(path, dependency.id);
       const root = nativePath(dependency.root); roots.set(normalized(root), vscode.Uri.file(root));
     }
     view.inputs = inputs; view.watchKey = key;
     for (const watcher of view.watchers) watcher.dispose(); view.watchers = [];
     for (const root of roots.values()) {
       const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, "**/*"));
-      const changed = (uri: vscode.Uri) => { const path = normalized(uri.fsPath); if (inputs.has(path) || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view); };
+      const changed = (uri: vscode.Uri) => { const path = normalized(uri.fsPath); if (watched.has(path) || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view); };
       view.watchers.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
     }
   }

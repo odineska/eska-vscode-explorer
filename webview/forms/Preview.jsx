@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo } from 'solid-js';
-import { caption, scalar, property, flag, number, font, color, fieldStyle, fieldValue, text } from './model.mjs';
+import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, text } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 
@@ -15,20 +15,23 @@ export function Icon(props) {
     <Match when={/Help/.test(props.name)}><text x="8" y="13" text-anchor="middle" font-size="15" fill="#424242">?</text></Match>
   </Switch></svg>;
 }
-function pictureName(node) {
-  const value = property(node, 'Picture')?.value;
-  return value?.kind === 'record' ? value.fields.find(field => field.key.name === 'Ref')?.value?.text : undefined;
+function Picture(props) {
+  const picture = () => props.node.presentation.picture;
+  const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
+  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name}/></Match>
+    <Match when={picture()?.kind === 'common' && image()}><img class="taxi-picture-resource" src={`data:${image().mimeType};base64,${image().data}`} alt="" draggable="false"/></Match>
+  </Switch>;
 }
 export function CommandButton(props) {
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
   const representation = () => props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
-  const picture = () => props.picture ?? (props.node && pictureName(props.node));
+  const picture = () => props.picture ?? props.node?.presentation.picture;
   return <button type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
     'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
     style={props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : undefined } : {}}
     title={label()} aria-label={label()} aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); }}>
-    <Show when={picture() && representation() !== 'Text'}><Icon name={picture()}/></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
   </button>;
 }
@@ -113,7 +116,7 @@ function Field(props) {
     <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node())}</span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
-    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${Math.max(10, number(node(), 'Width', 30)) * 8}px`, height: `${Math.max(2, number(node(), 'Height', 10)) * 20}px` }}/></Match>
+    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${Math.max(10, number(node(), 'Width', 30)) * 8}px`, height: `${Math.max(2, number(node(), 'Height', 10)) * 20}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
     <Match when={node().kind === 'PeriodField'}><span class="taxi-period"><Input {...props}/><span>—</span><Input {...props}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
@@ -132,7 +135,7 @@ export function Element(props) {
       <Match when={node().kind === 'Table'}><Table node={node()} controller={props.controller}/></Match>
       <Match when={node().kind === 'Button'}><CommandButton {...props}/></Match>
       <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'normal' : 'nowrap' }}>{caption(node(), state)}</span></Match>
-      <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Show when={pictureName(node())}><Icon name={pictureName(node())}/></Show></span></Match>
+      <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Picture node={node()} controller={props.controller}/></span></Match>
       <Match when={node().kind?.endsWith('Field')}><Field {...props}/></Match>
       <Match when={node().kind?.endsWith('Addition')}><span class="taxi-addition"><Show when={node().kind !== 'ViewStatusAddition'}><input readOnly placeholder={state.strings.search} tabIndex="-1"/></Show></span></Match>
     </Switch>

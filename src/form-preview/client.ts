@@ -43,7 +43,7 @@ export class FormSession {
           // Retain the acknowledged revision even if a later file event made this response visually obsolete.
           this.current = result; this.check(value, generation); return result;
         }
-        if (!this.current.dependencies.some(dependency => dependency.id === overlay.source)) throw new ExplorerError("sourceChanged");
+        if (!this.current.dependencies.some(dependency => dependency.id === overlay.source && dependency.role !== "picture")) throw new ExplorerError("sourceChanged");
         return withQueryText(overlay.text, { maxSnapshotBytes: this.limits.maxOverlayBytes, maxInlineBytes: this.limits.maxInlineBytes },
           (method, params) => this.request(method, params, generation), async id => { await this.request("query/bufferClose", { bufferId: id }, generation); },
           input => submit(index + 1, [...inputs, { source: overlay.source, version: overlay.version, ...input }]));

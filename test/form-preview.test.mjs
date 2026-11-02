@@ -11,14 +11,14 @@ function fixture() {
   const origin = { source, range: { start: 0, end: 200 } };
   const font = { face: null, points: 10, weight: 400, italic: false, underline: false, strikeout: false, origins: [] };
   const role = { kind: 'role', value: 'TextColor' };
-  const presentation = { titleLocation: 'Left', displayed: true, grouping: 'Vertical', caption: { kind: 'name', text: 'Форма' }, tooltip: null, font, titleFont: font,
+  const presentation = { picture: null, titleLocation: 'Left', displayed: true, grouping: 'Vertical', caption: { kind: 'name', text: 'Форма' }, tooltip: null, font, titleFont: font,
     foreground: role, background: role, border: role, titleColor: role, valueType: { kind: 'string', length: null, digits: null, fraction: null, dateParts: null, types: [] },
     binding: null, choices: [], autoCommands: [] };
   const root = { identity: { source, part: 'current', key: { kind: 'root' } }, origin, kind: 'Form', name: null,
     xmlName: { namespace: 'http://v8.1c.ru/8.3/xcf/logform', name: 'Form' }, properties: [], presentation, children: [], auxiliary: [] };
   return { formSessionId: 'f1', revision: '1', contextFingerprint: source, application: null, profile: 'taxi-8.3.27', limitedContext: false, modelComplete: true,
     status: 'ready', lastError: null, dependencies: [{ id: source, root: { encoding: 'utf-8', value: '/project/src' }, path: { encoding: 'utf-8', value: 'Form.xml' }, snapshot: source, version: null, member: null, role: 'form' }],
-    model: { root, attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
+    model: { root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
 
 test('form identities preserve signed XML i64 boundaries without JavaScript rounding', () => {
@@ -31,8 +31,10 @@ test('form identities preserve signed XML i64 boundaries without JavaScript roun
 
 test('form capability negotiation requires a static read-only profile and bounds uploads', () => {
   assert.equal(formCapabilities({ capabilities: {} }), undefined);
-  const value = { apiVersion: { major: 1, minor: 36 }, capabilities: { formPreview: { schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
+  const value = { apiVersion: { major: 1, minor: 37 }, capabilities: { formPreview: { pictures: true, schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
     uploads: 'queryBuffers', maxSessions: 32, maxOverlayBytes: 16777216, maxInlineBytes: 262144 } } };
+  assert.equal(formCapabilities({...value,apiVersion:{major:1,minor:36}}),undefined);
+  assert.throws(()=>formCapabilities({...value,apiVersion:{major:2,minor:36}}));
   assert.deepEqual(formCapabilities(value), { maxSessions: 16, maxOverlayBytes: 8388608, maxInlineBytes: 131072 });
   for (const patch of [{ executesBsl: true }, { readOnly: false }, { profile: 'taxi-8.5' }, { maxSessions: -1 }]) assert.throws(() => formCapabilities({ ...value, capabilities: { formPreview: { ...value.capabilities.formPreview, ...patch } } }));
 });
@@ -87,4 +89,14 @@ test('native tree hides helper nodes while preserving full identity lookup and u
   assert.equal(find(root,'tooltip').kind,'ExtendedTooltip');
   root.auxiliary[0].children.push(node('Button','command'));
   assert.deepEqual(treeChildren(root).map(node=>node.key),['bar','field']);
+});
+
+test('form image assets require checked source ownership, bounded image MIME and resolved references', () => {
+  const model = fixture(), picture = { status:'ready', mimeType:'image/svg+xml',data:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64'),fileName:'Icon.svg' };
+  const assetSource='b'.repeat(64);model.dependencies.push({...model.dependencies[0],id:assetSource,role:'metadata'});
+  model.model.assets.push({id:assetSource,picture});model.model.root.presentation.picture={kind:'common',source:assetSource};
+  assert.equal(parseFormSnapshot(model).model.assets.length,1);
+  const absent=structuredClone(model);absent.model.assets=[];assert.throws(()=>parseFormSnapshot(absent));
+  const html=structuredClone(model);html.model.assets[0].picture.mimeType='text/html';assert.throws(()=>parseFormSnapshot(html));
+  const foreign=structuredClone(model);foreign.model.assets[0].id='c'.repeat(64);assert.throws(()=>parseFormSnapshot(foreign));
 });
