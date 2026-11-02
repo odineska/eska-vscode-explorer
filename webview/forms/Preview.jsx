@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo } from 'solid-js';
-import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, text } from './model.mjs';
+import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 
@@ -28,21 +28,25 @@ export function CommandButton(props) {
   const representation = () => props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
   const picture = () => props.picture ?? props.node?.presentation.picture;
   return <button type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
-    'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
+    'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
     style={props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : undefined } : {}}
     title={label()} aria-label={label()} aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
   </button>;
 }
+function hasRootCommands(node) {
+  return (node.presentation.autoCommandItems?.length ?? node.presentation.autoCommands.length) > 0
+    || node.auxiliary.some(node => node.kind === 'AutoCommandBar' && node.children.some(child => child.presentation.displayed));
+}
 function RootCommands(props) {
   const state = props.controller.state, node = () => props.node;
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
-  const commands = () => node().presentation.autoCommands;
-  return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && (commands().length || bar()?.children.length)}>
-    <div class="taxi-root-commands"><For each={commands()}>{(name, index) => <CommandButton controller={props.controller} label={state.strings[`command.${name}`] ?? name} primary={index() === 0}/>}</For>
-      <For each={bar()?.children ?? []}>{node => <CommandButton node={node} controller={props.controller}/>}</For>
-      <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?"/>
+  const commands = () => automaticCommands(node());
+  return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
+    <div class="taxi-root-commands"><For each={commands()}>{item => <CommandButton controller={props.controller} label={text(item.caption,state.locale,state.strings)} primary={item.primary}/>}</For>
+      <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
+      <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/>
     </div>
   </Show>;
 }
@@ -54,7 +58,7 @@ export function Preview(props) {
       <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '28px' }}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-title">{caption(root(), state)}</div>
-        <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && (root().presentation.autoCommands.length || root().auxiliary.some(node => node.kind === "AutoCommandBar" && node.children.length)) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
+        <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && hasRootCommands(root()) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <RootCommands node={root()} controller={props.controller}/><Items node={root()} controller={props.controller}/>
         </div>
       </div>

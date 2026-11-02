@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
 const source = 'a'.repeat(64);
@@ -61,6 +61,19 @@ test('renderer preparation preserves identity across new models and localizes li
 
 test('form viewer UI strings have identical ru/en keys', () => {
   assert.deepEqual(Object.keys(formStrings('ru-RU')).sort(), Object.keys(formStrings('en-US')).sort());
+});
+
+test('automatic metadata commands preserve localized overrides and validate optional provenance', () => {
+  const snapshot = fixture(), root = snapshot.model.root;
+  root.presentation.autoCommands = ['WriteAndClose'];
+  assert.equal(text(automaticCommands(root)[0].caption, 'en-US', formStrings('en-US')), 'Save and close');
+  root.presentation.autoCommandItems = [{ key: 'metadata-command', primary: false, origin: root.origin,
+    caption: { kind: 'literal', items: [{ language: 'ru', content: 'Переопределено' }, { language: 'en', content: 'Overridden' }] } }];
+  assert.equal(text(automaticCommands(parseFormSnapshot(snapshot).model.root)[0].caption, 'ru-RU', formStrings('ru-RU')), 'Переопределено');
+  const bad = structuredClone(snapshot); bad.model.root.presentation.autoCommandItems[0].origin.range.start = -1;
+  assert.throws(() => parseFormSnapshot(bad));
+  root.presentation.autoCommandItems = [];
+  assert.deepEqual(automaticCommands(root), [], 'an explicit empty bar does not restore legacy commands');
 });
 
 

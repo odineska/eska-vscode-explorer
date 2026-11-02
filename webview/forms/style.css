@@ -102,7 +102,9 @@ button { cursor: default; }
 .taxi-input-button { display: flex; align-items: center; justify-content: center; width: 21px; flex: 0 0 21px; border-left: 1px solid #aaa; color: #555; font-size: 11px; line-height: 12px; }
 .taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
 .taxi-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 26px; padding: 3px 13px; margin: 0; border: 1px solid #a8a8a8; border-radius: 2px; box-shadow: 0 1px #bbb; color: #555; background: linear-gradient(#fff, #fdfdfd 60%, #eee); white-space: nowrap; line-height: 18px; }
-.taxi-button--default { background: linear-gradient(#ffeb35, #ffe000); border-color: #c9b700; color: #554c00; font-weight: 700; }
+.taxi-preview .taxi-button--default { background: linear-gradient(#ffeb35, #ffe000); border-color: #c9b700; color: #554c00; font-weight: 700; }
+.taxi-button--dropdown { padding: 3px 10px; }
+.taxi-button--help { width: 30px; padding: 3px 0; }
 .taxi-button--bar { background: none; border-color: transparent; box-shadow: none; min-height: 24px; padding: 2px 5px; }
 .taxi-button--picture { padding: 3px; min-width: 26px; }
 .taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; color: #0066a3 !important; text-decoration: underline; }

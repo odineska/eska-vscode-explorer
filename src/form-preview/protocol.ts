@@ -14,6 +14,7 @@ export interface Presentation {
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
   valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
+  autoCommandItems?: { key: string; caption: FormText; primary: boolean; origin: Origin | null }[];
 }
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[] }
@@ -58,7 +59,8 @@ function presentation(value: unknown): boolean {
   return isRecord(value) && (value.picture === null || isRecord(value.picture) && (value.picture.kind === "standard" && typeof value.picture.name === "string" || value.picture.kind === "common" && hash(value.picture.source) || value.picture.kind === "missing" && typeof value.picture.reference === "string"))
     && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
-    && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string");
+    && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string")
+    && (value.autoCommandItems === undefined || Array.isArray(value.autoCommandItems) && value.autoCommandItems.length <= 16_384 && value.autoCommandItems.every(item => isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean" && (item.origin === null || origin(item.origin))));
 }
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;

@@ -1,6 +1,6 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
-import { flatten, treeChildren, find, caption, localizedProperty } from './model.mjs';
+import { flatten, treeChildren, find, caption, localizedProperty, automaticCommands, text } from './model.mjs';
 
 function Splitter(props) {
   let start, initial;
@@ -61,7 +61,7 @@ function Properties(props) {
 function CommandInterface(props) {
   const state = props.controller.state;
   return <div class="form-table-scroll"><table class="form-definitions"><thead><tr><th>{state.strings.commands}</th><th>{state.strings.visible}</th></tr></thead><tbody>
-    <For each={state.model.root.presentation.autoCommands}>{name => <tr><td>{state.strings[`command.${name}`] ?? name}</td><td>✓</td></tr>}</For>
+    <For each={automaticCommands(state.model.root)}>{item => <tr><td>{text(item.caption, state.locale, state.strings)}</td><td>✓</td></tr>}</For>
     <For each={state.model.commands}>{command => <tr><td>{command.name}</td><td>✓</td></tr>}</For>
   </tbody></table></div>;
 }
