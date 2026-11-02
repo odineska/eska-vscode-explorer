@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-31",
+  "platform": "Windows 11 x64, build 26100",
+  "vscode": "1.144.0",
+  "node": "24.22.2",
+  "bun": "1.4.4",
+  "analyzer": "0.4.2",
+  "core_input": "43cfadf4950d1916b2f87d221c465a85b6a502c3",
+  "explorer_input": "b44736d3b25d9bcd7f2f798c84784bb5d7bbd67e",
+  "node_tests": {
+    "pass": 424,
+    "skip": 26,
+    "fail": 0
+  },
+  "bun_tests": {
+    "pass": 417,
+    "skip": 26,
+    "fail": 0
+  },
+  "python_tests": {
+    "pass": 22,
+    "skip": 2,
+    "fail": 0
+  },
+  "bundle_sha256": "3994be00d9750814d1852523177c0c8e8894b0d6334a024823dbcea63732a1ee",
+  "native": {
+    "activity-en": {
+      "passed": true,
+      "mode": "installed-vsix",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 55.24
+    },
+    "activity-ru": {
+      "passed": true,
+      "mode": "installed-vsix",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 91.28
+    },
+    "add-en": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 20.18
+    },
+    "add-ru": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 50.35
+    },
+    "explorer-en": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 34.67
+    },
+    "explorer-ru": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 64.22
+    },
+    "formatting": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 27.07
+    },
+    "groups-en": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 52.09
+    },
+    "groups-ru": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 64.81
+    },
+    "inlays-en": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 40.53
+    },
+    "inlays-ru": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 69.75
+    },
+    "library-en": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 22.61
+    },
+    "library-missing-directory": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 56.2
+    },
+    "library-missing-file": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 25.31
+    },
+    "library-ru": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 66.66
+    },
+    "query-constructor": {
+      "passed": true,
+      "mode": "source-sdk",
+      "fingerprint": "0a4087732819a8268608947746589fe82787cb717d2b4d2e43c22a84ea422314",
+      "seconds": 37.35
+    }
+  }
+}

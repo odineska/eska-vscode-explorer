@@ -42,7 +42,7 @@ async function run() {
   assert.equal(explorer.language.session.context.limited, false);
   const column = document.lineAt(1).text.indexOf("Проверка") + 2;
   await until(async () => (await vscode.commands.executeCommand("vscode.executeDefinitionProvider", document.uri, new vscode.Position(1, column)))
-    ?.some(value => (value.targetUri ?? value.uri).fsPath === fixture.library.first.definition), "dirty consumer resolves definition in added library");
+    ?.some(value => path.relative((value.targetUri ?? value.uri).fsPath, fixture.library.first.definition) === ""), "dirty consumer resolves definition in added library");
   assert.equal(document.isDirty, true);
   assert.equal(document.getText(), dirty);
   assert.equal(explorer.connection.state.session.projects.length, 1);

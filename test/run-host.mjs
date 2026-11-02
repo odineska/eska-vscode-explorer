@@ -107,6 +107,7 @@ try {
   const cli = process.env.VSCODE_CLI_JS;
   if (cli && !isAbsolute(cli)) throw new Error("VSCODE_CLI_JS must be absolute.");
   const run = promisify(execFile);
+  const installTimeout = process.platform === "win32" ? 300000 : 120000;
   const runCli = (args, options) => run(executable, cli ? [cli, ...args] : args, {
     ...options, windowsHide: true,
     ...(cli ? { env: { ...process.env, ...options?.env, ELECTRON_RUN_AS_NODE: "1" } } : {}),
@@ -122,7 +123,7 @@ try {
     const languagePack = process.env.ESKA_HOST_LANGUAGE_PACK_VSIX;
     if (!isAbsolute(languagePack)) throw new Error("ESKA_HOST_LANGUAGE_PACK_VSIX must be absolute.");
     await runCli([`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`,
-      "--install-extension", languagePack, "--force"], { timeout: 120000 });
+      "--install-extension", languagePack, "--force"], { timeout: installTimeout });
   }
   const conflictFixture = process.env.ESKA_HOST_CONFLICT_FIXTURE ? await (await import("./conflict-fixture.mjs")).createConflictFixture(root) : undefined;
   if (conflictFixture && process.env.ESKA_HOST_CONFLICT_FIXTURE === "initial") {
@@ -146,7 +147,7 @@ try {
   if (process.env.ESKA_TEST_VSIX) {
     if (!isAbsolute(process.env.ESKA_TEST_VSIX)) throw new Error("ESKA_TEST_VSIX must be absolute.");
     const directories = [`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`];
-    await runCli([...directories, "--install-extension", process.env.ESKA_TEST_VSIX], { timeout: 120000 });
+    await runCli([...directories, "--install-extension", process.env.ESKA_TEST_VSIX], { timeout: installTimeout });
     const { stdout } = await runCli([...directories, "--list-extensions", "--show-versions"], { timeout: 30000 });
     const installed = stdout.split(/\r?\n/).find(line => line.startsWith("1c-tooling.eska-explorer@"));
     if (!installed) throw new Error(`VSIX was not installed: ${stdout}`);
@@ -230,7 +231,7 @@ exports.activate = async function () {
       await run(process.execPath, [join(repository, "node_modules/@vscode/vsce/vsce"), "package", "--no-dependencies",
         "--allow-missing-repository", "--skip-license", "--out", probeVsix], { cwd: probe });
       await runCli([`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`,
-        "--install-extension", probeVsix, "--force"]);
+        "--install-extension", probeVsix, "--force"], { timeout: installTimeout });
       hostArguments.splice(0, 1);
       installedStartupProbe = true;
     } else hostArguments.splice(0, 1, `--extensionDevelopmentPath=${probe}`);
