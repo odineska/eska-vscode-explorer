@@ -70,11 +70,12 @@ button { cursor: default; }
 .taxi-preview * { box-sizing: border-box; }
 .taxi-preview button, .taxi-preview input, .taxi-preview textarea { font: inherit; color: inherit; }
 .taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 28px; background: #fff; box-sizing: content-box; }
-.taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #fff; font-size: 12px; padding-left: 1px; line-height: 20px; }
+.taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #555; font-size: 12px; padding-left: 1px; line-height: 20px; }
+.taxi-form-frame.taxi-selected > .taxi-form-title { color: #fff; }
 .taxi-form-content { padding: 12px 19px 10px 11px; }
 .taxi-form-content--commands { padding-top: 4px; }
 .taxi-items { min-width: 0; }
-.taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 9px 4px; align-items: start; }
+.taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 4px; align-items: start; }
 .taxi-items--horizontal { display: flex; align-items: center; gap: 8px; }
 .taxi-items--wrap { flex-wrap: wrap; }
 .taxi-element { grid-column: 1 / -1; min-width: 0; max-width: 100%; position: relative; }
@@ -85,7 +86,10 @@ button { cursor: default; }
 .taxi-selected { outline: 1px solid #1695f3; outline-offset: 0; }
 .taxi-disabled { color: #a0a0a0 !important; }
 .taxi-disabled .taxi-input { background: #f4f4f4 !important; }
-.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 22px; gap: 0 4px; }
+.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 19px; gap: 0 4px; }
+.taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
+.taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
+.taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
 .taxi-items--horizontal .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
@@ -128,15 +132,18 @@ button { cursor: default; }
 .taxi-pages[data-representation=TabsOnLeft], .taxi-pages[data-representation=TabsOnRight] { display: flex; gap: 10px; }
 .taxi-pages[data-representation=TabsOnRight] { flex-direction: row-reverse; }
 .taxi-pages[data-representation=TabsOnLeft] .taxi-tabs, .taxi-pages[data-representation=TabsOnRight] .taxi-tabs { flex-direction: column; border: none; align-items: stretch; }
-.taxi-checkbox { display: inline-block; width: 14px; height: 14px; border: 1px solid #a0a0a0; border-radius: 2px; background: linear-gradient(#fff, #fafafa); vertical-align: middle; }
-.taxi-radios { display: inline-flex; gap: 10px; align-items: flex-start; min-height: 20px; }
-.taxi-radios > span { display: inline-flex; align-items: center; gap: 6px; min-height: 20px; }
+.taxi-checkbox { display: inline-block; width: 15px; height: 15px; border: 1px solid #a0a0a0; border-radius: 2px; background: linear-gradient(#fff, #fafafa); vertical-align: middle; }
+.taxi-radios { display: flex; gap: 10px; align-items: flex-start; min-height: 19px; }
+.taxi-radios > span { display: inline-flex; align-items: center; gap: 6px; min-height: 19px; white-space: nowrap; }
 .taxi-radio { display: inline-block; width: 15px; height: 15px; border: 1px solid #aaa; border-radius: 50%; background: #fff; }
 .taxi-radio.checked::after { content: ''; display: block; margin: 4px; width: 5px; height: 5px; border-radius: 50%; background: #008941; }
-.taxi-progress { display: inline-block; height: 20px; max-width: 100%; border: 1px solid #bbb; background: #f3f3f3; }
-.taxi-track { display: inline-block; height: 24px; max-width: 100%; position: relative; }
-.taxi-track i { height: 4px; border: 1px solid #aaa; background: #ddd; position: absolute; left: 0; right: 0; top: 10px; }
-.taxi-track b { position: absolute; left: 0; width: 11px; height: 22px; background: linear-gradient(#fff, #ddd); border: 1px solid #aaa; border-radius: 2px; }
+.taxi-progress { display: block; height: 21px; max-width: 100%; padding: 1px; border: 1px solid #a0a0a0; background: #fff; }
+.taxi-progress i { display: block; width: 50%; height: 100%; background: #facc1f; }
+.taxi-track { display: block; height: 28px; max-width: 100%; position: relative; }
+.taxi-track i { height: 2px; background: #c7c7c7; position: absolute; left: 9px; right: 9px; top: 9px; }
+.taxi-track::after { content: ''; position: absolute; left: 9px; right: 9px; top: 21px; height: 2px; background: repeating-linear-gradient(to right, #c7c7c7 0 2px, transparent 2px 15px); }
+.taxi-track b { position: absolute; left: 2px; top: 2px; width: 15px; height: 15px; background: #fff; border: 1px solid #aaa; border-radius: 50%; }
+.taxi-track b::after { content: ''; display: block; width: 7px; height: 7px; margin: 3px; background: #00813f; border-radius: 50%; }
 .taxi-period { display: inline-flex; gap: 8px; align-items: center; }
 .taxi-period .taxi-input { width: 130px !important; }
 .taxi-picture-field { display: block; border: 1px solid #aaa; background: #fff; max-width: 100%; }
@@ -176,15 +183,24 @@ button { cursor: default; }
 .taxi-calendar-today span { color: #2899f5; border-bottom: 1px dashed #2899f5; }
 .taxi-chart { display: block; flex: 1; overflow: hidden; }
 .taxi-chart text { fill: #222; font-family: inherit; font-size: 13.333333px; }
-.taxi-sheet { width: 100%; height: 100%; overflow: auto; }
+.taxi-sheet { width: 100%; height: 100%; overflow: hidden; }
 .taxi-sheet table { border-collapse: collapse; table-layout: fixed; }
-.taxi-sheet td { width: 68px; min-width: 68px; height: 20px; border: 1px solid #ddd; }
+.taxi-sheet td { width: 64px; min-width: 64px; height: 16px; padding: 0; border: 1px solid #ddd; }
 .taxi-sheet th { height: 20px; min-width: 24px; background: #f3f3f3; border: 1px solid #bbb; font-weight: 400; text-align: center; }
 .taxi-sheet--no-grid td { border-color: transparent; }
-.taxi-planner { overflow: auto; height: 100%; }
-.taxi-planner table { border-collapse: collapse; width: 100%; }
-.taxi-planner td { border: 1px solid #ddd; height: 32px; }
-.taxi-planner th { border: 1px solid #ccc; background: #f5f5f5; font-weight: 400; padding: 4px; }
+.taxi-sheet-cell-selected { background: #edeff8; outline: 2px solid #d3d9ef; outline-offset: -2px; box-shadow: inset 0 0 0 3px #fff; }
+.taxi-planner { display: flex; flex-direction: column; height: 100%; color: #ccc; }
+.taxi-planner-date { height: 16px; flex: 0 0 16px; text-align: center; line-height: 16px; border-bottom: 1px solid #eee; }
+.taxi-planner-scroll { overflow-y: scroll; min-height: 0; flex: 1; }
+.taxi-planner-hours { position: relative; }
+.taxi-planner-hour { display: flex; height: 16px; line-height: 16px; }
+.taxi-planner-hour span { width: 40px; flex: 0 0 40px; padding-left: 3px; border-right: 1px solid #eee; border-bottom: 1px solid #eee; }
+.taxi-planner-hour i { flex: 1; border-bottom: 1px solid #eee; }
+.taxi-planner-meeting { position: absolute; top: 19px; left: 44px; right: 24px; height: 48px; padding: 2px 7px; background: #cfe2f3; color: #8799a8; }
+.taxi-planner-now { position: absolute; top: 9px; left: 40px; right: 0; border-top: 1px solid #ff6060; }
+.taxi-planner .taxi-planner-scroll::-webkit-scrollbar { width: 12px; }
+.taxi-planner .taxi-planner-scroll::-webkit-scrollbar-track { border: none; background: #fff; }
+.taxi-planner .taxi-planner-scroll::-webkit-scrollbar-thumb { border: none; border-radius: 6px; background: #ccc; }
 .taxi-addition input { height: 22px; border: 1px solid #aaa; border-radius: 2px; width: 180px; padding: 2px 5px; background: #fff; }
 .taxi-unsupported { padding: 8px; border: 1px dashed #d49342; color: #8b5b1d; }
 .taxi-preview ::-webkit-scrollbar { width: 17px; height: 17px; }
@@ -192,4 +208,4 @@ button { cursor: default; }
 .taxi-preview ::-webkit-scrollbar-thumb { border: 1px solid #b5b5b5; background: linear-gradient(90deg, #eee, #ddd); }
 @media (forced-colors: active) { .form-splitter { background: CanvasText; } }
 
-.taxi-label-field { display: inline-block; min-height: 16px; }
+.taxi-label-field { display: block; min-height: 16px; }

@@ -16,17 +16,19 @@ function Calendar(props) {
 }
 function Sheet(props) {
   const columns = Array.from({ length: 12 }, (_, index) => String.fromCharCode(65 + index));
-  return <div class="taxi-sheet" classList={{ 'taxi-sheet--no-grid': !flag(props.node, 'ShowGrid') }}><table><Show when={flag(props.node, 'ShowHeaders')}><thead><tr><th/><For each={columns}>{name => <th>{name}</th>}</For></tr></thead></Show>
-    <tbody><For each={Array.from({ length: 30 }, (_, index) => index + 1)}>{row => <tr><Show when={flag(props.node, 'ShowHeaders')}><th>{row}</th></Show><For each={columns}>{() => <td/>}</For></tr>}</For></tbody></table></div>;
+  return <div class="taxi-sheet" classList={{ 'taxi-sheet--no-grid': !flag(props.node, 'ShowGrid', false) }}><table><Show when={flag(props.node, 'ShowHeaders', false)}><thead><tr><th/><For each={columns}>{name => <th>{name}</th>}</For></tr></thead></Show>
+    <tbody><For each={Array.from({ length: 30 }, (_, index) => index + 1)}>{row => <tr><Show when={flag(props.node, 'ShowHeaders', false)}><th>{row}</th></Show><For each={columns}>{(_, index) => <td classList={{ 'taxi-sheet-cell-selected': row === 1 && index() === 0 }}/>}</For></tr>}</For></tbody></table></div>;
 }
 function DocumentToolbar(props) { return <Show when={flag(props.node, 'ShowToolbar', props.node.kind === 'PDFDocumentField')}>
   <div class="taxi-document-toolbar"><Show when={props.node.kind === 'FormattedDocumentField'} fallback={<><Icon name="Write"/><Icon name="Print"/><span>−</span><span>100%</span><span>+</span></>}>
     <span class="taxi-format-face">Arial ▾</span><span>10 ▾</span><b>B</b><i>I</i><u>U</u><span>▾</span><span>≡</span><span>≡</span>
   </Show></div></Show>; }
 function Planner(props) {
-  const locale = props.controller.state.locale;
-  const days = Array.from({ length: 5 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(2026, 5, index + 1)));
-  return <div class="taxi-planner"><table><thead><tr><th/><For each={days}>{day => <th>{day}</th>}</For></tr></thead><tbody><For each={Array.from({ length: 12 }, (_, index) => index + 8)}>{hour => <tr><th>{hour}:00</th><For each={days}>{() => <td/>}</For></tr>}</For></tbody></table></div>;
+  const state = props.controller.state, now = new Date(), date = new Intl.DateTimeFormat(state.culture, { dateStyle: 'long' }).format(now);
+  return <div class="taxi-planner"><div class="taxi-planner-date">{date}</div><div class="taxi-planner-scroll"><div class="taxi-planner-hours">
+    <For each={Array.from({ length: 24 }, (_, index) => index)}>{hour => <div class="taxi-planner-hour"><span>{String(hour).padStart(2, '0')}:00</span><i/></div>}</For>
+    <div class="taxi-planner-meeting">01:00 {state.strings.sampleMeeting}</div><div class="taxi-planner-now" style={{ top: `${(now.getHours() + now.getMinutes() / 60) * 16}px` }}/>
+  </div></div></div>;
 }
 /** Static surfaces belong to the design-time view. Bound runtime documents and handlers never execute. */
 export function SpecialField(props) {

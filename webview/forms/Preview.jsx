@@ -116,11 +116,11 @@ function Field(props) {
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
     <Match when={node().kind === 'InputField'}><Input {...props}/></Match>
     <Match when={node().kind === 'CheckBoxField'}><span role="checkbox" aria-checked="false" class="taxi-checkbox"/></Match>
-    <Match when={node().kind === 'RadioButtonField'}><span class="taxi-radios" style={{ 'flex-direction': scalar(node(), 'Orientation', 'Horizontal') === 'Vertical' ? 'column' : 'row' }}><For each={node().presentation.choices}>{(choice, index) => <span><i classList={{ 'taxi-radio': true, checked: index() === 0 }}/>{text(choice, state.locale, state.strings)}</span>}</For></span></Match>
+    <Match when={node().kind === 'RadioButtonField'}><span class="taxi-radios" style={{ 'flex-direction': scalar(node(), 'Orientation', 'Horizontal') === 'Vertical' ? 'column' : 'row' }}><For each={node().presentation.choices.length ? node().presentation.choices : [1, 2, 3].map(value => ({ kind: 'name', text: state.strings.sampleValue.replace('{0}', value) }))}>{(choice, index) => <span><i classList={{ 'taxi-radio': true, checked: index() === 0 }}/>{text(choice, state.locale, state.strings)}</span>}</For></span></Match>
     <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node())}</span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
-    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${Math.max(10, number(node(), 'Width', 30)) * 8}px`, height: `${Math.max(2, number(node(), 'Height', 10)) * 20}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
+    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
     <Match when={node().kind === 'PeriodField'}><span class="taxi-period"><Input {...props}/><span>—</span><Input {...props}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>

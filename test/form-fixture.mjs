@@ -22,7 +22,8 @@ export async function createFormSource(fixture) {
 export async function createFormGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native-bound-fields fixture directory.');
-  const kinds = ['InputField', 'CheckBoxField', 'CalendarField', 'ChartField', 'FormattedDocumentField', 'HTMLDocumentField', 'LabelField'];
+  const kinds = ['InputField', 'CheckBoxField', 'CalendarField', 'ChartField', 'FormattedDocumentField', 'HTMLDocumentField', 'LabelField',
+    'ProgressBarField', 'TrackBarField', 'RadioButtonField', 'PictureField', 'SpreadSheetDocumentField', 'PlannerField'];
   const forms = [];
   for (const kind of kinds) {
     const name = `Gallery${kind}`, path = join(fixture.source, 'CommonForms', name, 'Ext', 'Form.xml');

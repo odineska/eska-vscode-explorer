@@ -23,6 +23,20 @@ exports.run = async function () {
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     const geometry = await ui.evaluate(`(() => { const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}; const control=document.querySelector('.taxi-field-control').firstElementChild;return {frame:rect(document.querySelector('.taxi-form-frame')),control:rect(control),title:document.querySelector('.taxi-field-row').dataset.titleLocation,font:getComputedStyle(control).fontFamily}; })()`);
     if (form.kind === 'InputField') assert.equal(geometry.control.width, 161);
+    const sizes = { CheckBoxField: [15, 15], ProgressBarField: [320, 21], TrackBarField: [320, 28], PictureField: [122, 120], SpreadSheetDocumentField: [500, 243], PlannerField: [500, 243] };
+    if (sizes[form.kind]) assert.deepEqual([geometry.control.width, geometry.control.height], sizes[form.kind]);
+    const frameHeights = { InputField: 75, CheckBoxField: 69, ProgressBarField: 73, TrackBarField: 99, PictureField: 191, RadioButtonField: 69, LabelField: 69 };
+    if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
+    if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
+    if (form.kind === 'RadioButtonField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-radio').length"), 3);
+    if (form.kind === 'SpreadSheetDocumentField') {
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet th').length"), 0);
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet-cell-selected').length"), 1);
+    }
+    if (form.kind === 'PlannerField') {
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-hour').length"), 24);
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-meeting').length"), 1);
+    }
     if (form.kind === 'InputField') {
       const inspect = `(() => { const node=document.querySelector('.taxi-input'),css=getComputedStyle(node),label=getComputedStyle(document.querySelector('.taxi-field-label'));return {width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height,color:css.color,background:css.backgroundColor,border:css.borderColor,font:label.font}; })()`;
       const beforeTheme = await ui.evaluate(inspect), shellBefore = await ui.evaluate("getComputedStyle(document.querySelector('.form-shell')).color");

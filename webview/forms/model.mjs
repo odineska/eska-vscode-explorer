@@ -36,6 +36,8 @@ export function treeChildren(node) {
 export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
 export function fieldWidth(node) {
   const width = number(node, 'Width'); if (width > 0) return Math.max(20, width * 8 + 4);
+  if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
+  if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
   if (type.kind === 'number') return Math.max(80, Math.min(24, (type.digits ?? 12) + 2) * 8 + 4);
   if (type.kind === 'reference') return 411;
