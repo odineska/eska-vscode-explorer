@@ -90,7 +90,7 @@ async function run() {
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   await until(() => service.views.size === 2, 'independent second form');
   const second = [...service.views.values()].find(item => item.path === form.second);
-  await until(() => second.watchKey === 'initial' && !second.client, 'initial invalid file is watched');
+  await until(() => second.watchers.length > 0 && !second.client && !second.running, 'initial invalid file is watched');
   await fs.writeFile(form.second, secondText);
   await until(() => second.phase === 'ready', 'initial invalid disk snapshot recovers automatically');
   const secondSession = second.client.current.formSessionId;

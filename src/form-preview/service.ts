@@ -1,19 +1,20 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute } from "node:path";
-import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
+import { isAbsolute, relative, sep, extname, basename } from "node:path";
+import { ExplorerError, isRecord, projectEnabled, type WirePath } from "../protocol.js";
 import { existingSource, nativePath, editorRange, resolveSource, isForm } from "../source.js";
 import { revealFile } from "../reveal.js";
 import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
-import { FormSession, type Overlay } from "./client.js";
-import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
+import { FormSession } from "./client.js";
+import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
 import { formStrings } from "./strings.js";
 
 const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
+type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
 interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
@@ -21,8 +22,14 @@ interface View {
   phase: "loading" | "ready" | "stale" | "disconnected"; notice: string; sequence: number; wanted: number; running: Promise<void> | undefined;
   timer: ReturnType<typeof setTimeout> | undefined; suspended: boolean; closed: boolean; watchers: vscode.Disposable[]; watchKey: string;
   inputs: Map<string, string>; generation: string; activityKey: string;
+  inputRoots: { wire: WirePath; path: string }[]; formInputs: Map<string, FormInputSource>;
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
+function inside(root: string, file: string): string | undefined {
+  const path = relative(root, file);
+  return path && !isAbsolute(path) && !path.split(sep).includes("..") ? path : undefined;
+}
+function inputKey(input: Pick<FormInput, "root" | "path">): string { return JSON.stringify([input.root, input.path]); }
 
 /** Panels are disposable consumers of one backend session. File events never focus or reopen a panel. */
 export class FormPreviewService implements vscode.Disposable {
@@ -59,7 +66,7 @@ export class FormPreviewService implements vscode.Disposable {
     const create = Promise.resolve().then(() => {
       const view: View = { key, tree, entry, path, application, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
         frames: new Map(), client: undefined, snapshot: undefined, nodes: new Map(), selected: undefined, phase: "loading", notice: "", sequence: 0, wanted: 0,
-        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "" };
+        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "", inputRoots: [], formInputs: new Map() };
       this.views.set(key, view); return view;
     });
     this.opening.set(key, create); try { return await create; } finally { this.opening.delete(key); }
@@ -103,7 +110,8 @@ export class FormPreviewService implements vscode.Disposable {
   private async documentChanged(document: vscode.TextDocument): Promise<void> {
     if (this.disposed || document.uri.scheme !== "file") return;
     const path = normalized(await realpath(document.uri.fsPath).catch(() => document.uri.fsPath));
-    for (const view of this.views.values()) if (view.inputs.has(path) || normalized(view.path) === path) this.schedule(view);
+    for (const view of this.views.values()) if (view.inputs.has(path) || normalized(view.path) === path
+      || document.isDirty && extname(path).toLowerCase() === ".xml" && view.inputRoots.some(root => inside(root.path, path) !== undefined)) this.schedule(view);
   }
   private schedule(view: View, delay = 120): void {
     if (view.closed || view.suspended || this.disposed) return;
@@ -131,22 +139,30 @@ export class FormPreviewService implements vscode.Disposable {
         }
         view.phase = "loading"; view.notice = this.strings().updating!; this.publish(view, false);
         const opened = !view.client;
-        if (!view.client) {
-          this.watchInitial(view);
-          try { view.client = await FormSession.open(this.connection, tree, view.entry, state.formPreview, view.application); }
-          catch (error) {
-            if (error instanceof ExplorerError && error.details?.reason === "application_required" && Array.isArray(error.details.available)) {
-              const available = error.details.available.filter((value): value is string => typeof value === "string");
-              const chosen = await vscode.window.showQuickPick(available, { placeHolder: this.strings().application! });
-              if (!chosen) throw error; view.application = chosen;
-              view.client = await FormSession.open(this.connection, tree, view.entry, state.formPreview, chosen);
-            } else throw error;
-          }
+        if (opened) this.watchInitial(view);
+        let prepared: FormPreparation;
+        try { prepared = await FormSession.prepare(this.connection, tree, view.entry, view.application); }
+        catch (error) {
+          if (error instanceof ExplorerError && error.details?.reason === "application_required" && Array.isArray(error.details.available)) {
+            const available = error.details.available.filter((value): value is string => typeof value === "string");
+            const chosen = await vscode.window.showQuickPick(available, { placeHolder: this.strings().application! });
+            if (!chosen) throw error; view.application = chosen;
+            prepared = await FormSession.prepare(this.connection, tree, view.entry, chosen);
+          } else throw error;
         }
-        await this.watch(view, view.client.current);
-        const snapshot = await this.refreshInputs(view, opened, wanted);
         if (view.closed || view.suspended || this.disposed) return;
-        view.generation = view.entry.project.info.generation; view.activityKey = activityKey; await this.watch(view, snapshot);
+        await this.prepareInputs(view, prepared);
+        const inputs = await this.collectInputs(view);
+        if (!view.client) {
+          if (view.closed || view.suspended || this.disposed) return;
+          const client = await FormSession.open(this.connection, tree, view.entry, state.formPreview, inputs, view.application);
+          if (view.closed || view.suspended || this.disposed) { await client.close(); return; }
+          view.client = client;
+        }
+        await this.watch(view, view.client.current.dependencies);
+        const snapshot = await this.refreshInputs(view, opened, wanted, inputs);
+        if (view.closed || view.suspended || this.disposed) return;
+        view.generation = view.entry.project.info.generation; view.activityKey = activityKey; await this.watch(view, snapshot.dependencies);
         if (wanted === view.wanted) {
           view.snapshot = snapshot; view.phase = "ready"; view.notice = snapshot.modelComplete ? "" : this.strings().incomplete!;
           view.nodes.clear(); const visit = (node: FormNode): void => { view.nodes.set(identityKey(node.identity), node); node.children.forEach(visit); node.auxiliary.forEach(visit); }; visit(snapshot.model.root);
@@ -158,34 +174,48 @@ export class FormPreviewService implements vscode.Disposable {
       if (view.timer) { clearTimeout(view.timer); view.timer = undefined; }
     }
   }
-  private async overlays(view: View): Promise<Overlay[]> {
-    const result = new Map<string, Overlay>();
-    for (const document of vscode.workspace.textDocuments.filter(document => document.uri.scheme === "file" && document.isDirty)) {
-      const path = normalized(await realpath(document.uri.fsPath).catch(() => document.uri.fsPath)), source = view.inputs.get(path); if (!source) continue;
-      const text = document.getText(), previous = result.get(source);
+  private async prepareInputs(view: View, prepared: FormPreparation): Promise<void> {
+    view.inputRoots = await Promise.all(prepared.roots.map(async wire => ({ wire, path: await realpath(nativePath(wire)) })));
+    const forms = await Promise.all(prepared.forms.map(async input => [normalized(await realpath(await existingSource(input.root, input.path))), input] as const));
+    if (view.closed || view.suspended || this.disposed) return;
+    view.formInputs = new Map(forms);
+    if (!view.client) await this.watch(view, prepared.forms.map(input => ({ ...input, role: "form" as const })));
+  }
+  private async collectInputs(view: View): Promise<FormInput[]> {
+    const result = new Map<string, FormInput>();
+    const dependencies = view.client?.current.dependencies ?? view.snapshot?.dependencies ?? [];
+    for (const document of vscode.workspace.textDocuments.filter(document => document.uri.scheme === "file" && document.isDirty && extname(document.uri.fsPath).toLowerCase() === ".xml")) {
+      const file = await realpath(document.uri.fsPath).catch(() => undefined); if (!file) continue;
+      const path = normalized(file), form = view.formInputs.get(path);
+      if (basename(file).toLowerCase() === "form.xml" && !form) continue;
+      const known = dependencies.find(input => input.role !== "picture" && input.id === view.inputs.get(path)
+        && view.inputRoots.some(root => JSON.stringify(root.wire) === JSON.stringify(input.root)));
+      const base = view.inputRoots.find(root => inside(root.path, file) !== undefined);
+      const location = form ?? known ?? (base ? { root: base.wire, path: { value: inside(base.path, file)!, encoding: "utf-8" as const } } : undefined);
+      if (!location) continue;
+      const key = inputKey(location), text = document.getText(), previous = result.get(key);
       if (previous && previous.text !== text) throw new ExplorerError("sourceChanged");
-      result.set(source, { source, text, version: String(document.version) });
+      result.set(key, { root: location.root, path: location.path, text, version: String(document.version) });
     }
     return [...result.values()];
   }
-  private async refreshInputs(view: View, opened: boolean, wanted: number): Promise<FormSnapshot> {
+  private async refreshInputs(view: View, opened: boolean, wanted: number, inputs: FormInput[]): Promise<FormSnapshot> {
     const client = view.client;
     if (!client) throw new ExplorerError("obsolete");
-    let overlays = await this.overlays(view);
     // Each pass can discover another already-dirty resource. Publish only after
     // its overlay set stabilizes, bounded by the protocol's dependency limit.
     for (let pass = 0; pass <= MAX_FORM_DEPENDENCIES; pass++) {
       if (view.closed || view.suspended || this.disposed) throw new ExplorerError("obsolete");
-      const snapshot = opened && !overlays.length ? client.current : await client.update(overlays);
+      const snapshot = opened ? client.current : await client.update(inputs);
       opened = false;
-      await this.watch(view, snapshot);
+      await this.watch(view, snapshot.dependencies);
       if (wanted !== view.wanted) return snapshot;
-      const next = await this.overlays(view), pending = new Map(next.map(overlay => [overlay.source, overlay]));
-      if (next.length === overlays.length && overlays.every(overlay => {
-        const value = pending.get(overlay.source);
+      const next = await this.collectInputs(view), pending = new Map(next.map(overlay => [inputKey(overlay), overlay]));
+      if (next.length === inputs.length && inputs.every(overlay => {
+        const value = pending.get(inputKey(overlay));
         return value?.version === overlay.version && value.text === overlay.text;
       })) return snapshot;
-      overlays = next;
+      inputs = next;
     }
     throw new ExplorerError("sourceChanged");
   }
@@ -199,20 +229,23 @@ export class FormPreviewService implements vscode.Disposable {
     view.watchKey = "initial";
     view.watchers.push(source, source.onDidChange(changed), source.onDidCreate(changed), source.onDidDelete(changed));
   }
-  private async watch(view: View, snapshot: FormSnapshot): Promise<void> {
-    const key = JSON.stringify(snapshot.dependencies.map(dependency => [dependency.id, dependency.root, dependency.path]));
+  private async watch(view: View, dependencies: readonly InputLocation[]): Promise<void> {
+    if (view.closed || view.suspended || this.disposed) return;
+    const key = JSON.stringify([dependencies.map(dependency => [dependency.id, dependency.root, dependency.path]), view.inputRoots.map(root => root.wire)]);
     if (view.watchKey === key) return;
     const inputs = new Map<string, string>(), watched = new Set<string>(), roots = new Map<string, vscode.Uri>();
-    for (const dependency of snapshot.dependencies) {
+    for (const dependency of dependencies) {
       const path = normalized(await realpath(await existingSource(dependency.root, dependency.path))); watched.add(path);
       if (dependency.role !== "picture") inputs.set(path, dependency.id);
       const root = nativePath(dependency.root); roots.set(normalized(root), vscode.Uri.file(root));
     }
+    for (const root of view.inputRoots) roots.set(normalized(root.path), vscode.Uri.file(nativePath(root.wire)));
+    if (view.closed || view.suspended || this.disposed) return;
     view.inputs = inputs; view.watchKey = key;
     for (const watcher of view.watchers) watcher.dispose(); view.watchers = [];
     for (const root of roots.values()) {
       const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, "**/*"));
-      const changed = (uri: vscode.Uri) => { const path = normalized(uri.fsPath); if (watched.has(path) || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view); };
+      const changed = (uri: vscode.Uri) => { const path = normalized(uri.fsPath); if (watched.has(path) || extname(path).toLowerCase() === ".xml" || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view); };
       view.watchers.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
     }
   }

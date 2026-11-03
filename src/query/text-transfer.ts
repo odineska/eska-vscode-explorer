@@ -9,14 +9,14 @@ export type QueryTextInput = { text: string } | { bufferId: string };
 export function querySnapshot(text: string): string { return createHash("sha256").update(text, "utf8").digest("hex"); }
 
 /** Reuse the bounded upload contract for native owners and full constructor buffers. */
-export async function withQueryText<T>(text: string, limits: { maxSnapshotBytes: number; maxInlineBytes: number },
+export async function withQueryText<T>(text: string, limits: { maxSnapshotBytes: number; maxInlineBytes: number; maxInlineInputBytes?: number },
   request: (method: QueryBufferMethod, params: Record<string, unknown>) => Promise<unknown>,
   release: (id: string) => Promise<void>, use: (input: QueryTextInput) => Promise<T>, signal?: AbortSignal): Promise<T> {
   assertActive(signal);
   const bytes = Buffer.from(text, "utf8");
   if (bytes.toString("utf8") !== text) throw new ExplorerError("sourceChanged");
   if (bytes.length > limits.maxSnapshotBytes) throw new ExplorerError("resourceLimit");
-  if (bytes.length <= limits.maxInlineBytes) return use({ text });
+  if (bytes.length <= Math.min(limits.maxInlineBytes, limits.maxInlineInputBytes ?? limits.maxInlineBytes)) return use({ text });
   let bufferId: string | undefined;
   try {
     const begun = await request("query/bufferBegin", { bytes: bytes.length, snapshot: querySnapshot(text) });

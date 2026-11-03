@@ -4,6 +4,18 @@ import { QueryClient, querySnapshot } from "../out/query/client.js";
 import { QUERY_LIMITS, queryCapabilities } from "../out/query/protocol.js";
 import { parsePlan } from "../out/query/plan.js";
 import { MAX_REQUEST } from "../out/protocol.js";
+import { withQueryText } from "../out/query/text-transfer.js";
+
+test("a packet inline budget does not shrink Unicode upload chunks", async () => {
+  const text="я".repeat(30),methods=[];
+  const result=await withQueryText(text,{maxSnapshotBytes:1024,maxInlineBytes:64,maxInlineInputBytes:8},async(method,params)=>{
+    methods.push(method);
+    if(method==='query/bufferBegin')return {bufferId:'b1',receivedBytes:0,ready:false};
+    assert.equal(method,'query/bufferAppend');assert.equal(Buffer.byteLength(params.text),60);
+    return {bufferId:'b1',receivedBytes:60,ready:true};
+  },async id=>{assert.equal(id,'b1');methods.push('query/bufferClose');},async input=>{assert.deepEqual(input,{bufferId:'b1'});return 'used';});
+  assert.equal(result,'used');assert.deepEqual(methods,['query/bufferBegin','query/bufferAppend','query/bufferClose']);
+});
 
 /** Faults are injected at acknowledged RPC boundaries, without mocking UTF-8 or the client under test. */
 function client(handle, limits = QUERY_LIMITS) {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { formCapabilities, isIdentity, identityKey, parseFormSnapshot } from '../out/form-preview/protocol.js';
+import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
@@ -31,12 +31,20 @@ test('form identities preserve signed XML i64 boundaries without JavaScript roun
 
 test('form capability negotiation requires a static read-only profile and bounds uploads', () => {
   assert.equal(formCapabilities({ capabilities: {} }), undefined);
-  const value = { apiVersion: { major: 1, minor: 37 }, capabilities: { formPreview: { pictures: true, schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
+  const value = { apiVersion: { major: 1, minor: 38 }, capabilities: { formPreview: { inputPreparation: true, pictures: true, schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
     uploads: 'queryBuffers', maxSessions: 32, maxOverlayBytes: 16777216, maxInlineBytes: 262144 } } };
   assert.equal(formCapabilities({...value,apiVersion:{major:1,minor:36}}),undefined);
+  assert.equal(formCapabilities({...value,apiVersion:{major:1,minor:37}}),undefined);
   assert.throws(()=>formCapabilities({...value,apiVersion:{major:2,minor:36}}));
   assert.deepEqual(formCapabilities(value), { maxSessions: 16, maxOverlayBytes: 8388608, maxInlineBytes: 131072 });
-  for (const patch of [{ executesBsl: true }, { readOnly: false }, { profile: 'taxi-8.5' }, { maxSessions: -1 }]) assert.throws(() => formCapabilities({ ...value, capabilities: { formPreview: { ...value.capabilities.formPreview, ...patch } } }));
+  for (const patch of [{ inputPreparation: false }, { executesBsl: true }, { readOnly: false }, { profile: 'taxi-8.5' }, { maxSessions: -1 }]) assert.throws(() => formCapabilities({ ...value, capabilities: { formPreview: { ...value.capabilities.formPreview, ...patch } } }));
+});
+
+test('form preparation validates bounded roots and source ownership without a model', () => {
+  const root={value:'/source',encoding:'utf-8'},path={value:'CommonForms/Preview/Ext/Form.xml',encoding:'utf-8'};
+  const value={contextFingerprint:source,application:null,limitedContext:false,roots:[root],forms:[{id:source,root,path}]};
+  assert.equal(parseFormPreparation(value).forms[0].id,source);
+  for (const patch of [{roots:[]},{forms:[]},{forms:[value.forms[0],value.forms[0]]},{forms:[{...value.forms[0],root:{value:'/foreign',encoding:'utf-8'}}]},{contextFingerprint:'bad'}]) assert.throws(()=>parseFormPreparation({...value,...patch}));
 });
 
 test('a form snapshot rejects duplicate identities and missing input ownership', () => {

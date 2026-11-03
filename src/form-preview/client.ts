@@ -2,9 +2,26 @@ import type { Connection } from "../connection.js";
 import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
 import { withQueryText } from "../query/text-transfer.js";
-import { parseFormSnapshot, parseLocation, type FormLimits, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
+import { parseFormSnapshot, parseFormPreparation, parseLocation, MAX_FORM_DEPENDENCIES, type FormInput, type FormPreparation, type FormLimits, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
 
-export interface Overlay { source: string; version: string; text: string }
+function checkContext(connection: Connection, tree: MetadataTree, entry: TreeEntry, value: unknown, generation: string): void {
+  const state = connection.state;
+  if (state.kind !== "ready" || state.session.sessionId !== tree.session.sessionId || !projectEnabled(entry.project.info)
+    || generation !== entry.project.info.generation) throw new ExplorerError("obsolete");
+  if (!isRecord(value) || value.sessionId !== tree.session.sessionId || value.projectId !== entry.project.info.projectId || value.generation !== generation) throw new ExplorerError("protocolInvalid");
+}
+
+async function withInputs<T>(values: FormInput[], limits: FormLimits, request: (method: string, params: Record<string, unknown>) => Promise<unknown>, use: (inputs: Record<string, unknown>[]) => Promise<T>): Promise<T> {
+  if (values.length > MAX_FORM_DEPENDENCIES || values.reduce((bytes, input) => bytes + Buffer.byteLength(input.text, "utf8"), 0) > 32 * 1024 * 1024) throw new ExplorerError("resourceLimit");
+  const maxInlineInputBytes = Math.min(limits.maxInlineBytes, Math.floor(524288 / Math.max(1, values.length)));
+  const submit = async (index: number, inputs: Record<string, unknown>[]): Promise<T> => {
+    const value = values[index]; if (!value) return use(inputs);
+    return withQueryText(value.text, { maxSnapshotBytes: limits.maxOverlayBytes, maxInlineBytes: limits.maxInlineBytes, maxInlineInputBytes }, request,
+      async id => { await request("query/bufferClose", { bufferId: id }); },
+      input => submit(index + 1, [...inputs, { root: value.root, path: value.path, version: value.version, ...input }]));
+  };
+  return submit(0, []);
+}
 /** One logical session can feed several panels. No allocation/update is automatically replayed. */
 export class FormSession {
   private closed = false;
@@ -12,43 +29,39 @@ export class FormSession {
   private constructor(private readonly connection: Connection, readonly tree: MetadataTree, readonly entry: TreeEntry,
     readonly limits: FormLimits, public current: FormSnapshot) {}
 
-  static async open(connection: Connection, tree: MetadataTree, entry: TreeEntry, limits: FormLimits, application?: string): Promise<FormSession> {
+  static async prepare(connection: Connection, tree: MetadataTree, entry: TreeEntry, application?: string): Promise<FormPreparation> {
     await tree.synchronizeInputs();
     const generation = entry.project.info.generation;
-    const value = await connection.request(tree.session.sessionId, "form/open", { projectId: entry.project.info.projectId, generation, node: entry.node.id, ...(application ? { application } : {}) });
+    const value = await connection.request(tree.session.sessionId, "form/prepare", { projectId: entry.project.info.projectId, generation, node: entry.node.id, ...(application ? { application } : {}) });
+    checkContext(connection, tree, entry, value, generation); return parseFormPreparation(value);
+  }
+  static async open(connection: Connection, tree: MetadataTree, entry: TreeEntry, limits: FormLimits, inputs: FormInput[], application?: string): Promise<FormSession> {
+    await tree.synchronizeInputs();
+    const generation = entry.project.info.generation;
+    const request = (method: string, params: Record<string, unknown>) => connection.request(tree.session.sessionId, method, { ...params, projectId: entry.project.info.projectId, generation });
+    const value = await withInputs(inputs, limits, request, inputs => request("form/open", { node: entry.node.id, inputs, ...(application ? { application } : {}) }));
     const snapshot = parseFormSnapshot(value), session = new FormSession(connection, tree, entry, limits, snapshot);
     try { session.check(value, generation); return session; } catch (error) { await session.close(); throw error; }
   }
   private check(value: unknown, generation: string): void {
-    const state = this.connection.state;
-    if (this.closed || state.kind !== "ready" || state.session.sessionId !== this.tree.session.sessionId || !projectEnabled(this.entry.project.info)
-      || generation !== this.entry.project.info.generation) throw new ExplorerError("obsolete");
-    if (!isRecord(value) || value.sessionId !== this.tree.session.sessionId || value.projectId !== this.entry.project.info.projectId
-      || value.generation !== generation) throw new ExplorerError("protocolInvalid");
+    if (this.closed) throw new ExplorerError("obsolete");
+    checkContext(this.connection, this.tree, this.entry, value, generation);
   }
   private request(method: string, params: Record<string, unknown>, generation = this.entry.project.info.generation): Promise<unknown> {
     return this.connection.request(this.tree.session.sessionId, method, { ...params, projectId: this.entry.project.info.projectId, generation });
   }
   /** Uploads and update acknowledgement complete before close; stale results are never installed into another session. */
-  update(overlays: Overlay[]): Promise<FormSnapshot> {
+  update(inputs: FormInput[]): Promise<FormSnapshot> {
     const action = this.pending.then(async () => {
       if (this.closed) throw new ExplorerError("obsolete");
       await this.tree.synchronizeInputs();
       const generation = this.entry.project.info.generation;
-      const submit = async (index: number, inputs: Record<string, unknown>[]): Promise<FormSnapshot> => {
-        const overlay = overlays[index];
-        if (!overlay) {
-          const value = await this.request("form/update", { formSessionId: this.current.formSessionId, revision: this.current.revision, overlays: inputs }, generation);
-          const result = parseFormSnapshot(value);
-          // Retain the acknowledged revision even if a later file event made this response visually obsolete.
-          this.current = result; this.check(value, generation); return result;
-        }
-        if (!this.current.dependencies.some(dependency => dependency.id === overlay.source && dependency.role !== "picture")) throw new ExplorerError("sourceChanged");
-        return withQueryText(overlay.text, { maxSnapshotBytes: this.limits.maxOverlayBytes, maxInlineBytes: this.limits.maxInlineBytes },
-          (method, params) => this.request(method, params, generation), async id => { await this.request("query/bufferClose", { bufferId: id }, generation); },
-          input => submit(index + 1, [...inputs, { source: overlay.source, version: overlay.version, ...input }]));
-      };
-      return submit(0, []);
+      return withInputs(inputs, this.limits, (method, params) => this.request(method, params, generation), async inputs => {
+        const value = await this.request("form/update", { formSessionId: this.current.formSessionId, revision: this.current.revision, overlays: [], inputs }, generation);
+        const result = parseFormSnapshot(value);
+        // Retain the acknowledged revision even if a later file event made this response visually obsolete.
+        this.current = result; this.check(value, generation); return result;
+      });
     });
     this.pending = action.catch(() => {}); return action;
   }

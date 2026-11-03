@@ -5,6 +5,9 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 export const MAX_FORM_DEPENDENCIES = 1024;
 
 export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number }
+export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
+export interface FormInputSource { id: string; root: WirePath; path: WirePath }
+export interface FormPreparation { contextFingerprint: string; application: string | null; limitedContext: boolean; roots: WirePath[]; forms: FormInputSource[] }
 export interface ElementIdentity { source: string; part: "current"; key: { kind: "root" } | { kind: "xml"; value: string } }
 export interface Origin { source: string; range: { start: number; end: number } }
 export interface FormProperty extends PropertyField { origin: Origin; range: { start: number; end: number } }
@@ -71,11 +74,22 @@ function presentation(value: unknown): boolean {
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;
   const data = value.capabilities.formPreview;
-  if (isRecord(value.apiVersion) && value.apiVersion.major === 1 && typeof value.apiVersion.minor === "number" && value.apiVersion.minor < 37) return undefined;
-  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 37
-    || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.uploads !== "queryBuffers") invalid();
+  if (isRecord(value.apiVersion) && value.apiVersion.major === 1 && typeof value.apiVersion.minor === "number" && value.apiVersion.minor < 38) return undefined;
+  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 38
+    || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.inputPreparation !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072) };
+}
+export function parseFormPreparation(value: unknown): FormPreparation {
+  if (!isRecord(value) || !hash(value.contextFingerprint) || !(value.application === null || typeof value.application === "string") || typeof value.limitedContext !== "boolean"
+    || !Array.isArray(value.roots) || !value.roots.length || value.roots.length > MAX_FORM_DEPENDENCIES || !value.roots.every(isWirePath)
+    || !Array.isArray(value.forms) || !value.forms.length || value.forms.length > MAX_FORM_DEPENDENCIES) invalid();
+  const roots = new Set(value.roots.map(root => JSON.stringify(root))), ids = new Set<string>();
+  for (const input of value.forms) {
+    if (!isRecord(input) || !hash(input.id) || ids.has(input.id) || !isWirePath(input.root) || !isWirePath(input.path) || !roots.has(JSON.stringify(input.root))) invalid();
+    ids.add(input.id);
+  }
+  return value as unknown as FormPreparation;
 }
 export function parseFormSnapshot(value: unknown): FormSnapshot {
   if (!isRecord(value) || typeof value.formSessionId !== "string" || !value.formSessionId || !isToken(value.revision) || !hash(value.contextFingerprint)
