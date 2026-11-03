@@ -38,6 +38,7 @@ exports.run = async function () {
       if(form.kind==='InputDisabled')assert.equal(state.title,'rgb(170, 170, 170)');
       if(form.kind==='InputColors'){assert.equal(state.title,'rgb(255, 0, 0)');assert.equal(state.text,'rgb(0, 0, 255)');}
       if(['InputNumber','InputColors','Font14Number'].includes(form.kind))assert.equal(state.value,'0');
+      if(process.platform==='linux'&&['InputNumber','InputColors','Font14Number'].includes(form.kind))assert.deepEqual(await ui.evaluate("(() => {const b=document.querySelector('.taxi-input-button--number'),s=getComputedStyle(b),icon=b.querySelector('svg');return [s.width,s.borderLeftColor,s.backgroundColor,icon.getAttribute('width'),icon.getAttribute('height')];})()"),['20px',form.kind==='InputColors'?'rgb(0, 100, 0)':'rgb(160, 160, 160)','rgb(255, 255, 255)','9','11']);
       if(['InputDate','InputDateTime','InputTime'].includes(form.kind)){assert.ok(state.value.includes(form.kind==='InputDate'?'/':':'));assert.ok(!state.value.includes('0001'));}
       assert.equal(state.buttons,['InputColors','InputNumber','InputDate','InputDateTime','Font14Number'].includes(form.kind)?1:0);
     }
