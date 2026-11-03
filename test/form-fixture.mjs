@@ -112,6 +112,14 @@ export async function createStyleColorRolesSource(fixture) {
   return {...form,definition};
 }
 
+export async function createPrimaryAppearanceGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const form = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
+  await writeFile(form.style, await readFile(join(input, 'Style.xml')));
+  return createMeasuredFormGallery(fixture);
+}
+
 export async function createMeasuredFormGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
