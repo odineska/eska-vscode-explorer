@@ -124,7 +124,7 @@ button { cursor: default; }
 .taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
 .taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
 .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
-.taxi-items--horizontal .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
+.taxi-items--horizontal > .taxi-element--field > .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-label { position: relative; }
 .taxi-native-label { position: absolute; pointer-events: none; }
@@ -189,12 +189,16 @@ button { cursor: default; }
 .taxi-group-title { margin-bottom: 4px; }
 .taxi-group-title button { padding: 0; border: none; background: none; color: inherit; text-decoration: underline; line-height: inherit; }
 .taxi-group--painted { padding: 5px; }
+.taxi-preview[data-os=linux] .taxi-group--painted[data-native-group-background=ready] { box-shadow: inset 0 1px var(--taxi-group-outside), inset 0 -1px var(--taxi-group-outside); }
 .taxi-group--strong > .taxi-items, .taxi-group--collapsible > .taxi-items { padding-left: 10px; position: relative; }
 .taxi-group--strong > .taxi-items::before { content: ''; position: absolute; left: 0; top: 1px; bottom: 1px; width: 2px; background: var(--taxi-group-title-color); }
 .taxi-group--collapsible > .taxi-group-title { padding-bottom: 2px; }
 .taxi-pages { width: 100%; padding: 1px 0; }
 .taxi-tabs { display: flex; gap: 0; align-items: flex-end; height: 27px; }
 .taxi-tabs button { padding: 3px 9px; border: 1px solid var(--taxi-tab-border, #b4b4b4); border-radius: 2px 2px 0 0; background: #ebebeb; height: 27px; line-height: 19px; color: #555; position: relative; white-space: nowrap; }
+.taxi-tabs button[data-native-tab-border=ready] { border-radius: 0; }
+.taxi-tab-border { display: contents; }
+.taxi-tab-corner { display: block; position: absolute; pointer-events: none; z-index: 1; }
 .taxi-tabs button + button { margin-left: -1px; }
 .taxi-tabs button.active { border-bottom-color: #fff; background: #fff; z-index: 1; }
 .taxi-page { padding: 7px 10px 8px; border: 1px solid var(--taxi-tab-border, #b4b4b4); margin-top: -1px; }

@@ -48,7 +48,7 @@ exports.run = async function () {
         group:style(document.querySelector('.taxi-group')),title:style(document.querySelector('.taxi-group-title')),
         buttons:[...document.querySelectorAll('.taxi-form-content .taxi-button')].map(node=>({label:node.textContent,...rect(node)})),
         tabs:document.querySelectorAll('.taxi-tabs [role=tab]').length,
-        tabButtons:[...document.querySelectorAll('.taxi-tabs [role=tab]')].map(node=>({label:node.textContent,overflow:node.scrollHeight>node.clientHeight,...rect(node)})),menu:!!document.querySelector('.taxi-menu')};
+        tabButtons:[...document.querySelectorAll('.taxi-tabs [role=tab]')].map(node=>({label:node.textContent,overflow:(node.querySelector('[data-native-label]')?.getClientRects().length??1)>1,...rect(node)})),menu:!!document.querySelector('.taxi-menu')};
     })()`);
     if (process.platform === 'linux') {
       const expected = nativeFrames[form.kind];

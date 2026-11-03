@@ -8,6 +8,8 @@ import { NativeLabel } from './NativeLabel.jsx';
 import { tabMetrics } from './tab-metrics.mjs';
 import { calculatorRects, calculatorFill } from './input-calculator.mjs';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
+import { NativeTabBorder } from './NativeTabBorder.jsx';
+import { createNativeGroupBackdrop } from './native-group-background.js';
 
 export function Icon(props) {
   return <svg class="taxi-icon" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
@@ -122,7 +124,7 @@ function Pages(props) {
   const metrics = () => tabMetrics(pages().map(page => page.presentation.titleFont));
   const horizontal = () => !['TabsOnLeftHorizontal', 'TabsOnRightHorizontal'].includes(scalar(node(), 'PagesRepresentation'));
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
-    <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist" style={{height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined}}><For each={pages()}>{page => <PageTab page={page} pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} active={page.key === selected()}/>}</For></div></Show>
+    <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist" style={{height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined}}><For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()} pageBackground={pages().find(page=>page.key===selected())?.presentation.background} pageHasBackground={!!property(pages().find(page=>page.key===selected()),'BackColor')} pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} active={page.key === selected()}/>}</For></div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
       style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller}/></div>}</For></div>
   </div>;
@@ -130,14 +132,15 @@ function Pages(props) {
 function PageTab(props) {
   const state = props.controller.state;
   let button;
+  const [paint,setPaint]=createSignal();
   const width = createNativeButtonWidth(() => button, () => ({text:caption(props.page,state),os:state.os,automatic:true,font:font(props.page.presentation.titleFont,state.os),metrics:props.metrics}));
   const native = () => state.os === 'linux' && ['Auto', 'TabsOnTop', 'Swipe'].includes(scalar(props.pages, 'PagesRepresentation', 'Auto'));
-  return <button ref={button} type="button" role="tab" aria-label={caption(props.page,state)} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active} classList={{active:props.active,'taxi-selected':state.selected===props.page.key}}
+  return <button ref={button} data-native-tab-border={paint()?'ready':undefined} type="button" role="tab" aria-label={caption(props.page,state)} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active} classList={{active:props.active,'taxi-selected':state.selected===props.page.key}}
     style={{...font(props.page.presentation.titleFont,state.os),color:color(props.page.presentation.titleColor),width:width(),height:state.os === 'linux' ? `${props.metrics.height}px` : undefined,
       'padding-left':state.os === 'linux' && props.horizontal ? `${props.metrics.horizontalPadding}px` : undefined,'padding-right':state.os === 'linux' && props.horizontal ? `${props.metrics.horizontalPadding}px` : undefined,
-      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`}} onClick={event => {
+      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'background-color':paint()?`rgb(${paint().background.join(',')})`:undefined,'border-bottom-color':paint()&&props.active?`rgb(${paint().background.join(',')})`:undefined}} onClick={event => {
     event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page);
-  }}><NativeLabel enabled={native()} placement="tab" calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/></button>;
+  }}><NativeLabel enabled={native()} placement="tab" calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/><NativeTabBorder node={props.page} previous={props.previous} next={props.next} selected={props.selected} pageBackground={props.pageBackground} pageHasBackground={props.pageHasBackground} active={props.active} enabled={native()} button={()=>button} controller={props.controller} paint={paint()} setPaint={setPaint}/></button>;
 }
 function Group(props) {
   const node = () => props.node, state = props.controller.state;
@@ -146,12 +149,14 @@ function Group(props) {
   const collapsible = () => scalar(node(), 'Behavior') === 'Collapsible';
   const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page');
   const painted = () => !!property(node(), 'BackColor');
+  let container;
+  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.sequence}));
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
     <Match when={['CommandBar', 'ButtonGroup'].includes(node().kind)}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
-    <Match when={true}><div class="taxi-group" classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible(), 'taxi-group--painted': painted() }}
-      style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-title-color': color(node().presentation.titleColor) }}>
+    <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible(), 'taxi-group--painted': painted() }}
+      style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
       <Show when={title()}><div class="taxi-group-title" style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
         <Show when={collapsible()} fallback={caption(node(), state)}><button type="button" aria-expanded={!collapsed()} onClick={event => { event.stopPropagation(); props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() }); }}>{caption(node(), state)}</button></Show>
       </div></Show><Show when={!collapsed()}><Items {...props}/></Show>
@@ -213,7 +218,7 @@ function Field(props) {
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()} style={{ 'min-height': node().kind === 'InputField' ? `${inputHeight(node()) + 2}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
-    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}><NativeLabel text={label()} font={node().presentation.titleFont} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && node().kind === 'InputField' && ['Left','Right'].includes(titleLocation()) && flag(node(), 'Enabled')}/></label></Show>
+    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}><NativeLabel placement="fieldTitle" text={label()} font={node().presentation.titleFont} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && node().kind === 'InputField' && ['Left','Right'].includes(titleLocation()) && flag(node(), 'Enabled')}/></label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }

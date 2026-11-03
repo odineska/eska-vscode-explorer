@@ -144,7 +144,12 @@ export function fieldValue(node, culture) {
 }
 export function fieldStyle(node, os) {
   const maxWidth = number(node, 'MaxWidth'), minWidth = number(node, 'MinWidth');
-  return { width: `${fieldWidth(node, os)}px`, ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
+  // Preserve the intrinsic preferred width, then fill an allocated string column.
+  const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
+    && !property(node, 'HorizontalStretch') && number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0;
+  const automaticMinimum = automaticStretch && !node.presentation.valueType.length
+    ? `min(100%, ${Math.round((fontPixels(node) - 1) * 100 / 3 + 10)}px)` : '100%';
+  return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}), ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
     ...(flag(node, 'HorizontalStretch', false) ? { width: '100%' } : {}) };
 }
 export function localizedProperty(value, locale) {

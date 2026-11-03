@@ -25,6 +25,7 @@ export function NativeLabel(props) {
     runtime?.issue(owner, false); setStatus('browser');
     if (!props.enabled || !text || !runtime) return;
     const label = props.target?.() ?? placeholder.parentElement, metrics = fontLineMetrics(value), css = getComputedStyle(label);
+    const fieldFrame=props.placement==='fieldTitle'?label.closest('.taxi-form-frame'):undefined;
     const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
     if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
         || props.placement === 'tab' && !props.calibrated
@@ -42,8 +43,14 @@ export function NativeLabel(props) {
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
-        const baseline = tab || title || input ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
+        let baseline = tab || title || input ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
+        if(fieldFrame){
+          const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
+          const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
+          // The row may allocate half a CSS pixel; snap the baseline in form coordinates.
+          baseline=Math.floor(top+baseline+1e-6)-top;
+        }
         const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
           : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + parseFloat(style.width) - 3 - raster.advance : 0;
         canvas.style.left = `${left + raster.originX}px`;
@@ -54,6 +61,7 @@ export function NativeLabel(props) {
     };
     setStatus('pending');
     const resize = new ResizeObserver(draw); resize.observe(label);
+    if(fieldFrame)resize.observe(fieldFrame);
     const appearance = new MutationObserver(draw);
     for (let node = label; node && !node.classList.contains('taxi-preview'); node = node.parentElement) {
       appearance.observe(node, { attributes: true, attributeFilter: ['style', 'class'] });
