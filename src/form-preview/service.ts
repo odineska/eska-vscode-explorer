@@ -290,6 +290,7 @@ export class FormPreviewService implements vscode.Disposable {
       const found = await revealFile(tree, state.path), entry = found && "owner" in found ? found.owner : found;
       if (!entry || !isForm(entry)) throw new ExplorerError("sourceMissing");
       const view = await this.view(tree, entry, state.path, typeof state.application === "string" ? state.application : undefined);
+      if (!view.selected && isIdentity(state.selection)) view.selected = state.selection;
       const role = state.role as Role; if (view.frames.has(role)) { panel.dispose(); view.frames.get(role)?.panel.reveal(); return; }
       this.frame(view, role, panel); this.schedule(view, 0);
     } catch (error) { panel.dispose(); this.log(`form_restore ${error instanceof ExplorerError ? error.code : "requestFailed"}`); }

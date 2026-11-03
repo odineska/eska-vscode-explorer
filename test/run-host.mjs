@@ -31,7 +31,7 @@ try {
     const fields = Array.from({ length: 48 }, (_, index) => `${index} AS КолонкаРезультата${index}WithLongEnglishName`).join(',\r\n|');
     await writeFile(fixture.module, `\ufeffПроцедура Test()\r\nQ = "SELECT ${fields}\r\n|FROM (SELECT 1 AS NestedValue) AS Child";\r\nКонецПроцедуры\r\n`);
   }
-  if (["form-preview-host.cjs", "form-lifecycle-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
+  if (["form-preview-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
   if (basename(suite) === "form-states-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createStateGallery(fixture);
   if (basename(suite) === "form-groups-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createGroupGallery(fixture);

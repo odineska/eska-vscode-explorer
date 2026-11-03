@@ -7,9 +7,9 @@ export function controller(api) {
   const saved = api.getState();
   const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, detached: false,
     notice: '', restore: null, selected: '', ui: { upper: 230, left: 40, right: 65, tab: 'attributes', treeTab: 'elements', folded: {}, pages: {}, collapsed: {}, zoom: 100, ...saved?.ui } });
-  const [selection, setSelection] = createSignal(null);
+  const [selection, setSelection] = createSignal(saved?.selection ?? null);
   let persistFrame;
-  const persist = () => { cancelAnimationFrame(persistFrame); persistFrame = requestAnimationFrame(() => api.setState({ schemaVersion: 1, ...unwrap(state.restore), ui: { ...unwrap(state.ui), selected: state.selected } })); };
+  const persist = () => { cancelAnimationFrame(persistFrame); persistFrame = requestAnimationFrame(() => api.setState({ schemaVersion: 1, ...unwrap(state.restore), selection: unwrap(selection()), ui: { ...unwrap(state.ui), selected: state.selected } })); };
   function receive(event) {
     const value = event.data; if (!value || typeof value !== 'object') return;
     if (value.type === 'selection') { if (value.identity) { set('selected', key({ identity: value.identity })); setSelection(value.identity); persist(); } return; }

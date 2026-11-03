@@ -26,3 +26,26 @@ test('browser controller unwraps Solid store proxies before selection and naviga
   assert.equal(controller.state.selected,'own:current:-9223372036854775808');
   controller.dispose();assert.equal(listeners.size,0);
 });
+
+test('persisted selection identity survives loading before the restored model arrives', async () => {
+  const bundle = await build({ entryPoints:[fileURLToPath(new URL('../webview/forms/controller.js',import.meta.url))],
+    bundle:true, write:false, platform:'browser', format:'cjs', conditions:['browser','production'], define:{'process.env.NODE_ENV':'"production"'} });
+  const listeners = new Map(), module = {exports:{}};
+  let frame, saved;
+  const context = createContext({module,exports:module.exports,console,
+    requestAnimationFrame:callback=>{frame=callback;return 1;},cancelAnimationFrame:()=>{},
+    window:{addEventListener:(name,callback)=>listeners.set(name,callback),removeEventListener:name=>listeners.delete(name)} });
+  runInContext(bundle.outputFiles[0].text,context);
+  const identity = {source:'own',part:'current',key:{kind:'xml',value:'9223372036854775807'}};
+  const previous = {schemaVersion:1,path:'/source/Form.xml',role:'preview',selection:identity,ui:{zoom:150,selected:'own:current:9223372036854775807'}};
+  const controller = module.exports.controller({getState:()=>runInContext(`(${JSON.stringify(previous)})`,context),
+    setState:value=>{saved=structuredClone(value);},postMessage:()=>{}});
+  const loading = {type:'state',sequence:1,phase:'loading',restore:{path:'/source/Form.xml',role:'preview'}};
+  listeners.get('message')({data:runInContext(`(${JSON.stringify(loading)})`,context)});frame();
+  assert.deepEqual(saved.selection,identity,'loading must not overwrite the serialized identity with null');
+  assert.equal(saved.ui.zoom,150);assert.equal(saved.model,undefined);
+  const ready = {type:'state',sequence:2,selection:identity,model:{root:{identity,properties:[],children:[],auxiliary:[]}}};
+  listeners.get('message')({data:runInContext(`(${JSON.stringify(ready)})`,context)});frame();
+  assert.deepEqual(saved.selection,identity);assert.equal(saved.ui.selected,previous.ui.selected);
+  controller.dispose();
+});
