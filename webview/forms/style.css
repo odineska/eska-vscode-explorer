@@ -101,9 +101,15 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-form-frame { position: relative; border-color: transparent; box-shadow: none; }
 .taxi-preview[data-os=linux] .taxi-form-shadow { display: block; position: absolute; inset: 1px -5px -5px 1px; pointer-events: none;
   clip-path: polygon(calc(100% - 3px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(100% - 3px), calc(100% - 3px) calc(100% - 3px));
-  background: linear-gradient(to bottom, transparent calc(100% - 3px), #3f3f3f calc(100% - 3px), #3f3f3f calc(100% - 2px), #555 calc(100% - 2px), #555 calc(100% - 1px), #7f7f7f calc(100% - 1px)),
+  background: linear-gradient(to right, #565656 0 1px, #696969 1px 2px, #8e8e8e 2px 3px) right top / 3px 1px no-repeat,
+    linear-gradient(to bottom, #565656 0 1px, #696969 1px 2px, #8e8e8e 2px 3px) left bottom / 1px 3px no-repeat,
+    linear-gradient(to right, #565656 0 1px, #3f3f3f 1px 2px, #555 2px 3px, #7f7f7f 3px 4px) right 0 bottom 2px / 4px 1px no-repeat,
+    linear-gradient(to right, #555 0 1px, #525252 1px 2px, #555 2px 3px, #7f7f7f 3px 4px) right 0 bottom 1px / 4px 1px no-repeat,
+    linear-gradient(to right, #7f7f7f 0 2px, #7c7c7c 2px 3px, #8e8e8e 3px 4px) right bottom / 4px 1px no-repeat,
+    linear-gradient(to bottom, transparent calc(100% - 3px), #3f3f3f calc(100% - 3px), #3f3f3f calc(100% - 2px), #555 calc(100% - 2px), #555 calc(100% - 1px), #7f7f7f calc(100% - 1px)),
     linear-gradient(to right, #3f3f3f calc(100% - 2px), #555 calc(100% - 2px), #555 calc(100% - 1px), #7f7f7f calc(100% - 1px)); }
-.taxi-preview[data-os=linux] .taxi-form-frame::before { content: ''; position: absolute; inset: -2px; border: 1px solid #000; pointer-events: none; z-index: 1; }
+.taxi-preview[data-os=linux] .taxi-form-frame::before { content: ''; position: absolute; inset: -2px; border: 1px solid #000; border-top-color: transparent; border-left-color: transparent; pointer-events: none; z-index: 1;
+  background: linear-gradient(to bottom, #1f1f1f 0 2px, #000 2px) left top / 1px 100% no-repeat, linear-gradient(#000, #000) left top / 100% 1px no-repeat; background-origin: border-box; }
 .taxi-preview[data-os=linux] .taxi-form-title { position: relative; z-index: 1; background: #f6f5f4; box-shadow: 0 0 0 1px #f6f5f4; color: #fff; font-size: 11px; font-weight: 700; line-height: 24px; padding-left: 2px; }
 .taxi-preview[data-os=linux] .taxi-selected { outline: none; }
 .taxi-preview[data-os=linux] .taxi-element.taxi-selected::after, .taxi-preview[data-os=linux] .taxi-tabs > button.taxi-selected::after,

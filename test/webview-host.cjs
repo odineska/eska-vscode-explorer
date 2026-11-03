@@ -142,10 +142,11 @@ async function frame(tab) {
       await send('Input.dispatchMouseEvent', {type:'mouseReleased',...point,button:'left',clickCount:1});
     },
     /** Preserve visual evidence from the actual native editor window. */
-    async screenshot(name) {
-      if (!process.env.ESKA_SCREENSHOT_DIR) return;
+    async screenshot(name, withData = false) {
+      if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
       const result = await send('Page.captureScreenshot', { format: 'png' });
-      await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR, name), Buffer.from(result.data, 'base64'));
+      if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR, name), Buffer.from(result.data, 'base64'));
+      if (withData) return result.data;
     },
     close() { socket.close(); },
   };

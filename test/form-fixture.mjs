@@ -112,15 +112,26 @@ export async function createStyleColorRolesSource(fixture) {
   return {...form,definition};
 }
 
-export async function createFontRolesGallery(fixture) {
-  const input = process.env.ESKA_FORM_FIXTURES;
+export async function createFontRolesGallery(fixture, input = process.env.ESKA_FORM_FIXTURES) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const form = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
   await writeFile(form.style, await readFile(join(input, 'Style.xml')));
   const definition = join(fixture.source, 'StyleItems', 'TitleFont.xml'), root = join(fixture.source, 'Configuration.xml');
   await writeFile(definition, await readFile(join(input, 'TitleFont.xml')));
   await writeFile(root, (await readFile(root,'utf8')).replace('<ChildObjects>', '<ChildObjects><StyleItem>TitleFont</StyleItem>'));
-  return {forms:await createMeasuredFormGallery(fixture),style:form.style,definition,overrides:await readFile(join(input,'StyleOverrides.xml'),'utf8')};
+  return {forms:await createMeasuredFormGallery(fixture,input),style:form.style,definition,overrides:await readFile(join(input,'StyleOverrides.xml'),'utf8')};
+}
+
+export async function createFrameCornersGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const reference = JSON.parse(await readFile(join(input,'corners.json'),'utf8'));
+  const fonts = await createFontRolesGallery(fixture,join(input,'..','native-font-roles'));
+  const metrics = await createMeasuredFormGallery(fixture,join(input,'..','native-button-metrics'));
+  const pages = await createGallery(fixture,['PagesAuto'],join(input,'..','native-groups'));
+  const forms = [ ...fonts.forms.map(form=>({...form,kind:'font-'+form.kind})),
+    ...metrics.map(form=>({...form,kind:'button-'+form.kind})), ...pages ];
+  return {forms:forms.map(form=>({...form,expected:reference.rows.find(row=>row.name===form.kind)})),referencePixels:reference.referencePixels};
 }
 
 export async function createPrimaryAppearanceGallery(fixture) {
@@ -131,11 +142,10 @@ export async function createPrimaryAppearanceGallery(fixture) {
   return createMeasuredFormGallery(fixture);
 }
 
-export async function createMeasuredFormGallery(fixture) {
-  const input = process.env.ESKA_FORM_FIXTURES;
+export async function createMeasuredFormGallery(fixture, input = process.env.ESKA_FORM_FIXTURES) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const metrics = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
-  return (await createGallery(fixture, metrics.rows.map(row => row.name))).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
+  return (await createGallery(fixture, metrics.rows.map(row => row.name), input)).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
 }
 
 export async function createGroupGallery(fixture) {
