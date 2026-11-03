@@ -76,7 +76,7 @@ button { cursor: default; }
   --taxi-SpecialTextColor: #888; --taxi-GroupTitleTextColor: #009646; --taxi-SelectionBackColor: #d9eaf5; --taxi-SelectionTextColor: #000;
   --taxi-FieldSelectionBackColor: #cce8ff; --taxi-TooltipBackColor: #ffffe1; --taxi-ToolTipBackColor: #ffffe1; --taxi-TooltipTextColor: #000;
   --taxi-LinesColor: #d7d7d7; --taxi-HeaderBackColor: #f2f2f2; --taxi-HeaderTextColor: #555; --taxi-TableFooterBackColor: #f2f2f2; }
-.taxi-preview[data-os=linux] { font-family: 'ESKA Taxi Sans', Arial, sans-serif; --taxi-FormTextColor: #4d4d4d; --taxi-ButtonTextColor: #4d4d4d; --taxi-FieldTextColor: #333; --taxi-tab-border: #b3b3b3; }
+.taxi-preview[data-os=linux] { font-family: 'ESKA Taxi Sans', Arial, sans-serif; --taxi-FormTextColor: #4d4d4d; --taxi-ButtonTextColor: #4d4d4d; --taxi-FieldTextColor: #333; --taxi-tab-border: #b3b3b3; --taxi-ImportantColor: #ffe100; --taxi-AccentColor: #009646; --taxi-ActivityColor: #facc1f; --taxi-NavigationColor: #fbed9e; --taxi-AuxiliaryNavigationColor: #ffffd9; }
 .taxi-preview * { box-sizing: border-box; }
 .taxi-preview button, .taxi-preview input, .taxi-preview textarea { font: inherit; color: inherit; }
 .taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 28px; background: #fff; box-sizing: content-box; }

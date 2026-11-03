@@ -62,6 +62,21 @@ test('kerning, Cyrillic and explicit RGB captions match all eighteen native inte
   } finally { engine.dispose(); }
 });
 
+test('five Taxi style colors match native caption interiors with and without a selected style', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-style-palette/caption-interiors.json', import.meta.url)));
+  const engine = createFontRaster(binary);
+  try {
+    const face = engine.open(regular);
+    let compared = 0;
+    for (const row of reference.rows) {
+      const { rgb } = interiorPixels(face, reference.caption, reference.points, row.button.width, row.button.height, row.foreground);
+      assert.equal(sha(rgb), row.rgbSha256, `${row.context}: ${row.name}`);
+      compared += row.region.width * row.region.height;
+    }
+    assert.equal(compared, 9200);
+  } finally { engine.dispose(); }
+});
+
 test('rasterizer validates unsupported text and releases owned faces idempotently', () => {
   const engine = createFontRaster(binary), face = engine.open(regular);
   for (const text of ['e\u0301', 'a\u200d', '\n', 'مرحبا', '🚀', 'a'.repeat(4097)]) {

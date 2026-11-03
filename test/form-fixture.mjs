@@ -81,14 +81,23 @@ export async function createPaletteGallery(fixture) {
   return createGallery(fixture,['Field','Button']);
 }
 
-export async function createStyleFormSource(fixture) {
-  const input = process.env.ESKA_FORM_FIXTURES;
+export async function createStyleFormSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   for (const folder of ['Styles', 'StyleItems', 'CommonForms']) await cp(join(input, folder), join(fixture.source, folder), {recursive:true});
   const root = join(fixture.source, 'Configuration.xml');
   await writeFile(root, (await readFile(root, 'utf8')).replace('</Properties>', '<DefaultStyle>Style.ProbeStyleValues</DefaultStyle></Properties>')
     .replace('<ChildObjects>', '<ChildObjects><Style>ProbeStyleValues</Style><StyleItem>ProbeColor</StyleItem><StyleItem>ProbeFont</StyleItem><CommonForm>ProbeStyleConsumer</CommonForm>'));
   return {path:join(fixture.source,'CommonForms','ProbeStyleConsumer','Ext','Form.xml'),style:join(fixture.source,'Styles','ProbeStyleValues','Ext','Style.xml')};
+}
+
+export async function createStylePaletteGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const { style } = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
+  await writeFile(style, await readFile(join(input, 'Style.xml')));
+  const expected = JSON.parse(await readFile(join(input, 'manifest.json'), 'utf8'));
+  const forms = await createGallery(fixture, [...Object.keys(expected.defaultColors), 'Group', 'GroupAccent', 'TabAccent']);
+  return { forms, style, configuration:join(fixture.source, 'Configuration.xml'), expected };
 }
 
 export async function createMeasuredFormGallery(fixture) {
