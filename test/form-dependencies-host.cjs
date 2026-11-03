@@ -28,11 +28,17 @@ exports.run = async () => {
   await until(() => view.frames.get('preview')?.ready, 'detached dependency preview');
   const ui = await frame({ state: { title: view.frames.get('preview').panel.title } });
   await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input')"), 'input visible');
-  await ui.evaluate("globalThis.__dependencyInput=document.querySelector('.taxi-input');globalThis.__dependencyModels=[];window.addEventListener('message',event=>{if(event.data.type==='state'&&event.data.model)globalThis.__dependencyModels.push(event.data.model.root.children[0].children[0].presentation.font.points)})");
+  await ui.evaluate("globalThis.__dependencyInput=document.querySelector('.taxi-input');globalThis.__dependencyModels=[];window.addEventListener('message',event=>{if(event.data.type==='state'){globalThis.__dependencySequence=event.data.sequence;if(event.data.model)globalThis.__dependencyModels.push(event.data.model.root.children[0].children[0].presentation.font.points)}})");
   const points = () => view.snapshot.model.root.children[0].children[0].presentation.font.points;
   async function settled(revision, label) {
     await until(() => view.phase === 'ready' && view.snapshot.revision !== revision && !view.running && !view.timer, label);
-    await until(async () => await ui.evaluate(`globalThis.__dependencyModels.at(-1)===${points()}`), `${label} rendered`);
+    // Equal font values can belong to an earlier response. Drain the actual
+    // latest state before clearing the observer for a strict publication check.
+    assert.equal([...view.frames.keys()].at(-1), 'preview');
+    await until(async () => {
+      const rendered = await ui.evaluate('({points:globalThis.__dependencyModels.at(-1),sequence:globalThis.__dependencySequence})');
+      return view.phase === 'ready' && !view.running && !view.timer && rendered.points === points() && rendered.sequence === view.sequence;
+    }, `${label} rendered`);
   }
   assert.equal(points(), 12);
   const b = await vscode.workspace.openTextDocument(vscode.Uri.file(files.styles.FontB));
