@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep, extname, basename } from "node:path";
 import { ExplorerError, isRecord, projectEnabled, type WirePath } from "../protocol.js";
-import { existingSource, nativePath, editorRange, resolveSource, isForm } from "../source.js";
+import { existingSource, nativePath, resolveSource, isForm } from "../source.js";
 import { revealFile } from "../reveal.js";
 import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
@@ -11,6 +11,7 @@ import { querySnapshot } from "../query/text-transfer.js";
 import { FormSession } from "./client.js";
 import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
 import { formStrings } from "./strings.js";
+import { formEditorRange } from "./source.js";
 
 const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
@@ -271,8 +272,7 @@ export class FormPreviewService implements vscode.Disposable {
     const uri = await this.sourceUri(path), document = await vscode.workspace.openTextDocument(uri);
     const bytes = dependency?.version !== null ? Buffer.from(document.getText(), "utf8") : await readFile(path);
     if (querySnapshot(bytes.toString("utf8")) !== location.snapshot) throw new ExplorerError("sourceChanged");
-    const position = editorRange(bytes, location.range.start, location.range.end);
-    if (document.getText() !== position.text) throw new ExplorerError("sourceChanged");
+    const position = formEditorRange(bytes, location.range.start, location.range.end, document.getText(), document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
     const editor = await vscode.window.showTextDocument(document, { preview: false });
     editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end)); editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }
