@@ -40,12 +40,15 @@ exports.run = async () => {
     if (form.kind === '16Normal' && process.platform === 'linux') {
       const original = document.getText();
       await ui.evaluate("globalThis.__metricButton=document.querySelector('.taxi-command-bar .taxi-button')");
-      for (const points of [20, 16]) {
+      async function change(text) {
         const revision = view.snapshot.revision, edit = new vscode.WorkspaceEdit();
         edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
-          original.replaceAll('height="16"', `height="${points}"`));
+          text);
         assert.equal(await vscode.workspace.applyEdit(edit), true);
         await until(() => view.phase === 'ready' && view.snapshot.revision !== revision && !view.running && !view.timer, 'dirty font model');
+      }
+      for (const points of [20, 16]) {
+        await change(original.replaceAll('height="16"', `height="${points}"`));
         const expected = fixture.formGallery.find(item => item.kind === `${points}Normal`).expected;
         await until(async () => {
           const actual = await ui.evaluate(measurement);
@@ -56,6 +59,12 @@ exports.run = async () => {
         assert.equal(document.isDirty, true);
         results.push({name:`dirty ${points}pt`, ...await ui.evaluate(measurement)});
       }
+      const type = '<Type>CommandBarButton</Type>';
+      await change(original.replace(type, type + '<DefaultButton>true</DefaultButton>'));
+      await until(async () => await ui.evaluate("document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !document.querySelector('.taxi-button').style.backgroundImage"), 'primary button releases plain fill');
+      await change(original);
+      await until(async () => await ui.evaluate("!document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !!document.querySelector('.taxi-button').style.backgroundImage"), 'plain fill restored');
+      assert.equal(await ui.evaluate("globalThis.__metricButton===document.querySelector('.taxi-command-bar .taxi-button')"), true);
     }
     assert.deepEqual(await fs.readFile(form.path), before);
     ui.close(); panel.panel.dispose();

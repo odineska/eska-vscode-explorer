@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, fontLineHeight, buttonMetrics, text, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
@@ -38,7 +38,9 @@ export function CommandButton(props) {
   const metrics = () => {
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px` };
+    const plain = !picture() && !props.primary && !flag(props.node, 'DefaultButton', false) && flag(props.node, 'Enabled') && !property(props.node, 'BackColor');
+    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
+      'background-image': plain ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2) : undefined };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
     automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,

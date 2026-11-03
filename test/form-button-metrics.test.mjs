@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buttonMetrics } from '../webview/forms/model.mjs';
+import { buttonMetrics, buttonBackground } from '../webview/forms/model.mjs';
 import { hintedTextWidth } from '../webview/forms/font-metrics.mjs';
 
 test('raised button heights follow all sixteen native font references',async()=>{
@@ -10,6 +10,19 @@ test('raised button heights follow all sixteen native font references',async()=>
     const metrics=buttonMetrics({points:row.points});
     assert.equal(Math.max(26,metrics.lineHeight+2*metrics.verticalPadding+2),row.buttons[0].height,row.name);
   }
+});
+
+test('discrete button fills match every native background row without dithering', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-metrics/backgrounds.json', import.meta.url)));
+  for (const row of reference.rows) {
+    const height = row.buttonHeight - 2, colors = Array(height);
+    for (const match of buttonBackground(height).matchAll(/rgb\((\d+), (\d+), (\d+)\) (\d+)px (\d+)px/g)) {
+      assert.equal(match[1], match[2]); assert.equal(match[2], match[3]);
+      colors.fill(Number(match[1]), Number(match[4]), Number(match[5]));
+    }
+    assert.deepEqual(colors, row.grayscaleRows, `${row.buttonHeight}px button`);
+  }
+  for (const height of [0, -1, 1.5, 4097, Infinity, NaN]) assert.equal(buttonBackground(height), undefined);
 });
 
 test('hinted caption advances match all forty-eight native button widths', async () => {

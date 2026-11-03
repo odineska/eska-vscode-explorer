@@ -78,6 +78,21 @@ export function buttonMetrics(value) {
   const pixels = Math.round((value?.points ?? 10) * 4 / 3);
   return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: fontLineHeight(value) };
 }
+/** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
+export function buttonBackground(height) {
+  if (!Number.isInteger(height) || height < 1 || height > 4096) return;
+  const shade = y => 255 - Math.round(20 * Math.ceil(Math.max(0, 2 * y + 1 - height) * 1024 / height) / 1024);
+  const stops = [];
+  let start = 0, color = shade(0);
+  for (let y = 1; y <= height; y++) {
+    const next = y === height ? undefined : shade(y);
+    if (next !== color) {
+      stops.push(`rgb(${color}, ${color}, ${color}) ${start}px ${y}px`);
+      start = y; color = next;
+    }
+  }
+  return `linear-gradient(to bottom, ${stops.join(', ')})`;
+}
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
 export function inputHeight(node) {
