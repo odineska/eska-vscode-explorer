@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
 const source = 'a'.repeat(64);
@@ -88,6 +88,18 @@ test('renderer preparation preserves identity across new models and localizes li
   assert.equal(text(title, 'ru-RU', {}), 'Наименование'); assert.equal(text(title, 'en-US', {}), 'Name');
   assert.equal(fieldWidth(before.root), 161); assert.equal(color({ kind: 'rgb', value: '#009646' }), '#009646');
   assert.match(font({ face: 'Arial', points: 10 }, 'linux')['font-family'], /ESKA Taxi Sans/);
+});
+
+test('selection opens every enclosing page by identity while leaving unrelated groups alone', () => {
+  const model=fixture().model;
+  const node=(id,kind,children=[])=>({...structuredClone(model.root),kind,identity:{source,part:'current',key:{kind:'xml',value:String(id)}},children});
+  model.root.children=[node(1,'Pages',[node(2,'Page',[node(3,'Pages',[node(4,'Page',[node(5,'InputField')])])])]),node(6,'Pages',[node(7,'Page')])];
+  const prepared=prepare(model), root=prepared.root;
+  const path=pageSelections(root,find(root,`${source}:current:5`).key);
+  assert.deepEqual(path,{[`${source}:current:1`]:`${source}:current:2`,[`${source}:current:3`]:`${source}:current:4`});
+  assert.deepEqual(pageSelections(root,root.key),{});
+  assert.deepEqual(pageSelections(root,'missing'),{});
+  assert.deepEqual(pageSelections(root,`${source}:current:7`),{[`${source}:current:6`]:`${source}:current:7`});
 });
 
 test('form viewer UI strings have identical ru/en keys', () => {

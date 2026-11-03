@@ -20,7 +20,8 @@ export function createNativeButtonWidth(element, request) {
         return sum + parseFloat(style.width) + (parseFloat(style.marginLeft) || 0) + (parseFloat(style.marginRight) || 0);
       }, 0) + Math.max(0, adornments.length + (value.text ? 1 : 0) - 1) * (parseFloat(css.columnGap) || 0)
         + ['paddingLeft','paddingRight','borderLeftWidth','borderRightWidth'].reduce((sum, key) => sum + (parseFloat(css[key]) || 0), 0);
-      setWidth(`${Math.max(parseFloat(css.minWidth) || 0, Math.ceil(textWidth + extra))}px`);
+      const minimum = css.minWidth.endsWith('px') ? parseFloat(css.minWidth) || 0 : 0;
+      setWidth(`${Math.max(minimum, Math.ceil(textWidth + extra))}px`);
     }, () => {});
     onCleanup(() => { current = false; });
   }));

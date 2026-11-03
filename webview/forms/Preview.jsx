@@ -87,18 +87,18 @@ export function Items(props) {
 function Pages(props) {
   const node = () => props.node, state = props.controller.state;
   const pages = () => node().children.filter(node => node.presentation.displayed);
-  const selected = () => state.ui.pages[node().key] ?? pages()[0]?.key;
-  const page = createMemo(() => pages().find(page => page.key === selected()) ?? pages()[0]);
+  const selected = () => (pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0])?.key;
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
     <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist"><For each={pages()}>{page => <PageTab page={page} pages={node()} controller={props.controller} active={page.key === selected()}/>}</For></div></Show>
-    <Show when={page()}>{value => <div role="tabpanel" class="taxi-page" style={{ 'background-color': property(value(), 'BackColor') ? color(value().presentation.background) : undefined }}><Items node={value()} controller={props.controller}/></div>}</Show>
+    <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
+      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {
   const state = props.controller.state;
   let button;
   const width = createNativeButtonWidth(() => button, () => ({text:caption(props.page,state),os:state.os,automatic:true,font:font(props.pages.presentation.font,state.os)}));
-  return <button ref={button} type="button" role="tab" aria-selected={props.active} classList={{active:props.active}} style={{width:width()}} onClick={event => {
+  return <button ref={button} type="button" role="tab" aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active} classList={{active:props.active,'taxi-selected':state.selected===props.page.key}} style={{width:width()}} onClick={event => {
     event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page);
   }}>{caption(props.page,state)}</button>;
 }

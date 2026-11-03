@@ -74,7 +74,7 @@ export async function createGroupGallery(fixture) {
   const root = join(fixture.source, 'Configuration.xml');
   await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><StyleItem>ProbeColor</StyleItem><StyleItem>ProbeFont</StyleItem>'));
   return createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible',
-    'PagesTop', 'PagesBottom', 'PagesNone', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
+    'PagesTop', 'PagesBottom', 'PagesNone', 'PagesAuto', 'PagesLeft', 'PagesRight', 'PagesSwipe', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
 }
 
 export async function createTableGallery(fixture) {

@@ -49,6 +49,21 @@ export function color(value) {
   return `var(--taxi-${value.value}, var(--taxi-TextColor))`;
 }
 export function find(root, identity) { const id = typeof identity === 'string' ? identity : key({ identity }); if (root?.key === id) return root; for (const child of [...root?.children ?? [], ...root?.auxiliary ?? []]) { const found = find(child, id); if (found) return found; } }
+/** Select each enclosing page without changing unrelated page groups. */
+export function pageSelections(root, selected) {
+  const path = [];
+  function visit(node) {
+    if (!node) return false;
+    path.push(node);
+    if (node.key === selected) return true;
+    for (const child of [...node.children, ...node.auxiliary]) if (visit(child)) return true;
+    path.pop(); return false;
+  }
+  if (!visit(root)) return {};
+  const pages = {};
+  for (let i = 0; i + 1 < path.length; i++) if (path[i].kind === 'Pages' && path[i + 1].kind === 'Page') pages[path[i].key] = path[i + 1].key;
+  return pages;
+}
 export function treeChildren(node) {
   return [...node.auxiliary, ...node.children].filter(child => !['ContextMenu', 'ExtendedTooltip'].includes(child.kind) && (child.kind !== 'AutoCommandBar' || child.children.length || node.kind === 'Table'));
 }
