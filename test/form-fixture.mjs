@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm, cp } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { createTreeProject, descriptor } from './fixture.mjs';
 export async function createFormSource(fixture) {
@@ -79,6 +79,16 @@ export async function createStateGallery(fixture) {
 
 export async function createPaletteGallery(fixture) {
   return createGallery(fixture,['Field','Button']);
+}
+
+export async function createStyleFormSource(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  for (const folder of ['Styles', 'StyleItems', 'CommonForms']) await cp(join(input, folder), join(fixture.source, folder), {recursive:true});
+  const root = join(fixture.source, 'Configuration.xml');
+  await writeFile(root, (await readFile(root, 'utf8')).replace('</Properties>', '<DefaultStyle>Style.ProbeStyleValues</DefaultStyle></Properties>')
+    .replace('<ChildObjects>', '<ChildObjects><Style>ProbeStyleValues</Style><StyleItem>ProbeColor</StyleItem><StyleItem>ProbeFont</StyleItem><CommonForm>ProbeStyleConsumer</CommonForm>'));
+  return {path:join(fixture.source,'CommonForms','ProbeStyleConsumer','Ext','Form.xml'),style:join(fixture.source,'Styles','ProbeStyleValues','Ext','Style.xml')};
 }
 
 export async function createButtonMetricGallery(fixture) {
