@@ -1,0 +1,89 @@
+/* ESKA Linux Taxi caption rasterizer. See resources/forms/native-text/README.md. */
+#include <stdint.h>
+#include <stdlib.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_MODULE_H
+#include FT_LCD_FILTER_H
+
+/* Only 32-bit offsets cross the WebAssembly boundary. */
+uint32_t eska_ft_alloc(uint32_t length) {
+    if (!length || length > 4 * 1024 * 1024) return 0;
+    return (uint32_t)(uintptr_t)malloc(length);
+}
+
+void eska_ft_free(uint32_t pointer) {
+    free((void *)(uintptr_t)pointer);
+}
+
+uint32_t eska_ft_init(void) {
+    FT_Library library = NULL;
+    FT_UInt interpreter = 40;
+    if (FT_Init_FreeType(&library)) return 0;
+    if (FT_Property_Set(library, "truetype", "interpreter-version", &interpreter)
+        || FT_Library_SetLcdFilter(library, FT_LCD_FILTER_DEFAULT)) {
+        FT_Done_FreeType(library);
+        return 0;
+    }
+    return (uint32_t)(uintptr_t)library;
+}
+
+uint32_t eska_ft_version(uint32_t handle) {
+    FT_Int major, minor, patch;
+    if (!handle) return 0;
+    FT_Library_Version((FT_Library)(uintptr_t)handle, &major, &minor, &patch);
+    return ((uint32_t)major << 16) | ((uint32_t)minor << 8) | (uint32_t)patch;
+}
+
+uint32_t eska_ft_open(uint32_t library, uint32_t address, uint32_t length) {
+    const uint8_t *bytes = (const uint8_t *)(uintptr_t)address;
+    FT_Face face = NULL;
+    if (!library || !bytes || !length || length > 4 * 1024 * 1024) return 0;
+    if (FT_New_Memory_Face((FT_Library)(uintptr_t)library, bytes, (FT_Long)length, 0, &face)) return 0;
+    if (FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
+        FT_Done_Face(face);
+        return 0;
+    }
+    return (uint32_t)(uintptr_t)face;
+}
+
+int eska_ft_size(uint32_t handle, uint32_t pixels) {
+    if (!handle || pixels < 1 || pixels > 2048) return FT_Err_Invalid_Argument;
+    return FT_Set_Pixel_Sizes((FT_Face)(uintptr_t)handle, 0, pixels);
+}
+
+int eska_ft_glyph(uint32_t handle, uint32_t codepoint, uint32_t address) {
+    int32_t *out = (int32_t *)(uintptr_t)address;
+    if (!handle || !out || codepoint > 0x10ffff) return FT_Err_Invalid_Argument;
+    FT_Face face = (FT_Face)(uintptr_t)handle;
+    FT_UInt index = FT_Get_Char_Index(face, codepoint);
+    if (!index) return FT_Err_Invalid_Glyph_Index;
+    FT_Int32 flags = FT_LOAD_TARGET_LCD | FT_LOAD_COLOR | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH | FT_LOAD_RENDER;
+    FT_Error error = FT_Load_Glyph(face, index, flags);
+    if (error) return error;
+    FT_GlyphSlot glyph = face->glyph;
+    FT_Bitmap *bitmap = &glyph->bitmap;
+    if (bitmap->pixel_mode != FT_PIXEL_MODE_LCD || bitmap->width % 3 || bitmap->pitch < 0
+        || bitmap->width > 12288 || bitmap->rows > 4096) return FT_Err_Cannot_Render_Glyph;
+    out[0] = (int32_t)glyph->advance.x;
+    out[1] = (int32_t)glyph->metrics.horiBearingX;
+    out[2] = (int32_t)glyph->metrics.horiBearingY;
+    out[3] = (int32_t)glyph->metrics.width;
+    out[4] = (int32_t)glyph->metrics.height;
+    out[5] = glyph->bitmap_left;
+    out[6] = glyph->bitmap_top;
+    out[7] = (int32_t)(bitmap->width / 3);
+    out[8] = (int32_t)bitmap->rows;
+    out[9] = bitmap->pitch;
+    out[10] = (int32_t)(uintptr_t)bitmap->buffer;
+    out[11] = bitmap->pixel_mode;
+    return 0;
+}
+
+void eska_ft_close(uint32_t face) {
+    if (face) FT_Done_Face((FT_Face)(uintptr_t)face);
+}
+
+void eska_ft_done(uint32_t library) {
+    if (library) FT_Done_FreeType((FT_Library)(uintptr_t)library);
+}

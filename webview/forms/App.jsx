@@ -105,6 +105,6 @@ export function App(props) {
       </div><Splitter value={() => state.ui.upper} change={value => c.ui('upper', Math.max(100, Math.min(shell.clientHeight - 150, value)))}/></Show>
       <Show when={state.role === 'preview' || !state.detached} fallback={<div class="form-detached-placeholder"><button type="button" onClick={() => c.post({ type: 'revealPreview' })}>{state.strings.revealPreview}</button></div>}><Preview controller={c}/></Show>
     </Show>
-    <footer classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : state.strings.readOnly)}</span><span>1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
+    <footer classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
   </main>;
 }

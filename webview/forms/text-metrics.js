@@ -18,7 +18,8 @@ export function createNativeButtonWidth(element, request) {
         pixels: Math.round(parseFloat(css.fontSize)), weight: css.fontWeight, italic: css.fontStyle === 'italic' })
         ?? [...value.text].reduce((sum, char) => sum + Math.floor(context.measureText(char).width + .5), 0);
       // Computed widths stay in CSS units when the preview uses CSS zoom.
-      const adornments = [...button.children].map(node => ({style:getComputedStyle(node)})).filter(item => parseFloat(item.style.width) > 0);
+      const adornments = [...button.children].filter(node => !node.hasAttribute('data-native-caption') && !node.classList.contains('taxi-native-caption'))
+        .map(node => ({style:getComputedStyle(node)})).filter(item => parseFloat(item.style.width) > 0);
       const extra = adornments.reduce((sum, {style}) => {
         return sum + parseFloat(style.width) + (parseFloat(style.marginLeft) || 0) + (parseFloat(style.marginRight) || 0);
       }, 0) + Math.max(0, adornments.length + (value.text ? 1 : 0) - 1) * (parseFloat(css.columnGap) || 0)

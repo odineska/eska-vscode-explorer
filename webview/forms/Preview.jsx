@@ -3,6 +3,7 @@ import { caption, property, scalar, flag, number, font, color, fieldStyle, field
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
+import { NativeCaption } from './NativeCaption.jsx';
 
 export function Icon(props) {
   return <svg class="taxi-icon" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
@@ -35,12 +36,14 @@ export function CommandButton(props) {
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
   const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
   const picture = () => props.picture ?? props.node?.presentation.picture;
+  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && !props.iconOnly && !props.dropdown
+    && !link() && representation() !== 'Picture' && !picture() && !props.primary && !flag(props.node, 'DefaultButton', false)
+    && flag(props.node, 'Enabled') && !property(props.node, 'BackColor');
   const metrics = () => {
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    const plain = !picture() && !props.primary && !flag(props.node, 'DefaultButton', false) && flag(props.node, 'Enabled') && !property(props.node, 'BackColor');
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
-      'background-image': plain ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2) : undefined };
+      'background-image': plain() ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2) : undefined };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
     automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
@@ -51,7 +54,7 @@ export function CommandButton(props) {
     style={{ ...(props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background) } : {}), ...metrics(), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={props.node?.presentation.foreground}/></Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
   </button>;
 }

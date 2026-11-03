@@ -32,6 +32,8 @@ exports.run = async () => {
     await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-command-bar .taxi-button').length===3"), 'button font DOM');
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await until(async () => await ui.evaluate("[...document.querySelectorAll('.taxi-command-bar .taxi-button')].every(button=>button.style.width)"), 'native caption measurement');
+    const captionsReady = () => ui.evaluate("document.querySelectorAll('.taxi-command-bar [data-native-caption=ready]').length===3");
+    if (process.platform === 'linux') await until(captionsReady, 'packaged WASM captions');
     const geometry = await ui.evaluate(measurement);
     if (process.platform === 'linux') try { compare(geometry, form.expected, form.kind); }
     catch (error) { mismatches.push({name:form.kind, expected:form.expected, actual:geometry, message:error.message}); }
@@ -55,6 +57,7 @@ exports.run = async () => {
           return actual.frame.width === expected.nativeFrame[0] && actual.frame.height === expected.nativeFrame[1];
         }, 'dirty font geometry');
         compare(await ui.evaluate(measurement), expected, `dirty ${points}pt`);
+        await until(captionsReady, 'dirty WASM captions');
         assert.equal(await ui.evaluate("globalThis.__metricButton===document.querySelector('.taxi-command-bar .taxi-button')"), true);
         assert.equal(document.isDirty, true);
         results.push({name:`dirty ${points}pt`, ...await ui.evaluate(measurement)});
@@ -62,8 +65,15 @@ exports.run = async () => {
       const type = '<Type>CommandBarButton</Type>';
       await change(original.replace(type, type + '<DefaultButton>true</DefaultButton>'));
       await until(async () => await ui.evaluate("document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !document.querySelector('.taxi-button').style.backgroundImage"), 'primary button releases plain fill');
+      assert.equal(await ui.evaluate("document.querySelector('.taxi-button [data-native-caption]').dataset.nativeCaption"), 'browser');
       await change(original);
       await until(async () => await ui.evaluate("!document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !!document.querySelector('.taxi-button').style.backgroundImage"), 'plain fill restored');
+      await until(captionsReady, 'plain WASM caption restored');
+      await change(original.replaceAll('<v8:content>WW</v8:content>', '<v8:content>é</v8:content>'));
+      await until(async () => await ui.evaluate("document.querySelector('.taxi-button [data-native-caption]').textContent==='é' && document.querySelector('.taxi-button [data-native-caption]').dataset.nativeCaption==='browser'"), 'unsupported shaping uses accessible browser text');
+      assert.equal(await ui.evaluate("document.querySelector('.form-status').textContent.includes('" + (vscode.env.language.startsWith('ru') ? 'отрисована браузером' : 'browser rendering') + "')"), true);
+      await change(original);
+      await until(captionsReady, 'caption fallback cleared');
       assert.equal(await ui.evaluate("globalThis.__metricButton===document.querySelector('.taxi-command-bar .taxi-button')"), true);
     }
     assert.deepEqual(await fs.readFile(form.path), before);

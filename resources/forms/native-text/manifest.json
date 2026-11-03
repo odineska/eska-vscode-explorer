@@ -1,0 +1,10 @@
+{
+  "freeType": "2.13.2",
+  "emscripten": "6.0.13",
+  "sourceSha256": "12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb484d",
+  "bridgeSha256": "97f81ca757c2bde47e661273543c1d4e21244714ef44e7617c22b551f8f29016",
+  "wasmSha256": "1de1fe684e73bc8109b0601d67d4b2e8c62f3b025b00137da7d5115a50d48019",
+  "interpreterVersion": 40,
+  "lcdFilter": "default",
+  "curveRasterizer": "native-dda"
+}

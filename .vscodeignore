@@ -25,3 +25,4 @@
 
 !out/form-preview.css
 !out/form-fonts/*.ttf
+!out/form-fonts/*.wasm

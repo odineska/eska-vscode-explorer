@@ -85,7 +85,7 @@ export class FormPreviewService implements vscode.Disposable {
   private html(webview: vscode.Webview): string {
     const nonce = randomBytes(16).toString("hex"), base = vscode.Uri.joinPath(this.context.extensionUri, "out");
     const script = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.css"));
-    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource}"><link rel="stylesheet" href="${style}"></head><body><div id="root"></div><script nonce="${nonce}" src="${script}"></script></body></html>`;
+    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; connect-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'"><link rel="stylesheet" href="${style}"></head><body><div id="root"></div><script id="form-preview-script" nonce="${nonce}" src="${script}"></script></body></html>`;
   }
   private async receive(view: View, frame: Frame, value: unknown): Promise<void> {
     if (view.closed || this.disposed || !isRecord(value)) return;

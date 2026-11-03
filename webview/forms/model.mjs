@@ -69,9 +69,13 @@ export function treeChildren(node) {
 }
 export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
 function fontPixels(node) { return Math.round((node.presentation.font?.points ?? 10) * 4 / 3); }
-export function fontLineHeight(value) {
+export function fontLineMetrics(value) {
   const pixels = Math.round((value?.points ?? 10) * 4 / 3);
-  return Math.ceil(pixels * 1854 / 2048) + Math.ceil(pixels * 434 / 2048);
+  return { pixels, ascent: Math.ceil(pixels * 1854 / 2048), descent: Math.ceil(pixels * 434 / 2048) };
+}
+export function fontLineHeight(value) {
+  const { ascent, descent } = fontLineMetrics(value);
+  return ascent + descent;
 }
 /** Native raised-button padding scales from the 13px reference font. */
 export function buttonMetrics(value) {
@@ -81,17 +85,19 @@ export function buttonMetrics(value) {
 /** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
 export function buttonBackground(height) {
   if (!Number.isInteger(height) || height < 1 || height > 4096) return;
-  const shade = y => 255 - Math.round(20 * Math.ceil(Math.max(0, 2 * y + 1 - height) * 1024 / height) / 1024);
   const stops = [];
-  let start = 0, color = shade(0);
+  let start = 0, color = buttonBackgroundShade(height, 0);
   for (let y = 1; y <= height; y++) {
-    const next = y === height ? undefined : shade(y);
+    const next = y === height ? undefined : buttonBackgroundShade(height, y);
     if (next !== color) {
       stops.push(`rgb(${color}, ${color}, ${color}) ${start}px ${y}px`);
       start = y; color = next;
     }
   }
   return `linear-gradient(to bottom, ${stops.join(', ')})`;
+}
+export function buttonBackgroundShade(height, y) {
+  return 255 - Math.round(20 * Math.ceil(Math.max(0, 2 * y + 1 - height) * 1024 / height) / 1024);
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
