@@ -26,7 +26,7 @@ function Header(props) {
 
 /** Empty design-time collections do not fabricate runtime rows or values. */
 export function Table(props) {
-  const state = props.controller.state, node = () => props.node, layout = createMemo(() => tableLayout(node()));
+  const state = props.controller.state, node = () => props.node, layout = createMemo(() => tableLayout(node(), state.locale));
   const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
   return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>

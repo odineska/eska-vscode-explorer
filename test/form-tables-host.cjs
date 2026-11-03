@@ -10,6 +10,7 @@ exports.run = async function () {
   const explorer = await extension.activate(); await vscode.commands.executeCommand('eska.explorer.connect');
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   const results = [];
+  const english = !vscode.env.language.startsWith('ru');
   for (const form of fixture.formGallery) {
     const before = await fs.readFile(form.path);
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
@@ -31,7 +32,7 @@ exports.run = async function () {
         gutter:!!document.querySelector('.taxi-table-scrollbar'),paging:document.querySelectorAll('.taxi-table-pagination > span').length,
         fabricatedRows:document.querySelectorAll('.taxi-table-empty [role=row], .taxi-table-empty [role=cell]').length};
     })()`);
-    assert.equal(geometry.control.width, form.kind === 'MetadataTable' ? 520 : form.kind === 'DynamicList' ? 418 : ['GridFooter', 'NoAutoFill'].includes(form.kind) ? 400 : 415, `${form.kind} width`);
+    assert.equal(geometry.control.width, form.kind === 'MetadataTable' ? 520 : form.kind === 'DynamicList' ? english ? 454 : 418 : ['GridFooter', 'NoAutoFill'].includes(form.kind) ? 400 : english ? 429 : 415, `${form.kind} width`);
     assert.equal(geometry.control.height, form.kind === 'DynamicList' ? 452 : form.kind === 'GridFooter' ? 145 : form.kind === 'Vertical' ? 228 : 227, `${form.kind} height`);
     assert.equal(geometry.header.height, form.kind === 'Vertical' ? 90 : ['HorizontalTitled', 'InCell'].includes(form.kind) ? 60 : 30);
     assert.equal(geometry.bar, !['GridFooter', 'NoAutoFill'].includes(form.kind));
@@ -43,7 +44,8 @@ exports.run = async function () {
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
     if (form.kind !== 'DynamicList') assert.equal(geometry.frame.height, form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225 : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342);
     if (form.kind === 'MetadataTable') assert.deepEqual(geometry.columns.map(column => column.width), [97, 177, 176, 54]);
-    if (form.kind === 'DynamicList') assert.deepEqual(geometry.columns.map(column => column.width), [108, 308]);
+    if (form.kind === 'DynamicList') assert.deepEqual(geometry.columns.map(column => column.width), [108, english ? 344 : 308]);
+    if (form.kind === 'ColumnHidden') assert.deepEqual(geometry.columns.map(column => column.label),['Amount','Active']);
     if (form.kind === 'GridFooter') assert.equal(geometry.footer, 'Total');
     if (['Default', 'ReadOnly', 'Marked'].includes(form.kind)) {
       assert.equal(geometry.columns[1].width, form.kind === 'ReadOnly' ? 108 : 129);

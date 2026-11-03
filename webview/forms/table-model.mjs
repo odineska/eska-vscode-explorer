@@ -13,7 +13,7 @@ function column(node, readOnly, dynamic) {
 }
 
 /** Physical columns differ from logical fields for Vertical and InCell groups. */
-export function tableLayout(table) {
+export function tableLayout(table, locale = 'ru') {
   const readOnly = flag(table, 'ReadOnly', false);
   const dynamic = table.presentation.valueType?.types?.some(type => type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && type.name === 'DynamicList') ?? false;
   function visit(node) {
@@ -37,7 +37,9 @@ export function tableLayout(table) {
   const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;
   const rowCount = number(table, 'HeightInTableRows');
   const height = rowCount > 0 ? header + rowCount * 28 + footer + 1 : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);
-  const minWidth = Math.max(400, number(table, 'Width') * 8 + 4, columns.reduce((sum, column) => sum + column.width, 0) + (dynamic ? 2 : 16), toolbar && search ? dynamic ? 418 : 415 : 0);
+  const english = !locale.toLowerCase().startsWith('ru');
+  const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
+  const minWidth = Math.max(400, number(table, 'Width') * 8 + 4, columns.reduce((sum, column) => sum + column.width, 0) + (dynamic ? 2 : 16), toolbar && search ? toolbarWidth : 0);
   const flexible = columns.some(column => column.flexible);
   const tracks = columns.map((column, index) => column.flexible || !flexible && index === 0 ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
   return { children, columns, depth, header, footer, height, minWidth, tracks, toolbar, commands, bar, search, searchControl, chips, dynamic };

@@ -50,6 +50,7 @@ test('native metadata and dynamic list columns retain their distinct size and ad
   root.children = [code, description];
   root.auxiliary.push({...field('Search', 'SearchStringAddition', 'unknown'),auxiliary:[]});
   assert.equal(tableLayout(root).height, 452);assert.equal(tableLayout(root).minWidth, 418);
+  assert.equal(tableLayout(root,'en').minWidth,454);
   assert.equal(tableLayout(root).columns[0].flexible, false);
   const status = field('Status', 'ViewStatusAddition', 'unknown');root.auxiliary.push(status);
   assert.equal(viewStatusAddition(root), status);

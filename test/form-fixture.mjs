@@ -43,6 +43,7 @@ export async function createTableGallery(fixture) {
     result.push(...await createGallery(fixture, ['MetadataTable', 'DynamicList'], input));
   }
   if (process.env.ESKA_FORM_ADDITION_FIXTURES) result.push(...await createGallery(fixture, ['NoViewStatus', 'NoSearchControl'], process.env.ESKA_FORM_ADDITION_FIXTURES));
+  if (process.env.ESKA_FORM_STATE_FIXTURES) result.push(...await createGallery(fixture, ['ColumnHidden'], process.env.ESKA_FORM_STATE_FIXTURES));
   return result;
 }
 

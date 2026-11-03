@@ -9,7 +9,7 @@ const en = {
   detach: "Detach preview", dock: "Return preview", revealPreview: "Show preview window", floatFailed: "The preview is open in a tab. Use Move Editor into New Window from its tab menu.",
   xml: "XML", refresh: "Refresh", zoom: "Scale", elements: "Elements", commandInterface: "Command interface", attributes: "Attributes", commands: "Commands",
   parameters: "Parameters", properties: "Properties", name: "Name", kind: "Kind", type: "Type", visible: "Visible", source: "Go to XML", binding: "Go to attribute",
-  expand: "Expand or collapse", form: "Form", more: "More", taxi: "Taxi", unsupported: "Unsupported element", search: "Search", application: "Choose the application's form context",
+  expand: "Expand or collapse", form: "Form", more: "More actions", taxi: "Taxi", unsupported: "Unsupported element", search: "Search", application: "Choose the application's form context",
   "attribute.Code": "Code", "attribute.Description": "Description", "attribute.Parent": "Parent", "attribute.Folder": "Folder", "attribute.Ref": "Reference",
   "attribute.IsFolder": "Is folder", "attribute.DeletionMark": "Deletion mark", "attribute.Date": "Date", "attribute.Number": "Number", "attribute.Posted": "Posted",
   "attribute.Owner": "Owner", "attribute.LineNumber": "Line number", "attribute.Recorder": "Recorder", "attribute.Period": "Period", "attribute.Active": "Active",
