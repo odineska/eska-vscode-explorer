@@ -20,7 +20,8 @@ export function controller(api) {
     persist();
   }
   window.addEventListener('message', receive);
-  const post = value => api.postMessage(value);
+  // Store proxies cannot cross VS Code's structured-clone message boundary.
+  const post = value => api.postMessage(unwrap(value));
   const select = node => { set('selected', node.key); setSelection(node.identity); post({ type: 'select', identity: node.identity }); persist(); };
   const ui = (name, value) => { set('ui', name, value); persist(); };
   post({ type: 'ready' });
