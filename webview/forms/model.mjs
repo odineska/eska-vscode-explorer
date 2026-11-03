@@ -38,12 +38,15 @@ export function treeChildren(node) {
 }
 export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
 function fontPixels(node) { return Math.round((node.presentation.font?.points ?? 10) * 4 / 3); }
+export function fontLineHeight(value) {
+  const pixels = Math.round((value?.points ?? 10) * 4 / 3);
+  return Math.ceil(pixels * 1854 / 2048) + Math.ceil(pixels * 434 / 2048);
+}
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
 export function inputHeight(node) {
   // Linux reference Liberation Sans metrics; confirmed at 10, 12, 14 and 16pt.
-  const pixels = fontPixels(node), line = Math.ceil(pixels * 1854 / 2048) + Math.ceil(pixels * 434 / 2048);
-  return Math.ceil(line * 1.5);
+  return Math.ceil(fontLineHeight(node.presentation.font) * 1.5);
 }
 export function fieldWidth(node) {
   const unit = inputUnit(node), width = number(node, 'Width'); if (width > 0) return Math.max(20, width * unit + 4);

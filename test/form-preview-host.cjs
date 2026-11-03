@@ -38,7 +38,8 @@ async function run() {
   assert.equal(await ui.evaluate("globalThis.__formRoot===document.querySelector('.taxi-form-frame')"), true, 'updates preserve the Solid DOM');
   assert.deepEqual(await fs.readFile(form.path), before, 'dirty viewing writes no source');
   const first = view.snapshot.model.root.children[0].children[0];
-  await service.receive(view, main, { type: 'select', identity: first.identity });
+  await ui.evaluate("document.querySelector('.taxi-input').click()");
+  await until(()=>view.selected?.key?.value===first.identity.key.value,'click selection reaches the extension host');
   assert.equal(view.selected.key.value, first.identity.key.value);
   await service.receive(view, main, { type: 'detach' });
   await until(() => view.frames.has('preview') && view.frames.get('preview').ready, 'detached panel ready');

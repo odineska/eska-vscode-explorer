@@ -22,12 +22,14 @@ exports.run = async function () {
     const ui = await frame({ state: { title: panel.panel.title } });
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-scroll')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
+    if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-table-command-bar .taxi-button')].every(button=>button.style.width||button.classList.contains('taxi-button--picture'))"),'native table captions allocated');
     const geometry = await ui.evaluate(`(() => {
       const rect = node => {const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       return {frame:rect(document.querySelector('.taxi-form-frame')),control:rect(document.querySelector('.taxi-table-scroll')),
         header:rect(document.querySelector('.taxi-table-head')),headerColor:getComputedStyle(document.querySelector('.taxi-table-head')).backgroundColor,
         columns:[...document.querySelectorAll('[data-column]')].map(node=>({label:node.textContent,...rect(node)})),
         bar:!!document.querySelector('.taxi-table-command-bar'),chips:document.querySelector('.taxi-table-search-controls')?.textContent,
+        buttons:[...document.querySelectorAll('.taxi-table-command-bar .taxi-button')].map(button=>({label:button.textContent,...rect(button)})),
         mark:!!document.querySelector('.taxi-table-incomplete'),footer:document.querySelector('.taxi-table-footer')?.textContent,
         gutter:!!document.querySelector('.taxi-table-scrollbar'),paging:document.querySelectorAll('.taxi-table-pagination > span').length,
         fabricatedRows:document.querySelectorAll('.taxi-table-empty [role=row], .taxi-table-empty [role=cell]').length};
@@ -53,7 +55,11 @@ exports.run = async function () {
     }
     if (form.kind === 'Default') {
       const searchWidth = "document.querySelector('.taxi-table-search').getBoundingClientRect().width";
-      if (vscode.env.language.startsWith('ru')) assert.equal(Math.round(await ui.evaluate(searchWidth)), 172);
+      if(process.platform==='linux') {
+        assert.equal(geometry.buttons[0].width,english?51:85);
+        assert.equal(geometry.buttons.at(-1).width,english?108:60);
+        assert.equal(Math.round(await ui.evaluate(searchWidth)),172);
+      }
       await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='1000px'");
       assert.equal(await ui.evaluate(searchWidth), 260, 'search stays bounded in a wide table');
       await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='max-content'");

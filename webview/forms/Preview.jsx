@@ -1,7 +1,8 @@
-import { For, Show, Switch, Match, createMemo } from 'solid-js';
-import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, text, automaticCommands } from './model.mjs';
+import { For, Show, Switch, Match, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, fontLineHeight, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
+import { createNativeButtonWidth } from './text-metrics.js';
 
 export function Icon(props) {
   return <svg class="taxi-icon" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
@@ -17,6 +18,7 @@ export function Icon(props) {
     <Match when={/Find|Search/.test(props.name)}><circle cx="6" cy="6" r="4" fill="none" stroke="#3287b7" stroke-width="1.5"/><path d="M9 9l4 4" stroke="#3287b7" stroke-width="2"/></Match>
     <Match when={/Calculator/.test(props.name)}><rect x="4" y="2" width="8" height="12" rx="1" fill="#fff" stroke="#777"/><path d="M5 4h6M5 7h1m1 0h1m1 0h1M5 9h1m1 0h1m1 0h1M5 11h1m1 0h1m1 0h1" stroke="#777"/></Match>
     <Match when={/Calendar/.test(props.name)}><rect x="3" y="3" width="10" height="10" rx="1" fill="#fff" stroke="#777"/><path d="M3 6h10M5 2v3m6-3v3M5 8h1m2 0h1m2 0h1M5 10h1m2 0h1m2 0h1" stroke="#777"/></Match>
+    <Match when={/Information/.test(props.name)}><circle cx="8" cy="8" r="7" fill="#fff" stroke="#555"/><text x="8" y="12.5" text-anchor="middle" font-family="serif" font-size="14" font-style="italic" font-weight="700" fill="#555">i</text></Match>
     <Match when={/Help/.test(props.name)}><text x="8" y="13" text-anchor="middle" font-size="15" fill="#424242">?</text></Match>
   </Switch></svg>;
 }
@@ -28,14 +30,20 @@ function Picture(props) {
   </Switch>;
 }
 export function CommandButton(props) {
+  let button;
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
   const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
   const picture = () => props.picture ?? props.node?.presentation.picture;
-  return <button type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
+  const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
+    automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
+    picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,
+    font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
+  return <button ref={button} type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
     'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
-    style={props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : undefined } : {}}
-    title={label()} aria-label={label()} aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); }}>
+    style={{ ...(props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background) } : {}), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : measuredWidth() }}
+    title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
+    aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}>{label()}</Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
   </button>;
@@ -82,23 +90,58 @@ function Pages(props) {
   const selected = () => state.ui.pages[node().key] ?? pages()[0]?.key;
   const page = createMemo(() => pages().find(page => page.key === selected()) ?? pages()[0]);
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
-    <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist"><For each={pages()}>{page => <button type="button" role="tab" aria-selected={page.key === selected()} classList={{ active: page.key === selected() }} onClick={event => { event.stopPropagation(); props.controller.ui('pages', { ...state.ui.pages, [node().key]: page.key }); props.controller.select(page); }}>{caption(page, state)}</button>}</For></div></Show>
-    <Show when={page()}>{value => <div role="tabpanel" class="taxi-page"><Items node={value()} controller={props.controller}/></div>}</Show>
+    <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist"><For each={pages()}>{page => <PageTab page={page} pages={node()} controller={props.controller} active={page.key === selected()}/>}</For></div></Show>
+    <Show when={page()}>{value => <div role="tabpanel" class="taxi-page" style={{ 'background-color': property(value(), 'BackColor') ? color(value().presentation.background) : undefined }}><Items node={value()} controller={props.controller}/></div>}</Show>
   </div>;
+}
+function PageTab(props) {
+  const state = props.controller.state;
+  let button;
+  const width = createNativeButtonWidth(() => button, () => ({text:caption(props.page,state),os:state.os,automatic:true,font:font(props.pages.presentation.font,state.os)}));
+  return <button ref={button} type="button" role="tab" aria-selected={props.active} classList={{active:props.active}} style={{width:width()}} onClick={event => {
+    event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page);
+  }}>{caption(props.page,state)}</button>;
 }
 function Group(props) {
   const node = () => props.node, state = props.controller.state;
-  const collapsed = () => state.ui.collapsed[node().key] ?? (scalar(node(), 'Behavior') === 'Collapsible' && flag(node(), 'Collapsed', false));
-  const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page' && scalar(node(), 'Representation') !== 'None');
+  // Configurator expands design-time content even when the runtime starts collapsed.
+  const collapsed = () => state.ui.collapsed[node().key] ?? false;
+  const collapsible = () => scalar(node(), 'Behavior') === 'Collapsible';
+  const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page');
+  const painted = () => !!property(node(), 'BackColor');
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
-    <Match when={['CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind)}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller} bar/>}</For><Show when={node().kind === 'Popup'}><span>▾</span></Show></div></Match>
-    <Match when={true}><div class="taxi-group" classList={{ 'taxi-group--border': scalar(node(), 'Representation') === 'WeakSeparation' || scalar(node(), 'Representation') === 'StrongSeparation' }}>
-      <Show when={title()}><div class="taxi-group-title" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>
-        <Show when={scalar(node(), 'Behavior') === 'Collapsible'}><button type="button" aria-expanded={!collapsed()} onClick={event => { event.stopPropagation(); props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() }); }}>{collapsed() ? '▸' : '▾'}</button></Show>{caption(node(), state)}
+    <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
+    <Match when={['CommandBar', 'ButtonGroup'].includes(node().kind)}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
+    <Match when={true}><div class="taxi-group" classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible(), 'taxi-group--painted': painted() }}
+      style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-title-color': color(node().presentation.titleColor) }}>
+      <Show when={title()}><div class="taxi-group-title" style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
+        <Show when={collapsible()} fallback={caption(node(), state)}><button type="button" aria-expanded={!collapsed()} onClick={event => { event.stopPropagation(); props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() }); }}>{caption(node(), state)}</button></Show>
       </div></Show><Show when={!collapsed()}><Items {...props}/></Show>
     </div></Match>
   </Switch>;
+}
+function PopupMenu(props) {
+  const [open, setOpen] = createSignal(false), [active, setActive] = createSignal(0);
+  let container;
+  const children = () => props.node.children.filter(node => node.presentation.displayed);
+  createEffect(() => {
+    if (!open()) return;
+    const outside = event => { if (!container.contains(event.target)) setOpen(false); };
+    document.addEventListener('pointerdown', outside);
+    onCleanup(() => document.removeEventListener('pointerdown', outside));
+  });
+  const focus = index => { const items = container.querySelectorAll(':scope > [role=menu] > [role=menuitem]'); if (!items.length) return; const next = (index + items.length) % items.length; setActive(next); items[next]?.focus(); };
+  return <div class="taxi-popup" ref={container} onKeyDown={event => {
+    if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); container.querySelector(':scope > button')?.focus(); }
+    else if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const wasOpen = open(); setOpen(true); focus(wasOpen ? active() + (event.key === 'ArrowDown' ? 1 : -1) : 0); }
+  }}>
+    <CommandButton node={props.node} controller={props.controller} dropdown menu expanded={open()} onClick={() => { setOpen(!open()); if (open()) focus(0); }}/>
+    <Show when={open()}><div role="menu" class="taxi-menu"><For each={children()}>{(child, index) => <button type="button" role="menuitem" classList={{ active: active() === index() }}
+      aria-disabled={!flag(child, 'Enabled')} onMouseEnter={() => setActive(index())} onClick={event => { event.stopPropagation(); props.controller.select(child); setOpen(false); }}>
+      <Show when={child.presentation.picture}><Picture node={child} controller={props.controller}/></Show>{caption(child, props.controller.state)}
+    </button>}</For></div></Show>
+  </div>;
 }
 function Input(props) {
   const node = () => props.node, state = props.controller.state;
@@ -142,7 +185,7 @@ export function Element(props) {
       <Match when={group()}><Group {...props}/></Match>
       <Match when={node().kind === 'Table'}><Table node={node()} controller={props.controller}/></Match>
       <Match when={node().kind === 'Button'}><CommandButton {...props}/></Match>
-      <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'normal' : 'nowrap' }}>{caption(node(), state)}</span></Match>
+      <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), ...(state.os==='linux'?{'font-size':`${Math.round(node().presentation.font.points*4/3)}px`}:{}), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'normal' : 'nowrap' }}>{caption(node(), state)}</span></Match>
       <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Picture node={node()} controller={props.controller}/></span></Match>
       <Match when={node().kind?.endsWith('Field')}><Field {...props}/></Match>
       <Match when={node().kind?.endsWith('Addition')}><span class="taxi-addition"><Show when={node().kind !== 'ViewStatusAddition'}><input readOnly placeholder={state.strings.search} tabIndex="-1"/></Show></span></Match>
