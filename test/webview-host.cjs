@@ -19,7 +19,13 @@ async function frame(tab) {
     const message = JSON.parse(event.data);
     if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId });
     const promise = pending.get(message.id);
-    if (promise) { pending.delete(message.id); clearTimeout(promise.timer); message.error ? promise.reject(message.error) : promise.resolve(message.result); }
+    if (promise) {
+      pending.delete(message.id); clearTimeout(promise.timer);
+      if (message.error) {
+        promise.error.message = `${message.error.message} (${promise.method})`;
+        promise.reject(Object.assign(promise.error, { code: message.error.code, data: message.error.data }));
+      } else promise.resolve(message.result);
+    }
   });
   socket.addEventListener('close', () => {
     for (const value of pending.values()) { clearTimeout(value.timer); value.reject(new Error('native debug connection closed')); }
@@ -31,7 +37,7 @@ async function frame(tab) {
       const id = ++serial;
       // Hidden Windows webviews can suspend evaluation; they must not block discovery of the active frame.
       const timer = setTimeout(() => { pending.delete(id); reject(new Error(`native debug timeout: ${method}`)); }, 5000);
-      pending.set(id, { resolve, reject, timer }); socket.send(JSON.stringify({ id, method, params, sessionId }));
+      pending.set(id, { resolve, reject, timer, method, error: new Error(`native debug failure: ${method}`) }); socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
   await send('Runtime.enable');
@@ -45,9 +51,9 @@ async function frame(tab) {
         attached.add(target.targetId);
         await send('Runtime.enable', {}, sessionId);
       } catch (error) {
-        // A newly shown Windows webview can replace its iframe between enumeration and attachment.
+        // A newly shown webview can replace its iframe between enumeration and attachment.
         attached.delete(target.targetId);
-        if (!([-32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
+        if (!([-32602, -32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
       }
     }
     for (const candidate of contexts) {
