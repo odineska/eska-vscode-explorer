@@ -111,11 +111,12 @@ async function frame(tab) {
     /** Bring only the task's main workbench to the foreground for native editor commands. */
     async focusWorkbench() { await send('Page.bringToFront'); },
     /** Capture a specific floating workbench from this task's debugging endpoint. */
-    async captureTarget(targetId, name) {
-      if (!process.env.ESKA_SCREENSHOT_DIR) return;
+    async captureTarget(targetId, name, withData = false) {
+      if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
       const {sessionId} = await send('Target.attachToTarget', {targetId,flatten:true});
       try { const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
-        await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
+        if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
+        if (withData) return result.data;
       } finally { await send('Target.detachFromTarget',{sessionId}); }
     },
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */

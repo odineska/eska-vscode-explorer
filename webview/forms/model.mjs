@@ -114,12 +114,17 @@ export function inputHeight(node) {
   // Linux reference Liberation Sans metrics; confirmed at 10, 12, 14 and 16pt.
   return Math.ceil(fontLineHeight(node.presentation.font) * 1.5);
 }
-export function fieldWidth(node) {
+export function inputChoiceButton(node, os) {
+  const type = node.presentation.valueType;
+  const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
+  return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && type.kind === 'number' && flag(node, 'ReadOnly', false)));
+}
+export function fieldWidth(node, os) {
   const unit = inputUnit(node), width = number(node, 'Width'); if (width > 0) return Math.max(20, width * unit + 4);
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
-  if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21);
+  if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
   if (type.kind === 'date') return Math.round(type.dateParts === 'Time' ? 11 * unit + 3 : type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21);
   if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
@@ -137,9 +142,9 @@ export function fieldValue(node, culture) {
   }
   return '';
 }
-export function fieldStyle(node) {
+export function fieldStyle(node, os) {
   const maxWidth = number(node, 'MaxWidth'), minWidth = number(node, 'MinWidth');
-  return { width: `${fieldWidth(node)}px`, ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
+  return { width: `${fieldWidth(node, os)}px`, ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
     ...(flag(node, 'HorizontalStretch', false) ? { width: '100%' } : {}) };
 }
 export function localizedProperty(value, locale) {

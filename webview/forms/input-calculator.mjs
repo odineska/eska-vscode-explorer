@@ -8,3 +8,6 @@ export const calculatorRects = [
   [0,0,1,1,'#565656'], [8,0,1,1,'#565656'],
   [0,10,1,1,'#747474'], [8,10,1,1,'#747474'],
 ];
+
+const inactiveColors = {'#4d4d4d':'#a4a4a4','#565656':'#a8a8a8','#747474':'#b7b7b7'};
+export function calculatorFill(fill, inactive) { return inactive ? inactiveColors[fill] ?? fill : fill; }

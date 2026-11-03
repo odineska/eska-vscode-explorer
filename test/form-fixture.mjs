@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, rm, cp } from 'node:fs/promises';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, dirname, basename } from 'node:path';
 import { createTreeProject, descriptor } from './fixture.mjs';
 export async function createFormSource(fixture) {
   const root = join(fixture.source, 'Configuration.xml');
@@ -132,6 +132,18 @@ export async function createFrameCornersGallery(fixture) {
   const forms = [ ...fonts.forms.map(form=>({...form,kind:'font-'+form.kind})),
     ...metrics.map(form=>({...form,kind:'button-'+form.kind})), ...pages ];
   return {forms:forms.map(form=>({...form,expected:reference.rows.find(row=>row.name===form.kind)})),referencePixels:reference.referencePixels};
+}
+
+export async function createInputBordersGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const reference = JSON.parse(await readFile(join(input,'metrics.json'),'utf8')), forms = [];
+  for (const row of reference.forms) {
+    const source = row.file.includes('/') ? join(input,'..',row.file) : join(input,row.file);
+    const [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
+    forms.push({...form,kind:row.name,expected:row});
+  }
+  return {forms};
 }
 
 export async function createPrimaryAppearanceGallery(fixture) {
