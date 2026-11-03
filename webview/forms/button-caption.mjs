@@ -6,7 +6,7 @@ export function buttonCaptionPixels(raster, buttonHeight, foreground) {
       || foreground.length !== 3 || foreground.some(value => !Number.isInteger(value) || value < 0 || value > 255)) {
     throw new Error('font-raster-color');
   }
-  const top = Math.floor((buttonHeight + raster.ascent - raster.descent) / 2) - raster.ascent;
+  const top = Math.floor((buttonHeight + raster.ascent - raster.descent) / 2) - raster.ascent + raster.originY;
   const rgba = new Uint8ClampedArray(raster.width * raster.height * 4);
   for (let y = 0; y < raster.height; y++) {
     const back = buttonBackgroundShade(buttonHeight - 2, Math.max(0, Math.min(buttonHeight - 3, top + y - 1)));

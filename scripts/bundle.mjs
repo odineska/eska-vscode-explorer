@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { transformAsync } from "@babel/core";
 import solid from "babel-preset-solid";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
@@ -26,6 +26,12 @@ const browser = await build({ entryPoints: { "query-designer": "webview/query/in
     });
   } }]
 });
+// Asset names include hashes; an incremental build must not package older font engines.
+const assets = new Set(Object.keys(browser.metafile.outputs).map(file => resolve(file)));
+for (const file of await readdir("out/form-fonts")) {
+  const path = join("out/form-fonts", file);
+  if (/\.(?:ttf|wasm)$/.test(file) && !assets.has(resolve(path))) await rm(path);
+}
 const packages = new Map();
 for (const input of Object.keys({ ...result.metafile.inputs, ...browser.metafile.inputs }).filter(path => path.includes("node_modules/"))) {
   let folder = dirname(resolve(input));

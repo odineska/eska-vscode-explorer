@@ -84,6 +84,17 @@ void eska_ft_close(uint32_t face) {
     if (face) FT_Done_Face((FT_Face)(uintptr_t)face);
 }
 
+int32_t eska_ft_kerning(uint32_t handle, uint32_t left, uint32_t right) {
+    if (!handle || left > 0x10ffff || right > 0x10ffff) return 0;
+    FT_Face face = (FT_Face)(uintptr_t)handle;
+    FT_Vector value = { 0, 0 };
+    if (FT_Get_Kerning(face, FT_Get_Char_Index(face, left), FT_Get_Char_Index(face, right),
+                       FT_KERNING_UNFITTED, &value)) return 0;
+    /* Pixel rounding follows the design preview; DEFAULT attenuates small sizes. */
+    int32_t rounded = (int32_t)value.x + 32;
+    return rounded >= 0 ? rounded / 64 : -((63 - rounded) / 64);
+}
+
 void eska_ft_done(uint32_t library) {
     if (library) FT_Done_FreeType((FT_Library)(uintptr_t)library);
 }

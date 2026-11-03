@@ -64,7 +64,7 @@ def main():
         configure += ["-DFT_DISABLE_" + name + "=ON" for name in ["ZLIB", "BZIP2", "PNG", "HARFBUZZ", "BROTLI"]]
         subprocess.run(configure, env=environment, check=True)
         subprocess.run(["cmake", "--build", str(build), "--parallel", "4"], env=environment, check=True)
-        exports = ["_eska_ft_" + name for name in ["init", "version", "open", "size", "glyph", "close", "done", "alloc", "free"]]
+        exports = ["_eska_ft_" + name for name in ["init", "version", "open", "size", "glyph", "kerning", "close", "done", "alloc", "free"]]
         binary = scratch / "font-raster.wasm"
         subprocess.run([str(toolchain / "emcc"), "-std=c11", "-Wall", "-Wextra", "-Werror", *FLAGS,
                         "-I" + str(build / "include"), "-I" + str(source / "include"), str(bridge), str(build / "libfreetype.a"),

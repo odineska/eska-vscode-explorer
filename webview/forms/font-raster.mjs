@@ -34,16 +34,19 @@ export function createFontRaster(bytes) {
         }
         if (api.eska_ft_size(handle, pixels)) throw new Error('font-raster-size');
         const glyphs = [];
-        let width = 0, inkLeft = Infinity, inkRight = -Infinity;
+        let width = 0, inkLeft = Infinity, inkRight = -Infinity, inkTop = 0, inkBottom = ascent + descent, previous;
         for (const char of text) {
-          if (api.eska_ft_glyph(handle, char.codePointAt(0), header)) throw new Error('font-raster-glyph');
+          const codepoint = char.codePointAt(0);
+          if (previous !== undefined) width += api.eska_ft_kerning(handle, previous, codepoint);
+          previous = codepoint;
+          if (api.eska_ft_glyph(handle, codepoint, header)) throw new Error('font-raster-glyph');
           const fields = [...new Int32Array(api.memory.buffer, header, 12)];
           const [advance, bearingX, , inkWidth, , left, top, columns, rows, pitch, address, mode] = fields;
           if (mode !== 5 || advance < 0 || advance % 64 || columns < 0 || columns > 4096 || rows < 0 || rows > 4096
               || pitch < columns * 3 || address < 0 || address + pitch * rows > api.memory.buffer.byteLength) {
             throw new Error('font-raster-bitmap');
           }
-          if (width + advance / 64 > MAX_TEXT_WIDTH) throw new Error('font-raster-width');
+          if (width + advance / 64 > MAX_TEXT_WIDTH || width + advance / 64 < 0) throw new Error('font-raster-width');
           const coverage = new Uint8Array(columns * rows);
           for (let y = 0; y < rows; y++) {
             const source = new Uint8Array(api.memory.buffer, address + y * pitch, columns * 3);
@@ -52,15 +55,19 @@ export function createFontRaster(bytes) {
           if (columns) {
             inkLeft = Math.min(inkLeft, width + bearingX / 64);
             inkRight = Math.max(inkRight, width + (bearingX + inkWidth) / 64);
+            inkTop = Math.min(inkTop, ascent - top);
+            inkBottom = Math.max(inkBottom, ascent - top + rows);
           }
           glyphs.push({ pen: width, left, top, columns, rows, coverage });
           width += advance / 64;
         }
-        const height = ascent + descent, alpha = new Uint8Array(width * height);
+        const height = inkBottom - inkTop;
+        if (height > 512) throw new Error('font-raster-height');
+        const alpha = new Uint8Array(width * height);
         const clipLeft = Math.max(0, inkLeft), clipRight = Math.min(width, inkRight);
         for (const glyph of glyphs) {
           for (let y = 0; y < glyph.rows; y++) {
-            const ty = ascent - glyph.top + y;
+            const ty = ascent - glyph.top + y - inkTop;
             if (ty < 0 || ty >= height) continue;
             for (let x = 0; x < glyph.columns; x++) {
               const tx = glyph.pen + glyph.left + x;
@@ -71,7 +78,7 @@ export function createFontRaster(bytes) {
             }
           }
         }
-        return { width, height, ascent, descent, alpha };
+        return { width, height, ascent, descent, originY: inkTop, alpha };
       },
       dispose() {
         if (!handle) return;

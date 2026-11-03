@@ -36,12 +36,22 @@ test('hinted caption advances match all forty-eight native button widths', async
   }
 });
 
+test('rounded unattenuated kerning matches native Cyrillic and Latin caption widths', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-captions/metrics.json', import.meta.url)));
+  for (const row of reference.rows) for (const button of row.buttons) {
+    const pixels = Math.round(row.points * 4 / 3);
+    assert.equal(hintedTextWidth(button.caption, { family: 'ESKA Taxi Sans', pixels, weight: row.weight === 'bold' ? 700 : 400 })
+      + 2 * pixels + 2, button.width, `${row.name}: ${button.caption}`);
+  }
+});
+
 test('font metrics stay tied to the bundled font hashes and bound unsupported measurements', async () => {
   const folder = new URL('../resources/forms/fonts/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('manifest.json', folder)));
   const metrics = JSON.parse(await readFile(new URL('advances.json', folder)));
   assert.equal(metrics.freeType, '2.13.2');
   assert.equal(metrics.interpreterVersion, 40);
+  assert.equal(metrics.kerningMode, 'unfitted_round_pixels');
   assert.equal(Object.keys(metrics.faces).length, manifest.files.length);
   for (const file of manifest.files) assert.equal(metrics.faces[file.file].sha256, file.sha256);
   const font = { family: 'ESKA Taxi Sans', pixels: 21, weight: 400 };

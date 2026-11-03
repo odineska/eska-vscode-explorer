@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate bundled Linux glyph advances with the reference FreeType build.
+"""Regenerate Linux glyph advances and kerning with the reference FreeType build.
 
 Run manually in the Linux reference environment, not during a VSIX build.
 Only standard-library modules and the system FreeType library are required.
@@ -16,6 +16,23 @@ import struct
 def checked(error):
     if error:
         raise RuntimeError(f"FreeType error {error}")
+
+
+def kerning_pairs(data, offset):
+    if offset is None:
+        return []
+    version, count = struct.unpack_from(">HH", data, offset)
+    if version != 0:
+        raise RuntimeError("Expected a version-zero kern table in the pinned fonts")
+    offset += 4
+    result = []
+    for _ in range(count):
+        version, length, coverage, count = struct.unpack_from(">HHHH", data, offset)
+        if version != 0 or coverage != 1 or length < 14 + count * 6:
+            raise RuntimeError("Expected horizontal format-zero kerning in the pinned fonts")
+        result.extend(struct.unpack_from(">HHh", data, offset + 14 + i * 6) for i in range(count))
+        offset += length
+    return result
 
 
 def generate():
@@ -35,6 +52,7 @@ def generate():
     ft.FT_Get_First_Char.restype = ct.c_ulong
     ft.FT_Get_Next_Char.argtypes = [pointer, ct.c_ulong, ct.POINTER(ct.c_uint)]
     ft.FT_Get_Next_Char.restype = ct.c_ulong
+    ft.FT_Get_Kerning.argtypes = [pointer, ct.c_uint, ct.c_uint, ct.c_uint, pointer]
     library = pointer()
     checked(ft.FT_Init_FreeType(ct.byref(library)))
     try:
@@ -46,7 +64,8 @@ def generate():
         interpreter = ct.c_uint(40)
         checked(ft.FT_Property_Set(library, b"truetype", b"interpreter-version", ct.byref(interpreter)))
         result = {"freeType": version, "interpreterVersion": interpreter.value,
-                  "loadFlags": 0, "minPixels": 1, "maxPixels": 128, "faces": {}}
+                  "loadFlags": 0, "kerningMode": "unfitted_round_pixels",
+                  "minPixels": 1, "maxPixels": 128, "faces": {}}
         for item in manifest["files"]:
             file = folder / item["file"]
             data = file.read_bytes()
@@ -75,7 +94,7 @@ def generate():
                         difference = advances[i] // 65536 - (base[i] * pixels + units // 2) // units
                         if difference:
                             records[i][1][pixels] = difference
-                classes, indices, characters = [], {}, {}
+                classes, indices, characters, glyph_characters = [], {}, {}, {}
                 index = ct.c_uint()
                 code = ft.FT_Get_First_Char(face, ct.byref(index))
                 while index.value:
@@ -85,9 +104,34 @@ def generate():
                         indices[key] = len(classes)
                         classes.append(record)
                     characters[chr(code)] = indices[key]
+                    glyph_characters.setdefault(index.value, []).append(chr(code))
                     code = ft.FT_Get_Next_Char(face, code, ct.byref(index))
+                kern_classes, kern_indices, kern_pairs = [], {}, {}
+                for left, right, adjustment in kerning_pairs(data, tables.get(b"kern")):
+                    if not adjustment or left not in glyph_characters or right not in glyph_characters:
+                        continue
+                    vector = (ct.c_long * 2)()
+                    checked(ft.FT_Get_Kerning(face, left, right, 2, ct.byref(vector)))
+                    if vector[0] != adjustment:
+                        raise RuntimeError("Parsed kerning differs from FreeType")
+                    if adjustment not in kern_indices:
+                        differences = {}
+                        for pixels in range(result["minPixels"], result["maxPixels"] + 1):
+                            checked(ft.FT_Set_Pixel_Sizes(face, 0, pixels))
+                            # UNFITTED keeps kerning at small sizes; DEFAULT attenuates it.
+                            checked(ft.FT_Get_Kerning(face, left, right, 1, ct.byref(vector)))
+                            actual = (vector[0] + 32) // 64
+                            expected = (adjustment * pixels + units // 2) // units
+                            if actual != expected:
+                                differences[pixels] = actual - expected
+                        kern_indices[adjustment] = len(kern_classes)
+                        kern_classes.append([adjustment, differences])
+                    for first in glyph_characters[left]:
+                        for second in glyph_characters[right]:
+                            kern_pairs[first + second] = kern_indices[adjustment]
                 result["faces"][file.name] = {"sha256": item["sha256"], "units": units,
-                                             "characters": characters, "classes": classes}
+                                             "characters": characters, "classes": classes,
+                                             "kerningPairs": kern_pairs, "kerningClasses": kern_classes}
             finally:
                 checked(ft.FT_Done_Face(face))
     finally:

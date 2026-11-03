@@ -12,6 +12,20 @@ const regular = await readFile(asset('fonts/LiberationSans-Regular.ttf'));
 const bold = await readFile(asset('fonts/LiberationSans-Bold.ttf'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 
+function interiorPixels(face, caption, points, width, height, foreground) {
+  const { pixels, ascent, descent } = fontLineMetrics({ points });
+  const raster = face.raster(caption, pixels, ascent, descent);
+  const image = buttonCaptionPixels(raster, height, foreground);
+  const left = Math.floor((width - raster.width) / 2), rgb = Buffer.alloc((width - 6) * (height - 6) * 3);
+  let offset = 0;
+  for (let y = 3; y < height - 3; y++) for (let x = 3; x < width - 3; x++) {
+    const tx = x - left, ty = y - image.top;
+    for (let channel = 0; channel < 3; channel++) rgb[offset++] = tx >= 0 && tx < image.width && ty >= 0 && ty < image.height
+      ? image.rgba[(ty * image.width + tx) * 4 + channel] : buttonBackgroundShade(height - 2, y - 1);
+  }
+  return { rgb, textWidth: raster.width };
+}
+
 test('WASM button captions match all 275213 native interior pixels exactly', async () => {
   const fixture = new URL('../../eska/tests/fixtures/forms/native-button-metrics/', import.meta.url);
   const metrics = JSON.parse(await readFile(new URL('metrics.json', fixture)));
@@ -22,24 +36,29 @@ test('WASM button captions match all 275213 native interior pixels exactly', asy
     let compared = 0;
     for (const row of metrics.rows) {
       const expected = reference.rows.find(item => item.name === row.name);
-      const { pixels, ascent, descent } = fontLineMetrics({ points: row.points });
       for (const [index, button] of row.buttons.entries()) {
         const caption = expected.buttons[index], { width, height } = button;
-        const raster = faces[row.weight].raster(caption.caption, pixels, ascent, descent);
-        const image = buttonCaptionPixels(raster, height, [77, 77, 77]);
-        const left = Math.floor((width - raster.width) / 2);
-        const rgb = Buffer.alloc(caption.width * caption.height * 3);
-        let offset = 0;
-        for (let y = 3; y < height - 3; y++) for (let x = 3; x < width - 3; x++) {
-          const tx = x - left, ty = y - image.top;
-          for (let channel = 0; channel < 3; channel++) rgb[offset++] = tx >= 0 && tx < image.width && ty >= 0 && ty < image.height
-            ? image.rgba[(ty * image.width + tx) * 4 + channel] : buttonBackgroundShade(height - 2, y - 1);
-        }
+        const { rgb } = interiorPixels(faces[row.weight], caption.caption, row.points, width, height, [77, 77, 77]);
         assert.equal(sha(rgb), caption.rgbSha256, `${row.name}: ${caption.caption}`);
         compared += caption.width * caption.height;
       }
     }
     assert.equal(compared, 275213);
+  } finally { engine.dispose(); }
+});
+
+test('kerning, Cyrillic and explicit RGB captions match all eighteen native interiors', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-captions/metrics.json', import.meta.url)));
+  const engine = createFontRaster(binary);
+  try {
+    const faces = { normal: engine.open(regular), bold: engine.open(bold) };
+    for (const row of reference.rows) for (const button of row.buttons) {
+      const color = button.foreground.slice(1).match(/../g).map(value => parseInt(value, 16));
+      const { rgb, textWidth } = interiorPixels(faces[row.weight], button.caption, row.points, button.width, button.height, color);
+      const pixels = Math.round(row.points * 4 / 3);
+      assert.equal(textWidth + pixels * 2 + 2, button.width, `${row.name}: ${button.caption} width`);
+      assert.equal(sha(rgb), button.interiorRgbSha256, `${row.name}: ${button.caption} RGB`);
+    }
   } finally { engine.dispose(); }
 });
 
