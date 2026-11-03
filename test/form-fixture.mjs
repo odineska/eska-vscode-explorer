@@ -100,6 +100,18 @@ export async function createStylePaletteGallery(fixture) {
   return { forms, style, configuration:join(fixture.source, 'Configuration.xml'), expected };
 }
 
+export async function createStyleColorRolesSource(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const form = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
+  await writeFile(form.path, await readFile(join(input, 'Alias.xml')));
+  await writeFile(form.style, await readFile(join(input, 'Style.xml')));
+  const definition = join(fixture.source, 'StyleItems', 'TextColor.xml'), root = join(fixture.source, 'Configuration.xml');
+  await writeFile(definition, await readFile(join(input, 'TextColor.xml')));
+  await writeFile(root, (await readFile(root,'utf8')).replace('<ChildObjects>', '<ChildObjects><StyleItem>TextColor</StyleItem>'));
+  return {...form,definition};
+}
+
 export async function createMeasuredFormGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
