@@ -36,6 +36,24 @@ test('native table metrics preserve row units, footer and readonly edit affordan
   assert.equal(tableLayout(root).columns.length, 2);
 });
 
+test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
+  const root = fixture(); root.presentation.autoCommandItems = [];
+  const popup = field('Actions', 'Popup', 'unknown');
+  const bar = { ...field('RowsBar', 'AutoCommandBar', 'unknown'), properties: [prop('Autofill', false)], children: [popup] };
+  root.auxiliary.push(bar, field('Search', 'SearchStringAddition', 'unknown'));
+  root.properties.push(prop('SearchStringLocation', 'None'));
+  const layout = tableLayout(root);
+  assert.equal(layout.toolbar, true);
+  assert.equal(layout.bar.children[0], popup);
+  assert.equal(layout.more, false);
+  assert.equal(layout.search, undefined);
+  assert.equal(layout.minWidth, 400);
+  bar.properties = [];
+  assert.equal(tableLayout(root).more, true);
+  popup.presentation.displayed = false;
+  assert.equal(tableLayout(root).toolbar, false);
+});
+
 test('native metadata and dynamic list columns retain their distinct size and addition defaults', () => {
   const root = fixture();
   root.children[0].presentation.valueType.length = 0;

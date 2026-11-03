@@ -1,7 +1,7 @@
 import { For, Show, Switch, Match, createMemo } from 'solid-js';
 import { scalar, flag, caption, font, color, text } from './model.mjs';
 import { tableLayout } from './table-model.mjs';
-import { CommandButton } from './Preview.jsx';
+import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 
 function Header(props) {
@@ -33,11 +33,11 @@ export function Table(props) {
     <Show when={layout().toolbar}><div class="taxi-table-command-bar">
       <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.Copy' : undefined}/>}</For>
       <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} iconOnly/>}</For></span></Show>
-      <For each={layout().bar?.children.filter(item => item.presentation.displayed) ?? []}>{item => <CommandButton node={item} controller={props.controller}/>}</For>
+      <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <span class="taxi-command-spacer"/>
       <Show when={layout().search}><div class="taxi-table-search" data-element={layout().search.key} onClick={event => select(event, layout().search)}><input readOnly tabIndex="-1" placeholder={state.strings.searchShortcut} aria-label={state.strings.search}/><span>×</span></div></Show>
       <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.Find" iconOnly dropdown/></Show>
-      <CommandButton controller={props.controller} label={state.strings.more} dropdown/>
+      <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown/></Show>
     </div></Show>
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>

@@ -77,6 +77,7 @@ export async function createTableGallery(fixture) {
   }
   if (process.env.ESKA_FORM_ADDITION_FIXTURES) result.push(...await createGallery(fixture, ['NoViewStatus', 'NoSearchControl'], process.env.ESKA_FORM_ADDITION_FIXTURES));
   if (process.env.ESKA_FORM_STATE_FIXTURES) result.push(...await createGallery(fixture, ['ColumnHidden'], process.env.ESKA_FORM_STATE_FIXTURES));
+  if (process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES) result.push(...await createGallery(fixture, ['TablePopup', 'TableButtonGroup'], process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES));
   return result;
 }
 

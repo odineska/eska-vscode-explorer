@@ -127,7 +127,8 @@ button { cursor: default; }
 .taxi-command-spacer { flex: 1 1 auto; min-width: 12px; }
 .taxi-command-bar, .taxi-table-command-bar { display: flex; align-items: center; gap: 9px; min-height: 29px; }
 .taxi-command-bar { min-width: 108px; align-items: flex-start; padding: 1px 0 2px; }
-.taxi-command-bar > .taxi-element > .taxi-command-bar { min-height: 0; padding: 0; }
+.taxi-command-bar > .taxi-element > .taxi-command-bar,
+.taxi-table-command-bar > .taxi-element > .taxi-command-bar { min-height: 0; padding: 0; }
 .taxi-popup { position: relative; width: max-content; }
 .taxi-popup > .taxi-button--dropdown { padding-left: 13px; padding-right: 5px; }
 .taxi-popup > .taxi-button--dropdown .taxi-down { margin-left: 2px; }

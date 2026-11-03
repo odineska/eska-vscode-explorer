@@ -31,7 +31,7 @@ export function tableLayout(table, locale = 'ru') {
   const bar = table.auxiliary.find(node => node.kind === 'AutoCommandBar');
   const commands = table.presentation.autoCommandItems ?? [];
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
-  const search = table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node));
+  const search = scalar(table, 'SearchStringLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node)) : undefined;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && scalar(table, 'SearchControlLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchControlAddition' && visibleAddition(node)) : undefined;
   const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;
@@ -42,7 +42,7 @@ export function tableLayout(table, locale = 'ru') {
   const minWidth = Math.max(400, number(table, 'Width') * 8 + 4, columns.reduce((sum, column) => sum + column.width, 0) + (dynamic ? 2 : 16), toolbar && search ? toolbarWidth : 0);
   const flexible = columns.some(column => column.flexible);
   const tracks = columns.map((column, index) => column.flexible || !flexible && index === 0 ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, minWidth, tracks, toolbar, commands, bar, search, searchControl, chips, dynamic };
+  return { children, columns, depth, header, footer, height, minWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, searchControl, chips, dynamic };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }
