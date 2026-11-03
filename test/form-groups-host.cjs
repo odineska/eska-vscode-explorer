@@ -53,6 +53,10 @@ exports.run = async function () {
       // Text advances can land between CSS pixels; retain the exact measured result.
       for (const [index, dimension] of ['width','height'].entries()) if (Math.abs(geometry.frame[dimension]-expected[index])>1)
         mismatches.push(`${form.kind} ${dimension}: ${geometry.frame[dimension]} vs ${expected[index]}`);
+      if (['PagesAuto','PagesSwipe'].includes(form.kind)) {
+        assert.equal(geometry.frame.width,271,'native auto frame allocation');
+        assert.deepEqual(geometry.inputs.map(input=>[input.x-geometry.frame.x,input.y-geometry.frame.y]),[[78,74],[78,106]],'native field positions after title allocation');
+      }
     }
     const hidden = ['GroupHidden','ButtonGroup','Popup'].includes(form.kind);
     if(hidden) assert.equal(geometry.elements,0,form.kind);
