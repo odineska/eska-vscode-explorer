@@ -164,13 +164,14 @@ function PopupMenu(props) {
   </div>;
 }
 function Input(props) {
+  let valueInput;
   const node = () => props.node, state = props.controller.state;
   const kind = () => node().presentation.valueType.kind;
   const multiline = () => flag(node(), 'MultiLine', false);
   return <div class="taxi-input" classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node()), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node())}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border) }}>
     <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
-      <Match when={true}><input readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/></Match></Switch>
+      <Match when={true}><input ref={valueInput} readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && kind() === 'number' && flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)} placement="input" target={()=>valueInput} text={fieldValue(node(),state.culture)} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
     <Show when={flag(node(), 'ChoiceButton', ['reference', 'composite', 'number'].includes(kind()) || kind() === 'date' && node().presentation.valueType.dateParts !== 'Time')}><span class="taxi-input-button" classList={{'taxi-input-button--number':kind() === 'number'}}>{kind() === 'date' ? <Icon name="Calendar"/> : kind() === 'number' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><svg class="taxi-input-calculator" width="9" height="11" viewBox="0 0 9 11" aria-hidden="true" shape-rendering="crispEdges"><For each={calculatorRects}>{([x,y,width,height,fill])=><rect x={x} y={y} width={width} height={height} fill={fill}/>}</For></svg></Show> : '▾'}</span></Show>
     <Show when={flag(node(), 'OpenButton', kind() === 'reference')}><span class="taxi-input-button"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
     <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>

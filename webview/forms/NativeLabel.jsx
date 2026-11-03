@@ -24,7 +24,7 @@ export function NativeLabel(props) {
     const runtime = props.runtime, text = props.text, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!props.enabled || !text || !runtime) return;
-    const label = placeholder.parentElement, metrics = fontLineMetrics(value), css = getComputedStyle(label);
+    const label = props.target?.() ?? placeholder.parentElement, metrics = fontLineMetrics(value), css = getComputedStyle(label);
     const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
     if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
         || props.placement === 'tab' && !props.calibrated
@@ -37,17 +37,17 @@ export function NativeLabel(props) {
       if (!current || !raster) return;
       try {
         const style = getComputedStyle(label);
-        const tab = props.placement === 'tab', title = props.placement === 'formTitle';
-        if (!tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
+        const tab = props.placement === 'tab', title = props.placement === 'formTitle', input = props.placement === 'input';
+        if (input ? !['right','end'].includes(style.textAlign) : !tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
-        const baseline = tab || title ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
+        const baseline = tab || title || input ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
         const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
-          : title ? parseFloat(style.paddingLeft) : 0;
+          : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + parseFloat(style.width) - 3 - raster.advance : 0;
         canvas.style.left = `${left + raster.originX}px`;
-        canvas.style.top = `${baseline - metrics.ascent + raster.originY - (tab ? parseFloat(style.borderTopWidth) : 0)}px`;
+        canvas.style.top = `${baseline - metrics.ascent + raster.originY + (input ? label.offsetTop : 0) - (tab ? parseFloat(style.borderTopWidth) : 0)}px`;
         context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label)), raster.width, raster.height), 0, 0);
         runtime.issue(owner, false); setStatus('ready');
       } catch { fail(); }
@@ -70,6 +70,6 @@ export function NativeLabel(props) {
     onCleanup(() => { current = false; resize.disconnect(); appearance.disconnect(); runtime.issue(owner, false); });
   }));
   onCleanup(() => props.runtime?.issue(owner, false));
-  return <><span ref={placeholder} data-native-label={status()} style={{ visibility: status() === 'ready' ? 'hidden' : undefined }}>{props.text}</span>
+  return <><span ref={placeholder} data-native-label={status()} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: props.placement === 'input' ? 'none' : undefined, visibility: status() === 'ready' ? 'hidden' : undefined }}>{props.text}</span>
     <canvas ref={canvas} class="taxi-native-label" aria-hidden="true" style={{ display: status() === 'ready' ? undefined : 'none' }}/></>;
 }
