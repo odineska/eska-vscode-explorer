@@ -77,6 +77,10 @@ export async function createStateGallery(fixture) {
     'Font10Bold', 'Font12Normal', 'Font14Normal', 'Font16Normal', 'Font14Number', 'TableHidden']);
 }
 
+export async function createPaletteGallery(fixture) {
+  return createGallery(fixture,['Field','Button']);
+}
+
 export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');

@@ -36,6 +36,7 @@ try {
   if (basename(suite) === "form-handlers-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormHandlerSource(fixture);
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
   if (basename(suite) === "form-states-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createStateGallery(fixture);
+  if (basename(suite) === "form-palette-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPaletteGallery(fixture);
   if (basename(suite) === "form-groups-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createGroupGallery(fixture);
   if (basename(suite) === "form-activity-host.cjs") fixture.formActivity = await (await import("./form-fixture.mjs")).createFormActivitySource(fixture);
   if (basename(suite) === "form-tables-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableGallery(fixture);
