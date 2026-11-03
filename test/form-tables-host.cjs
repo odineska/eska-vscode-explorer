@@ -28,16 +28,22 @@ exports.run = async function () {
         columns:[...document.querySelectorAll('[data-column]')].map(node=>({label:node.textContent,...rect(node)})),
         bar:!!document.querySelector('.taxi-table-command-bar'),chips:document.querySelector('.taxi-table-search-controls')?.textContent,
         mark:!!document.querySelector('.taxi-table-incomplete'),footer:document.querySelector('.taxi-table-footer')?.textContent,
+        gutter:!!document.querySelector('.taxi-table-scrollbar'),paging:document.querySelectorAll('.taxi-table-pagination > span').length,
         fabricatedRows:document.querySelectorAll('.taxi-table-empty [role=row], .taxi-table-empty [role=cell]').length};
     })()`);
-    assert.equal(geometry.control.width, ['GridFooter', 'NoAutoFill'].includes(form.kind) ? 400 : 415, `${form.kind} width`);
-    assert.equal(geometry.control.height, form.kind === 'GridFooter' ? 145 : form.kind === 'Vertical' ? 228 : 227, `${form.kind} height`);
+    assert.equal(geometry.control.width, form.kind === 'MetadataTable' ? 520 : form.kind === 'DynamicList' ? 418 : ['GridFooter', 'NoAutoFill'].includes(form.kind) ? 400 : 415, `${form.kind} width`);
+    assert.equal(geometry.control.height, form.kind === 'DynamicList' ? 452 : form.kind === 'GridFooter' ? 145 : form.kind === 'Vertical' ? 228 : 227, `${form.kind} height`);
     assert.equal(geometry.header.height, form.kind === 'Vertical' ? 90 : ['HorizontalTitled', 'InCell'].includes(form.kind) ? 60 : 30);
     assert.equal(geometry.bar, !['GridFooter', 'NoAutoFill'].includes(form.kind));
-    assert.equal(geometry.mark, form.kind === 'Marked');
+    assert.equal(geometry.mark, ['Marked', 'MetadataTable'].includes(form.kind));
+    assert.equal(geometry.chips !== undefined, form.kind !== 'NoViewStatus');
+    assert.equal(geometry.gutter, form.kind !== 'DynamicList');
+    assert.equal(geometry.paging, form.kind === 'DynamicList' ? 4 : 0);
     assert.equal(geometry.fabricatedRows, 0);
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
-    assert.equal(geometry.frame.height, form.kind === 'GridFooter' ? 225 : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342);
+    if (form.kind !== 'DynamicList') assert.equal(geometry.frame.height, form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225 : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342);
+    if (form.kind === 'MetadataTable') assert.deepEqual(geometry.columns.map(column => column.width), [97, 177, 176, 54]);
+    if (form.kind === 'DynamicList') assert.deepEqual(geometry.columns.map(column => column.width), [108, 308]);
     if (form.kind === 'GridFooter') assert.equal(geometry.footer, 'Total');
     if (['Default', 'ReadOnly', 'Marked'].includes(form.kind)) {
       assert.equal(geometry.columns[1].width, form.kind === 'ReadOnly' ? 108 : 129);

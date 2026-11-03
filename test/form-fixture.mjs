@@ -26,11 +26,21 @@ export async function createFormGallery(fixture) {
 }
 
 export async function createTableGallery(fixture) {
-  return createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
+  const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
+  if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {
+    const input = process.env.ESKA_FORM_CONTEXT_FIXTURES;
+    if (!isAbsolute(input)) throw new Error('ESKA_FORM_CONTEXT_FIXTURES must be absolute.');
+    await mkdir(join(fixture.source, 'Catalogs'), { recursive: true });
+    await writeFile(join(fixture.source, 'Catalogs', 'NativeGoods.xml'), await readFile(join(input, 'Catalog.xml')));
+    const root = join(fixture.source, 'Configuration.xml');
+    await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
+    result.push(...await createGallery(fixture, ['MetadataTable', 'DynamicList'], input));
+  }
+  if (process.env.ESKA_FORM_ADDITION_FIXTURES) result.push(...await createGallery(fixture, ['NoViewStatus', 'NoSearchControl'], process.env.ESKA_FORM_ADDITION_FIXTURES));
+  return result;
 }
 
-async function createGallery(fixture, kinds) {
-  const input = process.env.ESKA_FORM_FIXTURES;
+async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTURES) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
   const forms = [];
   for (const kind of kinds) {

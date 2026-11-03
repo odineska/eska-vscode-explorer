@@ -2,6 +2,7 @@ import { For, Show, Switch, Match, createMemo } from 'solid-js';
 import { scalar, flag, caption, font, color, text } from './model.mjs';
 import { tableLayout } from './table-model.mjs';
 import { CommandButton } from './Preview.jsx';
+import { ViewStatus } from './Additions.jsx';
 
 function Header(props) {
   const state = props.controller.state, model = () => props.model, node = () => model().node;
@@ -30,21 +31,23 @@ export function Table(props) {
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
   return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar">
-      <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)}/>}</For>
+      <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.Copy' : undefined}/>}</For>
       <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} iconOnly/>}</For></span></Show>
       <For each={layout().bar?.children.filter(item => item.presentation.displayed) ?? []}>{item => <CommandButton node={item} controller={props.controller}/>}</For>
       <span class="taxi-command-spacer"/>
       <Show when={layout().search}><div class="taxi-table-search" data-element={layout().search.key} onClick={event => select(event, layout().search)}><input readOnly tabIndex="-1" placeholder={state.strings.searchShortcut} aria-label={state.strings.search}/><span>×</span></div></Show>
+      <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.Find" iconOnly dropdown/></Show>
       <CommandButton controller={props.controller} label={state.strings.more} dropdown/>
     </div></Show>
-    <Show when={layout().chips}><div class="taxi-table-search-controls" data-element={layout().chips.key} onClick={event => select(event, layout().chips)}><For each={[1, 2]}>{value => <span>{state.strings.sampleFilter.replaceAll('{0}', value)}<i>×</i></span>}</For></div></Show>
+    <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
       <div class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': layout().tracks }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
         <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ 'grid-template-columns': layout().tracks }}><For each={layout().columns}>{column => <div role="cell" onClick={event => select(event, column.node)} style={{ 'text-align': scalar(column.node, 'FooterHorizontalAlign', 'Left').toLowerCase() }}><For each={column.fields}>{(item, index) => <><Show when={index() > 0}>, </Show>{text(item.presentation.footerText, state.locale, state.strings)}</>}</For></div>}</For></div></Show>
       </div>
-      <div class="taxi-table-scrollbar" aria-hidden="true"><span/><span/></div>
+      <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><span/><span/></div></Show>
     </div>
+    <Show when={layout().dynamic}><div class="taxi-table-pagination" aria-hidden="true"><For each={['M2 9L6 5l4 4zM2 3h8', 'M2 8l4-4 4 4z', 'M2 4l4 4 4-4z', 'M2 3l4 4 4-4zM2 9h8']}>{path => <span><svg viewBox="0 0 12 12"><path d={path}/></svg></span>}</For></div></Show>
   </div>;
 }

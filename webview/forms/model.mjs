@@ -5,6 +5,9 @@ export function property(node, name) { return node?.properties?.find(value => va
 export function scalar(node, name, fallback = '') { const value = property(node, name)?.value; return value?.kind === 'text' ? value.text : fallback; }
 export function number(node, name, fallback = 0) { const text = scalar(node, name); return text !== '' && Number.isFinite(Number(text)) ? Number(text) : fallback; }
 export function flag(node, name, fallback = true) { const value = scalar(node, name); return value === 'false' || value === '0' ? false : value === 'true' || value === '1' ? true : fallback; }
+export function viewStatusAddition(node) {
+  return scalar(node, 'ViewStatusLocation') === 'None' ? undefined : node.auxiliary.find(item => item.kind === 'ViewStatusAddition' && item.presentation.displayed !== false && flag(item, 'Visible'));
+}
 export function text(value, locale, strings) {
   if (!value) return '';
   if (value.kind === 'name') return value.text;

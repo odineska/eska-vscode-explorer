@@ -113,6 +113,8 @@ button { cursor: default; }
 .taxi-button--bar { background: none; border-color: transparent; box-shadow: none; min-height: 24px; padding: 2px 5px; }
 .taxi-button--picture { padding: 3px; min-width: 26px; }
 .taxi-button--icon-only { width: 30px; padding: 3px 0; }
+.taxi-button--icon-only.taxi-button--dropdown { width: 42px; }
+.taxi-button--icon-only.taxi-button--dropdown .taxi-down { margin-left: 0; }
 .taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; color: #0066a3 !important; text-decoration: underline; }
 .taxi-button:active { background-color: #efefef; }
 .taxi-down { margin-left: 5px; font-size: 10px; }
@@ -160,6 +162,7 @@ button { cursor: default; }
 .taxi-table-command-bar { gap: 9px; height: 26px; min-height: 26px; margin-bottom: 9px; contain: inline-size; }
 .taxi-table-command-bar > .taxi-button { padding-left: 12px; padding-right: 12px; }
 .taxi-table-command-bar > .taxi-button--dropdown { padding-left: 8px; padding-right: 8px; }
+.taxi-table-command-bar > .taxi-button--icon-only { padding-left: 0; padding-right: 0; }
 .taxi-table-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 .taxi-table-move { display: inline-flex; margin-left: 11px; }
 .taxi-table-move .taxi-button:first-child { border-radius: 2px 0 0 2px; }
@@ -190,6 +193,10 @@ button { cursor: default; }
 .taxi-table-scrollbar { display: flex; flex-direction: column; justify-content: space-between; align-items: center; width: 14px; flex: 0 0 14px; background: #fff; padding: 9px 0; }
 .taxi-table-scrollbar > span { width: 6px; height: 4px; background: #c2c2c2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .taxi-table-scrollbar > span:last-child { transform: rotate(180deg); }
+.taxi-table-pagination { height: 21px; display: flex; justify-content: flex-end; }
+.taxi-table-pagination > span { display: grid; place-items: center; width: 24px; border: 1px solid #a0a0a0; border-top: 0; border-left: 0; }
+.taxi-table-pagination > span:first-child { border-left: 1px solid #a0a0a0; }
+.taxi-table-pagination svg { width: 12px; height: 12px; fill: #aaa; stroke: #aaa; stroke-width: .5; }
 .taxi-special { display: flex; flex-direction: column; max-width: 100%; border: 1px solid #aaa; overflow: hidden; background: #fff; }
 .taxi-document-surface { flex: 1; min-height: 0; background: #fff; }
 .taxi-document-toolbar { display: flex; align-items: center; gap: 8px; height: 28px; flex: 0 0 28px; padding: 3px; border-bottom: 1px solid #bbb; background: #f8f8f8; }

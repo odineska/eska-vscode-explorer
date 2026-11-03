@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { tableLayout } from '../webview/forms/table-model.mjs';
+import { viewStatusAddition } from '../webview/forms/model.mjs';
 
 const ns = 'http://v8.1c.ru/8.3/xcf/logform';
 const prop = (name, text) => ({ key: { namespace: ns, name }, value: { kind: 'text', text: String(text) } });
@@ -33,4 +34,25 @@ test('native table metrics preserve row units, footer and readonly edit affordan
   layout = tableLayout(root); assert.equal(layout.height, 145); assert.equal(layout.footer, 30);
   root.children[0].properties.push(prop('Visible', false));
   assert.equal(tableLayout(root).columns.length, 2);
+});
+
+test('native metadata and dynamic list columns retain their distinct size and addition defaults', () => {
+  const root = fixture();
+  root.children[0].presentation.valueType.length = 0;
+  root.children[1].presentation.valueType.digits = 0;
+  const line = field('Line', 'LabelField', 'number');line.presentation.caption = {kind:'standard',key:'table.LineNumber'};line.presentation.valueType.digits = 9;
+  root.children.unshift(line);
+  assert.deepEqual(tableLayout(root).columns.map(column => column.width), [97, 177, 176, 54]);
+  assert.equal(tableLayout(root).minWidth, 520);
+  root.presentation.valueType = {types:[{namespace:'http://v8.1c.ru/8.1/data/enterprise/current-config',name:'DynamicList'}]};
+  const code = field('Code', 'InputField', 'string');code.presentation.caption = {kind:'standard',key:'attribute.Code'};code.presentation.valueType.length=9;
+  const description = field('Description', 'InputField', 'string');description.presentation.valueType.length=25;
+  root.children = [code, description];
+  root.auxiliary.push({...field('Search', 'SearchStringAddition', 'unknown'),auxiliary:[]});
+  assert.equal(tableLayout(root).height, 452);assert.equal(tableLayout(root).minWidth, 418);
+  assert.equal(tableLayout(root).columns[0].flexible, false);
+  const status = field('Status', 'ViewStatusAddition', 'unknown');root.auxiliary.push(status);
+  assert.equal(viewStatusAddition(root), status);
+  root.properties.push(prop('ViewStatusLocation', 'None'));
+  assert.equal(viewStatusAddition(root), undefined);
 });
