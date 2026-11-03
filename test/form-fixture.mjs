@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
-import { descriptor } from './fixture.mjs';
+import { createTreeProject, descriptor } from './fixture.mjs';
 export async function createFormSource(fixture) {
   const root = join(fixture.source, 'Configuration.xml');
   await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><CommonForm>Preview</CommonForm><CommonForm>Second</CommonForm>'));
@@ -24,6 +24,28 @@ export async function createFormGallery(fixture) {
     'ProgressBarField', 'TrackBarField', 'RadioButtonField', 'PictureField', 'SpreadSheetDocumentField', 'PlannerField',
     'TextDocumentField', 'PDFDocumentField', 'DendrogramField', 'GanttChartField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PeriodField'];
   return createGallery(fixture, kinds);
+}
+
+export async function createFormActivitySource(fixture) {
+  await rm(fixture.source,{recursive:true});
+  const base=await createTreeProject(join(fixture.root,'members','base'));
+  const extension=await createTreeProject(join(fixture.root,'members','extension'),'extension');
+  await writeFile(join(base.root,'eska.toml'),"[project]\nname='base'\ntype='configuration'\n");
+  await writeFile(join(extension.root,'eska.toml'),"[project]\nname='extension'\ntype='extension'\n");
+  const child=title=>`<ChildItems><LabelDecoration name="Caption" id="1"><Title><v8:item><v8:lang>ru</v8:lang><v8:content>${title}</v8:content></v8:item><v8:item><v8:lang>en</v8:lang><v8:content>${title}</v8:content></v8:item></Title></LabelDecoration></ChildItems>`;
+  const body='<CommandBarLocation>None</CommandBarLocation>'+child('Base caption');
+  const form=content=>`<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core">${content}</Form>`;
+  for(const member of [base,extension]) {
+    const root=join(member.source,'Configuration.xml');
+    await writeFile(root,(await readFile(root,'utf8')).replace('<ChildObjects>','<ChildObjects><CommonForm>Preview</CommonForm>'));
+    await mkdir(join(member.source,'CommonForms','Preview','Ext'),{recursive:true});
+    await writeFile(join(member.source,'CommonForms','Preview.xml'),descriptor('CommonForm','Preview','', '<FormType>Managed</FormType>'));
+    member.path=join(member.source,'CommonForms','Preview','Ext','Form.xml');
+    await writeFile(member.path,form(member===base?body:body.replaceAll('Base caption','Extension caption')+`<BaseForm>${body}</BaseForm>`));
+  }
+  await writeFile(join(fixture.root,'eska.toml'),"[workspace]\n[analysis]\ndefault_application='app'\n[workspace.members.app]\nconfiguration='members/base'\nextensions=[{path='members/extension'}]\n");
+  const configDir=join(fixture.root,'.machine-config');await mkdir(configDir);
+  return {base,extension,configDir};
 }
 
 export async function createStateGallery(fixture) {

@@ -20,7 +20,7 @@ interface View {
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
   phase: "loading" | "ready" | "stale" | "disconnected"; notice: string; sequence: number; wanted: number; running: Promise<void> | undefined;
   timer: ReturnType<typeof setTimeout> | undefined; suspended: boolean; closed: boolean; watchers: vscode.Disposable[]; watchKey: string;
-  inputs: Map<string, string>; generation: string;
+  inputs: Map<string, string>; generation: string; activityKey: string;
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
 
@@ -59,7 +59,7 @@ export class FormPreviewService implements vscode.Disposable {
     const create = Promise.resolve().then(() => {
       const view: View = { key, tree, entry, path, application, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
         frames: new Map(), client: undefined, snapshot: undefined, nodes: new Map(), selected: undefined, phase: "loading", notice: "", sequence: 0, wanted: 0,
-        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "" };
+        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "" };
       this.views.set(key, view); return view;
     });
     this.opening.set(key, create); try { return await create; } finally { this.opening.delete(key); }
@@ -117,11 +117,17 @@ export class FormPreviewService implements vscode.Disposable {
       try {
         const tree = this.tree(); const state = this.connection.state;
         if (!tree || state.kind !== "ready" || !state.formPreview) throw new ExplorerError("incompatible");
+        const activityKey = JSON.stringify(tree.projects.map(project => [project.key, projectEnabled(project.info)]));
         if (tree !== view.tree || !view.client || view.generation !== view.entry.project.info.generation) {
           const found = await revealFile(tree, view.path), entry = found && "owner" in found ? found.owner : found;
           if (!entry || !isForm(entry) || !projectEnabled(entry.project.info)) throw new ExplorerError("sourceMissing");
           if (view.client && (tree !== view.tree || nodeKey(entry.node.id) !== nodeKey(view.entry.node.id))) { await view.client.close().catch(() => {}); view.client = undefined; }
           view.tree = tree; view.entry = entry;
+        }
+        if (view.client && view.activityKey !== activityKey) {
+          // A removed extension invalidates its old input IDs. Reopen before
+          // collecting dirty overlays; reactivation must discover their latest text.
+          await view.client.close().catch(() => {}); view.client = undefined;
         }
         view.phase = "loading"; view.notice = this.strings().updating!; this.publish(view, false);
         const opened = !view.client;
@@ -141,7 +147,7 @@ export class FormPreviewService implements vscode.Disposable {
         const overlays = await this.overlays(view);
         const snapshot = opened && !overlays.length ? view.client.current : await view.client.update(overlays);
         if (view.closed || view.suspended || this.disposed) return;
-        view.generation = view.entry.project.info.generation; await this.watch(view, snapshot);
+        view.generation = view.entry.project.info.generation; view.activityKey = activityKey; await this.watch(view, snapshot);
         if (wanted === view.wanted) {
           view.snapshot = snapshot; view.phase = "ready"; view.notice = snapshot.modelComplete ? "" : this.strings().incomplete!;
           view.nodes.clear(); const visit = (node: FormNode): void => { view.nodes.set(identityKey(node.identity), node); node.children.forEach(visit); node.auxiliary.forEach(visit); }; visit(snapshot.model.root);
@@ -220,7 +226,7 @@ export class FormPreviewService implements vscode.Disposable {
   /** Reconnect only to the replacement tree supplied by the owning Explorer, preserving the visible last model. */
   changed(tree: MetadataTree | undefined): void {
     for (const view of this.views.values()) {
-      if (!tree || (view.tree === tree && !projectEnabled(view.entry.project.info))) { for (const watcher of view.watchers) watcher.dispose(); view.watchers = []; view.watchKey = ""; view.suspended = true; view.phase = "disconnected"; view.notice = this.strings().disconnected!; this.publish(view, false); }
+      if (!tree || (view.tree === tree && !projectEnabled(view.entry.project.info))) { for (const watcher of view.watchers) watcher.dispose(); view.watchers = []; view.watchKey = ""; view.activityKey = ""; view.suspended = true; view.phase = "disconnected"; view.notice = this.strings().disconnected!; this.publish(view, false); }
       else { view.suspended = false; this.schedule(view); }
     }
   }
