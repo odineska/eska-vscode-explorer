@@ -110,3 +110,17 @@ export async function createPictureFormSource(fixture) {
   await writeFile(form.path,form.text.replace('<ChildItems>','<ChildItems><PictureDecoration name="Logo" id="99"><Picture xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"><xr:Ref>CommonPicture.Icon</xr:Ref><xr:LoadTransparent>false</xr:LoadTransparent></Picture></PictureDecoration>'));
   return {...form,pictureXml,one,two};
 }
+
+export async function createDependencyFormSource(fixture) {
+  const form = await createFormSource(fixture), root = join(fixture.source, 'Configuration.xml');
+  const names = ['FontA', 'FontB', 'FontC'];
+  await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + names.map(name => `<StyleItem>${name}</StyleItem>`).join('')));
+  await mkdir(join(fixture.source, 'StyleItems'), { recursive: true });
+  const styles = {};
+  for (const name of names) {
+    styles[name] = join(fixture.source, 'StyleItems', `${name}.xml`);
+    await writeFile(styles[name], descriptor('StyleItem', name, '', '<Type>Font</Type><Value xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xsi:type="v8ui:Font" ref="sys:DefaultGUIFont" height="12" kind="WindowsFont"/>'));
+  }
+  await writeFile(form.path, form.text.replace('<Width>20</Width>', '<Width>20</Width><Font xmlns:style="http://v8.1c.ru/8.1/data/ui/style" ref="style:FontA" kind="StyleItem"/>'));
+  return { ...form, styles };
+}

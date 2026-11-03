@@ -9,7 +9,7 @@ import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { FormSession, type Overlay } from "./client.js";
-import { identityKey, isIdentity, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
+import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
 import { formStrings } from "./strings.js";
 
 const VIEW_TYPE = "eska.formViewer";
@@ -144,8 +144,7 @@ export class FormPreviewService implements vscode.Disposable {
           }
         }
         await this.watch(view, view.client.current);
-        const overlays = await this.overlays(view);
-        const snapshot = opened && !overlays.length ? view.client.current : await view.client.update(overlays);
+        const snapshot = await this.refreshInputs(view, opened, wanted);
         if (view.closed || view.suspended || this.disposed) return;
         view.generation = view.entry.project.info.generation; view.activityKey = activityKey; await this.watch(view, snapshot);
         if (wanted === view.wanted) {
@@ -168,6 +167,27 @@ export class FormPreviewService implements vscode.Disposable {
       result.set(source, { source, text, version: String(document.version) });
     }
     return [...result.values()];
+  }
+  private async refreshInputs(view: View, opened: boolean, wanted: number): Promise<FormSnapshot> {
+    const client = view.client;
+    if (!client) throw new ExplorerError("obsolete");
+    let overlays = await this.overlays(view);
+    // Each pass can discover another already-dirty resource. Publish only after
+    // its overlay set stabilizes, bounded by the protocol's dependency limit.
+    for (let pass = 0; pass <= MAX_FORM_DEPENDENCIES; pass++) {
+      if (view.closed || view.suspended || this.disposed) throw new ExplorerError("obsolete");
+      const snapshot = opened && !overlays.length ? client.current : await client.update(overlays);
+      opened = false;
+      await this.watch(view, snapshot);
+      if (wanted !== view.wanted) return snapshot;
+      const next = await this.overlays(view), pending = new Map(next.map(overlay => [overlay.source, overlay]));
+      if (next.length === overlays.length && overlays.every(overlay => {
+        const value = pending.get(overlay.source);
+        return value?.version === overlay.version && value.text === overlay.text;
+      })) return snapshot;
+      overlays = next;
+    }
+    throw new ExplorerError("sourceChanged");
   }
   private watchInitial(view: View): void {
     if (view.watchKey) return;

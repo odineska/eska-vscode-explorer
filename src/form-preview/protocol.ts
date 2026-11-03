@@ -2,6 +2,8 @@ import { ExplorerError, isRecord, isToken, isWirePath, type WirePath } from "../
 import type { PropertyField, PropertyKey } from "../properties.js";
 import { picturePreview, type PicturePreview } from "../picture.js";
 
+export const MAX_FORM_DEPENDENCIES = 1024;
+
 export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number }
 export interface ElementIdentity { source: string; part: "current"; key: { kind: "root" } | { kind: "xml"; value: string } }
 export interface Origin { source: string; range: { start: number; end: number } }
@@ -78,7 +80,7 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
 export function parseFormSnapshot(value: unknown): FormSnapshot {
   if (!isRecord(value) || typeof value.formSessionId !== "string" || !value.formSessionId || !isToken(value.revision) || !hash(value.contextFingerprint)
     || !(value.application === null || typeof value.application === "string") || value.profile !== "taxi-8.3.27" || typeof value.limitedContext !== "boolean"
-    || typeof value.modelComplete !== "boolean" || !["ready", "stale"].includes(String(value.status)) || !Array.isArray(value.dependencies) || value.dependencies.length > 1024 || !isRecord(value.model)) invalid();
+    || typeof value.modelComplete !== "boolean" || !["ready", "stale"].includes(String(value.status)) || !Array.isArray(value.dependencies) || value.dependencies.length > MAX_FORM_DEPENDENCIES || !isRecord(value.model)) invalid();
   const ids = new Set<string>();
   for (const dependency of value.dependencies) {
     if (!isRecord(dependency) || !hash(dependency.id) || ids.has(dependency.id) || !isWirePath(dependency.root) || !isWirePath(dependency.path) || !hash(dependency.snapshot)
