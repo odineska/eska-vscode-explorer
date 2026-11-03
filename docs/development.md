@@ -610,3 +610,16 @@ DOM-компонентами. Оболочка, навигация и публи
 операций, разбор, построение текста и preview остаются в Rust.
 `metadataRevision` — внутренний счётчик webview, не поле публичного Rust API.
 В хранилище webview находятся только ограниченные настройки компоновки.
+
+Для просмотра форм `scripts/form-font-metrics.py` вручную пересчитывает
+`resources/forms/fonts/advances.json` из неизменённых комплектных шрифтов.
+Его запускают в эталонном Linux-окружении с FreeType 2.13.2; фиксируются
+интерпретатор TrueType 40, `FT_LOAD_DEFAULT`, SHA-256 шрифтов и диапазон 1–128 px.
+Скрипт использует Python standard library и системный FreeType. Обычная сборка
+VSIX использует готовый JSON и не запускает Python/FreeType. Общий измеритель
+`webview/forms/text-metrics.js` применяет эти данные для подписей кнопок,
+вкладок и табличных команд; вне покрытия остаётся прежнее измерение Canvas.
+Галерея `test/form-button-metrics-host.cjs` принимает `ESKA_FORM_FIXTURES`
+с абсолютным путём к `tests/fixtures/forms/native-button-metrics` репозитория
+ESKA. Она сверяет все 16 форм с native-размерами и проверяет dirty-переход
+16 → 20 → 16 pt без замены DOM-кнопки и записи исходника.

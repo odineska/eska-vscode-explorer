@@ -73,6 +73,11 @@ export function fontLineHeight(value) {
   const pixels = Math.round((value?.points ?? 10) * 4 / 3);
   return Math.ceil(pixels * 1854 / 2048) + Math.ceil(pixels * 434 / 2048);
 }
+/** Native raised-button padding scales from the 13px reference font. */
+export function buttonMetrics(value) {
+  const pixels = Math.round((value?.points ?? 10) * 4 / 3);
+  return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: fontLineHeight(value) };
+}
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
 export function inputHeight(node) {

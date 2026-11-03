@@ -1,4 +1,5 @@
 import { createSignal, createEffect, on, onCleanup } from 'solid-js';
+import { hintedTextWidth } from './font-metrics.mjs';
 
 /** Allocate measured Linux captions without fractional layout drift. */
 export function createNativeButtonWidth(element, request) {
@@ -13,7 +14,9 @@ export function createNativeButtonWidth(element, request) {
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
       const context = canvas.getContext('2d'); if (!context) return;
       context.font = descriptor;
-      const textWidth = [...value.text].reduce((sum, char) => sum + Math.floor(context.measureText(char).width + .5), 0);
+      const textWidth = hintedTextWidth(value.text, { family: css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, ''),
+        pixels: Math.round(parseFloat(css.fontSize)), weight: css.fontWeight, italic: css.fontStyle === 'italic' })
+        ?? [...value.text].reduce((sum, char) => sum + Math.floor(context.measureText(char).width + .5), 0);
       // Computed widths stay in CSS units when the preview uses CSS zoom.
       const adornments = [...button.children].map(node => ({style:getComputedStyle(node)})).filter(item => parseFloat(item.style.width) > 0);
       const extra = adornments.reduce((sum, {style}) => {
