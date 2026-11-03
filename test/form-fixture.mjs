@@ -26,6 +26,11 @@ export async function createFormGallery(fixture) {
   return createGallery(fixture, kinds);
 }
 
+export async function createStateGallery(fixture) {
+  return createGallery(fixture, ['InputHidden', 'InputDisabled', 'InputReadOnly', 'InputColors', 'InputFont', 'InputNumber', 'InputDate', 'InputDateTime', 'InputTime',
+    'Font10Bold', 'Font12Normal', 'Font14Normal', 'Font16Normal', 'Font14Number', 'TableHidden']);
+}
+
 export async function createTableGallery(fixture) {
   const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
   if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {

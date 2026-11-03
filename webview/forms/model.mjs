@@ -37,21 +37,35 @@ export function treeChildren(node) {
   return [...node.auxiliary, ...node.children].filter(child => !['ContextMenu', 'ExtendedTooltip'].includes(child.kind) && (child.kind !== 'AutoCommandBar' || child.children.length || node.kind === 'Table'));
 }
 export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
+function fontPixels(node) { return Math.round((node.presentation.font?.points ?? 10) * 4 / 3); }
+// Reference Linux character units, calibrated against 10–16pt native inputs.
+function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
+export function inputHeight(node) {
+  // Linux reference Liberation Sans metrics; confirmed at 10, 12, 14 and 16pt.
+  const pixels = fontPixels(node), line = Math.ceil(pixels * 1854 / 2048) + Math.ceil(pixels * 434 / 2048);
+  return Math.ceil(line * 1.5);
+}
 export function fieldWidth(node) {
-  const width = number(node, 'Width'); if (width > 0) return Math.max(20, width * 8 + 4);
+  const unit = inputUnit(node), width = number(node, 'Width'); if (width > 0) return Math.max(20, width * unit + 4);
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
-  if (type.kind === 'number') return Math.max(80, Math.min(24, (type.digits ?? 12) + 2) * 8 + 4);
-  if (type.kind === 'reference') return 411;
-  if (type.kind === 'date') return type.dateParts === 'Time' ? 92 : type.dateParts === 'Date' ? 116 : 180;
-  if (type.kind === 'string') return type.length ? Math.max(100, Math.min(50, type.length) * 8 + 11) : 161;
-  return 161;
+  if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21);
+  if (type.kind === 'reference') return Math.round(50 * unit + 11);
+  if (type.kind === 'date') return Math.round(type.dateParts === 'Time' ? 11 * unit + 3 : type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21);
+  if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
+  return Math.round(20 * unit + 1);
 }
-export function fieldValue(node) {
+export function fieldValue(node, culture) {
   const type = node.presentation.valueType;
-  if (type.kind === 'number') return (0).toFixed(Math.min(type.fraction ?? 0, 12)).replace('.', ',');
-  if (type.kind === 'date') return type.dateParts === 'Time' ? '0:00:00' : type.dateParts === 'DateTime' ? '01.01.0001 0:00:00' : '01.01.0001';
+  if (type.kind === 'number') return '0';
+  if (type.kind === 'date') {
+    const sample = new Date(2001, 10, 22, 1, 2, 3);
+    const empty = part => ['month', 'day', 'hour', 'minute', 'second'].includes(part.type) ? '  ' : part.type === 'year' ? '    ' : part.value.replaceAll('\u202f', ' ');
+    const date = new Intl.DateTimeFormat(culture, { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(sample).map(empty).join('');
+    const time = new Intl.DateTimeFormat(culture, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(sample).map(empty).join('');
+    return type.dateParts === 'Time' ? time : type.dateParts === 'Date' ? date : `${date} ${time}`;
+  }
   return '';
 }
 export function fieldStyle(node) {

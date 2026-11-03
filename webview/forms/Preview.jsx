@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo } from 'solid-js';
-import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, text, automaticCommands } from './model.mjs';
+import { caption, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 
@@ -15,6 +15,8 @@ export function Icon(props) {
     <Match when={/Down|Forward/.test(props.name)}><path d="M4 3l8 5-8 5z" fill="#729ab0"/></Match>
     <Match when={/Copy/.test(props.name)}><path d="M5 1h6l3 3v9H5zM11 1v3h3" fill="#fff" stroke="#829fb0"/><circle cx="4" cy="11" r="4" fill="#60ad48" stroke="#428931"/><path d="M4 8v6M1 11h6" stroke="#fff"/></Match>
     <Match when={/Find|Search/.test(props.name)}><circle cx="6" cy="6" r="4" fill="none" stroke="#3287b7" stroke-width="1.5"/><path d="M9 9l4 4" stroke="#3287b7" stroke-width="2"/></Match>
+    <Match when={/Calculator/.test(props.name)}><rect x="4" y="2" width="8" height="12" rx="1" fill="#fff" stroke="#777"/><path d="M5 4h6M5 7h1m1 0h1m1 0h1M5 9h1m1 0h1m1 0h1M5 11h1m1 0h1m1 0h1" stroke="#777"/></Match>
+    <Match when={/Calendar/.test(props.name)}><rect x="3" y="3" width="10" height="10" rx="1" fill="#fff" stroke="#777"/><path d="M3 6h10M5 2v3m6-3v3M5 8h1m2 0h1m2 0h1M5 10h1m2 0h1m2 0h1" stroke="#777"/></Match>
     <Match when={/Help/.test(props.name)}><text x="8" y="13" text-anchor="middle" font-size="15" fill="#424242">?</text></Match>
   </Switch></svg>;
 }
@@ -102,11 +104,11 @@ function Input(props) {
   const node = () => props.node, state = props.controller.state;
   const kind = () => node().presentation.valueType.kind;
   const multiline = () => flag(node(), 'MultiLine', false);
-  return <div class="taxi-input" classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true }} style={{ ...fieldStyle(node()), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : undefined,
+  return <div class="taxi-input" classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node()), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node())}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border) }}>
-    <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node())} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
-      <Match when={true}><input readOnly value={fieldValue(node())} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/></Match></Switch>
-    <Show when={flag(node(), 'ChoiceButton', kind() === 'reference' || kind() === 'date' || kind() === 'composite')}><span class="taxi-input-button">{kind() === 'date' ? <Icon name="Calendar"/> : '▾'}</span></Show>
+    <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
+      <Match when={true}><input readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/></Match></Switch>
+    <Show when={flag(node(), 'ChoiceButton', ['reference', 'composite', 'number'].includes(kind()) || kind() === 'date' && node().presentation.valueType.dateParts !== 'Time')}><span class="taxi-input-button">{kind() === 'date' ? <Icon name="Calendar"/> : kind() === 'number' ? <Icon name="Calculator"/> : '▾'}</span></Show>
     <Show when={flag(node(), 'OpenButton', kind() === 'reference')}><span class="taxi-input-button"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
     <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
     <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
@@ -120,12 +122,12 @@ function Field(props) {
     <Match when={node().kind === 'InputField'}><Input {...props}/></Match>
     <Match when={node().kind === 'CheckBoxField'}><span role="checkbox" aria-checked="false" class="taxi-checkbox"/></Match>
     <Match when={node().kind === 'RadioButtonField'}><span class="taxi-radios" style={{ 'flex-direction': scalar(node(), 'Orientation', 'Horizontal') === 'Vertical' ? 'column' : 'row' }}><For each={node().presentation.choices.length ? node().presentation.choices : [1, 2, 3].map(value => ({ kind: 'name', text: state.strings.sampleValue.replace('{0}', value) }))}>{(choice, index) => <span><i classList={{ 'taxi-radio': true, checked: index() === 0 }}/>{text(choice, state.locale, state.strings)}</span>}</For></span></Match>
-    <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node())}</span></Match>
+    <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node(), state.culture)}</span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
-  return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
+  return <div class="taxi-field-row" data-title-location={titleLocation()} style={{ 'min-height': node().kind === 'InputField' ? `${inputHeight(node()) + 2}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>{title()}{title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : ''}</label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
