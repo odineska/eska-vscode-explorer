@@ -26,6 +26,19 @@ export async function createFormGallery(fixture) {
   return createGallery(fixture, kinds);
 }
 
+export async function createFormInspectorSource(fixture) {
+  const form = await createFormSource(fixture);
+  const input = form.text.match(/<InputField\b[\s\S]*?<\/InputField>/)[0];
+  const changed = input.replace(/<Title>[\s\S]*?<\/Title>/, '<Title>true</Title>').replace('</InputField>', `
+<Visible>true</Visible><ReadOnly>false</ReadOnly>
+<Font faceName="Liberation Sans" height="12" bold="false"/>
+<Width xmlns="urn:vendor">false</Width>
+<Events><Event name="OnChange">NameChanged</Event><Event name="OnChange" callType="After">NameChangedAfter</Event></Events>
+</InputField>`);
+  await writeFile(form.path, form.text.replace(input, changed));
+  return form;
+}
+
 export async function createFormActivitySource(fixture) {
   await rm(fixture.source,{recursive:true});
   const base=await createTreeProject(join(fixture.root,'members','base'));

@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
 const source = 'a'.repeat(64);
@@ -58,6 +58,27 @@ test('a form snapshot rejects duplicate identities and missing input ownership',
   assert.throws(() => parseFormSnapshot(badSize));
   const badMark = structuredClone(snapshot); badMark.model.root.presentation.markIncomplete = 'true';
   assert.throws(() => parseFormSnapshot(badMark));
+});
+
+test('form properties validate caption pairs, qualifiers and explicit boolean hints', () => {
+  const snapshot = fixture(), origin = snapshot.model.root.origin;
+  const property = {key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name:'Visible'},qualifiers:[],origin,range:origin.range,
+    caption:{'ru-RU':'Видимость','en-US':'Visibility'},value:{kind:'text',text:'false',scalarType:'boolean'}};
+  snapshot.model.root.properties.push(property);
+  assert.equal(parseFormSnapshot(snapshot).model.root.properties[0].value.text,'false');
+  for (const patch of [{caption:{'en-US':'Visibility'}},{qualifiers:[{key:{name:'ref',namespace:null},value:42}]},
+    {value:{kind:'text',text:'other',scalarType:'boolean'}},{value:{kind:'text',text:'true',caption:{'ru-RU':'Да'}}}]) {
+    const changed = structuredClone(snapshot);changed.model.root.properties[0]={...property,...patch};
+    assert.throws(()=>parseFormSnapshot(changed));
+  }
+});
+
+test('nested property summaries use backend captions without interpreting user text', () => {
+  const value = {kind:'record',fields:[{key:{name:'Type'},caption:{'ru-RU':'Тип','en-US':'Type'},value:{kind:'text',text:'xs:string',caption:{'ru-RU':'Строка','en-US':'String'}}},
+    {key:{name:'Title'},value:{kind:'text',text:'true'}}]};
+  assert.equal(localizedProperty(value,'ru-RU'),'Тип: Строка; Title: true');
+  assert.equal(localizedProperty(value,'en-US'),'Type: String; Title: true');
+  assert.equal(value.fields[0].value.text,'xs:string');
 });
 
 test('renderer preparation preserves identity across new models and localizes literal titles', () => {

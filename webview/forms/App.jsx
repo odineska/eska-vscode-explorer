@@ -1,6 +1,7 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
-import { flatten, treeChildren, find, caption, localizedProperty, automaticCommands, text } from './model.mjs';
+import { PropertyValue } from './PropertyValue.jsx';
+import { flatten, treeChildren, find, property, automaticCommands, text } from './model.mjs';
 
 function Splitter(props) {
   let start, initial;
@@ -43,17 +44,23 @@ function ElementTree(props) {
 function Definitions(props) {
   const c = props.controller, state = c.state;
   const definitions = () => state.model[state.ui.tab] ?? state.model.attributes;
-  return <><div class="form-table-scroll"><table class="form-definitions"><thead><tr><th>{state.strings[state.ui.tab] ?? state.strings.attributes}</th><th>{state.strings.type}</th></tr></thead><tbody><For each={definitions()}>{definition => <tr tabindex="0" onDblClick={() => c.post({ type: 'locate', target: { kind: 'definition', section: state.ui.tab, name: definition.name } })} onKeyDown={event => { if (event.key === 'F12' || event.key === 'Enter') c.post({ type: 'locate', target: { kind: 'definition', section: state.ui.tab, name: definition.name } }); }}>
-    <td>{definition.name}</td><td>{definition.properties.filter(property => property.key.name === 'Type').map(property => localizedProperty(property.value, state.locale)).join(', ')}</td>
+  const locate = definition => c.post({ type: 'locate', target: { kind: 'definition', section: state.ui.tab, name: definition.name } });
+  return <><div class="form-table-scroll"><table class="form-definitions"><thead><tr><th>{state.strings[state.ui.tab] ?? state.strings.attributes}</th><th>{state.strings.type}</th></tr></thead><tbody><For each={definitions()}>{definition => <tr tabindex="0"
+    onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(definition); }}
+    onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(definition); } }}>
+    <td>{definition.name}</td><td><Show when={property(definition, 'Type')}>{field => <PropertyValue field={field()} state={state}/>}</Show></td>
   </tr>}</For></tbody></table></div><div class="form-tabs" role="tablist"><For each={['attributes', 'commands', 'parameters']}>{name => <button role="tab" aria-selected={state.ui.tab === name} classList={{ active: state.ui.tab === name }} onClick={() => c.ui('tab', name)}>{state.strings[name]}</button>}</For></div></>;
 }
 function Properties(props) {
   const c = props.controller, state = c.state;
   const node = createMemo(() => find(state.model.root, state.selected) ?? state.model.root);
+  const locate = field => c.post({ type: 'locate', target: { kind: 'property', identity: node().identity, property: field.key } });
   return <><div class="form-pane-title">{state.strings.properties}<span>{node().name || state.strings.form}</span></div><div class="form-table-scroll"><table class="form-properties"><tbody>
     <tr><th>{state.strings.name}</th><td>{node().name ?? state.strings.form}</td></tr><tr><th>{state.strings.kind}</th><td>{node().kind}</td></tr>
-    <For each={node().properties}>{property => <tr title={state.strings.source} onDblClick={() => c.post({ type: 'locate', target: { kind: 'property', identity: node().identity, property: property.key } })}>
-      <th>{property.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? property.key.name}</th><td>{localizedProperty(property.value, state.locale)}</td>
+    <For each={node().properties}>{field => <tr tabindex="0" data-property-name={field.key.name} data-property-namespace={field.key.namespace ?? ''} title={`{${field.key.namespace ?? ''}}${field.key.name} — ${state.strings.source}`}
+      onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(field); }}
+      onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(field); } }}>
+      <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th><td><PropertyValue field={field} state={state}/></td>
     </tr>}</For>
   </tbody></table></div><div class="form-property-actions"><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: node().identity } })}>{state.strings.source}</button>
     <Show when={node().presentation.binding}><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'binding', identity: node().identity } })}>{state.strings.binding}</button></Show></div></>;

@@ -1,6 +1,22 @@
 export const FORM_NS = 'http://v8.1c.ru/8.3/xcf/logform';
 export function key(node) { const id = node?.identity; return id ? `${id.source}:${id.part}:${id.key.kind === 'root' ? 'root' : id.key.value}` : ''; }
-export function prepare(model) { const visit = node => ({ ...node, key: key(node), children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) }); return { ...model, root: visit(model.root) }; }
+function prepareFields(fields) {
+  // XML property keys are objects. Solid needs a separate scalar key to retain
+  // record components when the next JSON response creates fresh QName objects.
+  const occurrences = new Map();
+  return fields.map(field => {
+    const name = JSON.stringify([field.key.namespace, field.key.name]), index = occurrences.get(name) ?? 0;
+    occurrences.set(name, index + 1);
+    return { ...field, reconcileKey: `${name}:${index}`, value: field.value.kind === 'record' ? { ...field.value, fields: prepareFields(field.value.fields) } : field.value };
+  });
+}
+export function prepare(model) {
+  const visit = node => ({ ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) });
+  const result = { ...model, root: visit(model.root) };
+  for (const section of ['attributes', 'commands', 'parameters']) if (model[section]) result[section] = model[section].map(definition => ({ ...definition,
+    reconcileKey: JSON.stringify([definition.xmlName, definition.name]), properties: prepareFields(definition.properties) }));
+  return result;
+}
 export function property(node, name) { return node?.properties?.find(value => value.key.namespace === FORM_NS && value.key.name === name); }
 export function scalar(node, name, fallback = '') { const value = property(node, name)?.value; return value?.kind === 'text' ? value.text : fallback; }
 export function number(node, name, fallback = 0) { const text = scalar(node, name); return text !== '' && Number.isFinite(Number(text)) ? Number(text) : fallback; }
@@ -80,6 +96,6 @@ export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
   if (value?.kind === 'text') return value.text;
   if (value?.kind === 'localized') return text({ kind: 'literal', items: value.items }, locale);
-  if (value?.kind === 'record') return value.fields.map(field => `${field.key.name}: ${localizedProperty(field.value, locale)}`).join('; ');
+  if (value?.kind === 'record') return value.fields.map(field => `${field.caption?.[locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}: ${localizedProperty(field.value, locale)}`).join('; ');
   return value?.issue ?? '';
 }

@@ -47,10 +47,13 @@ export function isIdentity(value: unknown): value is ElementIdentity {
 function origin(value: unknown): boolean { return isRecord(value) && hash(value.source) && range(value.range); }
 function range(value: unknown): boolean { return isRecord(value) && Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end) && (value.start as number) >= 0 && (value.end as number) >= (value.start as number); }
 function key(value: unknown): boolean { return isRecord(value) && typeof value.name === "string" && (value.namespace === null || typeof value.namespace === "string"); }
+function caption(value: unknown): boolean { return value === undefined || isRecord(value) && ["ru-RU", "en-US"].every(locale => typeof value[locale] === "string" && (value[locale] as string).trim().length > 0); }
 function field(value: unknown, depth = 0): boolean {
-  if (!isRecord(value) || !key(value.key) || !isRecord(value.value) || depth > 64 || !Array.isArray(value.qualifiers)) return false;
+  if (!isRecord(value) || !key(value.key) || !caption(value.caption) || !isRecord(value.value) || depth > 64 || !Array.isArray(value.qualifiers)
+    || !value.qualifiers.every(qualifier => isRecord(qualifier) && key(qualifier.key) && typeof qualifier.value === "string" && caption(qualifier.caption))) return false;
   const data = value.value;
-  if (data.kind === "text") return typeof data.text === "string";
+  if (data.kind === "text") return typeof data.text === "string" && caption(data.caption)
+    && (data.scalarType === undefined || data.scalarType === "boolean" && ["true", "false", "1", "0"].includes(data.text.trim()));
   if (data.kind === "localized") return Array.isArray(data.items) && data.items.every(item => isRecord(item) && typeof item.language === "string" && typeof item.content === "string");
   if (data.kind === "record") return Array.isArray(data.fields) && data.fields.every(value => field(value, depth + 1));
   return data.kind === "unsupported" && typeof data.issue === "string";

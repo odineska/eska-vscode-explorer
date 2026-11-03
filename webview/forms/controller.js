@@ -15,7 +15,7 @@ export function controller(api) {
     if (value.type === 'selection') { if (value.identity) { set('selected', key({ identity: value.identity })); setSelection(value.identity); persist(); } return; }
     if (value.type !== 'state' || !Number.isSafeInteger(value.sequence) || value.sequence < state.sequence) return;
     for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'notice', 'restore', 'title']) if (value[field] !== undefined) set(field, value[field]);
-    if (value.model) { set('model', reconcile(prepare(value.model), { key: 'key', merge: true })); if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root)); }
+    if (value.model) { set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true })); if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root)); }
     if (value.selection) { set('selected', key({ identity: value.selection })); setSelection(value.selection); }
     persist();
   }

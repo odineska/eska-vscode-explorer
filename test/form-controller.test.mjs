@@ -24,6 +24,12 @@ test('browser controller unwraps Solid store proxies before selection and naviga
   runInContext("controller.select(controller.state.model.root);controller.post({type:'locate',target:{kind:'property',identity:controller.state.model.root.identity,property:controller.state.model.root.properties[0].key}})",context);
   assert.deepEqual(messages,[{type:'ready'},{type:'select',identity},{type:'locate',target:{kind:'property',identity,property:property.key}}]);
   assert.equal(controller.state.selected,'own:current:-9223372036854775808');
+  const oldProperty = node.properties[0];
+  const changed = structuredClone(incoming);changed.sequence=2;changed.model.root.properties[0].value.text='Updated title';
+  listeners.get('message')({data:runInContext(`(${JSON.stringify(changed)})`,context)});
+  assert.equal(controller.state.model.root.properties[0],oldProperty,'property records retain their DOM owner across new JSON key objects');
+  assert.equal(oldProperty.value.text,'Updated title');
+  assert.deepEqual(structuredClone(messages[2].target.property),property.key,'domain property keys remain unchanged');
   controller.dispose();assert.equal(listeners.size,0);
 });
 

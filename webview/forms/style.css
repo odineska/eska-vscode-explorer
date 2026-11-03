@@ -51,6 +51,14 @@ button { cursor: default; }
 .form-definitions th { position: sticky; top: 0; background: var(--vscode-editorGroupHeader-tabsBackground, #eee); }
 .form-properties th { width: 45%; background: var(--vscode-sideBar-background, #f5f5f5); }
 .form-properties td { white-space: normal; overflow-wrap: anywhere; }
+.form-properties tr:focus-visible, .form-definitions tr:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
+.form-property-value { white-space: normal; overflow-wrap: anywhere; }
+.form-property-value input[type=checkbox] { margin: 0; vertical-align: middle; }
+.form-property-record > summary { cursor: pointer; }
+.form-property-record dl, .form-property-qualifiers { margin: 3px 0 0; }
+.form-property-record dl > div, .form-property-qualifiers > div { padding: 3px 0; border-top: 1px solid var(--vscode-panel-border, #ddd); }
+.form-property-record dt, .form-property-qualifiers dt { color: var(--vscode-descriptionForeground, #666); }
+.form-property-record dd, .form-property-qualifiers dd { margin: 1px 0 0 8px; }
 .form-property-actions { display: flex; gap: 4px; padding: 4px; flex: 0 0 auto; }
 .form-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 23px; padding: 3px 8px; border-top: 1px solid var(--vscode-panel-border, #ccc); font-size: 11px; }
 .form-status--stale { color: var(--vscode-editorWarning-foreground, #bf8803); }
