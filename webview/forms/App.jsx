@@ -1,7 +1,13 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
 import { PropertyValue } from './PropertyValue.jsx';
-import { flatten, treeChildren, find, property, automaticCommands, text } from './model.mjs';
+import { flatten, treeChildren, find, property, automaticCommands, text, key } from './model.mjs';
+
+function handlerLinks(model, matches) {
+  const result=[];
+  for (const [index,handler] of (model.handlers??[]).entries()) if(matches(handler)) result.push({handler,index});
+  return result;
+}
 
 function Splitter(props) {
   let start, initial;
@@ -45,15 +51,18 @@ function Definitions(props) {
   const c = props.controller, state = c.state;
   const definitions = () => state.model[state.ui.tab] ?? state.model.attributes;
   const locate = definition => c.post({ type: 'locate', target: { kind: 'definition', section: state.ui.tab, name: definition.name } });
-  return <><div class="form-table-scroll"><table class="form-definitions"><thead><tr><th>{state.strings[state.ui.tab] ?? state.strings.attributes}</th><th>{state.strings.type}</th></tr></thead><tbody><For each={definitions()}>{definition => <tr tabindex="0"
+  return <><div class="form-table-scroll"><table class="form-definitions"><thead><tr><th>{state.strings[state.ui.tab] ?? state.strings.attributes}</th><th>{state.ui.tab==='commands'?state.strings.action:state.strings.type}</th></tr></thead><tbody><For each={definitions()}>{definition => <tr tabindex="0"
     onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(definition); }}
     onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(definition); } }}>
-    <td>{definition.name}</td><td><Show when={property(definition, 'Type')}>{field => <PropertyValue field={field()} state={state}/>}</Show></td>
+    <td>{definition.name}</td><td><Show when={property(definition, 'Type')}>{field => <PropertyValue field={field()} state={state}/>}</Show>
+      <Show when={state.handlerNavigation&&state.ui.tab==='commands'}><For each={handlerLinks(state.model,handler=>handler.owner.kind==='command'&&handler.owner.name===definition.name)}>{entry=><button class="form-handler" type="button" title={state.strings.handler} onClick={()=>c.post({type:'handler',index:entry.index})}>{entry.handler.name}</button>}</For></Show>
+    </td>
   </tr>}</For></tbody></table></div><div class="form-tabs" role="tablist"><For each={['attributes', 'commands', 'parameters']}>{name => <button role="tab" aria-selected={state.ui.tab === name} classList={{ active: state.ui.tab === name }} onClick={() => c.ui('tab', name)}>{state.strings[name]}</button>}</For></div></>;
 }
 function Properties(props) {
   const c = props.controller, state = c.state;
   const node = createMemo(() => find(state.model.root, state.selected) ?? state.model.root);
+  const handlers = createMemo(() => state.handlerNavigation ? handlerLinks(state.model,handler=>handler.owner.kind==='element'&&key({identity:handler.owner.identity})===node().key) : []);
   const locate = field => c.post({ type: 'locate', target: { kind: 'property', identity: node().identity, property: field.key } });
   return <><div class="form-pane-title">{state.strings.properties}<span>{node().name || state.strings.form}</span></div><div class="form-table-scroll"><table class="form-properties"><tbody>
     <tr><th>{state.strings.name}</th><td>{node().name ?? state.strings.form}</td></tr><tr><th>{state.strings.kind}</th><td>{node().kind}</td></tr>
@@ -62,6 +71,8 @@ function Properties(props) {
       onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(field); } }}>
       <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th><td><PropertyValue field={field} state={state}/></td>
     </tr>}</For>
+    <Show when={handlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
+    <For each={handlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={()=>c.post({type:'handler',index:entry.index})}>{entry.handler.name}</button></td></tr>}</For>
   </tbody></table></div><div class="form-property-actions"><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: node().identity } })}>{state.strings.source}</button>
     <Show when={node().presentation.binding}><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'binding', identity: node().identity } })}>{state.strings.binding}</button></Show></div></>;
 }

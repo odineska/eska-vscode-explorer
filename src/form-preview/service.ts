@@ -22,7 +22,7 @@ interface View {
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
   phase: "loading" | "ready" | "stale" | "disconnected"; notice: string; sequence: number; wanted: number; running: Promise<void> | undefined;
   timer: ReturnType<typeof setTimeout> | undefined; suspended: boolean; closed: boolean; watchers: vscode.Disposable[]; watchKey: string;
-  inputs: Map<string, string>; generation: string; activityKey: string;
+  inputs: Map<string, string>; generation: string; activityKey: string; navigation: number;
   inputRoots: { wire: WirePath; path: string }[]; formInputs: Map<string, FormInputSource>;
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
@@ -67,7 +67,7 @@ export class FormPreviewService implements vscode.Disposable {
     const create = Promise.resolve().then(() => {
       const view: View = { key, tree, entry, path, application, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
         frames: new Map(), client: undefined, snapshot: undefined, nodes: new Map(), selected: undefined, phase: "loading", notice: "", sequence: 0, wanted: 0,
-        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "", inputRoots: [], formInputs: new Map() };
+        running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "", navigation: 0, inputRoots: [], formInputs: new Map() };
       this.views.set(key, view); return view;
     });
     this.opening.set(key, create); try { return await create; } finally { this.opening.delete(key); }
@@ -98,7 +98,15 @@ export class FormPreviewService implements vscode.Disposable {
     if (value.type === "detach") { await this.detach(view); return; }
     if (value.type === "revealPreview") { view.frames.get("preview")?.panel.reveal(); return; }
     if (value.type === "dock") { const main = view.frames.get("main") ?? this.frame(view, "main"); view.frames.get("preview")?.panel.dispose(); main.panel.reveal(); this.publish(view); return; }
-    if (value.type === "source") { await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(await this.sourceUri(view.path)), { preview: false }); return; }
+    if (value.type === "source") { view.navigation++; await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(await this.sourceUri(view.path)), { preview: false }); return; }
+    if (value.type === "handler" && Number.isSafeInteger(value.index) && (value.index as number) >= 0) {
+      const navigation = ++view.navigation;
+      try { await this.handler(view, value.index as number, navigation); }
+      catch (error) {
+        if (!view.closed && !this.disposed && view.navigation === navigation) { view.notice = this.strings().handlerUnavailable!; this.log(`form_handler ${String(error)}`); this.publish(view, false); }
+      }
+      return;
+    }
     if (value.type === "locate" && isRecord(value.target)) await this.locate(view, value.target as unknown as FormTarget);
   }
   /** The native command targets only our active preview panel, after checking its identity and command availability. */
@@ -252,7 +260,7 @@ export class FormPreviewService implements vscode.Disposable {
   }
   private publish(view: View, model = true): void {
     for (const frame of view.frames.values()) if (frame.ready) void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
-      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"),
+      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true,
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
       ...(view.selected ? { selection: view.selected } : {}), ...(model && view.snapshot ? { model: view.snapshot.model } : {}) });
   }
@@ -265,6 +273,7 @@ export class FormPreviewService implements vscode.Disposable {
     this.log(JSON.stringify({ event: "form_preview_failed", code: error instanceof ExplorerError ? error.code : "requestFailed", reason })); this.publish(view, false);
   }
   private async locate(view: View, target: FormTarget): Promise<void> {
+    view.navigation++;
     if (!view.client || view.phase !== "ready") throw new ExplorerError("sourceChanged");
     if (target.kind !== "definition" && (!isIdentity(target.identity) || !view.nodes.has(identityKey(target.identity)))) return;
     const location = await view.client.locate(target), path = await existingSource(location.root, location.path);
@@ -273,6 +282,19 @@ export class FormPreviewService implements vscode.Disposable {
     const bytes = dependency?.version !== null ? Buffer.from(document.getText(), "utf8") : await readFile(path);
     if (querySnapshot(bytes.toString("utf8")) !== location.snapshot) throw new ExplorerError("sourceChanged");
     const position = formEditorRange(bytes, location.range.start, location.range.end, document.getText(), document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
+    const editor = await vscode.window.showTextDocument(document, { preview: false });
+    editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end)); editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  }
+  private async handler(view: View, index: number, navigation: number): Promise<void> {
+    const client = view.client;
+    if (!client || view.phase !== "ready" || !view.snapshot?.model.handlers?.[index]) throw new ExplorerError("sourceChanged");
+    const source = await client.handlerSource(index, view.snapshot.revision), path = await existingSource(source.root, source.path);
+    const document = await vscode.workspace.openTextDocument(await this.sourceUri(path));
+    const text = document.getText(), location = await client.locateHandler(index, source, text, String(document.version));
+    if (view.closed || view.client !== client || view.phase !== "ready" || view.navigation !== navigation || client.current.revision !== source.revision
+      || document.getText() !== text || querySnapshot(text) !== location.snapshot) throw new ExplorerError("sourceChanged");
+    const position = formEditorRange(Buffer.from(text, "utf8"), location.range.start, location.range.end, text, document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
+    view.notice = view.snapshot?.modelComplete ? "" : this.strings().incomplete!; this.publish(view, false);
     const editor = await vscode.window.showTextDocument(document, { preview: false });
     editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end)); editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   }

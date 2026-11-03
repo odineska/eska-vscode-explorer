@@ -2,7 +2,7 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation } from '../out/form-preview/protocol.js';
+import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
@@ -45,6 +45,18 @@ test('form preparation validates bounded roots and source ownership without a mo
   const value={contextFingerprint:source,application:null,limitedContext:false,roots:[root],forms:[{id:source,root,path}]};
   assert.equal(parseFormPreparation(value).forms[0].id,source);
   for (const patch of [{roots:[]},{forms:[]},{forms:[value.forms[0],value.forms[0]]},{forms:[{...value.forms[0],root:{value:'/foreign',encoding:'utf-8'}}]},{contextFingerprint:'bad'}]) assert.throws(()=>parseFormPreparation({...value,...patch}));
+});
+
+test('handler navigation is optional for viewing and validates retained owner identities', () => {
+  const snapshot=fixture();
+  snapshot.model.handlers=[{owner:{kind:'element',identity:snapshot.model.root.identity},event:'OnOpen',name:'Opened',origin:snapshot.model.root.origin}];
+  assert.equal(parseFormSnapshot(snapshot).model.handlers.length,1);
+  for(const owner of [{kind:'element',identity:{...snapshot.model.root.identity,source:'b'.repeat(64)}},{kind:'unknown'}]) {
+    const invalid=structuredClone(snapshot);invalid.model.handlers[0].owner=owner;assert.throws(()=>parseFormSnapshot(invalid));
+  }
+  const location={source,root:{value:'/source',encoding:'utf-8'},path:{value:'CommonForms/Preview/Ext/Form/Module.bsl',encoding:'utf-8'},revision:'1'};
+  assert.equal(parseHandlerSource(location).revision,'1');
+  for(const patch of [{source:'bad'},{revision:1},{root:null}]) assert.throws(()=>parseHandlerSource({...location,...patch}));
 });
 
 test('a form snapshot rejects duplicate identities and missing input ownership', () => {

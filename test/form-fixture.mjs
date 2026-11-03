@@ -39,6 +39,17 @@ export async function createFormInspectorSource(fixture) {
   return form;
 }
 
+export async function createFormHandlerSource(fixture) {
+  const form=await createFormInspectorSource(fixture);
+  const xml=await readFile(form.path,'utf8');
+  await writeFile(form.path,xml.replace('</Form>','<Events><Event name="OnOpen">ПриОткрытии</Event></Events><Commands><Command name="Execute" id="100"><Action>ExecuteCommand</Action></Command></Commands></Form>'));
+  const module=join(fixture.source,'CommonForms','Preview','Ext','Form','Module.bsl');
+  await mkdir(join(module,'..'),{recursive:true});
+  const bsl='\ufeff// 😀 Procedure NameChanged() EndProcedure\r\n&НаКлиенте\r\nПроцедура ПРИОТКРЫТИИ()\r\nКонецПроцедуры\r\nProcedure NameChanged(Element)\r\nEndProcedure\r\nProcedure NameChangedAfter(Element)\r\nEndProcedure\r\nProcedure ExecuteCommand(Command)\r\nEndProcedure\r\n';
+  await writeFile(module,bsl);
+  return {...form,module};
+}
+
 export async function createFormActivitySource(fixture) {
   await rm(fixture.source,{recursive:true});
   const base=await createTreeProject(join(fixture.root,'members','base'));

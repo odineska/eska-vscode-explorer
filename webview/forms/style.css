@@ -60,6 +60,8 @@ button { cursor: default; }
 .form-property-record dt, .form-property-qualifiers dt { color: var(--vscode-descriptionForeground, #666); }
 .form-property-record dd, .form-property-qualifiers dd { margin: 1px 0 0 8px; }
 .form-property-actions { display: flex; gap: 4px; padding: 4px; flex: 0 0 auto; }
+.form-handler { border: none; padding: 0; background: transparent; color: var(--vscode-textLink-foreground, #0066a3); cursor: pointer; text-align: left; }
+.form-handler:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); }
 .form-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 23px; padding: 3px 8px; border-top: 1px solid var(--vscode-panel-border, #ccc); font-size: 11px; }
 .form-status--stale { color: var(--vscode-editorWarning-foreground, #bf8803); }
 .form-status span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -2,7 +2,7 @@ import type { Connection } from "../connection.js";
 import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
 import { withQueryText } from "../query/text-transfer.js";
-import { parseFormSnapshot, parseFormPreparation, parseLocation, MAX_FORM_DEPENDENCIES, type FormInput, type FormPreparation, type FormLimits, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
+import { parseFormSnapshot, parseFormPreparation, parseLocation, parseHandlerSource, MAX_FORM_DEPENDENCIES, type FormHandlerSource, type FormInput, type FormPreparation, type FormLimits, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
 
 function checkContext(connection: Connection, tree: MetadataTree, entry: TreeEntry, value: unknown, generation: string): void {
   const state = connection.state;
@@ -70,6 +70,29 @@ export class FormSession {
     const generation = this.entry.project.info.generation;
     const value = await this.request("form/locate", { formSessionId: this.current.formSessionId, revision: this.current.revision, target }, generation);
     this.check(value, generation); return parseLocation(value);
+  }
+  async handlerSource(index: number, revision = this.current.revision): Promise<FormHandlerSource> {
+    await this.pending;
+    if (this.closed) throw new ExplorerError("obsolete");
+    if (!this.limits.handlerNavigation) throw new ExplorerError("incompatible");
+    if (this.current.revision !== revision) throw new ExplorerError("sourceChanged");
+    const generation = this.entry.project.info.generation;
+    const value = await this.request("form/handlerSource", { formSessionId: this.current.formSessionId, revision: this.current.revision, index }, generation);
+    this.check(value, generation); return parseHandlerSource(value);
+  }
+  locateHandler(index: number, source: FormHandlerSource, text: string, version: string): Promise<Location> {
+    const action = this.pending.then(async () => {
+      if (this.closed) throw new ExplorerError("obsolete");
+      if (!this.limits.handlerNavigation || this.current.revision !== source.revision) throw new ExplorerError("sourceChanged");
+      const generation = this.entry.project.info.generation;
+      return withQueryText(text, { maxSnapshotBytes: this.limits.maxOverlayBytes, maxInlineBytes: this.limits.maxInlineBytes },
+        (method, params) => this.request(method, params, generation), async id => { await this.request("query/bufferClose", { bufferId: id }); }, async input => {
+          const value = await this.request("form/handlerLocate", { formSessionId: this.current.formSessionId, revision: source.revision, index,
+            input: { source: source.source, version, ...input } }, generation);
+          this.check(value, generation); return parseLocation(value);
+        });
+    });
+    this.pending = action.catch(() => {}); return action;
   }
   async close(): Promise<void> {
     await this.pending;

@@ -4,7 +4,7 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 
 export const MAX_FORM_DEPENDENCIES = 1024;
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number }
+export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
 export interface FormPreparation { contextFingerprint: string; application: string | null; limitedContext: boolean; roots: WirePath[]; forms: FormInputSource[] }
@@ -26,7 +26,9 @@ export interface Presentation {
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[] }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
-export interface FormModel { root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
+export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
+export interface FormModel { root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -81,7 +83,8 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 38
     || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.inputPreparation !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
-  return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072) };
+  return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
+    ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}) };
 }
 export function parseFormPreparation(value: unknown): FormPreparation {
   if (!isRecord(value) || !hash(value.contextFingerprint) || !(value.application === null || typeof value.application === "string") || typeof value.limitedContext !== "boolean"
@@ -120,12 +123,28 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
     if (isRecord(value.presentation) && isRecord(value.presentation.picture) && value.presentation.picture.kind === "common" && !assets.has(String(value.presentation.picture.source))) invalid();
   }
   node(value.model.root, 0);
+  if (value.model.handlers !== undefined && (!Array.isArray(value.model.handlers) || value.model.handlers.length > 16_384 || !value.model.handlers.every(handler =>
+    isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
+    && (handler.owner.kind === "element" && isIdentity(handler.owner.identity) && identities.has(identityKey(handler.owner.identity))
+      || handler.owner.kind === "command" && typeof handler.owner.name === "string")))) invalid();
   for (const name of ["attributes", "commands", "parameters"]) if (!Array.isArray(value.model[name]) || !(value.model[name] as unknown[]).every(value => isRecord(value)
     && (value.name === null || typeof value.name === "string") && origin(value.origin) && Array.isArray(value.properties) && value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)))) invalid();
+  const commands = value.model.commands as unknown[];
+  if (Array.isArray(value.model.handlers)) for (const handler of value.model.handlers) {
+    if (isRecord(handler) && isRecord(handler.owner) && handler.owner.kind === "command") {
+      const name = handler.owner.name;
+      if (!commands.some(command => isRecord(command) && command.name === name)) invalid();
+    }
+  }
   if (!isRecord(value.model.diagnostics) || !Array.isArray(value.model.diagnostics.composition) || !Array.isArray(value.model.diagnostics.appearance)) invalid();
   return value as unknown as FormSnapshot;
 }
 export function parseLocation(value: unknown): Location {
   if (!isRecord(value) || !hash(value.source) || !hash(value.snapshot) || !isWirePath(value.root) || !isWirePath(value.path) || !range(value.range)) invalid();
   return value as unknown as Location;
+}
+
+export function parseHandlerSource(value: unknown): FormHandlerSource {
+  if (!isRecord(value) || !hash(value.source) || !isWirePath(value.root) || !isWirePath(value.path) || !isToken(value.revision)) invalid();
+  return value as unknown as FormHandlerSource;
 }

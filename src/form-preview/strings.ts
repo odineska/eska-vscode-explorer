@@ -1,4 +1,5 @@
 const en = {
+  events: "Events", action: "Action", handler: "Go to handler", handlerUnavailable: "The handler is missing, ambiguous, or its module is incomplete.",
   chartElement: "Element", chartValue: "Value",
   "table.LineNumber": "N",
   commandBar: "Command bar", today: "Today", chartPoint: "Point", chartSeries: "Series", sampleValue: "<Value {0}>", sampleMeeting: "Meeting", searchShortcut: "Search (Ctrl+F)", sampleFilter: "Field{0}: Value{0}",
@@ -22,6 +23,7 @@ const en = {
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
 const ru: Record<keyof typeof en, string> = {
+  events: "События", action: "Действие", handler: "Перейти к обработчику", handlerUnavailable: "Обработчик не найден, неоднозначен или его модуль пока некорректен.",
   chartElement: "Элемент", chartValue: "Значение",
   "table.LineNumber": "N",
   commandBar: "Командная панель", today: "Сегодня", chartPoint: "Точка", chartSeries: "Серия", sampleValue: "<Значение {0}>", sampleMeeting: "Встреча", searchShortcut: "Поиск (Ctrl+F)", sampleFilter: "Поле{0}: Значение{0}",
