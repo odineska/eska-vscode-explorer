@@ -68,6 +68,14 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input').length"),0);
       await ui.evaluate("document.querySelector('.taxi-group-title button').click()");
     }
+    if(form.kind==='PagesAuto') {
+      await ui.evaluate("document.querySelector('.taxi-form-title').click()");
+      await until(()=>view.selected?.key?.kind==='root','root design selection');
+      await ui.screenshot(`group-design-root-${vscode.env.language}.png`);
+      await ui.evaluate("document.querySelector('.taxi-input').click()");
+      await until(()=>view.selected?.key?.value==='10','field design selection');
+      await ui.screenshot(`group-design-field-${vscode.env.language}.png`);
+    }
     if(form.kind.startsWith('Pages')) {
       assert.equal(geometry.tabs,form.kind==='PagesNone'?0:2);
       assert.equal(geometry.tabButtons.some(button=>button.overflow),false,'page captions stay on one line');

@@ -78,6 +78,7 @@ button { cursor: default; }
 .taxi-preview * { box-sizing: border-box; }
 .taxi-preview button, .taxi-preview input, .taxi-preview textarea { font: inherit; color: inherit; }
 .taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 28px; background: #fff; box-sizing: content-box; }
+.taxi-form-shadow { display: none; }
 .taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #555; font-size: 12px; padding-left: 1px; line-height: 20px; }
 .taxi-form-frame.taxi-selected > .taxi-form-title { color: #fff; }
 .taxi-form-content { padding: 12px 19px 10px 11px; }
@@ -94,6 +95,20 @@ button { cursor: default; }
 .taxi-items--horizontal > .taxi-element--field { display: block; }
 .taxi-element--stretch { width: 100%; flex: 1 1 auto !important; }
 .taxi-selected { outline: 1px solid #1695f3; outline-offset: 0; }
+/* Linux Designer draws its frame and selection over the allocated layout. */
+.taxi-preview[data-os=linux] .taxi-form-frame { position: relative; border-color: transparent; box-shadow: none; }
+.taxi-preview[data-os=linux] .taxi-form-shadow { display: block; position: absolute; inset: 1px -5px -5px 1px; pointer-events: none;
+  clip-path: polygon(calc(100% - 3px) 0, 100% 0, 100% 100%, 0 100%, 0 calc(100% - 3px), calc(100% - 3px) calc(100% - 3px));
+  background: linear-gradient(to bottom, transparent calc(100% - 3px), #3f3f3f calc(100% - 3px), #3f3f3f calc(100% - 2px), #555 calc(100% - 2px), #555 calc(100% - 1px), #7f7f7f calc(100% - 1px)),
+    linear-gradient(to right, #3f3f3f calc(100% - 2px), #555 calc(100% - 2px), #555 calc(100% - 1px), #7f7f7f calc(100% - 1px)); }
+.taxi-preview[data-os=linux] .taxi-form-frame::before { content: ''; position: absolute; inset: -2px; border: 1px solid #000; pointer-events: none; z-index: 1; }
+.taxi-preview[data-os=linux] .taxi-form-title { position: relative; z-index: 1; background: #f6f5f4; box-shadow: 0 0 0 1px #f6f5f4; color: #fff; font-size: 11px; font-weight: 700; line-height: 24px; padding-left: 2px; }
+.taxi-preview[data-os=linux] .taxi-selected { outline: none; }
+.taxi-preview[data-os=linux] .taxi-element.taxi-selected::after, .taxi-preview[data-os=linux] .taxi-tabs > button.taxi-selected::after,
+.taxi-preview[data-os=linux] .taxi-form-frame.taxi-selected::after { content: ''; position: absolute; inset: -3px; border: 2px solid #1e90ff; pointer-events: none; z-index: 2; }
+.taxi-preview[data-os=linux] .taxi-form-frame.taxi-selected::after { inset: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=InputField].taxi-selected::after { top: -2px; bottom: -2px; }
+.taxi-preview[data-os=linux] .taxi-tabs > button.taxi-selected::after { top: -4px; left: -4px; right: -4px; }
 .taxi-disabled { color: #a0a0a0 !important; }
 .taxi-disabled .taxi-input { background: #fff !important; border-color: #d7d7d7 !important; }
 .taxi-disabled[data-kind=InputField] .taxi-field-label, .taxi-disabled .taxi-input input { color: #aaa !important; }

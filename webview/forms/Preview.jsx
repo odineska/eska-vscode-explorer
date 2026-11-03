@@ -70,6 +70,7 @@ export function Preview(props) {
     <div class="taxi-preview" data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '28px' }}
         onClick={() => props.controller.select(root())}>
+        <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title">{caption(root(), state)}</div>
         <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && hasRootCommands(root()) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <RootCommands node={root()} controller={props.controller}/><Items node={root()} controller={props.controller}/>
