@@ -91,14 +91,7 @@ export async function createStyleFormSource(fixture) {
   return {path:join(fixture.source,'CommonForms','ProbeStyleConsumer','Ext','Form.xml'),style:join(fixture.source,'Styles','ProbeStyleValues','Ext','Style.xml')};
 }
 
-export async function createButtonMetricGallery(fixture) {
-  const input = process.env.ESKA_FORM_FIXTURES;
-  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
-  const metrics = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
-  return (await createGallery(fixture, metrics.rows.map(row => row.name))).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
-}
-
-export async function createTabTitleGallery(fixture) {
+export async function createMeasuredFormGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const metrics = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));

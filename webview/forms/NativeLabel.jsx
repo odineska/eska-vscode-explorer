@@ -1,6 +1,6 @@
 import { createEffect, createSignal, on, onCleanup } from 'solid-js';
 import { fontLineMetrics } from './model.mjs';
-import { hintedTextWidth } from './font-metrics.mjs';
+import { hintedTextWidth, designTextAdvances } from './font-metrics.mjs';
 import { lcdCaptionPixels } from './lcd-caption.mjs';
 
 function rgb(value) {
@@ -37,14 +37,15 @@ export function NativeLabel(props) {
       if (!current || !raster) return;
       try {
         const style = getComputedStyle(label);
-        const tab = props.placement === 'tab';
+        const tab = props.placement === 'tab', title = props.placement === 'formTitle';
         if (!tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
-        const baseline = tab ? Math.round((height + metrics.ascent - metrics.descent) / 2) - 1
+        const baseline = tab || title ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
-        const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth) : 0;
+        const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
+          : title ? parseFloat(style.paddingLeft) : 0;
         canvas.style.left = `${left + raster.originX}px`;
         canvas.style.top = `${baseline - metrics.ascent + raster.originY - (tab ? parseFloat(style.borderTopWidth) : 0)}px`;
         context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label)), raster.width, raster.height), 0, 0);
@@ -59,8 +60,11 @@ export function NativeLabel(props) {
     }
     runtime.face(css.fontWeight).then(face => {
       if (!current) return;
-      raster = face.raster(text, metrics.pixels, metrics.ascent, metrics.descent, 'lcd');
-      if (raster.advance !== hintedTextWidth(text, { family, pixels: metrics.pixels, weight: css.fontWeight })) throw new Error('font-raster-advance');
+      const options = { family, pixels: metrics.pixels, weight: css.fontWeight };
+      const advances = props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
+      if (props.placement === 'formTitle' && !advances) throw new Error('font-raster-advances');
+      raster = face.raster(text, metrics.pixels, metrics.ascent, metrics.descent, 'lcd', advances);
+      if (raster.advance !== (advances?.reduce((sum, value) => sum + value, 0) ?? hintedTextWidth(text, options))) throw new Error('font-raster-advance');
       draw();
     }).catch(fail);
     onCleanup(() => { current = false; resize.disconnect(); appearance.disconnect(); runtime.issue(owner, false); });

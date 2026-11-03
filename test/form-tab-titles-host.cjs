@@ -34,7 +34,7 @@ exports.run=async()=>{
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'tab form ready');
     const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
     const ui=await frame({state:{title:panel.panel.title}});
-    const ready=()=>ui.evaluate("document.querySelectorAll('.taxi-tabs [data-native-label=ready]').length===2&&[...document.querySelectorAll('.taxi-tabs > button')].every(button=>button.style.width)");
+    const ready=()=>ui.evaluate("document.querySelectorAll('.taxi-tabs [data-native-label=ready]').length===2&&[...document.querySelectorAll('.taxi-tabs > button')].every(button=>button.style.width)&&!document.querySelector('[data-native-label=pending]')");
     if(process.platform==='linux')await until(ready,'packaged native tab captions');
     else await until(()=>ui.evaluate("document.querySelectorAll('.taxi-tabs > button').length===2"),'tab DOM');
     const actual=await ui.evaluate(measure);

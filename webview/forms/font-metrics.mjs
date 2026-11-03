@@ -1,11 +1,16 @@
 import metrics from '../../resources/forms/fonts/advances.json' with { type: 'json' };
 
-/** Hinted advances and rounded unattenuated kerning of the bundled Linux fonts. */
-export function hintedTextWidth(text, { family, pixels, weight, italic }) {
+function selectFace({ family, pixels, weight, italic }) {
   const name = family === 'ESKA Taxi Sans' ? 'Sans' : family === 'ESKA Taxi Serif' ? 'Serif' : family === 'ESKA Taxi Mono' ? 'Mono' : undefined;
   if (!name || !Number.isInteger(pixels) || pixels < metrics.minPixels || pixels > metrics.maxPixels) return;
   const style = `${Number(weight) > 500 ? 'Bold' : ''}${italic ? 'Italic' : ''}` || 'Regular';
-  const face = metrics.faces[`Liberation${name}-${style}.ttf`];
+  return metrics.faces[`Liberation${name}-${style}.ttf`];
+}
+
+/** Hinted advances and rounded unattenuated kerning of the bundled Linux fonts. */
+export function hintedTextWidth(text, options) {
+  const face = selectFace(options), { pixels } = options;
+  if (!face) return;
   let width = 0, previous = '';
   for (const char of text) {
     const index = face.characters[char];
@@ -21,4 +26,19 @@ export function hintedTextWidth(text, { family, pixels, weight, italic }) {
     previous = char;
   }
   return width;
+}
+
+/** Native form-title layout rounds the design advance and following pair together. */
+export function designTextAdvances(text, options) {
+  const face = selectFace(options), { pixels } = options;
+  if (!face) return;
+  const characters = [...text], output = [];
+  for (const [position, char] of characters.entries()) {
+    const index = face.characters[char];
+    if (index === undefined || /[\p{Mark}\p{Format}]/u.test(char)) return;
+    const units = face.classes[index][0], pair = face.kerningPairs[char + (characters[position + 1] ?? '')];
+    const adjustment = pair === undefined ? 0 : face.kerningClasses[pair][0];
+    output.push(Math.round((units + adjustment) * pixels / face.units));
+  }
+  return output;
 }

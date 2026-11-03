@@ -83,7 +83,7 @@ export function Preview(props) {
       <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '28px' }}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
-        <div class="taxi-form-title">{caption(root(), state)}</div>
+        <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
         <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && hasRootCommands(root()) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <RootCommands node={root()} controller={props.controller}/><Items node={root()} controller={props.controller}/>
         </div>
