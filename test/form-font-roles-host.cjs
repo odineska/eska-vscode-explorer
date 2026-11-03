@@ -38,7 +38,7 @@ exports.run = async () => {
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'native font form');
     const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
-    const ui=await frame({state:{title:panel.panel.title}});
+    let ui=await frame({state:{title:panel.panel.title}});
     try { await until(()=>matches(ui,form.expected),'three native captions in a mixed font row'); }
     catch(error) {
       const debug=await ui.evaluate(`(() => ({buttons:[...document.querySelectorAll('.taxi-command-bar .taxi-button')].map(button=>({rect:button.getBoundingClientRect().toJSON(),style:button.getAttribute('style'),font:getComputedStyle(button).font,caption:button.querySelector('[data-native-caption]')?.dataset.nativeCaption,canvas:[button.querySelector('canvas')?.width,button.querySelector('canvas')?.height]})),status:document.querySelector('.form-status')?.textContent}))()`);
@@ -87,7 +87,9 @@ exports.run = async () => {
       await until(()=>matches(floating,form.expected),'font inputs restored');
       await geometry(floating,form.expected);
       assert.equal(await floating.evaluate("globalThis.__fontButton===document.querySelector('.taxi-command-bar .taxi-button')"),true);
-      floating.close();detached.panel.dispose();
+      floating.close();detached.panel.dispose();ui.close();
+      // VS Code may recreate the main webview when the floating editor returns.
+      ui=await frame({state:{title:panel.panel.title}});
       await until(()=>matches(ui,form.expected),'font preview reattached');
     }
     ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'font session released');
