@@ -20,13 +20,14 @@ function backdrop(element) {
 export function NativeLabel(props) {
   let canvas, placeholder;
   const [status, setStatus] = createSignal('browser'), owner = {};
-  createEffect(on(() => [props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
+  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
     const runtime = props.runtime, text = props.text, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!props.enabled || !text || !runtime) return;
     const label = placeholder.parentElement, metrics = fontLineMetrics(value), css = getComputedStyle(label);
     const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
     if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
+        || props.placement === 'tab' && !props.calibrated
         || hintedTextWidth(text, { family, pixels: metrics.pixels, weight: css.fontWeight }) === undefined) {
       runtime.issue(owner, true); return;
     }
@@ -36,12 +37,16 @@ export function NativeLabel(props) {
       if (!current || !raster) return;
       try {
         const style = getComputedStyle(label);
-        if (!['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
+        const tab = props.placement === 'tab';
+        if (!tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
-        canvas.style.left = `${raster.originX}px`;
-        canvas.style.top = `${(height + metrics.ascent - metrics.descent) / 2 - metrics.ascent + raster.originY}px`;
+        const baseline = tab ? Math.round((height + metrics.ascent - metrics.descent) / 2) - 1
+          : (height + metrics.ascent - metrics.descent) / 2;
+        const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth) : 0;
+        canvas.style.left = `${left + raster.originX}px`;
+        canvas.style.top = `${baseline - metrics.ascent + raster.originY - (tab ? parseFloat(style.borderTopWidth) : 0)}px`;
         context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label)), raster.width, raster.height), 0, 0);
         runtime.issue(owner, false); setStatus('ready');
       } catch { fail(); }

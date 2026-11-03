@@ -98,6 +98,13 @@ export async function createButtonMetricGallery(fixture) {
   return (await createGallery(fixture, metrics.rows.map(row => row.name))).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
 }
 
+export async function createTabTitleGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const metrics = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  return (await createGallery(fixture, metrics.rows.map(row => row.name))).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
+}
+
 export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
