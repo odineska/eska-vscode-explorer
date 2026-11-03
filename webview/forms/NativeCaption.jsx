@@ -7,7 +7,7 @@ export function NativeCaption(props) {
   let canvas;
   const [status, setStatus] = createSignal('browser');
   const owner = {};
-  createEffect(on(() => [props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
+  createEffect(on(() => [props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground), JSON.stringify(props.background)], () => {
     const runtime = props.runtime, text = props.text, enabled = props.enabled, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!enabled || !text || !runtime) return;
@@ -26,8 +26,9 @@ export function NativeCaption(props) {
         const style = getComputedStyle(button), width = parseFloat(style.width), height = parseFloat(style.height);
         if (!Number.isInteger(width) || height !== expectedHeight || width < raster.width + 2) throw new Error('font-raster-layout');
         const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(style.color);
-        if (!match) throw new Error('font-raster-color');
-        const image = buttonCaptionPixels(raster, height, match.slice(1).map(Number));
+        const background = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(style.backgroundColor);
+        if (!match || !background) throw new Error('font-raster-color');
+        const image = buttonCaptionPixels(raster, height, match.slice(1).map(Number), background.slice(1).map(Number));
         const context = canvas.getContext('2d');
         if (!context) throw new Error('font-raster-canvas');
         canvas.width = image.width; canvas.height = image.height;

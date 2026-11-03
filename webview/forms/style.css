@@ -145,6 +145,7 @@ button { cursor: default; }
 .taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
 .taxi-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 26px; padding: 3px 13px; margin: 0; border: 1px solid #b2b2b2; border-bottom-color: #9b9b9b; border-radius: 2px; box-shadow: 0 1px #d2d2d2; color: #555; background: linear-gradient(#fff 50%, #ebebeb); white-space: nowrap; line-height: 18px; }
 .taxi-button { position: relative; }
+.taxi-preview[data-os=linux] .taxi-button--native-fill { background-color: var(--taxi-ButtonBackColor); }
 .taxi-native-caption { position: absolute; pointer-events: none; }
 .taxi-preview .taxi-button--default { background: linear-gradient(#ffeb35, #ffe000); border-color: #c9b700; color: #554c00; font-weight: 700; }
 .taxi-button--dropdown { padding: 3px 8px; }

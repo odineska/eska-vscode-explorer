@@ -25,6 +25,18 @@ test('discrete button fills match every native background row without dithering'
   for (const height of [0, -1, 1.5, 4097, Infinity, NaN]) assert.equal(buttonBackground(height), undefined);
 });
 
+test('colored fills match every native RGB row including non-primary channel values', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-colors/metrics.json',import.meta.url)));
+  for (const row of reference.rows) {
+    const background = row.background.slice(1).match(/../g).map(value => parseInt(value,16)), colors = Array(row.backgroundRows.length);
+    for (const match of buttonBackground(row.backgroundRows.length,background).matchAll(/rgb\((\d+), (\d+), (\d+)\) (\d+)px (\d+)px/g)) {
+      colors.fill('#'+match.slice(1,4).map(value=>Number(value).toString(16).padStart(2,'0')).join(''),Number(match[4]),Number(match[5]));
+    }
+    assert.deepEqual(colors,row.backgroundRows,row.name);
+  }
+  for (const background of [null,[],[1,2],[1,2,3,4],[-1,0,0],[256,0,0],[NaN,0,0],[1.5,0,0]]) assert.equal(buttonBackground(24,background),undefined);
+});
+
 test('hinted caption advances match all forty-eight native button widths', async () => {
   const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-metrics/metrics.json', import.meta.url)));
   for (const row of reference.rows) {

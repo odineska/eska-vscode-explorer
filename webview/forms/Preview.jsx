@@ -1,4 +1,4 @@
-import { For, Show, Switch, Match, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
 import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
@@ -35,29 +35,36 @@ function Picture(props) {
 }
 export function CommandButton(props) {
   let button;
+  const [backgroundImage, setBackgroundImage] = createSignal();
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
   const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
   const picture = () => props.picture ?? props.node?.presentation.picture;
   const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && !props.iconOnly && !props.dropdown
     && !link() && representation() !== 'Picture' && !picture() && !props.primary && !flag(props.node, 'DefaultButton', false)
-    && flag(props.node, 'Enabled') && !property(props.node, 'BackColor');
+    && flag(props.node, 'Enabled');
+  createEffect(on(() => [plain(), JSON.stringify(props.node?.presentation.background), JSON.stringify(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font)], ([enabled]) => {
+    const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(getComputedStyle(button).backgroundColor);
+    const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
+    setBackgroundImage(enabled && match ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2, match.slice(1).map(Number)) : undefined);
+  }));
   const metrics = () => {
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
-      'background-image': plain() ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2) : undefined };
+      'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
     automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   return <button ref={button} type="button" classList={{ 'taxi-button': true, 'taxi-button--default': props.primary || props.node && flag(props.node, 'DefaultButton', false),
+    'taxi-button--native-fill': plain(),
     'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
     style={{ ...(props.node ? { ...font(props.node.presentation.font, props.controller.state.os), color: color(props.node.presentation.foreground), 'background-color': color(props.node.presentation.background) } : {}), ...metrics(), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={props.node?.presentation.foreground}/></Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={props.node?.presentation.foreground} background={props.node?.presentation.background}/></Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
   </button>;
 }

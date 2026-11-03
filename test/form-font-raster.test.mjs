@@ -12,16 +12,16 @@ const regular = await readFile(asset('fonts/LiberationSans-Regular.ttf'));
 const bold = await readFile(asset('fonts/LiberationSans-Bold.ttf'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 
-function interiorPixels(face, caption, points, width, height, foreground) {
+function interiorPixels(face, caption, points, width, height, foreground, background = [255, 255, 255]) {
   const { pixels, ascent, descent } = fontLineMetrics({ points });
   const raster = face.raster(caption, pixels, ascent, descent);
-  const image = buttonCaptionPixels(raster, height, foreground);
+  const image = buttonCaptionPixels(raster, height, foreground, background);
   const left = Math.floor((width - raster.width) / 2), rgb = Buffer.alloc((width - 6) * (height - 6) * 3);
   let offset = 0;
   for (let y = 3; y < height - 3; y++) for (let x = 3; x < width - 3; x++) {
     const tx = x - left, ty = y - image.top;
     for (let channel = 0; channel < 3; channel++) rgb[offset++] = tx >= 0 && tx < image.width && ty >= 0 && ty < image.height
-      ? image.rgba[(ty * image.width + tx) * 4 + channel] : buttonBackgroundShade(height - 2, y - 1);
+      ? image.rgba[(ty * image.width + tx) * 4 + channel] : buttonBackgroundShade(height - 2, y - 1, background[channel]);
   }
   return { rgb, textWidth: raster.width };
 }
@@ -74,6 +74,22 @@ test('five Taxi style colors match native caption interiors with and without a s
       compared += row.region.width * row.region.height;
     }
     assert.equal(compared, 9200);
+  } finally { engine.dispose(); }
+});
+
+test('ordinary button backgrounds and captions match twenty-eight native RGB and font interiors', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-colors/metrics.json', import.meta.url)));
+  const engine = createFontRaster(binary);
+  try {
+    const face = engine.open(regular);
+    let compared = 0;
+    for (const row of reference.rows) {
+      const button = row.buttons[reference.ordinaryButtonIndex], background = row.background.slice(1).match(/../g).map(value => parseInt(value,16));
+      const { rgb } = interiorPixels(face, button.caption, row.points, button.width, button.height, [77,77,77], background);
+      assert.equal(sha(rgb),button.interiorRgbSha256,row.name);
+      compared += button.interior.width * button.interior.height;
+    }
+    assert.equal(compared,60752);
   } finally { engine.dispose(); }
 });
 

@@ -83,21 +83,30 @@ export function buttonMetrics(value) {
   return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: fontLineHeight(value) };
 }
 /** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
-export function buttonBackground(height) {
-  if (!Number.isInteger(height) || height < 1 || height > 4096) return;
+export function buttonBackground(height, background = [255, 255, 255]) {
+  if (!Number.isInteger(height) || height < 1 || height > 4096 || !Array.isArray(background) || background.length !== 3
+      || background.some(value => !Number.isInteger(value) || value < 0 || value > 255)) return;
+  const shade = y => background.map(value => buttonBackgroundShade(height, y, value)).join(', ');
   const stops = [];
-  let start = 0, color = buttonBackgroundShade(height, 0);
+  let start = 0, color = shade(0);
   for (let y = 1; y <= height; y++) {
-    const next = y === height ? undefined : buttonBackgroundShade(height, y);
+    const next = y === height ? undefined : shade(y);
     if (next !== color) {
-      stops.push(`rgb(${color}, ${color}, ${color}) ${start}px ${y}px`);
+      stops.push(`rgb(${color}) ${start}px ${y}px`);
       start = y; color = next;
     }
   }
   return `linear-gradient(to bottom, ${stops.join(', ')})`;
 }
-export function buttonBackgroundShade(height, y) {
-  return 255 - Math.round(20 * Math.ceil(Math.max(0, 2 * y + 1 - height) * 1024 / height) / 1024);
+export function buttonBackgroundShade(height, y, channel = 255) {
+  const sample = 2 * y + 1;
+  // Native upper/lower rounding differs; CSS and caption pixels must share it.
+  if (sample <= height) {
+    const color16 = Math.floor((channel * height + Math.floor((255 - channel) * 63 / 255) * (height - sample)) * 257 / height);
+    return (color16 + 128 - (color16 >> 8)) >> 8;
+  }
+  const step = Math.ceil((sample - height) * 1023 / height);
+  return Math.round(channel - Math.ceil(channel * 20 / 255) * step / 1023);
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
