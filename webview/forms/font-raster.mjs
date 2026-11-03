@@ -24,45 +24,51 @@ export function createFontRaster(bytes) {
     let handle = api.eska_ft_open(library, data, bytes.length);
     if (!handle) { api.eska_ft_free(data); throw new Error('font-raster-font'); }
     const face = {
-      raster(text, pixels, ascent, descent) {
+      raster(text, pixels, ascent, descent, mode = 'gray') {
         if (!handle) throw new Error('font-raster-disposed');
         if (typeof text !== 'string' || text.length > 4096 || /[\p{Mark}\p{Format}\p{Control}]/u.test(text)
             || !/^[\p{Script=Latin}\p{Script=Cyrillic}\p{Number}\p{Punctuation}\p{Separator}\p{Symbol}]*$/u.test(text)
             || !Number.isInteger(pixels) || pixels < 1 || pixels > 128
-            || !Number.isInteger(ascent) || !Number.isInteger(descent) || ascent < 1 || descent < 0 || ascent + descent > 256) {
+            || !Number.isInteger(ascent) || !Number.isInteger(descent) || ascent < 1 || descent < 0 || ascent + descent > 256
+            || !['gray', 'lcd'].includes(mode)) {
           throw new Error('font-raster-text');
         }
         if (api.eska_ft_size(handle, pixels)) throw new Error('font-raster-size');
         const glyphs = [];
-        let width = 0, inkLeft = Infinity, inkRight = -Infinity, inkTop = 0, inkBottom = ascent + descent, previous;
+        let width = 0, inkLeft = Infinity, inkRight = -Infinity, inkTop = 0, inkBottom = ascent + descent, bitmapLeft = 0, bitmapRight = 0, previous;
         for (const char of text) {
           const codepoint = char.codePointAt(0);
           if (previous !== undefined) width += api.eska_ft_kerning(handle, previous, codepoint);
           previous = codepoint;
           if (api.eska_ft_glyph(handle, codepoint, header)) throw new Error('font-raster-glyph');
           const fields = [...new Int32Array(api.memory.buffer, header, 12)];
-          const [advance, bearingX, , inkWidth, , left, top, columns, rows, pitch, address, mode] = fields;
-          if (mode !== 5 || advance < 0 || advance % 64 || columns < 0 || columns > 4096 || rows < 0 || rows > 4096
+          const [advance, bearingX, , inkWidth, , left, top, columns, rows, pitch, address, pixelMode] = fields;
+          if (pixelMode !== 5 || advance < 0 || advance % 64 || columns < 0 || columns > 4096 || rows < 0 || rows > 4096
               || pitch < columns * 3 || address < 0 || address + pitch * rows > api.memory.buffer.byteLength) {
             throw new Error('font-raster-bitmap');
           }
           if (width + advance / 64 > MAX_TEXT_WIDTH || width + advance / 64 < 0) throw new Error('font-raster-width');
-          const coverage = new Uint8Array(columns * rows);
+          const coverage = new Uint8Array(columns * rows * (mode === 'lcd' ? 3 : 1));
           for (let y = 0; y < rows; y++) {
             const source = new Uint8Array(api.memory.buffer, address + y * pitch, columns * 3);
-            for (let x = 0; x < columns; x++) coverage[y * columns + x] = source[x * 3];
+            if (mode === 'lcd') coverage.set(source, y * columns * 3);
+            else for (let x = 0; x < columns; x++) coverage[y * columns + x] = source[x * 3];
           }
           if (columns) {
             inkLeft = Math.min(inkLeft, width + bearingX / 64);
             inkRight = Math.max(inkRight, width + (bearingX + inkWidth) / 64);
             inkTop = Math.min(inkTop, ascent - top);
             inkBottom = Math.max(inkBottom, ascent - top + rows);
+            bitmapLeft = Math.min(bitmapLeft, width + left);
+            bitmapRight = Math.max(bitmapRight, width + left + columns);
           }
           glyphs.push({ pen: width, left, top, columns, rows, coverage });
           width += advance / 64;
         }
         const height = inkBottom - inkTop;
         if (height > 512) throw new Error('font-raster-height');
+        if (mode === 'lcd') return { width: Math.max(width, bitmapRight) - bitmapLeft, advance: width, height,
+          ascent, descent, originX: bitmapLeft, originY: inkTop, glyphs };
         const alpha = new Uint8Array(width * height);
         const clipLeft = Math.max(0, inkLeft), clipRight = Math.min(width, inkRight);
         for (const glyph of glyphs) {

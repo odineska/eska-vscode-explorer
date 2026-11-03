@@ -120,6 +120,8 @@ button { cursor: default; }
 .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
 .taxi-items--horizontal .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
+.taxi-field-label { position: relative; }
+.taxi-native-label { position: absolute; pointer-events: none; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: calc-size(max-content, round(up, size, 1px)); }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }

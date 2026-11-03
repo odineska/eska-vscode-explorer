@@ -37,12 +37,14 @@ exports.run = async function () {
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-form-frame')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-form-content .taxi-button,.taxi-tabs > button')].every(button=>button.style.width||button.classList.contains('taxi-button--help')||button.classList.contains('taxi-button--picture'))"),'native captions allocated');
+    if(process.platform==='linux')await until(async()=>await ui.evaluate("!document.querySelector('[data-native-label=pending]')"),'native field captions settled');
     await ui.evaluate("globalThis.__formTestErrors=[];window.addEventListener('error',event=>globalThis.__formTestErrors.push(event.message));window.addEventListener('unhandledrejection',event=>globalThis.__formTestErrors.push(String(event.reason)))");
     const geometry = await ui.evaluate(`(() => {
       const rect=node=>{if(!node)return null;const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const style=node=>{if(!node)return null;const s=getComputedStyle(node);return {fontSize:s.fontSize,fontWeight:s.fontWeight,fontStyle:s.fontStyle,color:s.color,background:s.backgroundColor}};
       return {frame:rect(document.querySelector('.taxi-form-frame')),elements:document.querySelectorAll('.taxi-element').length,
         inputs:[...document.querySelectorAll('.taxi-input')].filter(node=>getComputedStyle(node).visibility!=='hidden').map(node=>({...rect(node),...style(node)})),
+        labels:[...document.querySelectorAll('.taxi-field-label')].filter(node=>getComputedStyle(node).visibility!=='hidden').map(node=>({...rect(node),...style(node),caption:node.textContent,lineHeight:getComputedStyle(node).lineHeight,raster:node.querySelector('[data-native-label]')?.dataset.nativeLabel})),
         group:style(document.querySelector('.taxi-group')),title:style(document.querySelector('.taxi-group-title')),
         buttons:[...document.querySelectorAll('.taxi-form-content .taxi-button')].map(node=>({label:node.textContent,...rect(node)})),
         tabs:document.querySelectorAll('.taxi-tabs [role=tab]').length,
@@ -56,6 +58,7 @@ exports.run = async function () {
       if (['PagesAuto','PagesSwipe'].includes(form.kind)) {
         assert.equal(geometry.frame.width,271,'native auto frame allocation');
         assert.deepEqual(geometry.inputs.map(input=>[input.x-geometry.frame.x,input.y-geometry.frame.y]),[[78,74],[78,106]],'native field positions after title allocation');
+        assert.deepEqual(geometry.labels.map(label=>label.raster),['ready','ready'],'packaged LCD field captions');
       }
     }
     const hidden = ['GroupHidden','ButtonGroup','Popup'].includes(form.kind);
@@ -149,6 +152,16 @@ exports.run = async function () {
       assert.equal(geometry.inputs[0].fontWeight,'700');assert.equal(geometry.inputs[0].fontStyle,'italic');assert.equal(geometry.inputs[0].color,'rgb(255, 140, 0)');
     }
     await ui.screenshot(`group-${form.kind}-${vscode.env.language}.png`);
+    if(form.kind==='GroupBackColor' && process.platform==='linux') {
+      await ui.evaluate("globalThis.__lcdLabel=document.querySelector('.taxi-field-label')");
+      for(const [from,to,color] of [['LightYellow','LightBlue',[173,216,230]],['LightBlue','LightYellow',[255,255,224]]]) {
+        await replaceText(document,`<BackColor>web:${from}</BackColor>`,`<BackColor>web:${to}</BackColor>`);
+        await until(async()=>await ui.evaluate(`(() => {const c=document.querySelector('.taxi-field-label canvas');if(!c?.width)return false;
+          const p=c.getContext('2d').getImageData(0,0,1,1).data;return p[0]===${color[0]}&&p[1]===${color[1]}&&p[2]===${color[2]};})()`),'LCD caption follows dirty ancestor background');
+      }
+      assert.equal(await ui.evaluate("globalThis.__lcdLabel===document.querySelector('.taxi-field-label')"),true);
+      assert.equal(document.isDirty,true);
+    }
     if(form.kind==='CommandBar') {
       await replaceText(document,'First command','Second command');
       await until(async()=>await ui.evaluate("document.querySelector('.taxi-command-bar .taxi-button')?.textContent==='Second command'"),'dirty command caption');

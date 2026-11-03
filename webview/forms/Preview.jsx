@@ -4,6 +4,7 @@ import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
 import { NativeCaption } from './NativeCaption.jsx';
+import { NativeLabel } from './NativeLabel.jsx';
 
 export function Icon(props) {
   return <svg class="taxi-icon" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
@@ -172,6 +173,7 @@ function Field(props) {
   const node = () => props.node, state = props.controller.state;
   const titleLocation = () => node().presentation.titleLocation;
   const title = () => caption(node(), state);
+  const label = () => title() + (title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : '');
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
     <Match when={node().kind === 'InputField'}><Input {...props}/></Match>
     <Match when={node().kind === 'CheckBoxField'}><span role="checkbox" aria-checked="false" class="taxi-checkbox"/></Match>
@@ -182,7 +184,7 @@ function Field(props) {
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()} style={{ 'min-height': node().kind === 'InputField' ? `${inputHeight(node()) + 2}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
-    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>{title()}{title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : ''}</label></Show>
+    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}><NativeLabel text={label()} font={node().presentation.titleFont} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && node().kind === 'InputField' && ['Left','Right'].includes(titleLocation()) && flag(node(), 'Enabled')}/></label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }
