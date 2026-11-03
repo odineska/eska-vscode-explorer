@@ -138,7 +138,9 @@ button { cursor: default; }
 .taxi-input--read-only { border-color: #d7d7d7 !important; }
 .taxi-input input, .taxi-input textarea { width: 0; flex: 1; border: none; background: transparent; padding: 2px 4px; outline: none; box-shadow: none; border-radius: 0; line-height: 17px; resize: none; min-width: 0; }
 .taxi-input-button { display: flex; align-items: center; justify-content: center; width: 21px; flex: 0 0 21px; border-left: 1px solid #aaa; color: #555; font-size: 11px; line-height: 12px; }
-.taxi-preview[data-os=linux] .taxi-input-button--number { width: 20px; flex-basis: 20px; border-left-color: inherit; background: #fff; }
+.taxi-preview[data-os=linux] .taxi-input:has(> .taxi-input-button--number) { overflow: visible; }
+.taxi-preview[data-os=linux] .taxi-input-button--number { position: relative; width: 20px; flex-basis: 20px; border-color: inherit; background: #fff; }
+.taxi-preview[data-os=linux] .taxi-input-button--number::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
 .taxi-input-calculator { display: block; flex: none; width: 9px; height: 11px; transform: translateY(-1px); }
 .taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
 .taxi-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 26px; padding: 3px 13px; margin: 0; border: 1px solid #b2b2b2; border-bottom-color: #9b9b9b; border-radius: 2px; box-shadow: 0 1px #d2d2d2; color: #555; background: linear-gradient(#fff 50%, #ebebeb); white-space: nowrap; line-height: 18px; }
