@@ -21,11 +21,12 @@ exports.run = async function () {
     const ui = await frame({ state: { title: panel.panel.title } });
     await until(async () => await ui.evaluate(`!!document.querySelector('[data-kind="${form.kind}"]')`), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
-    const geometry = await ui.evaluate(`(() => { const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}; const control=document.querySelector('.taxi-field-control').firstElementChild;return {frame:rect(document.querySelector('.taxi-form-frame')),control:rect(control),title:document.querySelector('.taxi-field-row').dataset.titleLocation,font:getComputedStyle(control).fontFamily}; })()`);
+    const geometry = await ui.evaluate(`(() => { const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}}; const control=document.querySelector('.taxi-special') ?? document.querySelector('.taxi-field-control').firstElementChild;return {frame:rect(document.querySelector('.taxi-form-frame')),control:rect(control),title:document.querySelector('.taxi-field-row').dataset.titleLocation,font:getComputedStyle(control).fontFamily}; })()`);
     if (form.kind === 'InputField') assert.equal(geometry.control.width, 161);
     const sizes = { CheckBoxField: [15, 15], ProgressBarField: [320, 21], TrackBarField: [320, 28], PictureField: [122, 120], SpreadSheetDocumentField: [500, 243], PlannerField: [500, 243] };
     if (sizes[form.kind]) assert.deepEqual([geometry.control.width, geometry.control.height], sizes[form.kind]);
-    const frameHeights = { InputField: 75, CheckBoxField: 69, ProgressBarField: 73, TrackBarField: 99, PictureField: 191, RadioButtonField: 69, LabelField: 69 };
+    const frameHeights = { InputField: 75, CheckBoxField: 69, ProgressBarField: 73, TrackBarField: 99, PictureField: 191, RadioButtonField: 69, LabelField: 69,
+      TextDocumentField:314, PDFDocumentField:344, DendrogramField:314, GanttChartField:314, GeographicalSchemaField:314, GraphicalSchemaField:314, PeriodField:280 };
     if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
     if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
     if (form.kind === 'RadioButtonField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-radio').length"), 3);
@@ -51,6 +52,29 @@ exports.run = async function () {
     if (['ChartField','HTMLDocumentField','FormattedDocumentField'].includes(form.kind)) {assert.equal(geometry.control.width,500);assert.equal(geometry.control.height,243);assert.equal(geometry.title,'Top');}
     if (form.kind === 'FormattedDocumentField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-document-toolbar').length"),0);
     if (form.kind === 'ChartField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-chart rect').length"),20);
+    if (['TextDocumentField','PDFDocumentField','DendrogramField','GanttChartField','GeographicalSchemaField','GraphicalSchemaField'].includes(form.kind)) {
+      assert.deepEqual([geometry.control.width,geometry.control.height],[500,243]);assert.equal(geometry.title,'Top');
+    }
+    if (form.kind === 'PeriodField') {
+      assert.deepEqual([geometry.control.width,geometry.control.height],[500,209]);assert.equal(geometry.title,'Top');
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-period-months > span').length"),36);
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-period-months > .current').length"),1);
+    }
+    if (form.kind === 'DendrogramField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-dendrogram-label').length"),4);
+    if (form.kind === 'GanttChartField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-gantt-interval').length"),vscode.env.language.startsWith('ru') ? 3 : 5);
+    if (form.kind === 'GraphicalSchemaField') assert.equal(await ui.evaluate("getComputedStyle(document.querySelector('.taxi-graphical-schema')).backgroundSize"),'20px 20px, 20px 20px');
+    if (form.kind === 'TextDocumentField') assert.equal(await ui.evaluate("getComputedStyle(document.querySelector('.taxi-text-document'),'::before').width"),'16px');
+    if (form.kind === 'PDFDocumentField') {
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-document-toolbar').length"),0);
+      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-table-search-controls').length"),1);
+      const original = document.getText();
+      const change = async value => { const edit = new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),value);assert.equal(await vscode.workspace.applyEdit(edit),true); };
+      await change(original.replace(/(<ViewStatusAddition\b[^>]*>)/,'$1<Visible>false</Visible>'));
+      await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-table-search-controls').length") === 0,'PDF view-status hidden from dirty XML');
+      assert.equal(await ui.evaluate("document.querySelector('.taxi-form-frame').getBoundingClientRect().height"),314);
+      await change(original);
+      await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-table-search-controls').length") === 1,'PDF view-status restored from dirty XML');
+    }
     await ui.screenshot(`renderer-${form.kind}-${vscode.env.language}.png`);
     assert.deepEqual(await fs.readFile(form.path),before);
     results.push({kind:form.kind,...geometry}); panel.panel.dispose();

@@ -1,4 +1,5 @@
 const en = {
+  chartElement: "Element", chartValue: "Value",
   "table.LineNumber": "N",
   commandBar: "Command bar", today: "Today", chartPoint: "Point", chartSeries: "Series", sampleValue: "<Value {0}>", sampleMeeting: "Meeting", searchShortcut: "Search (Ctrl+F)", sampleFilter: "Field{0}: Value{0}",
   title: "Form", preview: "Form preview", open: "Open form preview", loading: "Loading form…", updating: "Updating…", readOnly: "View only",
@@ -21,6 +22,7 @@ const en = {
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
 const ru: Record<keyof typeof en, string> = {
+  chartElement: "Элемент", chartValue: "Значение",
   "table.LineNumber": "N",
   commandBar: "Командная панель", today: "Сегодня", chartPoint: "Точка", chartSeries: "Серия", sampleValue: "<Значение {0}>", sampleMeeting: "Встреча", searchShortcut: "Поиск (Ctrl+F)", sampleFilter: "Поле{0}: Значение{0}",
   title: "Форма", preview: "Предпросмотр формы", open: "Открыть просмотр формы", loading: "Загрузка формы…", updating: "Обновление…", readOnly: "Только просмотр",

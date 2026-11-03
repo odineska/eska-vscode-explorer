@@ -124,7 +124,6 @@ function Field(props) {
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
-    <Match when={node().kind === 'PeriodField'}><span class="taxi-period"><Input {...props}/><span>—</span><Input {...props}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}>{title()}{title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : ''}</label></Show>

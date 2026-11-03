@@ -21,7 +21,8 @@ export async function createFormSource(fixture) {
 
 export async function createFormGallery(fixture) {
   const kinds = ['InputField', 'CheckBoxField', 'CalendarField', 'ChartField', 'FormattedDocumentField', 'HTMLDocumentField', 'LabelField',
-    'ProgressBarField', 'TrackBarField', 'RadioButtonField', 'PictureField', 'SpreadSheetDocumentField', 'PlannerField'];
+    'ProgressBarField', 'TrackBarField', 'RadioButtonField', 'PictureField', 'SpreadSheetDocumentField', 'PlannerField',
+    'TextDocumentField', 'PDFDocumentField', 'DendrogramField', 'GanttChartField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PeriodField'];
   return createGallery(fixture, kinds);
 }
 
