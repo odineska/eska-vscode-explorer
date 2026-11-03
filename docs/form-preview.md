@@ -120,6 +120,8 @@ AccentColor. Изменение выбора стиля в XML конфигур�
 В Linux явный BackColor имеет приоритет и при DefaultButton=true: кнопка
 получает обычную заливку и обычный автоматический цвет текста. Собственный
 TextColor сохраняется; значение DefaultButton в модели остаётся исходным.
+[Проверка приоритетов](measurements/t158-native-primary-overrides-linux.json)
+включает RGB, ссылки на стиль и dirty-переключение флага.
 [Измерения цветного фона Linux](measurements/t158-native-button-colors-linux.json)
 сохраняют границы принятой области и непроверенные состояния.
 
