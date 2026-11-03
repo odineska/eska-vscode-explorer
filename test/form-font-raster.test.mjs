@@ -93,6 +93,21 @@ test('ordinary button backgrounds and captions match twenty-eight native RGB and
   } finally { engine.dispose(); }
 });
 
+test('predefined and named fonts match all twenty-one native mixed-row button interiors', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-font-roles/metrics.json', import.meta.url)));
+  const engine = createFontRaster(binary);
+  try {
+    const faces = { regular:engine.open(regular), bold:engine.open(bold) };
+    let compared = 0;
+    for (const row of reference.rows) for (const button of row.buttons) {
+      const { rgb } = interiorPixels(faces[button.weight],button.caption,button.points,button.width,button.height,[77,77,77]);
+      assert.equal(sha(rgb),button.interiorRgbSha256,`${row.name}: ${button.caption}`);
+      compared += button.interior.width * button.interior.height;
+    }
+    assert.equal(compared,39117);
+  } finally { engine.dispose(); }
+});
+
 test('rasterizer validates unsupported text and releases owned faces idempotently', () => {
   const engine = createFontRaster(binary), face = engine.open(regular);
   for (const text of ['e\u0301', 'a\u200d', '\n', 'مرحبا', '🚀', 'a'.repeat(4097)]) {

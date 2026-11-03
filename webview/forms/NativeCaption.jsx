@@ -24,7 +24,7 @@ export function NativeCaption(props) {
       if (!current || !raster) return;
       try {
         const style = getComputedStyle(button), width = parseFloat(style.width), height = parseFloat(style.height);
-        if (!Number.isInteger(width) || height !== expectedHeight || width < raster.width + 2) throw new Error('font-raster-layout');
+        if (!Number.isInteger(width) || !Number.isInteger(height) || height < expectedHeight || height > 4096 || width < raster.width + 2) throw new Error('font-raster-layout');
         const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(style.color);
         const background = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(style.backgroundColor);
         if (!match || !background) throw new Error('font-raster-color');

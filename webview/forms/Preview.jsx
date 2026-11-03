@@ -46,9 +46,16 @@ export function CommandButton(props) {
     && !link() && representation() !== 'Picture' && !picture() && !primary()
     && flag(props.node, 'Enabled');
   createEffect(on(() => [plain(), JSON.stringify(props.node?.presentation.background), JSON.stringify(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font)], ([enabled]) => {
-    const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(getComputedStyle(button).backgroundColor);
-    const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    setBackgroundImage(enabled && match ? buttonBackground(Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) - 2, match.slice(1).map(Number)) : undefined);
+    setBackgroundImage(undefined);
+    if (!enabled) return;
+    const draw = () => {
+      const style = getComputedStyle(button), height = parseFloat(style.height) - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth);
+      const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(style.backgroundColor);
+      setBackgroundImage(match ? buttonBackground(height, match.slice(1).map(Number)) : undefined);
+    };
+    const observer = new ResizeObserver(draw); observer.observe(button);
+    draw();
+    onCleanup(() => observer.disconnect());
   }));
   const metrics = () => {
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};

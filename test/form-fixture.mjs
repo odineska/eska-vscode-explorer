@@ -112,6 +112,17 @@ export async function createStyleColorRolesSource(fixture) {
   return {...form,definition};
 }
 
+export async function createFontRolesGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const form = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
+  await writeFile(form.style, await readFile(join(input, 'Style.xml')));
+  const definition = join(fixture.source, 'StyleItems', 'TitleFont.xml'), root = join(fixture.source, 'Configuration.xml');
+  await writeFile(definition, await readFile(join(input, 'TitleFont.xml')));
+  await writeFile(root, (await readFile(root,'utf8')).replace('<ChildObjects>', '<ChildObjects><StyleItem>TitleFont</StyleItem>'));
+  return {forms:await createMeasuredFormGallery(fixture),style:form.style,definition,overrides:await readFile(join(input,'StyleOverrides.xml'),'utf8')};
+}
+
 export async function createPrimaryAppearanceGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
