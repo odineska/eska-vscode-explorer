@@ -151,16 +151,18 @@ export function fieldValue(node, culture) {
   return '';
 }
 export function fieldStyle(node, os) {
-  // Non-stretching native fields keep their preferred width even with conflicting bounds.
-  const fixedNative = linuxSimpleInput(node, os) && !!property(node, 'HorizontalStretch') && !flag(node, 'HorizontalStretch');
-  const maxWidth = fixedNative ? 0 : number(node, 'MaxWidth'), minWidth = fixedNative ? 0 : number(node, 'MinWidth');
-  // Preserve the intrinsic preferred width, then fill an allocated string column.
+  const native = linuxSimpleInput(node, os);
+  // Native bounds do not change preferred dimensions in the Configurator preview.
+  const maxWidth = native ? 0 : number(node, 'MaxWidth'), minWidth = native ? 0 : number(node, 'MinWidth');
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
-    && !property(node, 'HorizontalStretch') && number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0;
-  const automaticMinimum = automaticStretch && !node.presentation.valueType.length
+    && !property(node, 'HorizontalStretch') && (native || number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0);
+  const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
     ? `min(100%, ${Math.round((fontPixels(node) - 1) * 100 / 3 + 10)}px)` : '100%';
-  return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}), ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
-    ...(flag(node, 'HorizontalStretch', false) ? { width: '100%' } : {}) };
+  const stretch = flag(node, 'HorizontalStretch', false);
+  // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
+  return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),
+    ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
+    ...(stretch ? native ? { 'min-width': inputChoiceButton(node, os) ? 'calc(100% - 1px)' : '100%' } : { width: '100%' } : {}) };
 }
 export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];

@@ -23,8 +23,11 @@ async function run() {
   const view = [...service.views.values()][0], main = view.frames.get('main'); assert.ok(main);
   let ui = await frame({ state: { title: main.panel.title } });
   await until(async () => (await ui.evaluate("document.querySelectorAll('.taxi-input').length")) === 1, 'form DOM ready');
-  const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
-  assert.ok(geometry.frame.width > 400); assert.equal(geometry.input.width, process.platform==='linux'?211:164); assert.equal(geometry.script, true);
+  const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},controlWidth:document.querySelector('.taxi-field-control').getBoundingClientRect().width,script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
+  assert.ok(geometry.frame.width > 400);
+  if(process.platform==='linux'){assert.equal(geometry.input.width,geometry.controlWidth);assert.ok(geometry.input.width>211,'automatic string fills the wider column');}
+  else assert.equal(geometry.input.width,164);
+  assert.equal(geometry.script,true);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
   assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length"), 1);
   await replace(document, '<AutoMarkIncomplete>true</AutoMarkIncomplete>', '<AutoMarkIncomplete>false</AutoMarkIncomplete>');

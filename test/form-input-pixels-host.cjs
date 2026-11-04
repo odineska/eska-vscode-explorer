@@ -52,7 +52,7 @@ exports.runGallery=async(options)=>{
   for(const form of gallery.forms){
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'input border form');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main'),ui=await frame({state:{title:panel.panel.title}});
+    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
     if(form.kind===options.dirtyFrom){
       const other=gallery.forms.find(item=>item.kind===options.dirtyTo),original=document.getText(),changed=await fs.readFile(other.path,'utf8');
@@ -66,7 +66,10 @@ exports.runGallery=async(options)=>{
       results.push(await sample(floating,form.expected,'floating-'+form.kind,target.targetId));
       await change(changed,floating,other.expected);results.push(await sample(floating,other.expected,'floating-dirty-'+other.kind,target.targetId));await change(original,floating,form.expected);
       assert.equal(await floating.evaluate("globalThis.__borderInput===document.querySelector('.taxi-input')&&globalThis.__borderCorner===document.querySelector('.taxi-input-corner')"),true);
-      floating.close();detached.panel.dispose();await until(()=>appearance(ui,form.expected),'input border reattached');results.push(await sample(ui,form.expected,'reattached-'+form.kind));
+      floating.close();detached.panel.dispose();
+      // Docking may recreate the owner's webview; reconnect to its current CDP target.
+      ui.close();ui=await frame({state:{title:panel.panel.title}});
+      await until(()=>appearance(ui,form.expected),'input border reattached');results.push(await sample(ui,form.expected,'reattached-'+form.kind));
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'input session released');await Promise.all([...explorer.formPreview.closing]);
   }
