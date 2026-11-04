@@ -5,6 +5,7 @@ import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { TableSearch } from './TableSearch.jsx';
+import { NativeTableMovement } from './NativeTableMovement.jsx';
 import { tableScrollbarGrays, tablePaginationGlyphs } from './table-scrollbar.mjs';
 
 function TableCaption(props) {
@@ -39,13 +40,14 @@ function Header(props) {
 
 /** Empty design-time collections do not fabricate runtime rows or values. */
 export function Table(props) {
+  let movementGroup;
   const state = props.controller.state, node = () => props.node, layout = createMemo(() => tableLayout(node(), state.locale));
   const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
   return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar">
       <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.CloneListItem' : undefined}/>}</For>
-      <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For></span></Show>
+      <Show when={movement().length}><span ref={movementGroup} class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For><NativeTableMovement element={()=>movementGroup} commands={movement()} controller={props.controller}/></span></Show>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <span class="taxi-command-spacer"/>
       <Show when={layout().search}><TableSearch node={layout().search} controller={props.controller}/></Show>

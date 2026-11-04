@@ -415,6 +415,17 @@ export async function createTablePixelsGallery(fixture) {
       }
     }
   }
+  const movement=process.env.ESKA_FORM_TABLE_MOVEMENT_PIXELS;
+  if(movement){
+    if(!isAbsolute(movement))throw new Error('ESKA_FORM_TABLE_MOVEMENT_PIXELS must be absolute.');
+    for(const table of JSON.parse(await readFile(join(movement,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===table.name);
+      if(!row)throw new Error(`Missing table for native movement ${table.name}.`);
+      for(const [locale,region]of Object.entries(table.locales)){
+        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(region);
+      }
+    }
+  }
   return forms.map(form=>{
     const row=reference.rows.find(row=>row.name===form.kind);
     if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);

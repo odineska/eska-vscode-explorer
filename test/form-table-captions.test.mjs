@@ -6,6 +6,7 @@ import {createFontRaster} from '../webview/forms/font-raster.mjs';
 import {buttonCaptionPixels,buttonArrowPixels} from '../webview/forms/button-caption.mjs';
 import {inputBorderPixels} from '../webview/forms/input-border.mjs';
 import {searchClearPixels} from '../webview/forms/search-control.mjs';
+import {tableMovementRgba} from '../webview/forms/table-movement.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
 import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
@@ -70,4 +71,12 @@ test('native search fields reuse choice-input corners and preserve the clear gly
  const rgb=Buffer.from(searchClearPixels([77,77,77],[255,255,255]).flat());assert.equal(createHash('sha256').update(rgb).digest('hex'),reference.clearStencil.rgbSha256);
  for(const row of reference.rows)for(const entry of Object.values(row.locales))assert.equal(entry.clearRgbSha256,reference.clearStencil.rgbSha256);
  assert.equal(corners.nativeImagesVerified,8);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
+});
+
+test('native automatic movement preserves all 25920 group pixels in sixteen native references',async()=>{
+ const matrix=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-movement/metrics.json',import.meta.url))),rgba=tableMovementRgba(),rgb=Buffer.from([...rgba].filter((value,index)=>index%4!==3));let compared=0;
+ for(const row of matrix.rows)for(const [locale,expected]of Object.entries(row.locales)){
+  assert.equal(createHash('sha256').update(rgb).digest('hex'),expected.rgbSha256,row.name+'/'+locale);compared+=60*27;
+ }
+ assert.equal(compared,25920);assert.equal(matrix.pixelTolerance,0);assert.deepEqual(matrix.comparisonMasks,[]);
 });
