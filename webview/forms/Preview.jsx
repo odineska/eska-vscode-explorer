@@ -76,6 +76,13 @@ export function CommandButton(props) {
     onCleanup(() => observer.disconnect());
   }));
   const metrics = () => {
+    if (props.controller.state.os === 'linux' && link()) {
+      if (scalar(props.node, 'Type') === 'Hyperlink') {
+        const height = fontLineHeight(props.node.presentation.font);
+        return { 'min-height': `${height + 2}px`, 'line-height': `${height}px` };
+      }
+      return { padding: '0 1px' };
+    }
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
@@ -91,10 +98,10 @@ export function CommandButton(props) {
     report(value ? parseFloat(value) : undefined);
     onCleanup(() => report(undefined));
   });
-  return <button ref={button} type="button" classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
+  return <button ref={button} type="button" data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
-    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
+    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
@@ -136,9 +143,9 @@ export function Preview(props) {
 export function Items(props) {
   const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping);
   const children = () => props.node.children.filter(node => node.presentation.displayed);
-  const uniform = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
-    && children().length > 0 && children().every(node => node.kind === 'Button'
-      && scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
+  const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
+    && children().length > 0 && children().every(node => node.kind === 'Button');
+  const uniform = () => buttonRow() && children().every(node => scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
   const [widths, setWidths] = createSignal({});
   const preferred = (key, value) => setWidths(previous => {
     if (previous[key] === value) return previous;
@@ -148,14 +155,16 @@ export function Items(props) {
   });
   const width = () => uniform() ? Math.max(0, ...children().map(node => widths()[node.key] ?? 0)) : undefined;
   const height = node => {
+    if (scalar(node, 'Type', 'UsualButton') === 'Hyperlink') return fontLineHeight(node.presentation.font) + 4;
     const value = buttonMetrics(node.presentation.font);
-    return Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2);
+    // Raised buttons allocate one extra bottom pixel for their shadow.
+    return Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) + 3;
   };
-  const maximumHeight = () => uniform() ? Math.max(...children().map(height)) : 0;
-  return <div classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform() }}>
+  const maximumHeight = () => buttonRow() ? Math.max(...children().map(height)) : 0;
+  return <div classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
-      usualButtonOffset={uniform() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
+      usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
   </div>;
 }
 

@@ -343,3 +343,10 @@ export async function createButtonLinksSource(fixture, input = process.env.ESKA_
   const result=await createButtonTypesSource(fixture,input);
   return {...result,linkPixels:JSON.parse(await readFile(join(input,'link-pixels.json'),'utf8'))};
 }
+
+export async function createButtonRowsSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  await rm(fixture.source,{recursive:true});await cp(join(input,'source'),fixture.source,{recursive:true});
+  const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
+  return {cases:matrix.cases.map(row=>({...row,path:join(fixture.source,row.path)})),sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
+}
