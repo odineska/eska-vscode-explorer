@@ -401,3 +401,7 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child svg { left: 7px; top: 7px; }
 /* Native pagination retains one lighter pixel where the first left edge starts. */
 .taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child::after { content: ''; position: absolute; width: 1px; height: 1px; left: -1px; top: 0; background: #acacac; }
+
+/* Native initial table search hints use their own LCD color and an integer top edge. */
+.taxi-preview[data-os=linux] .taxi-table-search { position: relative; align-self: flex-start; margin-top: 2px; color: #c8c8c8; background: #fff; }
+.taxi-preview[data-os=linux] .taxi-table-search:has(> [data-native-label=ready]) input::placeholder { color: transparent; }

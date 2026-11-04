@@ -26,6 +26,10 @@ exports.run=async()=>{
    if(restore){await ui.evaluate("document.querySelector('.taxi-table-empty').click()");await until(()=>view.selected?.key.value==='1','table identity restored after capture');}return passed;
   }
   const passed=await sample(reference(form),form.kind);
+  if(passed&&form.kind==='Default'){
+   const hit=await ui.evaluate("(()=>{const n=document.querySelector('.taxi-table-search input'),r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+10,r.y+r.height/2);return n===hit})()");assert.equal(hit,true,'LCD placeholder leaves the input hit-testable');
+   await ui.evaluate("document.querySelector('.taxi-table-search input').click()");await until(()=>view.selected?.key.value==='8','search control selects its source identity');assert.equal(await ui.evaluate("document.querySelector('.taxi-table-search input').value"),'');results.at(-1).searchPlaceholderHitTestable=true;
+  }
   if(passed&&['Default','DynamicList'].includes(form.kind)){
    const dynamic=form.kind==='DynamicList',label=value=>dynamic?'dynamic-'+value:value,other=forms.find(f=>f.kind===(dynamic?'MetadataTable':'GridFooter')),grid=await fs.readFile(other.path,'utf8');await ui.evaluate("document.querySelector('.taxi-table-empty').click();globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await until(()=>view.selected?.key.value==='1','table selected before dirty XML');const identity=view.selected;
    const change=async text=>{await replace(document,text);await until(()=>view.phase==='ready'&&!view.running&&!view.timer&&view.snapshot.dependencies.some(d=>d.role==='form'&&d.version===String(document.version)),'dirty table revision');assert.deepEqual(view.selected,identity);assert.equal(await ui.evaluate("globalThis.__tableGrid===document.querySelector('.taxi-table-scroll')"),true);};

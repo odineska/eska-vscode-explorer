@@ -381,6 +381,18 @@ export async function createTablePixelsGallery(fixture) {
       ];
     }
   }
+  const searches=process.env.ESKA_FORM_TABLE_SEARCH_PIXELS;
+  if(searches){
+    if(!isAbsolute(searches))throw new Error('ESKA_FORM_TABLE_SEARCH_PIXELS must be absolute.');
+    for(const search of JSON.parse(await readFile(join(searches,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===search.name);
+      if(!row)throw new Error(`Missing table for native search ${search.name}.`);
+      for(const [locale,region]of Object.entries(search.locales)){
+        const expected=row.locales[locale];expected.additionalRegions??=[];
+        expected.additionalRegions.push({name:'search-placeholder',offset:region.offset,width:region.nativeRegion[2],height:region.nativeRegion[3],rgbSha256:region.rgbSha256});
+      }
+    }
+  }
   return forms.map(form=>{
     const row=reference.rows.find(row=>row.name===form.kind);
     if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);

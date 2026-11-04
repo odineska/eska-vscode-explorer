@@ -28,7 +28,7 @@ export function NativeLabel(props) {
     const fieldFrame=props.placement==='fieldTitle'?label.closest('.taxi-form-frame'):undefined;
     const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
     if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
-        || ['tab','buttonLink','tableHeader','tableFooter'].includes(props.placement) && !props.calibrated
+        || ['tab','buttonLink','tableHeader','tableFooter','tableSearch'].includes(props.placement) && !props.calibrated
         || hintedTextWidth(text, { family, pixels: metrics.pixels, weight: css.fontWeight }) === undefined) {
       runtime.issue(owner, true); return;
     }
@@ -39,7 +39,7 @@ export function NativeLabel(props) {
       try {
         const style = getComputedStyle(label);
         const tab = props.placement === 'tab', link = props.placement === 'buttonLink', title = props.placement === 'formTitle', input = props.placement === 'input';
-        const tableHeader = props.placement === 'tableHeader', tableFooter = props.placement === 'tableFooter', table = tableHeader || tableFooter;
+        const search=props.placement==='tableSearch',tableHeader = props.placement === 'tableHeader', tableFooter = props.placement === 'tableFooter', table = tableHeader || tableFooter;
         if (input ? !['left','start','right','end'].includes(style.textAlign) : !tab && !link && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
@@ -48,6 +48,7 @@ export function NativeLabel(props) {
           : (height + metrics.ascent - metrics.descent) / 2;
         if(input)baseline=inputTextBaseline(height,value);
         if(tableHeader)baseline=Math.floor((30+metrics.ascent-metrics.descent)/2)-1;
+        if(search)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(tableFooter)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
@@ -56,8 +57,8 @@ export function NativeLabel(props) {
           baseline=Math.floor(top+baseline+1e-6)-top;
         }
         const left = tab || link ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
-          : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
-        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link||table?parseFloat(style.borderTopWidth):0);
+          : search ? 2 : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
+        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link||table||search?parseFloat(style.borderTopWidth):0);
         canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
         let clipping='';
         if(input){
@@ -68,6 +69,7 @@ export function NativeLabel(props) {
           const edges=[Math.max(0,label.offsetTop+3-canvasTop),Math.max(0,canvasLeft+raster.width-clipRight),Math.max(0,canvasTop+raster.height-label.offsetTop-height+3),Math.max(0,clipLeft-canvasLeft)];
           clipping=`inset(${edges.map(edge=>`${edge}px`).join(' ')})`;
         }
+        if(search)clipping=`inset(0 ${Math.max(0,canvasLeft+raster.width-parseFloat(style.width)+22)}px 0 0)`;
         canvas.style.clipPath=clipping;
         context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label), link), raster.width, raster.height), 0, 0);
         runtime.issue(owner, false); setStatus('ready');
@@ -94,6 +96,6 @@ export function NativeLabel(props) {
     onCleanup(() => { current = false; resize.disconnect(); appearance.disconnect(); runtime.issue(owner, false); });
   }));
   onCleanup(() => props.runtime?.issue(owner, false));
-  return <><span ref={placeholder} data-native-label={status()} data-native-link={props.placement === 'buttonLink' ? status() : undefined} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: props.placement === 'input' ? 'none' : undefined, visibility: status() === 'ready' && !props.interactive ? 'hidden' : undefined, color: status() === 'ready' && props.interactive ? 'transparent' : undefined }}>{props.children ?? props.text}</span>
+  return <><span ref={placeholder} data-native-label={status()} data-native-link={props.placement === 'buttonLink' ? status() : undefined} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: ['input','tableSearch'].includes(props.placement) ? 'none' : undefined, visibility: status() === 'ready' && !props.interactive ? 'hidden' : undefined, color: status() === 'ready' && props.interactive ? 'transparent' : undefined }}>{props.children ?? props.text}</span>
     <canvas ref={canvas} class="taxi-native-label" aria-hidden="true" style={{ display: status() === 'ready' ? undefined : 'none' }}/></>;
 }

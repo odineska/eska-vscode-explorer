@@ -49,3 +49,15 @@ test('native table menus preserve complete caption bitmaps and dropdown stencils
   assert.equal(pixels,6120);assert.equal(reference.arrowPixels,144);
  }finally{engine.dispose();}
 });
+
+test('native table search preserves the complete initial 13px LCD variant',async()=>{
+ const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-search/metrics.json',import.meta.url))),resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
+ try{
+  const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let pixels=0;
+  for(const form of reference.rows)for(const [locale,row]of Object.entries(form.locales)){
+   const q=face.raster(row.text,13,12,3,'lcd'),rgba=lcdCaptionPixels(q,[200,200,200],[255,255,255]),rgb=Buffer.from([...rgba].filter((value,index)=>index%4!==3));
+   assert.deepEqual([q.width,q.height],row.nativeRegion.slice(2));assert.equal(createHash('sha256').update(rgb).digest('hex'),row.rgbSha256,form.name+'/'+locale);pixels+=q.width*q.height;
+  }
+  assert.equal(pixels,10560);assert.equal(reference.nativeVariantSelectionRuleKnown,false);assert.equal(reference.alternate11pxVariantRendered,false);assert.equal(reference.alternate11pxObservations.length,4);
+ }finally{engine.dispose();}
+});
