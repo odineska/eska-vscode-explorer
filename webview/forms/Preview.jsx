@@ -5,6 +5,7 @@ import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
 import { primaryForeground } from './primary-foreground.mjs';
 import { NativeCaption } from './NativeCaption.jsx';
+import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
@@ -52,7 +53,7 @@ export function CommandButton(props) {
     && !picture() && !props.dropdown && !props.menu && flag(props.node, 'Enabled');
   const primary = () => (props.primary || flag(props.node, 'DefaultButton', false))
     && !(props.controller.state.os === 'linux' && property(props.node, 'BackColor'));
-  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && !props.iconOnly && !props.dropdown
+  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && !props.iconOnly && (!props.dropdown || props.nativeDropdown)
     && !link() && representation() !== 'Picture' && !picture()
     && (primary() || flag(props.node, 'Enabled'));
   const background = () => props.controller.state.os === 'linux' && primary()
@@ -83,7 +84,8 @@ export function CommandButton(props) {
       }
       return { padding: '0 1px' };
     }
-    if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || props.dropdown || link() || representation() === 'Picture') return {};
+    if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || link() || representation() === 'Picture') return {};
+    if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
       'background-image': backgroundImage() };
@@ -104,8 +106,8 @@ export function CommandButton(props) {
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
-    <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
 }

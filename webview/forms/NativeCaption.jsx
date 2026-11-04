@@ -7,7 +7,7 @@ export function NativeCaption(props) {
   let canvas;
   const [status, setStatus] = createSignal('browser');
   const owner = {};
-  createEffect(on(() => [props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground), JSON.stringify(props.background)], () => {
+  createEffect(on(() => [props.enabled, props.text, props.trailingWidth, JSON.stringify(props.font), JSON.stringify(props.foreground), JSON.stringify(props.background)], () => {
     const runtime = props.runtime, text = props.text, enabled = props.enabled, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!enabled || !text || !runtime) return;
@@ -32,7 +32,7 @@ export function NativeCaption(props) {
         const context = canvas.getContext('2d');
         if (!context) throw new Error('font-raster-canvas');
         canvas.width = image.width; canvas.height = image.height;
-        canvas.style.left = `${Math.floor((width - image.width) / 2) - parseFloat(style.borderLeftWidth)}px`;
+        canvas.style.left = `${Math.floor((width - image.width - (props.trailingWidth ?? 0)) / 2) - parseFloat(style.borderLeftWidth)}px`;
         canvas.style.top = `${image.top - parseFloat(style.borderTopWidth)}px`;
         context.putImageData(new ImageData(image.rgba, image.width, image.height), 0, 0);
         runtime.issue(owner, false); setStatus('ready');

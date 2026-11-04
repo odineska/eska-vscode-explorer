@@ -360,6 +360,27 @@ export async function createTablePixelsGallery(fixture) {
     if(!isAbsolute(context))throw new Error('ESKA_FORM_CONTEXT_PIXELS must be absolute.');
     reference.rows.push(...JSON.parse(await readFile(join(context,'metrics.json'),'utf8')).rows);
   }
+  const bars=process.env.ESKA_FORM_TABLE_BARS;
+  if(bars){
+    if(!isAbsolute(bars))throw new Error('ESKA_FORM_TABLE_BARS must be absolute.');
+    for(const toolbar of JSON.parse(await readFile(join(bars,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===toolbar.name);
+      if(!row)throw new Error(`Missing table for native toolbar ${toolbar.name}.`);
+      for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].additionalRegions=[region];
+    }
+  }
+  const menus=process.env.ESKA_FORM_TABLE_MENU_PIXELS;
+  if(menus){
+    if(!isAbsolute(menus))throw new Error('ESKA_FORM_TABLE_MENU_PIXELS must be absolute.');
+    for(const menu of JSON.parse(await readFile(join(menus,'metrics.json'),'utf8')).menuCaptions.rows){
+      const row=reference.rows.find(row=>row.name===menu.form);
+      if(!row)throw new Error(`Missing table for native menu ${menu.form}.`);
+      row.locales[menu.locale].additionalRegions=[
+        {name:'menu-caption',offset:[menu.region[0],-65+menu.region[1]],width:menu.region[2],height:menu.region[3],rgbSha256:menu.rgbSha256},
+        {name:'menu-arrow',offset:[menu.arrowRegion[0],-65+menu.arrowRegion[1]],width:6,height:3,rgbSha256:menu.arrowRgbSha256}
+      ];
+    }
+  }
   return forms.map(form=>{
     const row=reference.rows.find(row=>row.name===form.kind);
     if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);

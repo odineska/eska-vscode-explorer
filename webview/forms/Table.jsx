@@ -49,7 +49,7 @@ export function Table(props) {
       <span class="taxi-command-spacer"/>
       <Show when={layout().search}><div class="taxi-table-search" data-element={layout().search.key} onClick={event => select(event, layout().search)}><input readOnly tabIndex="-1" placeholder={state.strings.searchShortcut} aria-label={state.strings.search}/><span>×</span></div></Show>
       <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.Find" iconOnly dropdown/></Show>
-      <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown/></Show>
+      <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/></Show>
     </div></Show>
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>

@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
+import {buttonCaptionPixels,buttonArrowPixels} from '../webview/forms/button-caption.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
 import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
@@ -32,4 +33,19 @@ test('native DynamicList pagination preserves all 198 glyph pixels in both local
   assert.equal(createHash('sha256').update(rgb).digest('hex'),rows[index].rgbSha256,`pagination ${index}`);pixels+=glyph.width*glyph.height;
  }
  assert.equal(pixels,198);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
+});
+
+test('native table menus preserve complete caption bitmaps and dropdown stencils',async()=>{
+ const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-bars/metrics.json',import.meta.url))).menuCaptions;
+ const resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm'))),rgb=rgba=>Buffer.from([...rgba].filter((value,index)=>index%4!==3));
+ try{
+  const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let pixels=0;
+  for(const row of reference.rows){
+   const image=buttonCaptionPixels(face.raster(row.text,13,12,3),26,[77,77,77],[255,255,255]);
+   assert.deepEqual([image.width,image.height,image.top],[row.region[2],row.region[3],row.region[1]]);
+   assert.equal(createHash('sha256').update(rgb(image.rgba)).digest('hex'),row.rgbSha256,row.form+'/'+row.locale);pixels+=image.width*image.height;
+   assert.equal(createHash('sha256').update(rgb(buttonArrowPixels([77,77,77],[255,255,255]))).digest('hex'),row.arrowRgbSha256,row.form+'/'+row.locale+' arrow');
+  }
+  assert.equal(pixels,6120);assert.equal(reference.arrowPixels,144);
+ }finally{engine.dispose();}
 });
