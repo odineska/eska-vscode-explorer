@@ -11,7 +11,7 @@ test('stretching retains measured intrinsic preferences before filling the nativ
     assert.equal(style.width,field.preferredLogicalWidth+'px',label);
     assert.equal(style['max-width'],undefined,label);
     assert.equal(!!style['min-width'],form.name.startsWith('Stretch')||field.type.kind==='string',label);
-    assert.equal(inputHeight(node),field.rect[3],label);fields++;
+    assert.equal(inputHeight(node,'linux'),field.rect[3],label);fields++;
   }
   assert.equal(fields,64);
 });

@@ -28,7 +28,7 @@ test('automatic and explicit numeric choices keep native logical sizes in each s
     const value=node(field);
     assert.equal(inputChoiceButton(value,'linux'),field.choice,form.name+' '+field.name+' choice');
     assert.equal(fieldWidth(value,'linux'),field.logicalWidth,form.name+' '+field.name+' width');
-    assert.equal(inputHeight(value),field.rect[3],form.name+' '+field.name+' height');
+    assert.equal(inputHeight(value,'linux'),field.rect[3],form.name+' '+field.name+' height');
   }
 });
 

@@ -110,9 +110,20 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
-export function inputHeight(node) {
-  // Linux reference Liberation Sans metrics; confirmed at 10, 12, 14 and 16pt.
-  return Math.ceil(fontLineHeight(node.presentation.font) * 1.5);
+export function inputHeight(node, os) {
+  const line = fontLineHeight(node.presentation.font);
+  // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
+  return os === 'linux' ? Math.round(line * 20 / 13) : Math.ceil(line * 1.5);
+}
+export function inputRowHeight(node, os, captioned = true) {
+  const height=inputHeight(node,os)+2;
+  return os==='linux'&&captioned&&['Left','Right'].includes(node.presentation.titleLocation)
+    ? Math.max(height,fontLineHeight(node.presentation.titleFont)+2) : height;
+}
+export function inputTextBaseline(height, value) {
+  const {ascent,descent}=fontLineMetrics(value);
+  // Preserve the native four-pixel top inset before centering the text line.
+  return Math.max(ascent+3,Math.floor((height+ascent-descent)/2));
 }
 export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;

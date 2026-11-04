@@ -1,5 +1,5 @@
 import { createEffect, createSignal, on, onCleanup } from 'solid-js';
-import { fontLineMetrics } from './model.mjs';
+import { fontLineMetrics, inputTextBaseline } from './model.mjs';
 import { hintedTextWidth, designTextAdvances } from './font-metrics.mjs';
 import { lcdCaptionPixels } from './lcd-caption.mjs';
 
@@ -45,11 +45,7 @@ export function NativeLabel(props) {
         canvas.width = raster.width; canvas.height = raster.height;
         let baseline = tab || title || input ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
-        if(input) {
-          // Native line centering uses rounded font ascender/descender metrics.
-          const ascent=Math.round(metrics.pixels*1854/2048),descent=Math.round(metrics.pixels*434/2048);
-          baseline=Math.floor((height+ascent-descent)/2);
-        }
+        if(input)baseline=inputTextBaseline(height,value);
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
           const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
@@ -58,8 +54,18 @@ export function NativeLabel(props) {
         }
         const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
           : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + parseFloat(style.width) - 3 - raster.advance : 0;
-        canvas.style.left = `${left + raster.originX}px`;
-        canvas.style.top = `${baseline - metrics.ascent + raster.originY + (input ? label.offsetTop : 0) - (tab ? parseFloat(style.borderTopWidth) : 0)}px`;
+        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab?parseFloat(style.borderTopWidth):0);
+        canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
+        let clipping='';
+        if(input){
+          const width=parseFloat(style.width),overflowsHeight=metrics.pixels>height-6,overflowsWidth=raster.advance>width-6;
+          // Overflow uses the native text viewport instead of the LCD bitmap's overhang.
+          const clipLeft=Math.max(label.offsetLeft+3,overflowsHeight?left:-Infinity);
+          const clipRight=Math.min(label.offsetLeft+width,overflowsHeight?left+raster.advance:Infinity,overflowsWidth?label.offsetLeft+width-4:Infinity);
+          const edges=[Math.max(0,label.offsetTop+3-canvasTop),Math.max(0,canvasLeft+raster.width-clipRight),Math.max(0,canvasTop+raster.height-label.offsetTop-height+3),Math.max(0,clipLeft-canvasLeft)];
+          clipping=`inset(${edges.map(edge=>`${edge}px`).join(' ')})`;
+        }
+        canvas.style.clipPath=clipping;
         context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label)), raster.width, raster.height), 0, 0);
         runtime.issue(owner, false); setStatus('ready');
       } catch { fail(); }

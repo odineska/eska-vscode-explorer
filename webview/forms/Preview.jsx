@@ -1,12 +1,12 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputChoiceButton, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputRowHeight, inputChoiceButton, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
 import { Table } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
 import { NativeCaption } from './NativeCaption.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { tabMetrics } from './tab-metrics.mjs';
-import { calculatorRects, calculatorFill } from './input-calculator.mjs';
+import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
@@ -191,13 +191,18 @@ function Input(props) {
   const node = () => props.node, state = props.controller.state;
   const kind = () => node().presentation.valueType.kind;
   const multiline = () => flag(node(), 'MultiLine', false);
+  const verticalOffset=()=>{
+    if(state.os!=='linux'||multiline())return 0;
+    const offset=(inputRowHeight(node(),state.os,!!caption(node(),state))-inputHeight(node(),state.os))/2;
+    return Math.round(offset)-offset;
+  };
   return <div ref={surface} class="taxi-input" data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={paint()?Number(paint().choice):undefined}
-    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node())}px`,
+    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), top:verticalOffset()?`${verticalOffset()}px`:undefined, height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node(),state.os)}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>
     <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}/>
     <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
       <Match when={true}><input ref={valueInput} readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && kind() === 'number' && ((flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)) || !!paint())} placement="input" target={()=>valueInput} text={fieldValue(node(),state.culture)} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
-    <Show when={inputChoiceButton(node(),state.os)}><span class="taxi-input-button" classList={{'taxi-input-button--choice':true,'taxi-input-button--number':kind() === 'number'}}>{kind() === 'date' ? <Icon name="Calendar"/> : kind() === 'number' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><svg class="taxi-input-calculator" width="9" height="11" viewBox="0 0 9 11" aria-hidden="true" shape-rendering="crispEdges"><For each={calculatorRects}>{([x,y,width,height,fill])=><rect x={x} y={y} width={width} height={height} fill={calculatorFill(fill,paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled')))}/>}</For></svg></Show> : '▾'}</span></Show>
+    <Show when={inputChoiceButton(node(),state.os)}><span class="taxi-input-button" classList={{'taxi-input-button--choice':true,'taxi-input-button--number':kind() === 'number'}}>{kind() === 'date' ? <Icon name="Calendar"/> : kind() === 'number' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={multiline()?Math.max(2,number(node(),'Height',3))*20:inputHeight(node(),state.os)} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))}/></Show> : '▾'}</span></Show>
     <Show when={flag(node(), 'OpenButton', kind() === 'reference')}><span class="taxi-input-button"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
     <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
     <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
@@ -217,7 +222,7 @@ function Field(props) {
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
-  return <div class="taxi-field-row" data-title-location={titleLocation()} style={{ 'min-height': node().kind === 'InputField' ? `${inputHeight(node()) + 2}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
+  return <div class="taxi-field-row" data-title-location={titleLocation()} style={{ 'min-height': node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={{ ...font(node().presentation.titleFont, state.os), color: color(node().presentation.titleColor) }}><NativeLabel placement="fieldTitle" text={label()} font={node().presentation.titleFont} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && node().kind === 'InputField' && ['Left','Right'].includes(titleLocation()) && flag(node(), 'Enabled')}/></label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;

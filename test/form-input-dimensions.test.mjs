@@ -16,7 +16,7 @@ test('explicit input widths and conflicting non-stretching bounds match forty na
     assert.equal(fieldWidth(input,'linux'),field.logicalWidth,label);
     assert.equal(style.width,field.logicalWidth+'px',label);
     assert.equal(style['min-width'],undefined,label);assert.equal(style['max-width'],undefined,label);
-    assert.equal(inputHeight(input),field.rect[3],label);fields++;
+    assert.equal(inputHeight(input,'linux'),field.rect[3],label);fields++;
   }
   assert.equal(fields,160);
 });
