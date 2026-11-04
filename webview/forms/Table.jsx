@@ -3,6 +3,18 @@ import { scalar, flag, caption, font, color, text } from './model.mjs';
 import { tableLayout } from './table-model.mjs';
 import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
+import { NativeLabel } from './NativeLabel.jsx';
+import { tableScrollbarGrays } from './table-scrollbar.mjs';
+
+function TableCaption(props) {
+  const state=props.controller.state;
+  const value=()=>props.footer?props.node.presentation.font:props.node.presentation.titleFont;
+  const foreground=()=>props.footer?props.node.presentation.foreground:props.node.presentation.titleColor;
+  const calibrated=()=>props.calibrated!==false&&value().points===10&&value().weight===400
+    &&(props.footer||['Auto','Top'].includes(scalar(props.node,'HeaderVerticalAlign','Top')));
+  return <NativeLabel text={props.text} font={value()} foreground={foreground()} placement={props.footer?'tableFooter':'tableHeader'}
+    enabled={state.os==='linux'} calibrated={calibrated()} segments={props.segments} interactive={props.interactive} runtime={props.controller.nativeText}>{props.children}</NativeLabel>;
+}
 
 function Header(props) {
   const state = props.controller.state, model = () => props.model, node = () => model().node;
@@ -10,14 +22,14 @@ function Header(props) {
   const cell = (item, extra = {}) => ({ ...font(item.presentation.titleFont, state.os), color: color(item.presentation.titleColor), 'text-align': scalar(item, 'HeaderHorizontalAlign', 'Left').toLowerCase(), ...extra });
   const title = item => flag(item, 'ShowInHeader') ? caption(item, state) : '';
   return <Switch>
-    <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} classList={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}>{title(node())}</div></Match>
+    <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} classList={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}><TableCaption node={node()} controller={props.controller} text={title(node())}/></div></Match>
     <Match when={model().mode === 'horizontal'}><div class="taxi-table-header-horizontal" style={{ 'grid-column': `span ${model().columns.length}`, height: `${props.height}px`, 'grid-template-rows': model().show ? '30px minmax(0, 1fr)' : 'minmax(0, 1fr)' }}>
-      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell taxi-table-header-title" style={cell(node())} onClick={select}>{caption(node(), state)}</div></Show>
+      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell taxi-table-header-title" style={cell(node())} onClick={select}><TableCaption node={node()} controller={props.controller} text={caption(node(),state)}/></div></Show>
       <div class="taxi-table-header-children"><For each={model().children}>{child => <Header model={child} controller={props.controller} height={props.height - (model().show ? 30 : 0)}/>}</For></div>
     </div></Match>
     <Match when={model().mode === 'vertical' || model().mode === 'inCell'}><div class="taxi-table-header-vertical" style={{ height: `${props.height}px` }}>
-      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell" style={cell(node(), { height: '30px' })} onClick={select}>{caption(node(), state)}</div></Show>
-      <Show when={model().mode === 'vertical'} fallback={<div role="columnheader" class="taxi-table-header-cell" style={cell(node(), { flex: 1 })}><For each={model().columns[0].fields}>{(item, index) => <><Show when={index() > 0}>, </Show><span data-column={item.key} onClick={event => select(event, item)}>{title(item)}</span></>}</For></div>}>
+      <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell" style={cell(node(), { height: '30px' })} onClick={select}><TableCaption node={node()} controller={props.controller} text={caption(node(),state)}/></div></Show>
+      <Show when={model().mode === 'vertical'} fallback={<div role="columnheader" class="taxi-table-header-cell" style={cell(node(), { flex: 1 })}><TableCaption node={node()} controller={props.controller} text={model().columns[0].fields.map(title).join(', ')} segments={model().columns[0].fields.flatMap((item,index)=>index?[', ',title(item)]:[title(item)])} interactive><For each={model().columns[0].fields}>{(item, index) => <><Show when={index() > 0}>, </Show><span data-column={item.key} onClick={event => select(event, item)}>{title(item)}</span></>}</For></TableCaption></div>}>
         <For each={model().children}>{(child, index) => <Header model={child} controller={props.controller} height={child.depth * 30 + (index() === model().children.length - 1 ? props.height - model().depth * 30 : 0)}/>}</For>
       </Show>
     </div></Match>
@@ -44,9 +56,9 @@ export function Table(props) {
       <div class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': layout().tracks }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
-        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ 'grid-template-columns': layout().tracks }}><For each={layout().columns}>{column => <div role="cell" onClick={event => select(event, column.node)} style={{ 'text-align': scalar(column.node, 'FooterHorizontalAlign', 'Left').toLowerCase() }}><For each={column.fields}>{(item, index) => <><Show when={index() > 0}>, </Show>{text(item.presentation.footerText, state.locale, state.strings)}</>}</For></div>}</For></div></Show>
+        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ 'grid-template-columns': layout().tracks }}><For each={layout().columns}>{column => <div role="cell" onClick={event => select(event, column.node)} style={{ 'text-align': scalar(column.node, 'FooterHorizontalAlign', 'Left').toLowerCase() }}><TableCaption node={node()} controller={props.controller} footer calibrated={column.fields.length===1} text={column.fields.map(item=>text(item.presentation.footerText,state.locale,state.strings)).join(', ')}/></div>}</For></div></Show>
       </div>
-      <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><span/><span/></div></Show>
+      <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><For each={[0,1]}>{()=><span><Show when={state.os==='linux'}><svg width="6" height="4" viewBox="0 0 6 4" shape-rendering="crispEdges"><For each={tableScrollbarGrays}>{(value,index)=><rect x={index()%6} y={Math.floor(index()/6)} width="1" height="1" fill={`rgb(${value},${value},${value})`}/>}</For></svg></Show></span>}</For></div></Show>
     </div>
     <Show when={layout().dynamic}><div class="taxi-table-pagination" aria-hidden="true"><For each={['M2 9L6 5l4 4zM2 3h8', 'M2 8l4-4 4 4z', 'M2 4l4 4 4-4z', 'M2 3l4 4 4-4zM2 9h8']}>{path => <span><svg viewBox="0 0 12 12"><path d={path}/></svg></span>}</For></div></Show>
   </div>;

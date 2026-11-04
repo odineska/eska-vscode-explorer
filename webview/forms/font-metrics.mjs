@@ -42,3 +42,17 @@ export function designTextAdvances(text, options) {
   }
   return output;
 }
+
+/** Keep kerning inside each native caption fragment, never across fragment boundaries. */
+export function segmentedTextAdvances(segments, options) {
+  const result=[];
+  for (const segment of segments) {
+    const chars=[...segment];
+    for (let index=0;index<chars.length;index++) {
+      const next=chars[index+1]??'',pair=hintedTextWidth(chars[index]+next,options),following=next?hintedTextWidth(next,options):0;
+      if (pair===undefined||following===undefined) return;
+      result.push(pair-following);
+    }
+  }
+  return result;
+}

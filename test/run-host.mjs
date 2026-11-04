@@ -66,6 +66,7 @@ try {
   if (basename(suite) === "form-owners-host.cjs") fixture.formOwners = await (await import("./form-fixture.mjs")).createOwnerFormSource(fixture);
   if (basename(suite) === "form-composition-host.cjs") fixture.formComposition = await (await import("./form-fixture.mjs")).createCompositionFormSource(fixture);
   if (basename(suite) === "form-activity-host.cjs") fixture.formActivity = await (await import("./form-fixture.mjs")).createFormActivitySource(fixture);
+  if (basename(suite) === "form-table-pixels-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTablePixelsGallery(fixture);
   if (basename(suite) === "form-tables-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableGallery(fixture);
   if (basename(suite) === "form-pictures-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createPictureFormSource(fixture);
   if (basename(suite) === "form-dependencies-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createDependencyFormSource(fixture);

@@ -1,6 +1,6 @@
 import { createEffect, createSignal, on, onCleanup } from 'solid-js';
 import { fontLineMetrics, inputTextBaseline } from './model.mjs';
-import { hintedTextWidth, designTextAdvances } from './font-metrics.mjs';
+import { hintedTextWidth, designTextAdvances, segmentedTextAdvances } from './font-metrics.mjs';
 import { lcdCaptionPixels } from './lcd-caption.mjs';
 
 function rgb(value) {
@@ -20,7 +20,7 @@ function backdrop(element) {
 export function NativeLabel(props) {
   let canvas, placeholder;
   const [status, setStatus] = createSignal('browser'), owner = {};
-  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, props.mask, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
+  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, props.mask, JSON.stringify(props.segments), JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
     const runtime = props.runtime, text = props.text, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!props.enabled || !text || !runtime) return;
@@ -28,7 +28,7 @@ export function NativeLabel(props) {
     const fieldFrame=props.placement==='fieldTitle'?label.closest('.taxi-form-frame'):undefined;
     const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
     if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
-        || ['tab','buttonLink'].includes(props.placement) && !props.calibrated
+        || ['tab','buttonLink','tableHeader','tableFooter'].includes(props.placement) && !props.calibrated
         || hintedTextWidth(text, { family, pixels: metrics.pixels, weight: css.fontWeight }) === undefined) {
       runtime.issue(owner, true); return;
     }
@@ -39,6 +39,7 @@ export function NativeLabel(props) {
       try {
         const style = getComputedStyle(label);
         const tab = props.placement === 'tab', link = props.placement === 'buttonLink', title = props.placement === 'formTitle', input = props.placement === 'input';
+        const tableHeader = props.placement === 'tableHeader', tableFooter = props.placement === 'tableFooter', table = tableHeader || tableFooter;
         if (input ? !['left','start','right','end'].includes(style.textAlign) : !tab && !link && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
@@ -46,6 +47,8 @@ export function NativeLabel(props) {
         let baseline = tab || title || input || link ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
         if(input)baseline=inputTextBaseline(height,value);
+        if(tableHeader)baseline=Math.floor((30+metrics.ascent-metrics.descent)/2)-1;
+        if(tableFooter)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
           const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
@@ -53,8 +56,8 @@ export function NativeLabel(props) {
           baseline=Math.floor(top+baseline+1e-6)-top;
         }
         const left = tab || link ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
-          : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
-        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link?parseFloat(style.borderTopWidth):0);
+          : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
+        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link||table?parseFloat(style.borderTopWidth):0);
         canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
         let clipping='';
         if(input){
@@ -81,7 +84,8 @@ export function NativeLabel(props) {
       if (!current) return;
       const options = { family, pixels: metrics.pixels, weight: css.fontWeight };
       // Date masks allocate character positions without pair kerning.
-      const advances = props.mask ? [...text].map(char=>hintedTextWidth(char,options)) : props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
+      const advances = props.segments ? segmentedTextAdvances(props.segments,options) : props.mask ? [...text].map(char=>hintedTextWidth(char,options)) : props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
+      if(props.segments && (props.segments.join('') !== text || !advances)) throw new Error('font-raster-segments');
       if (props.placement === 'formTitle' && !advances) throw new Error('font-raster-advances');
       raster = face.raster(text, metrics.pixels, metrics.ascent, metrics.descent, 'lcd', advances);
       if (raster.advance !== (advances?.reduce((sum, value) => sum + value, 0) ?? hintedTextWidth(text, options))) throw new Error('font-raster-advance');
@@ -90,6 +94,6 @@ export function NativeLabel(props) {
     onCleanup(() => { current = false; resize.disconnect(); appearance.disconnect(); runtime.issue(owner, false); });
   }));
   onCleanup(() => props.runtime?.issue(owner, false));
-  return <><span ref={placeholder} data-native-label={status()} data-native-link={props.placement === 'buttonLink' ? status() : undefined} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: props.placement === 'input' ? 'none' : undefined, visibility: status() === 'ready' ? 'hidden' : undefined }}>{props.text}</span>
+  return <><span ref={placeholder} data-native-label={status()} data-native-link={props.placement === 'buttonLink' ? status() : undefined} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: props.placement === 'input' ? 'none' : undefined, visibility: status() === 'ready' && !props.interactive ? 'hidden' : undefined, color: status() === 'ready' && props.interactive ? 'transparent' : undefined }}>{props.children ?? props.text}</span>
     <canvas ref={canvas} class="taxi-native-label" aria-hidden="true" style={{ display: status() === 'ready' ? undefined : 'none' }}/></>;
 }

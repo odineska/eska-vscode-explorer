@@ -791,6 +791,27 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "table-pixels",
+      "driver": "test/form-table-pixels-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-tables",
+        "ESKA_FORM_TABLE_PIXELS": "native-table-pixels"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "tables",
       "driver": "test/form-tables-host.cjs",
       "mode": "installed",

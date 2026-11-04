@@ -350,3 +350,10 @@ export async function createButtonRowsSource(fixture, input = process.env.ESKA_F
   const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
   return {cases:matrix.cases.map(row=>({...row,path:join(fixture.source,row.path)})),sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
 }
+
+export async function createTablePixelsGallery(fixture) {
+  const input=process.env.ESKA_FORM_TABLE_PIXELS;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_TABLE_PIXELS must identify the native pixel fixture directory.');
+  const reference=JSON.parse(await readFile(join(input,'metrics.json'),'utf8')),forms=await createTableGallery(fixture);
+  return forms.map(form=>({...form,expectedTablePixels:reference.rows.find(row=>row.name===form.kind).locales}));
+}
