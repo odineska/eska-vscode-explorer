@@ -4,7 +4,8 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
 
-exports.run = async () => {
+exports.run = async (options = {}) => {
+  const prefix = options.prefix ?? 'primary-buttons';
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), gallery = fixture.primaryButtons, results = [];
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');
@@ -26,7 +27,7 @@ exports.run = async () => {
   async function ready(ui,expected) {
     return ui.evaluate(`(() => {const buttons=[...document.querySelectorAll('.taxi-command-bar .taxi-button')];
       return buttons.length===3&&buttons.every((button,index)=>{const target=${JSON.stringify(expected.buttons)},style=getComputedStyle(button);
-        return button.querySelector('[data-native-caption]')?.dataset.nativeCaption==='ready'&&style.color===${JSON.stringify(expected.buttons.map(button => css(button.foreground)))}[index]
+        return button.querySelector('[data-native-caption]')?.dataset.nativeCaption==='ready'&&(${!options.wholeWidgets}||button.querySelector('[data-native-button-border]')?.dataset.nativeButtonBorder==='ready')&&style.color===${JSON.stringify(expected.buttons.map(button => css(button.foreground)))}[index]
           &&style.backgroundColor===${JSON.stringify(expected.buttons.map(button => css(button.background)))}[index]
           &&style.fontWeight===(target[index].weight==='bold'?'700':'400');});})()`);
   }
@@ -34,7 +35,7 @@ exports.run = async () => {
     try { await until(() => ready(ui,expected),'three native primary/ordinary captions'); }
     catch (error) {
       const debug = await ui.evaluate("[...document.querySelectorAll('.taxi-command-bar .taxi-button')].map(button=>({font:getComputedStyle(button).font,color:getComputedStyle(button).color,background:getComputedStyle(button).backgroundColor,caption:button.querySelector('[data-native-caption]')?.dataset.nativeCaption,rect:button.getBoundingClientRect().toJSON()}))");
-      if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`primary-buttons-failure-${vscode.env.language}.json`),JSON.stringify({label,debug,expected},null,2));
+      if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${prefix}-failure-${vscode.env.language}.json`),JSON.stringify({label,debug,expected},null,2));
       throw error;
     }
     await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
@@ -48,7 +49,7 @@ exports.run = async () => {
     let pixels, captureAttempts = 0;
     await until(async () => {
       captureAttempts++;
-      const name = `primary-buttons-${label}-${vscode.env.language}.png`;
+      const name = `${prefix}-${label}-${vscode.env.language}.png`;
       const png = targetId ? await ui.captureTarget(targetId,name,true) : await ui.screenshot(name,true);
       pixels = await ui.evaluate(`(async()=>{
         if(devicePixelRatio!==1)throw new Error('primary-reference-dpi');
@@ -62,7 +63,7 @@ exports.run = async () => {
           if(right-left+1===${actual.frame.width}-2&&bottom-top+1===${actual.frame.height}-2)frames.push({x:left-1,y:top-1});}
         if(frames.length!==1)return {waitingForFrame:true,frames};
         const origin=frames[0],output=[];
-        for(const button of ${JSON.stringify(expected.buttons)}){const r=button.interior,rgb=new Uint8Array(r.width*r.height*3);let offset=0;
+        for(const button of ${JSON.stringify(expected.buttons)}){const r=${!!options.wholeWidgets}?{x:button.x,y:button.y,width:button.width,height:button.height+1}:button.interior,rgb=new Uint8Array(r.width*r.height*3);let offset=0;
           for(let y=0;y<r.height;y++)for(let x=0;x<r.width;x++){const p=((origin.y+r.y+y)*canvas.width+origin.x+r.x+x)*4;for(let c=0;c<3;c++)rgb[offset++]=data[p+c];}
           const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',rgb));
           output.push({caption:button.caption,pixels:r.width*r.height,sha:[...digest].map(v=>v.toString(16).padStart(2,'0')).join('')});}
@@ -70,7 +71,7 @@ exports.run = async () => {
       return !pixels.waitingForFrame;
     },'primary native frame painted');
     // Only a missing frame is retried; a pixel mismatch fails immediately.
-    assert.deepEqual(pixels.regions.map(region=>region.sha),expected.buttons.map(button=>button.interiorRgbSha256),label+' actual screenshot interiors');
+    assert.deepEqual(pixels.regions.map(region=>region.sha),expected.buttons.map(button=>options.wholeWidgets?button.wholeRgbSha256:button.interiorRgbSha256),label+(options.wholeWidgets?' actual whole buttons and shadows':' actual screenshot interiors'));
     return {label,expected:expected.name,...actual,...pixels,captureAttempts,pixelsCompared:pixels.regions.reduce((sum,region)=>sum+region.pixels,0),differentRgbPixels:0};
   }
   for (const form of gallery.forms) {
@@ -110,7 +111,7 @@ exports.run = async () => {
   }
   assert.deepEqual(await Promise.all(files.map(file=>fs.readFile(file))),before);
   await explorer.shutdown();
-  const report={passed:true,locale:vscode.env.language,forms:gallery.forms.length,buttons:gallery.forms.length*3,dirtyFont:true,dirtyStyle:true,dirtyDefaultStyle:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
-  if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`primary-buttons-measured-${vscode.env.language}.json`),JSON.stringify(report));
+  const report={passed:true,locale:vscode.env.language,forms:gallery.forms.length,buttons:gallery.forms.length*3,dirtyFont:true,dirtyStyle:true,dirtyDefaultStyle:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeWidgetPixelParity:!!options.wholeWidgets,wholeFormVisualParity:false,results};
+  if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${prefix}-measured-${vscode.env.language}.json`),JSON.stringify(report));
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
 };

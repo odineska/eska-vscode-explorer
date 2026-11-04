@@ -48,7 +48,7 @@ try {
   if (basename(suite) === "form-input-fonts-host.cjs") fixture.inputFonts = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-frame-corners-host.cjs") fixture.frameCorners = await (await import("./form-fixture.mjs")).createFrameCornersGallery(fixture);
   if (basename(suite) === "form-font-roles-host.cjs") fixture.formFonts = await (await import("./form-fixture.mjs")).createFontRolesGallery(fixture);
-  if (basename(suite) === "form-primary-buttons-host.cjs") fixture.primaryButtons = await (await import("./form-fixture.mjs")).createPrimaryButtonGallery(fixture);
+  if (["form-primary-buttons-host.cjs", "form-button-borders-host.cjs"].includes(basename(suite))) fixture.primaryButtons = await (await import("./form-fixture.mjs")).createPrimaryButtonGallery(fixture);
   if (basename(suite) === "form-primary-appearance-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPrimaryAppearanceGallery(fixture);
   if (["form-usual-buttons-host.cjs", "form-button-metrics-host.cjs", "form-button-captions-host.cjs", "form-button-colors-host.cjs", "form-tab-titles-host.cjs", "form-window-titles-host.cjs"].includes(basename(suite))) fixture.formGallery = await (await import("./form-fixture.mjs")).createMeasuredFormGallery(fixture);
   if (basename(suite) === "form-groups-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createGroupGallery(fixture);

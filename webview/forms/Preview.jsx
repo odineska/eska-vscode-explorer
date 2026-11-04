@@ -11,6 +11,7 @@ import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
+import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 
 export function Icon(props) {
@@ -42,6 +43,7 @@ export function CommandButton(props) {
   let button;
   const [backgroundImage, setBackgroundImage] = createSignal();
   const [automaticForeground, setAutomaticForeground] = createSignal();
+  const [borderPaint, setBorderPaint] = createSignal();
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node && scalar(props.node, 'Type') === 'Hyperlink';
   const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
@@ -88,13 +90,14 @@ export function CommandButton(props) {
     onCleanup(() => report(undefined));
   });
   return <button ref={button} type="button" classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
-    'taxi-button--native-fill': plain(),
+    'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
-    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), color: foreground(), 'background-color': color(background()), ...metrics(), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
+    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/></Show>
     <Show when={props.dropdown}><span class="taxi-down">▾</span></Show>
+    <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
 }
 function hasRootCommands(node) {

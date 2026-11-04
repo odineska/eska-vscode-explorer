@@ -52,6 +52,7 @@ for (const input of Object.keys({ ...result.metafile.inputs, ...browser.metafile
 const notices = [];
 notices.push(`Liberation Fonts 2.1.5 (SIL Open Font License 1.1)\n${"=".repeat(72)}\n${await readFile("resources/forms/fonts/LICENSE", "utf8")}\n`);
 notices.push(await readFile("resources/forms/native-text/NOTICES.txt", "utf8"));
+notices.push(await readFile("resources/forms/native-paint/NOTICES.txt", "utf8"));
 for (const [name, { folder, value }] of [...packages].sort(([a], [b]) => a.localeCompare(b, "en"))) {
   const files = (await readdir(folder)).filter(file => /^(licen[cs]e|copying|notice)(\.|$)/i.test(file)).sort();
   if (!files.length) throw new Error(`Missing bundled dependency license: ${name}`);
