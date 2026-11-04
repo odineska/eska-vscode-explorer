@@ -1,5 +1,6 @@
-import { For, Show, Switch, Match, createMemo } from 'solid-js';
-import { number, flag, scalar } from './model.mjs';
+import { For, Show, Switch, Match, createMemo, createEffect, onCleanup } from 'solid-js';
+import { number, flag, scalar, color } from './model.mjs';
+import { textDocumentMetrics } from './text-document.mjs';
 import { Icon } from './Preview.jsx';
 import { Chart } from './Chart.jsx';
 import { Dendrogram, Gantt } from './ComplexCharts.jsx';
@@ -46,16 +47,19 @@ function Planner(props) {
 }
 /** Static surfaces belong to the design-time view. Bound runtime documents and handlers never execute. */
 export function SpecialField(props) {
-  const width = () => number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500;
-  const height = () => number(props.node, 'Height') > 0 ? Math.max(2, number(props.node, 'Height')) * 20 + 3 : props.node.kind === 'CalendarField' ? 300 : props.node.kind === 'PeriodField' ? 209 : 243;
+  const document = createMemo(() => props.node.kind==='TextDocumentField'?textDocumentMetrics(props.node,props.controller.state.os):undefined), owner={};
+  createEffect(()=>props.controller.nativeText?.issue(owner,props.controller.state.os==='linux'&&document()&&!document().calibrated));
+  onCleanup(()=>props.controller.nativeText?.issue(owner,false));
+  const width = () => document()?.width ?? (number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500);
+  const height = () => document()?.height ?? (number(props.node, 'Height') > 0 ? Math.max(2, number(props.node, 'Height')) * 20 + 3 : props.node.kind === 'CalendarField' ? 300 : props.node.kind === 'PeriodField' ? 209 : 243);
   return <div class="taxi-special-stack" style={{ width: `${width()}px` }}><Show when={props.node.kind === 'PDFDocumentField'}><ViewStatus node={props.node} controller={props.controller}/></Show>
-    <div class="taxi-special" data-native-field={props.node.kind} style={{ width: `${width()}px`, height: `${height()}px` }}>
+    <div class="taxi-special" data-native-field={props.node.kind} style={{ width: `${width()}px`, height: `${height()}px`, 'border-color': document()&&props.controller.state.os==='linux' ? flag(props.node,'Enabled')?color(props.node.presentation.border):'#e8e8e8':undefined }}>
     <Switch fallback={<div class="taxi-document-surface"/>}>
       <Match when={props.node.kind === 'CalendarField'}><Calendar {...props}/></Match>
       <Match when={props.node.kind === 'PeriodField'}><Period {...props}/></Match>
       <Match when={props.node.kind === 'SpreadSheetDocumentField'}><Sheet {...props}/></Match>
       <Match when={props.node.kind === 'PlannerField'}><Planner {...props}/></Match>
-      <Match when={['TextDocumentField', 'FormattedDocumentField'].includes(props.node.kind)}><DocumentToolbar {...props}/><div classList={{ 'taxi-document-surface': true, 'taxi-text-document': props.node.kind === 'TextDocumentField' }}/></Match>
+      <Match when={['TextDocumentField', 'FormattedDocumentField'].includes(props.node.kind)}><DocumentToolbar {...props}/><div classList={{ 'taxi-document-surface': true, 'taxi-text-document': props.node.kind === 'TextDocumentField' }} style={{'background-color':document()?color(props.node.presentation.background):undefined}}/></Match>
       <Match when={props.node.kind === 'PDFDocumentField'}><DocumentToolbar {...props}/><Pdf/></Match>
       <Match when={props.node.kind === 'ChartField'}><Chart width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
       <Match when={props.node.kind === 'DendrogramField'}><Dendrogram width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
