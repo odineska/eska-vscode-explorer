@@ -72,6 +72,27 @@ export async function createFormActivitySource(fixture) {
   return {base,extension,configDir};
 }
 
+export async function createCompositionFormSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  await rm(fixture.source,{recursive:true});
+  const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
+  const members={},sources=[];
+  for(const [name,prefix,type]of [['base','Base','configuration'],['first','First','extension'],['second','Second','extension']]) {
+    const root=join(fixture.root,'members',name),source=join(root,'src');
+    const payload=join(source,'CommonForms','ProbeCompose','Ext','Form.xml');
+    await mkdir(dirname(payload),{recursive:true});
+    const manifest=join(root,'eska.toml');await writeFile(manifest,`[project]\nname='${name}'\ntype='${type}'\n`);sources.push(manifest);
+    for(const [from,to]of [[name==='second'?'SecondAddonConfiguration.xml':prefix+'Configuration.xml','Configuration.xml'],[prefix+'Descriptor.xml','CommonForms/ProbeCompose.xml'],[prefix+'.xml','CommonForms/ProbeCompose/Ext/Form.xml']]) {
+      const target=join(source,to);await cp(join(input,from),target);sources.push(target);
+    }
+    if(name==='base') {const target=join(source,'Languages','Русский.xml');await mkdir(dirname(target),{recursive:true});await cp(join(input,'Language.xml'),target);sources.push(target);}
+    members[name]={root,source,path:payload,configuration:join(source,'Configuration.xml')};
+  }
+  const manifest=join(fixture.root,'eska.toml');
+  await writeFile(manifest,"[workspace]\n[analysis]\ndefault_application='native'\n[workspace.members.native]\nconfiguration='members/base'\nextensions=[{path='members/second'},{path='members/first'}]\n");sources.push(manifest);
+  return {members,sources,cases:matrix.cases,path:members.base.path};
+}
+
 export async function createStateGallery(fixture) {
   return createGallery(fixture, ['InputHidden', 'InputDisabled', 'InputReadOnly', 'InputColors', 'InputFont', 'InputNumber', 'InputDate', 'InputDateTime', 'InputTime',
     'Font10Bold', 'Font12Normal', 'Font14Normal', 'Font16Normal', 'Font14Number', 'TableHidden']);

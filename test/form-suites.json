@@ -124,6 +124,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "composition",
+      "driver": "test/form-composition-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-extension-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "dependencies",
       "driver": "test/form-dependencies-host.cjs",
       "mode": "installed",
@@ -551,15 +571,15 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
-      "id": "style-color-roles",
-      "driver": "test/form-style-color-roles-host.cjs",
+      "id": "style",
+      "driver": "test/form-style-host.cjs",
       "mode": "installed",
       "locales": [
         "en",
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-style-color-roles"
+        "ESKA_FORM_FIXTURES": "native-style-values"
       },
       "environment": {},
       "dependencies": [
@@ -571,15 +591,15 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
-      "id": "style",
-      "driver": "test/form-style-host.cjs",
+      "id": "style-color-roles",
+      "driver": "test/form-style-color-roles-host.cjs",
       "mode": "installed",
       "locales": [
         "en",
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-style-values"
+        "ESKA_FORM_FIXTURES": "native-style-color-roles"
       },
       "environment": {},
       "dependencies": [
