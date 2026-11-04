@@ -1,7 +1,7 @@
 import {number} from './model.mjs';
 
-/** Empty native text documents use form-character width and editor-row height. */
-export function textDocumentMetrics(node,os){
+/** Measured empty native document surfaces use form-character width and editor-row height. */
+export function documentSurfaceMetrics(node,os){
  const value=node.presentation.font,width=number(node,'Width'),height=number(node,'Height');
  const font=value.points===10&&value.weight===400&&!value.italic&&!value.underline&&!value.strikeout
   &&(!value.face||['Arial','Liberation Sans'].includes(value.face));

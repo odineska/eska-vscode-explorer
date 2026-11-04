@@ -921,6 +921,26 @@
         "native-display"
       ],
       "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "geographical",
+      "driver": "test/form-geographical-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-geographical"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
     }
   ],
   "presets": {
