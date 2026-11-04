@@ -800,7 +800,9 @@
       ],
       "fixtureEnv": {
         "ESKA_FORM_FIXTURES": "native-tables",
-        "ESKA_FORM_TABLE_PIXELS": "native-table-pixels"
+        "ESKA_FORM_TABLE_PIXELS": "native-table-pixels",
+        "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
+        "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels"
       },
       "environment": {},
       "dependencies": [

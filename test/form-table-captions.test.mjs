@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
 import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
-import {tableScrollbarGrays} from '../webview/forms/table-scrollbar.mjs';
+import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
 
 test('native table captions preserve fragment boundaries and all 3885 LCD pixels',async()=>{
  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-pixels/metrics.json',import.meta.url)));
@@ -22,4 +22,14 @@ test('native table captions preserve fragment boundaries and all 3885 LCD pixels
   assert.equal(compared,3885);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
   const arrow=Buffer.from(tableScrollbarGrays.flatMap(gray=>[gray,gray,gray]));assert.equal(createHash('sha256').update(arrow).digest('hex'),reference.scrollbar.upperRgbSha256);assert.equal(reference.scrollbar.nativeImagesVerified,18);
  }finally{engine.dispose();}
+});
+
+test('native DynamicList pagination preserves all 198 glyph pixels in both locales',async()=>{
+ const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-context-pixels/metrics.json',import.meta.url))),rows=reference.paginationGlyphs.rows;
+ assert.deepEqual(reference.paginationGlyphs.nativeLocalesVerified,['en','ru']);assert.equal(tablePaginationGlyphs.length,4);let pixels=0;
+ for(const [index,glyph]of tablePaginationGlyphs.entries()){
+  assert.deepEqual([glyph.width,glyph.height],rows[index].region.slice(2));const rgb=Buffer.from(glyph.grays.flatMap(gray=>[gray,gray,gray]));
+  assert.equal(createHash('sha256').update(rgb).digest('hex'),rows[index].rgbSha256,`pagination ${index}`);pixels+=glyph.width*glyph.height;
+ }
+ assert.equal(pixels,198);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
 });

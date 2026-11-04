@@ -4,7 +4,7 @@ import { tableLayout } from './table-model.mjs';
 import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
-import { tableScrollbarGrays } from './table-scrollbar.mjs';
+import { tableScrollbarGrays, tablePaginationGlyphs } from './table-scrollbar.mjs';
 
 function TableCaption(props) {
   const state=props.controller.state;
@@ -60,6 +60,6 @@ export function Table(props) {
       </div>
       <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><For each={[0,1]}>{()=><span><Show when={state.os==='linux'}><svg width="6" height="4" viewBox="0 0 6 4" shape-rendering="crispEdges"><For each={tableScrollbarGrays}>{(value,index)=><rect x={index()%6} y={Math.floor(index()/6)} width="1" height="1" fill={`rgb(${value},${value},${value})`}/>}</For></svg></Show></span>}</For></div></Show>
     </div>
-    <Show when={layout().dynamic}><div class="taxi-table-pagination" aria-hidden="true"><For each={['M2 9L6 5l4 4zM2 3h8', 'M2 8l4-4 4 4z', 'M2 4l4 4 4-4z', 'M2 3l4 4 4-4zM2 9h8']}>{path => <span><svg viewBox="0 0 12 12"><path d={path}/></svg></span>}</For></div></Show>
+    <Show when={layout().dynamic}><div class="taxi-table-pagination" aria-hidden="true"><For each={['M2 9L6 5l4 4zM2 3h8', 'M2 8l4-4 4 4z', 'M2 4l4 4 4-4z', 'M2 3l4 4 4-4zM2 9h8']}>{(path,index) => <span><Show when={state.os==='linux'} fallback={<svg viewBox="0 0 12 12"><path d={path}/></svg>}><svg width="9" height={tablePaginationGlyphs[index()].height} viewBox={`0 0 9 ${tablePaginationGlyphs[index()].height}`} shape-rendering="crispEdges"><For each={tablePaginationGlyphs[index()].grays}>{(gray,pixel)=><rect x={pixel()%9} y={Math.floor(pixel()/9)} width="1" height="1" fill={`rgb(${gray},${gray},${gray})`}/>}</For></svg></Show></span>}</For></div></Show>
   </div>;
 }

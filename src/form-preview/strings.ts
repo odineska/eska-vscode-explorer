@@ -1,7 +1,7 @@
 const en = {
   events: "Events", action: "Action", handler: "Go to handler", handlerUnavailable: "The handler is missing, ambiguous, or its module is incomplete.",
   chartElement: "Element", chartValue: "Value",
-  "table.LineNumber": "N",
+  "table.LineNumber": "#",
   commandBar: "Command bar", today: "Today", chartPoint: "Point", chartSeries: "Series", sampleValue: "<Value {0}>", sampleMeeting: "Meeting", searchShortcut: "Search (Ctrl+F)", sampleFilter: "Field{0}: Value{0}",
   title: "Form", preview: "Form preview", open: "Open form preview", loading: "Loading form…", updating: "Updating…", readOnly: "View only",
   nativeTextApproximate: "Some form text uses browser rendering; visual matching is incomplete.",

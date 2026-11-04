@@ -355,5 +355,14 @@ export async function createTablePixelsGallery(fixture) {
   const input=process.env.ESKA_FORM_TABLE_PIXELS;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_TABLE_PIXELS must identify the native pixel fixture directory.');
   const reference=JSON.parse(await readFile(join(input,'metrics.json'),'utf8')),forms=await createTableGallery(fixture);
-  return forms.map(form=>({...form,expectedTablePixels:reference.rows.find(row=>row.name===form.kind).locales}));
+  const context=process.env.ESKA_FORM_CONTEXT_PIXELS;
+  if(context){
+    if(!isAbsolute(context))throw new Error('ESKA_FORM_CONTEXT_PIXELS must be absolute.');
+    reference.rows.push(...JSON.parse(await readFile(join(context,'metrics.json'),'utf8')).rows);
+  }
+  return forms.map(form=>{
+    const row=reference.rows.find(row=>row.name===form.kind);
+    if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);
+    return {...form,expectedTablePixels:row.locales};
+  });
 }
