@@ -394,6 +394,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "owners",
+      "driver": "test/form-owners-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-owner-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "palette",
       "driver": "test/form-palette-host.cjs",
       "mode": "installed",
