@@ -50,7 +50,7 @@ async function run() {
   const detachedUi = await frame({ state: { title: detached.panel.title } });
   await until(async () => await detachedUi.evaluate("document.querySelectorAll('.taxi-input').length===1"), 'detached DOM ready');
   const targets = await detachedUi.targets();
-  const floating=await detachedUi.nativeWindow();assert.equal(floating.url,'about:blank','native floating workbench exists');
+  const floating=await detachedUi.nativeWindow({detached:true});assert.equal(floating.url,'about:blank','native floating workbench exists');
   await detachedUi.captureTarget(floating.targetId,`form-detached-${vscode.env.language}.png`);
   await detachedUi.evaluate("globalThis.__repeatPreviewRoot=document.querySelector('.taxi-form-frame')");
   const floatingIds=targets.filter(target=>target.type==='page'&&target.url==='about:blank').map(target=>target.targetId).sort();

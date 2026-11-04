@@ -132,7 +132,7 @@ async function frame(tab) {
       } finally { await send('Target.detachFromTarget',{sessionId}); }
     },
     /** Resolve the native window containing this exact webview frame, even with several previews. */
-    async nativeWindow() {
+    async nativeWindow({ detached = false } = {}) {
       if(!context.frameId)throw new Error('native webview frame identity missing');
       const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
       let owner;
@@ -155,7 +155,11 @@ async function frame(tab) {
         }
         const seen=new Set();let id=context.frameId;owner=undefined;
         while(id&&!seen.has(id)){
-          if(windows.has(id)){owner=windows.get(id);return true;}
+          if(windows.has(id)){
+            owner=windows.get(id);
+            // The native move command can finish before the webview is reparented.
+            return !detached||owner.targetId!==workbenchTarget.id;
+          }
           seen.add(id);id=parents.get(id);
         }
         return false;

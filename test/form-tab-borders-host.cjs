@@ -59,7 +59,7 @@ exports.run=async()=>{
       const remember="globalThis.__tabButton=document.querySelector('.taxi-tabs>[role=tab]');globalThis.__tabCorner=document.querySelector('.taxi-tab-corner')",retained="globalThis.__tabButton===document.querySelector('.taxi-tabs>[role=tab]')&&globalThis.__tabCorner===document.querySelector('.taxi-tab-corner')";
       await ui.evaluate(remember);await change(changed);results.push(await sample(ui,target,'dirty-FreshB'));await change(original);await until(()=>ready(ui,own),'tab inputs restored');assert.equal(await ui.evaluate(retained),true);
       await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'tab preview detached');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
-      const workbench=await floating.nativeWindow();assert.equal(workbench.url,'about:blank');
+      const workbench=await floating.nativeWindow({detached:true});assert.equal(workbench.url,'about:blank');
       await until(()=>ready(floating,own),'floating keeps active page with root selected');
       results.push(await sample(floating,own,'floating-FreshA',workbench.targetId));await floating.evaluate(remember);await change(changed);results.push(await sample(floating,target,'floating-dirty-FreshB',workbench.targetId));await change(original);await until(()=>ready(floating,own),'floating tab inputs restored');assert.equal(await floating.evaluate(retained),true);
       floating.close();detached.panel.dispose();ui.close();ui=await frame({state:{title:panel.panel.title}});results.push(await sample(ui,own,'reattached-FreshA'));

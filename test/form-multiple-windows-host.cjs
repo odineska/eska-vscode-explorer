@@ -18,7 +18,7 @@ exports.run=async()=>{
     await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'independent floating panel ready');
     const preview=view.frames.get('preview'),ui=await frame({state:{title:preview.panel.title}});
     await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===1"),'independent input ready');
-    const target=await ui.nativeWindow();assert.equal(target.url,'about:blank');
+    const target=await ui.nativeWindow({detached:true});assert.equal(target.url,'about:blank');
     return {file,before,document,view,main,preview,ui,target,session:view.client.current.formSessionId};
   }
   const first=await open(fixture.form.path);await first.ui.focusWorkbench();const second=await open(fixture.form.second);
@@ -39,7 +39,7 @@ exports.run=async()=>{
   await until(()=>first.ui.evaluate("document.querySelectorAll('.taxi-pages [role=tab]')[1].getAttribute('aria-selected')==='true'"),'first page navigation');
   assert.equal(await second.ui.evaluate("document.querySelectorAll('.taxi-pages [role=tab]')[0].getAttribute('aria-selected')"),'true','second page remains independent');
   second.main.panel.reveal(undefined,false);await service.receive(first.view,first.main,{type:'detach'});
-  assert.equal((await first.ui.nativeWindow()).targetId,first.target.targetId);assert.equal((await second.ui.nativeWindow()).targetId,second.target.targetId);
+  assert.equal((await first.ui.nativeWindow({detached:true})).targetId,first.target.targetId);assert.equal((await second.ui.nativeWindow({detached:true})).targetId,second.target.targetId);
   assert.equal(first.view.client.current.formSessionId,first.session);assert.equal(second.view.client.current.formSessionId,second.session);
   await first.ui.captureTarget(first.target.targetId,'form-multiple-windows-first-'+vscode.env.language+'.png');
   await second.ui.captureTarget(second.target.targetId,'form-multiple-windows-second-'+vscode.env.language+'.png');
@@ -48,7 +48,7 @@ exports.run=async()=>{
   await until(()=>service.views.size===1,'only first session released');await Promise.all([...service.closing]);
   await until(async()=>!(await second.ui.targets()).some(target=>target.targetId===first.target.targetId),'first native window closed');
   await assert.rejects(()=>explorer.connection.request(second.view.tree.session.sessionId,'form/get',{projectId:second.view.entry.project.info.projectId,generation:second.view.entry.project.info.generation,formSessionId:first.session}),error=>error.details?.reason==='unknown_form_session');
-  await rename(second,'Second survives');assert.equal((await second.ui.nativeWindow()).targetId,second.target.targetId);assert.equal(service.views.size,1);
+  await rename(second,'Second survives');assert.equal((await second.ui.nativeWindow({detached:true})).targetId,second.target.targetId);assert.equal(service.views.size,1);
   second.main.panel.dispose();await until(()=>second.view.frames.size===1,'second preview survives its main panel');second.ui.close();second.preview.panel.dispose();
   await until(()=>service.views.size===0,'all sessions released');await Promise.all([...service.closing]);
   assert.ok(first.document.isDirty&&second.document.isDirty,'view disposal retains both dirty documents');
