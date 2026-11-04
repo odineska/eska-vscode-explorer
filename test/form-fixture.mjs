@@ -331,3 +331,10 @@ export async function createPictureCompositionSource(fixture, input = process.en
     secondDescription:await readFile(join(input,'second','CommonPictures','ProbeIcon','Ext','Picture.xml'),'utf8'),secondImage:(await readFile(join(input,'second','CommonPictures','ProbeIcon','Ext','Picture','Picture.svg'))).toString('base64'),
     secondPictureXml:join(second,'Ext','Picture.xml'),secondPayload:join(second,'Ext','Picture','Picture.zip'),secondSvg:join(second,'Ext','Picture','Picture.svg')};
 }
+
+export async function createButtonTypesSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  await rm(fixture.source,{recursive:true});await cp(join(input,'source'),fixture.source,{recursive:true});
+  const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
+  return {path:join(fixture.source,'CommonForms','ProbeButtons','Ext','Form.xml'),controls:matrix.controls,sources:matrix.files.map(file=>join(fixture.source,file.path.slice('source/'.length)))};
+}

@@ -58,6 +58,7 @@ try {
   if (basename(suite) === "form-primary-appearance-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPrimaryAppearanceGallery(fixture);
   if (["form-usual-buttons-host.cjs", "form-button-metrics-host.cjs", "form-button-captions-host.cjs", "form-button-colors-host.cjs", "form-tab-titles-host.cjs", "form-window-titles-host.cjs"].includes(basename(suite))) fixture.formGallery = await (await import("./form-fixture.mjs")).createMeasuredFormGallery(fixture);
   if (basename(suite) === "form-groups-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createGroupGallery(fixture);
+  if (basename(suite) === "form-button-types-host.cjs") fixture.buttonTypes = await (await import("./form-fixture.mjs")).createButtonTypesSource(fixture);
   if (basename(suite) === "form-picture-composition-host.cjs") fixture.pictureComposition = await (await import("./form-fixture.mjs")).createPictureCompositionSource(fixture);
   if (basename(suite) === "form-style-composition-host.cjs") fixture.styleComposition = await (await import("./form-fixture.mjs")).createStyleCompositionSource(fixture);
   if (basename(suite) === "form-owners-host.cjs") fixture.formOwners = await (await import("./form-fixture.mjs")).createOwnerFormSource(fixture);

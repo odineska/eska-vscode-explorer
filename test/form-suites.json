@@ -124,6 +124,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "button-types",
+      "driver": "test/form-button-types-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-types"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "composition",
       "driver": "test/form-composition-host.cjs",
       "mode": "installed",
