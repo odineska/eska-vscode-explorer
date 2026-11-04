@@ -70,7 +70,7 @@ exports.runGallery=async(options)=>{
       assert.equal(await ui.evaluate("globalThis.__borderInput===document.querySelector('.taxi-input')&&globalThis.__borderCorner===document.querySelector('.taxi-input-corner')"),true);
       await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'input border detached');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
       await until(()=>ready(floating,form.expected),'floating input values');await floating.evaluate("globalThis.__borderInput=document.querySelector('.taxi-input');globalThis.__borderCorner=document.querySelector('.taxi-input-corner')");
-      const target=(await floating.targets()).find(target=>target.type==='page'&&target.url==='about:blank');assert.ok(target,'native floating workbench');
+      const target=await floating.nativeWindow();assert.equal(target.url,'about:blank','native floating workbench');
       results.push(await sample(floating,form.expected,'floating-'+form.kind,target.targetId));
       await change(changed,floating,other.expected);results.push(await sample(floating,other.expected,'floating-dirty-'+other.kind,target.targetId));await change(original,floating,form.expected);
       assert.equal(await floating.evaluate("globalThis.__borderInput===document.querySelector('.taxi-input')&&globalThis.__borderCorner===document.querySelector('.taxi-input-corner')"),true);

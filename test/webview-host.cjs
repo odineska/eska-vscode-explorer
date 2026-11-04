@@ -11,13 +11,14 @@ async function until(condition, label) {
 /** Attach to a packaged webview by its visible title and retain screenshot evidence. */
 async function frame(tab) {
   const targets = await (await fetch(`http://127.0.0.1:${process.env.ESKA_HOST_DEBUG_PORT}/json/list`)).json();
-  const socket = new WebSocket(targets.find(item => item.type === 'page' && item.url.startsWith('vscode-file:')).webSocketDebuggerUrl);
+  const workbenchTarget=targets.find(item=>item.type==='page'&&item.url.startsWith('vscode-file:'));
+  const socket = new WebSocket(workbenchTarget.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
   let serial = 0;
   const pending = new Map(), contexts = [];
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
-    if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId });
+    if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId, frameId:message.params.context.auxData?.frameId });
     const promise = pending.get(message.id);
     if (promise) {
       pending.delete(message.id); clearTimeout(promise.timer);
@@ -129,6 +130,37 @@ async function frame(tab) {
         if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
         if (withData) return result.data;
       } finally { await send('Target.detachFromTarget',{sessionId}); }
+    },
+    /** Resolve the native window containing this exact webview frame, even with several previews. */
+    async nativeWindow() {
+      if(!context.frameId)throw new Error('native webview frame identity missing');
+      const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
+      let owner;
+      await until(async()=>{
+        const parents=new Map(),windows=new Map(),all=(await send('Target.getTargets')).targetInfos;
+        const record=(node,parent)=>{
+          if(node.frame.parentId||parent)parents.set(node.frame.id,node.frame.parentId??parent);
+          for(const child of node.childFrames??[])record(child,node.frame.id);
+        };
+        // OOPIF subtrees are reported by their own targets; parentId joins them to the native page.
+        for(const target of all.filter(target=>['page','iframe'].includes(target.type))){
+          let sessionId;
+          try {
+            if(target.targetId!==workbenchTarget.id)({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true}));
+            const result=await send('Page.getFrameTree',{},sessionId);
+            record(result.frameTree);
+            if(target.type==='page')windows.set(result.frameTree.frame.id,target);
+          } catch(error){if(!gone(error))throw error;}
+          finally {if(sessionId)try{await send('Target.detachFromTarget',{sessionId});}catch(error){if(!gone(error))throw error;}}
+        }
+        const seen=new Set();let id=context.frameId;owner=undefined;
+        while(id&&!seen.has(id)){
+          if(windows.has(id)){owner=windows.get(id);return true;}
+          seen.add(id);id=parents.get(id);
+        }
+        return false;
+      },'native window containing the webview frame');
+      return owner;
     },
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
     async targets() { return (await send('Target.getTargets')).targetInfos; },
