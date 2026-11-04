@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
 import {buttonCaptionPixels,buttonArrowPixels} from '../webview/forms/button-caption.mjs';
+import {inputBorderPixels} from '../webview/forms/input-border.mjs';
+import {searchClearPixels} from '../webview/forms/search-control.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
 import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
@@ -60,4 +62,12 @@ test('native table search preserves the complete initial 13px LCD variant',async
   }
   assert.equal(pixels,10560);assert.equal(reference.nativeVariantSelectionRuleKnown,false);assert.equal(reference.alternate11pxVariantRendered,false);assert.equal(reference.alternate11pxObservations.length,4);
  }finally{engine.dispose();}
+});
+
+test('native search fields reuse choice-input corners and preserve the clear glyph',async()=>{
+ const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-search-fields/metrics.json',import.meta.url))),corners=reference.corners;
+ assert.deepEqual(inputBorderPixels(corners.border,corners.background,corners.outside,{choice:true}).corners,corners.rgbCorners);
+ const rgb=Buffer.from(searchClearPixels([77,77,77],[255,255,255]).flat());assert.equal(createHash('sha256').update(rgb).digest('hex'),reference.clearStencil.rgbSha256);
+ for(const row of reference.rows)for(const entry of Object.values(row.locales))assert.equal(entry.clearRgbSha256,reference.clearStencil.rgbSha256);
+ assert.equal(corners.nativeImagesVerified,8);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
 });

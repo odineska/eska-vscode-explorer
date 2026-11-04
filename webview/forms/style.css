@@ -405,3 +405,7 @@ button { cursor: default; }
 /* Native initial table search hints use their own LCD color and an integer top edge. */
 .taxi-preview[data-os=linux] .taxi-table-search { position: relative; align-self: flex-start; margin-top: 2px; color: #c8c8c8; background: #fff; }
 .taxi-preview[data-os=linux] .taxi-table-search:has(> [data-native-label=ready]) input::placeholder { color: transparent; }
+
+.taxi-preview[data-os=linux] .taxi-table-search[data-native-search-field=ready] { border-radius: 0; }
+.taxi-preview[data-os=linux] .taxi-search-clear { position: relative; }
+.taxi-search-clear > svg { display: block; position: absolute; left: 6px; top: 6px; pointer-events: none; }

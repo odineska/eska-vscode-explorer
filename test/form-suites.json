@@ -804,7 +804,8 @@
         "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
         "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels",
         "ESKA_FORM_TABLE_MENU_PIXELS": "native-table-bars",
-        "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search"
+        "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search",
+        "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields"
       },
       "environment": {},
       "dependencies": [

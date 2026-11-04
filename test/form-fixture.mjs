@@ -393,6 +393,17 @@ export async function createTablePixelsGallery(fixture) {
       }
     }
   }
+  const searchFields=process.env.ESKA_FORM_TABLE_SEARCH_FIELDS;
+  if(searchFields){
+    if(!isAbsolute(searchFields))throw new Error('ESKA_FORM_TABLE_SEARCH_FIELDS must be absolute.');
+    for(const field of JSON.parse(await readFile(join(searchFields,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===field.name);
+      if(!row)throw new Error(`Missing table for native search field ${field.name}.`);
+      for(const [locale,region]of Object.entries(field.locales)){
+        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(region);
+      }
+    }
+  }
   return forms.map(form=>{
     const row=reference.rows.find(row=>row.name===form.kind);
     if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);
