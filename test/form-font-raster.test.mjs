@@ -108,6 +108,26 @@ test('predefined and named fonts match all twenty-one native mixed-row button in
   } finally { engine.dispose(); }
 });
 
+test('primary button fonts, palette contrast and ordinary overrides match 153 native interiors', async () => {
+  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-primary-buttons/metrics.json', import.meta.url)));
+  const { primaryForeground } = await import('../webview/forms/primary-foreground.mjs');
+  const engine = createFontRaster(binary);
+  try {
+    const faces = { regular: engine.open(regular), bold: engine.open(bold) };
+    let compared = 0;
+    for (const row of reference.rows) for (const button of row.buttons) {
+      const rgb = value => value.slice(1).match(/../g).map(channel => parseInt(channel,16));
+      const background = rgb(button.background), foreground = rgb(button.foreground);
+      if (button.primary && row.name !== 'CheckAutoText') assert.deepEqual(Array(3).fill(primaryForeground(background)), foreground, row.name);
+      const { rgb: pixels } = interiorPixels(faces[button.weight], button.caption, button.points, button.width, button.height, foreground, background);
+      assert.equal(sha(pixels), button.interiorRgbSha256, `${row.name}: ${button.caption}`);
+      compared += button.interior.width * button.interior.height;
+    }
+    assert.equal(reference.rows.length * 3, 153);
+    assert.equal(compared, 215112);
+  } finally { engine.dispose(); }
+});
+
 test('rasterizer validates unsupported text and releases owned faces idempotently', () => {
   const engine = createFontRaster(binary), face = engine.open(regular);
   for (const text of ['e\u0301', 'a\u200d', '\n', 'مرحبا', '🚀', 'a'.repeat(4097)]) {

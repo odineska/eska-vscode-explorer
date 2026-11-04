@@ -28,7 +28,7 @@ export interface FormDefinition { name: string | null; origin: Origin; propertie
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -79,8 +79,8 @@ function presentation(value: unknown): boolean {
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;
   const data = value.capabilities.formPreview;
-  if (isRecord(value.apiVersion) && value.apiVersion.major === 1 && typeof value.apiVersion.minor === "number" && value.apiVersion.minor < 38) return undefined;
-  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 38
+  if (isRecord(value.apiVersion) && value.apiVersion.major === 1 && typeof value.apiVersion.minor === "number" && value.apiVersion.minor < 40) return undefined;
+  if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 40
     || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.inputPreparation !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
@@ -122,6 +122,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
     identities.add(identityKey(value.identity)); value.children.forEach(value => node(value, depth + 1)); value.auxiliary.forEach(value => node(value, depth + 1));
     if (isRecord(value.presentation) && isRecord(value.presentation.picture) && value.presentation.picture.kind === "common" && !assets.has(String(value.presentation.picture.source))) invalid();
   }
+  if (!color(value.model.importantColor)) invalid();
   node(value.model.root, 0);
   if (value.model.handlers !== undefined && (!Array.isArray(value.model.handlers) || value.model.handlers.length > 16_384 || !value.model.handlers.every(handler =>
     isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)

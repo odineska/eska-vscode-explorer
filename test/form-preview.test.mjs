@@ -18,7 +18,7 @@ function fixture() {
     xmlName: { namespace: 'http://v8.1c.ru/8.3/xcf/logform', name: 'Form' }, properties: [], presentation, children: [], auxiliary: [] };
   return { formSessionId: 'f1', revision: '1', contextFingerprint: source, application: null, profile: 'taxi-8.3.27', limitedContext: false, modelComplete: true,
     status: 'ready', lastError: null, dependencies: [{ id: source, root: { encoding: 'utf-8', value: '/project/src' }, path: { encoding: 'utf-8', value: 'Form.xml' }, snapshot: source, version: null, member: null, role: 'form' }],
-    model: { root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
+    model: { importantColor: {kind:"role",value:"ImportantColor"}, root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
 
 test('form identities preserve signed XML i64 boundaries without JavaScript rounding', () => {
@@ -31,10 +31,11 @@ test('form identities preserve signed XML i64 boundaries without JavaScript roun
 
 test('form capability negotiation requires a static read-only profile and bounds uploads', () => {
   assert.equal(formCapabilities({ capabilities: {} }), undefined);
-  const value = { apiVersion: { major: 1, minor: 38 }, capabilities: { formPreview: { inputPreparation: true, pictures: true, schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
+  const value = { apiVersion: { major: 1, minor: 40 }, capabilities: { formPreview: { inputPreparation: true, pictures: true, schemaVersion: 1, profile: 'taxi-8.3.27', readOnly: true, executesBsl: false,
     uploads: 'queryBuffers', maxSessions: 32, maxOverlayBytes: 16777216, maxInlineBytes: 262144 } } };
   assert.equal(formCapabilities({...value,apiVersion:{major:1,minor:36}}),undefined);
   assert.equal(formCapabilities({...value,apiVersion:{major:1,minor:37}}),undefined);
+  for (const minor of [38,39]) assert.equal(formCapabilities({...value,apiVersion:{major:1,minor}}),undefined);
   assert.throws(()=>formCapabilities({...value,apiVersion:{major:2,minor:36}}));
   assert.deepEqual(formCapabilities(value), { maxSessions: 16, maxOverlayBytes: 8388608, maxInlineBytes: 131072 });
   for (const patch of [{ inputPreparation: false }, { executesBsl: true }, { readOnly: false }, { profile: 'taxi-8.5' }, { maxSessions: -1 }]) assert.throws(() => formCapabilities({ ...value, capabilities: { formPreview: { ...value.capabilities.formPreview, ...patch } } }));
@@ -57,6 +58,15 @@ test('handler navigation is optional for viewing and validates retained owner id
   const location={source,root:{value:'/source',encoding:'utf-8'},path:{value:'CommonForms/Preview/Ext/Form/Module.bsl',encoding:'utf-8'},revision:'1'};
   assert.equal(parseHandlerSource(location).revision,'1');
   for(const patch of [{source:'bad'},{revision:1},{root:null}]) assert.throws(()=>parseHandlerSource({...location,...patch}));
+});
+
+test('form snapshots require the resolved ImportantColor supplied by API 1.40', () => {
+  const snapshot = fixture();
+  assert.deepEqual(parseFormSnapshot(snapshot).model.importantColor,{kind:'role',value:'ImportantColor'});
+  for (const value of [undefined,null,{kind:'unknown',value:'#ffe100'},{kind:'rgb',value:17}]) {
+    const invalid = structuredClone(snapshot); invalid.model.importantColor = value;
+    assert.throws(() => parseFormSnapshot(invalid));
+  }
 });
 
 test('a form snapshot rejects duplicate identities and missing input ownership', () => {

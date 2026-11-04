@@ -10,7 +10,7 @@ exports.run = async () => {
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-  const ready = target => target.evaluate("document.querySelectorAll('.taxi-command-bar [data-native-caption=ready]').length===2");
+  const ready = target => target.evaluate("document.querySelectorAll('.taxi-command-bar [data-native-caption=ready]').length===3");
   async function bitmap(target) {
     const rgb = await target.evaluate(`(() => {const c=document.querySelectorAll('.taxi-command-bar .taxi-button')[1]?.querySelector('canvas');
       if(!c?.width||!c.height)return null;return [...c.getContext('2d').getImageData(0,0,c.width,c.height).data].filter((v,i)=>i%4!==3);})()`);
@@ -23,7 +23,7 @@ exports.run = async () => {
     await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'colored button form ready');
     const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
     const ui = await frame({state:{title:panel.panel.title}}), expected = form.expected.buttons[1];
-    await until(() => ready(ui), 'colored and white caption rasters');
+    await until(() => ready(ui), 'primary, colored and white caption rasters');
     const actual = await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const button=document.querySelectorAll('.taxi-command-bar .taxi-button')[1],s=getComputedStyle(button);
       return {frame:rect(document.querySelector('.taxi-form-frame')),button:rect(button),background:s.backgroundColor,color:s.color};})()`);

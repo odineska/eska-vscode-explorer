@@ -158,6 +158,18 @@ export async function createTabBordersGallery(fixture) {
   return {forms};
 }
 
+export async function createPrimaryButtonGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  const style = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
+  const metrics = JSON.parse(await readFile(join(input,'metrics.json'),'utf8')), forms = [];
+  for (const row of metrics.rows) {
+    const source = join(input,row.file), [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
+    forms.push({...form,kind:row.name,expected:row,...(row.styleFile?{styleText:await readFile(join(input,row.styleFile),'utf8')}:{})});
+  }
+  return {forms,style:style.style,configuration:join(fixture.source,'Configuration.xml')};
+}
+
 export async function createPrimaryAppearanceGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
