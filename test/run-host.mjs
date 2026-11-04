@@ -5,6 +5,7 @@ import { mkdtemp, rm, readFile, writeFile, cp, mkdir, symlink } from "node:fs/pr
 import { resolve, join, isAbsolute, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTreeProject } from "./fixture.mjs";
+import { verifyRuntime } from "./installed-runtime.mjs";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const suite = resolve(repository, process.argv[2] ?? "test/extension-host.cjs");
@@ -20,10 +21,15 @@ const playground = process.env.ESKA_TEST_ROOT ?? resolve(repository, "../eska-pl
 if (!isAbsolute(playground)) throw new Error("ESKA_TEST_ROOT must be absolute.");
 // VS Code's Uri.fsPath lowercases drive letters; keep native fixture expectations in that form.
 const root = (await mkdtemp(join(playground, "explorer-host-"))).replace(/^[A-Z]:/, drive => drive.toLowerCase());
+const driverStarted = performance.now();
+const receipt = {schemaVersion:1,suite:basename(suite),locale,runs:[],timings:{}};
+const saveReceipt = async () => { if (process.env.ESKA_HOST_RECEIPT) await writeFile(process.env.ESKA_HOST_RECEIPT,JSON.stringify(receipt,null,2)+'\n'); };
 try {
   await mkdir(join(root, "profile", "User"), { recursive: true });
   await writeFile(join(root, "profile", "User", "settings.json"), JSON.stringify({
     "workbench.startupEditor": "none", "onboarding.enabled": false,
+    "telemetry.telemetryLevel": "off", "extensions.autoUpdate": false,
+    "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
@@ -133,10 +139,16 @@ try {
   if (cli && !isAbsolute(cli)) throw new Error("VSCODE_CLI_JS must be absolute.");
   const run = promisify(execFile);
   const installTimeout = process.platform === "win32" ? 300000 : 120000;
-  const runCli = (args, options) => run(executable, cli ? [cli, ...args] : args, {
-    ...options, windowsHide: true,
-    ...(cli ? { env: { ...process.env, ...options?.env, ELECTRON_RUN_AS_NODE: "1" } } : {}),
-  });
+  const runCli = async (args, options) => {
+    try {
+      return await run(executable, [...(cli ? [cli] : []), '--disable-telemetry', ...args], {
+        ...options, windowsHide: true,
+        ...(cli ? { env: { ...process.env, ...options?.env, ELECTRON_RUN_AS_NODE: "1" } } : {}),
+      });
+    } catch(error) {
+      throw Object.assign(error,{category:'harness',context:{exitCode:error.code,signal:error.signal,killed:error.killed,stdout:error.stdout,stderr:error.stderr},code:'host_cli_failed'});
+    }
+  };
   let extensionPath = repository;
   if (process.env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY) {
     const source = process.env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY;
@@ -171,19 +183,18 @@ try {
   }
   if (process.env.ESKA_TEST_VSIX) {
     if (!isAbsolute(process.env.ESKA_TEST_VSIX)) throw new Error("ESKA_TEST_VSIX must be absolute.");
+    const installStarted = performance.now();
     const directories = [`--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`];
     await runCli([...directories, "--install-extension", process.env.ESKA_TEST_VSIX], { timeout: installTimeout });
     const { stdout } = await runCli([...directories, "--list-extensions", "--show-versions"], { timeout: 30000 });
     const installed = stdout.split(/\r?\n/).find(line => line.startsWith("1c-tooling.eska-explorer@"));
     if (!installed) throw new Error(`VSIX was not installed: ${stdout}`);
     extensionPath = join(root, "extensions", installed.replace("@", "-"));
-    const { createHash } = await import("node:crypto");
-    const installedBundle = await readFile(join(extensionPath,"out/extension.js"));
-    if (!installedBundle.equals(await readFile(join(repository,"out/extension.js")))) throw new Error("Installed VSIX bundle differs from the packaged checkout.");
-    const installedRenderer = await readFile(join(extensionPath,"resources/properties/view.js"));
-    if (!installedRenderer.equals(await readFile(join(repository,"resources/properties/view.js")))) throw new Error("Installed VSIX property renderer differs from the checkout.");
-    console.log(JSON.stringify({installedVsix:process.env.ESKA_TEST_VSIX,installedBundle:join(extensionPath,"out/extension.js"),bundleSha256:createHash("sha256").update(installedBundle).digest("hex"),
-      propertyRendererSha256:createHash("sha256").update(installedRenderer).digest("hex")}));
+    receipt.timings.installCliMs = performance.now() - installStarted;
+    const verificationStarted = performance.now();
+    receipt.runtimeAssets = await verifyRuntime(process.env.ESKA_TEST_VSIX,{checkout:repository,installed:extensionPath,forms:basename(suite).startsWith('form-')});
+    receipt.timings.runtimeVerificationMs = performance.now() - verificationStarted;
+    console.log(JSON.stringify({installedVsix:process.env.ESKA_TEST_VSIX,runtimeFiles:receipt.runtimeAssets.files.length,runtimeManifestSha256:receipt.runtimeAssets.manifestSha256}));
     // Test mode exposes the provider only for acceptance. All runtime files come from the installed VSIX.
   }
   let workspace = fixture.root;
@@ -207,10 +218,12 @@ try {
     const assert = require('node:assert/strict');
     const expected = process.env.ESKA_HOST_LOCALE;
     if (expected) assert.equal(vscode.env.language.split('-')[0], expected, 'native host locale');
+    const bodyStarted = performance.now();
     await require(${JSON.stringify(suite)}).run();
+    const suiteBodyMs = performance.now() - bodyStarted;
     const fs = require('node:fs/promises'), file = ${JSON.stringify(join(fixture.root, "host-result.json"))};
     const result = JSON.parse(await fs.readFile(file, 'utf8'));
-    await fs.writeFile(file, JSON.stringify({ ...result, locale: vscode.env.language }));
+    await fs.writeFile(file, JSON.stringify({ ...result, locale: vscode.env.language, hostDriver:{suiteBodyMs} }));
   };\n`);
   const hostArguments = [`--extensionTestsPath=${hostSuite}`];
   let languageWarmup;
@@ -263,7 +276,9 @@ exports.activate = async function () {
   }
   let languageAttempts = 0;
   const runs = process.env.ESKA_HOST_CONFLICT_RELOAD ? 3 : process.env.ESKA_HOST_RESTART || process.env.ESKA_HOST_QUERY_RESTART || process.env.ESKA_HOST_ACTIVITY_RESTART ? 2 : 1;
+  receipt.timings.preHostMs = performance.now() - driverStarted;
   for (let run = languageWarmup ? -1 : 0; run < runs; run++) {
+    const hostStarted = performance.now();
     await rm(join(fixture.root, "host-result.json"), { force: true });
     const child = spawn(executable, ["--verbose", "--skip-welcome", "--skip-release-notes", ...(locale ? [`--locale=${locale}`] : []), ...(process.env.ESKA_HOST_DEBUG_PORT ? [`--remote-debugging-port=${process.env.ESKA_HOST_DEBUG_PORT}`] : []),
       ...(installedStartupProbe && run !== -1 ? [] : [`--extensionDevelopmentPath=${extensionPath}`]), ...(run === -1 ? [`--extensionDevelopmentPath=${languageWarmup}`] : hostArguments),
@@ -276,6 +291,8 @@ exports.activate = async function () {
       ...(fixture.activity ? { ESKA_CONFIG_DIR: fixture.activity.configDir } : {}),
       ...(fixture.formActivity ? { ESKA_CONFIG_DIR: fixture.formActivity.configDir } : {}),
       ESKA_HOST_FIXTURE: JSON.stringify(fixture), ESKA_HOST_SECOND_FIXTURE: JSON.stringify(secondFixture) }, stdio: ["ignore", "pipe", "pipe"] });
+    const attempt = {index:run,phase:run === -1 ? 'language-registration' : 'suite',startedAt:new Date().toISOString(),pid:child.pid};
+    receipt.runs.push(attempt);await saveReceipt();
     let output = "";
     const fullLog = process.env.ESKA_HOST_FULL_LOG ? createWriteStream(process.env.ESKA_HOST_FULL_LOG) : undefined;
     /** Retain bounded diagnostic output; host startup can be verbose. */
@@ -285,6 +302,7 @@ exports.activate = async function () {
     // Windows crash reporters can inherit these pipes after the workbench exits.
     // The owned workbench process and its result file determine suite completion.
     const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+    attempt.hostMs=performance.now()-hostStarted;attempt.exitCode=code;
     child.stdout.destroy();
     child.stderr.destroy();
     if (fullLog) await new Promise(resolve => fullLog.end(resolve));
@@ -297,6 +315,7 @@ exports.activate = async function () {
     }
     try {
       const result = JSON.parse(await readFile(join(fixture.root, "host-result.json"), "utf8"));
+      attempt.result=result;
       if (result.passed !== true) {
         if (process.env.ESKA_HOST_FULL_LOG) await writeFile(`${process.env.ESKA_HOST_FULL_LOG}.result.json`, JSON.stringify(result, null, 2) + "\n");
         throw new Error(`Acceptance result did not pass: ${result.error ?? "unknown failure"}`);
@@ -308,6 +327,7 @@ exports.activate = async function () {
         process.kill(pid, "SIGKILL");
         throw new Error(`Backend ${pid} survived native host shutdown`);
       }
+      await saveReceipt();
       console.log(JSON.stringify(result));
       // Registration may finish after the first startup; repeat only this read-only locale probe.
       if (run === -1 && locale && result.locale?.split('-')[0] !== locale) {
@@ -317,4 +337,21 @@ exports.activate = async function () {
     }
     catch (error) { throw new Error(`Extension host did not report success: ${error.message}\n${output}`); }
   }
-} finally { await rm(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 20 : 0, retryDelay: 250 }); }
+  receipt.passed = true;
+} catch (error) {
+  receipt.passed = false;
+  receipt.failure = {category:error.category ?? 'unclassified',code:error.code ?? 'suite_failed',message:String(error.stack ?? error),context:error.context};
+  throw error;
+} finally {
+  const cleanupStarted = performance.now();
+  try {
+    await rm(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 20 : 0, retryDelay: 250 });
+  } catch(error) {
+    receipt.passed=false;receipt.cleanupFailure={category:'harness',code:'fixture_cleanup_failed',message:String(error.message)};
+    throw error;
+  } finally {
+    receipt.timings.cleanupMs = performance.now() - cleanupStarted;
+    receipt.timings.totalMs = performance.now() - driverStarted;
+    await saveReceipt();
+  }
+}
