@@ -110,6 +110,23 @@ export async function createOwnerFormSource(fixture, input = process.env.ESKA_FO
   return {members,sources,cases:matrix.cases.filter(row=>row.activeExtensions.length===2)};
 }
 
+export async function createStyleCompositionSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
+  await rm(fixture.source,{recursive:true});
+  const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8')),members={},sources=[];
+  for(const name of ['base','first','second']) {
+    const root=join(fixture.root,'members',name),source=join(root,'src');await cp(join(input,name),source,{recursive:true});
+    const manifest=join(root,'eska.toml');await writeFile(manifest,`[project]\nname='${name}'\ntype='${name==='base'?'configuration':'extension'}'\n`);sources.push(manifest);
+    for(const file of matrix.files.filter(file=>file.path.startsWith(name+'/')))sources.push(join(source,file.path.slice(name.length+1)));
+    members[name]={root,source,configuration:join(source,'Configuration.xml')};
+  }
+  const manifest=join(fixture.root,'eska.toml');await writeFile(manifest,"[workspace]\n[analysis]\ndefault_application='native'\n[workspace.members.native]\nconfiguration='members/base'\nextensions=[{path='members/first'},{path='members/second'}]\n");sources.push(manifest);
+  const fullStyle=await readFile(join(input,'variants/FirstBaseSelectedStyle.xml'),'utf8');
+  const start=fullStyle.indexOf('<Item name="StyleItem.F_ProbeColor">'),end=fullStyle.indexOf('</Item>',start)+7;
+  if(start<0||end<=start)throw new Error('Native owned color item is missing.');
+  return {members,sources,cases:matrix.cases,fullStyle,ownColorItem:fullStyle.slice(start,end)};
+}
+
 export async function createStateGallery(fixture) {
   return createGallery(fixture, ['InputHidden', 'InputDisabled', 'InputReadOnly', 'InputColors', 'InputFont', 'InputNumber', 'InputDate', 'InputDateTime', 'InputTime',
     'Font10Bold', 'Font12Normal', 'Font14Normal', 'Font16Normal', 'Font14Number', 'TableHidden']);
