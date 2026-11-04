@@ -119,8 +119,16 @@ export function inputChoiceButton(node, os) {
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
   return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && type.kind === 'number' && flag(node, 'ReadOnly', false)));
 }
+function linuxSimpleInput(node, os) {
+  const kind = node.presentation.valueType.kind;
+  return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
+    && !flag(node, 'MultiLine', false) && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false)
+    && !(kind === 'string' && inputChoiceButton(node, os));
+}
 export function fieldWidth(node, os) {
-  const unit = inputUnit(node), width = number(node, 'Width'); if (width > 0) return Math.max(20, width * unit + 4);
+  const unit = inputUnit(node), native = linuxSimpleInput(node, os), width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
+  // Explicit Taxi widths use fixed character units, independent of the value font.
+  if (width > 0) return native ? width * 10 + 11 + (inputChoiceButton(node, os) ? 20 : 0) : Math.max(20, width * unit + 4);
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
@@ -143,7 +151,9 @@ export function fieldValue(node, culture) {
   return '';
 }
 export function fieldStyle(node, os) {
-  const maxWidth = number(node, 'MaxWidth'), minWidth = number(node, 'MinWidth');
+  // Non-stretching native fields keep their preferred width even with conflicting bounds.
+  const fixedNative = linuxSimpleInput(node, os) && !!property(node, 'HorizontalStretch') && !flag(node, 'HorizontalStretch');
+  const maxWidth = fixedNative ? 0 : number(node, 'MaxWidth'), minWidth = fixedNative ? 0 : number(node, 'MinWidth');
   // Preserve the intrinsic preferred width, then fill an allocated string column.
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
     && !property(node, 'HorizontalStretch') && number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0;

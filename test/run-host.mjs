@@ -42,6 +42,7 @@ try {
   if (basename(suite) === "form-style-color-roles-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createStyleColorRolesSource(fixture);
   if (basename(suite) === "form-tab-borders-host.cjs") fixture.tabBorders = await (await import("./form-fixture.mjs")).createTabBordersGallery(fixture);
   if (basename(suite) === "form-input-borders-host.cjs") fixture.inputBorders = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
+  if (basename(suite) === "form-input-dimensions-host.cjs") fixture.inputDimensions = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-frame-corners-host.cjs") fixture.frameCorners = await (await import("./form-fixture.mjs")).createFrameCornersGallery(fixture);
   if (basename(suite) === "form-font-roles-host.cjs") fixture.formFonts = await (await import("./form-fixture.mjs")).createFontRolesGallery(fixture);
   if (basename(suite) === "form-primary-appearance-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPrimaryAppearanceGallery(fixture);

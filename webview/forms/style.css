@@ -359,3 +359,6 @@ button { cursor: default; }
 @media (forced-colors: active) { .form-splitter { background: CanvasText; } }
 
 .taxi-label-field { display: block; min-height: 16px; }
+
+/* Include the choice border outset when the field determines an intrinsic column. */
+.taxi-preview[data-os=linux] .taxi-input[data-native-border=ready]:has(> .taxi-input-button) { margin-right: 1px; }

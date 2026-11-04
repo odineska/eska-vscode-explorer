@@ -24,7 +24,7 @@ async function run() {
   let ui = await frame({ state: { title: main.panel.title } });
   await until(async () => (await ui.evaluate("document.querySelectorAll('.taxi-input').length")) === 1, 'form DOM ready');
   const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
-  assert.ok(geometry.frame.width > 400); assert.equal(geometry.input.width, 164); assert.equal(geometry.script, true);
+  assert.ok(geometry.frame.width > 400); assert.equal(geometry.input.width, process.platform==='linux'?211:164); assert.equal(geometry.script, true);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
   assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length"), 1);
   await replace(document, '<AutoMarkIncomplete>true</AutoMarkIncomplete>', '<AutoMarkIncomplete>false</AutoMarkIncomplete>');

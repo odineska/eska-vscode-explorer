@@ -37,7 +37,7 @@ test('calculator button interiors include native inactive marks, separators and 
   for(const form of fixture.forms)for(const field of form.fields){
     if(field.button?.kind!=='calculator')continue;
     const palette=inputBorderPixels(field.border,field.background,field.outside,field),height=field.rect[3],width=field.rect[2];
-    const image=Buffer.alloc(20*(height-2)*3,255),left=width-22,top=1,markTop=Math.floor((height-13)/2);
+    const image=Buffer.alloc(20*(height-2)*3,255),left=width-22,top=1,markTop=Math.round((height-13)/2);
     const set=(x,y,color)=>{if(x>=0&&x<20&&y>=0&&y<height-2)image.set(color,(y*20+x)*3);};
     for(let y=0;y<height-2;y++)set(0,y,field.inactive?[215,215,215]:field.border);
     for(const [x,y,w,h,source] of calculatorRects){

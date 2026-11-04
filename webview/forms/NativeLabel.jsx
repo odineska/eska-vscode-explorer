@@ -45,6 +45,11 @@ export function NativeLabel(props) {
         canvas.width = raster.width; canvas.height = raster.height;
         let baseline = tab || title || input ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
+        if(input) {
+          // Native line centering uses rounded font ascender/descender metrics.
+          const ascent=Math.round(metrics.pixels*1854/2048),descent=Math.round(metrics.pixels*434/2048);
+          baseline=Math.floor((height+ascent-descent)/2);
+        }
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
           const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
