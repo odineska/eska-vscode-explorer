@@ -44,6 +44,7 @@ try {
   if (basename(suite) === "form-input-borders-host.cjs") fixture.inputBorders = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-input-dimensions-host.cjs") fixture.inputDimensions = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-input-stretch-host.cjs") fixture.inputStretch = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
+  if (basename(suite) === "form-input-dates-host.cjs") fixture.inputDates = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-input-fonts-host.cjs") fixture.inputFonts = await (await import("./form-fixture.mjs")).createInputBordersGallery(fixture);
   if (basename(suite) === "form-frame-corners-host.cjs") fixture.frameCorners = await (await import("./form-fixture.mjs")).createFrameCornersGallery(fixture);
   if (basename(suite) === "form-font-roles-host.cjs") fixture.formFonts = await (await import("./form-fixture.mjs")).createFontRolesGallery(fixture);

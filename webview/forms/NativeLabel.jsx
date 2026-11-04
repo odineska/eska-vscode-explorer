@@ -20,7 +20,7 @@ function backdrop(element) {
 export function NativeLabel(props) {
   let canvas, placeholder;
   const [status, setStatus] = createSignal('browser'), owner = {};
-  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
+  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, props.mask, JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
     const runtime = props.runtime, text = props.text, value = props.font;
     runtime?.issue(owner, false); setStatus('browser');
     if (!props.enabled || !text || !runtime) return;
@@ -39,7 +39,7 @@ export function NativeLabel(props) {
       try {
         const style = getComputedStyle(label);
         const tab = props.placement === 'tab', title = props.placement === 'formTitle', input = props.placement === 'input';
-        if (input ? !['right','end'].includes(style.textAlign) : !tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
+        if (input ? !['left','start','right','end'].includes(style.textAlign) : !tab && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
@@ -53,7 +53,7 @@ export function NativeLabel(props) {
           baseline=Math.floor(top+baseline+1e-6)-top;
         }
         const left = tab ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
-          : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + parseFloat(style.width) - 3 - raster.advance : 0;
+          : title ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
         const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab?parseFloat(style.borderTopWidth):0);
         canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
         let clipping='';
@@ -61,7 +61,7 @@ export function NativeLabel(props) {
           const width=parseFloat(style.width),overflowsHeight=metrics.pixels>height-6,overflowsWidth=raster.advance>width-6;
           // Overflow uses the native text viewport instead of the LCD bitmap's overhang.
           const clipLeft=Math.max(label.offsetLeft+3,overflowsHeight?left:-Infinity);
-          const clipRight=Math.min(label.offsetLeft+width,overflowsHeight?left+raster.advance:Infinity,overflowsWidth?label.offsetLeft+width-4:Infinity);
+          const clipRight=Math.min(label.offsetLeft+width,overflowsHeight?left+raster.advance:Infinity,overflowsWidth?label.offsetLeft+width-(props.mask?3:4):Infinity);
           const edges=[Math.max(0,label.offsetTop+3-canvasTop),Math.max(0,canvasLeft+raster.width-clipRight),Math.max(0,canvasTop+raster.height-label.offsetTop-height+3),Math.max(0,clipLeft-canvasLeft)];
           clipping=`inset(${edges.map(edge=>`${edge}px`).join(' ')})`;
         }
@@ -80,7 +80,8 @@ export function NativeLabel(props) {
     runtime.face(css.fontWeight).then(face => {
       if (!current) return;
       const options = { family, pixels: metrics.pixels, weight: css.fontWeight };
-      const advances = props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
+      // Date masks allocate character positions without pair kerning.
+      const advances = props.mask ? [...text].map(char=>hintedTextWidth(char,options)) : props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
       if (props.placement === 'formTitle' && !advances) throw new Error('font-raster-advances');
       raster = face.raster(text, metrics.pixels, metrics.ascent, metrics.descent, 'lcd', advances);
       if (raster.advance !== (advances?.reduce((sum, value) => sum + value, 0) ?? hintedTextWidth(text, options))) throw new Error('font-raster-advance');

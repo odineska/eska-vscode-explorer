@@ -114,7 +114,18 @@ async function frame(tab) {
     async captureTarget(targetId, name, withData = false) {
       if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
       const {sessionId} = await send('Target.attachToTarget', {targetId,flatten:true});
-      try { const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
+      try {
+        // The move command can resolve before the auxiliary workbench has painted.
+        await send('Page.bringToFront',{},sessionId);
+        let editorTabs;
+        try { await until(async()=>{
+          const result=await send('Runtime.evaluate',{expression:"[...document.querySelectorAll('.tabs-container .tab')].map(tab=>tab.textContent)",returnByValue:true},sessionId);
+          editorTabs=result.result?.value;
+          return editorTabs?.includes(tab.state.title);
+        },'native floating editor identity'); }
+        catch(error){throw new Error(error.message+' '+JSON.stringify({expected:tab.state.title,actual:editorTabs}));}
+        await send('Runtime.evaluate',{expression:'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',awaitPromise:true},sessionId);
+        const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
         if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
         if (withData) return result.data;
       } finally { await send('Target.detachFromTarget',{sessionId}); }

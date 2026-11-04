@@ -128,7 +128,7 @@ export function inputTextBaseline(height, value) {
 export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
-  return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && type.kind === 'number' && flag(node, 'ReadOnly', false)));
+  return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && ['number','date'].includes(type.kind) && flag(node, 'ReadOnly', false)));
 }
 function linuxSimpleInput(node, os) {
   const kind = node.presentation.valueType.kind;

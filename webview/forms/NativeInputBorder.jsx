@@ -26,7 +26,7 @@ export function NativeInputBorder(props) {
       const disabled=!!surface.closest('.taxi-disabled'),inactive=flag(node(),'ReadOnly',false)||disabled;
       const supported=state.os==='linux'&&!flag(node(),'MultiLine',false)&&['string','number','date'].includes(kind)
         && buttons.length<=1&&buttons.every(button=>button.classList.contains('taxi-input-button--choice'))
-        && !(kind==='string'&&buttons.length)&&!(kind==='date'&&inactive)&&surface.getBoundingClientRect().height>=6;
+        && !(kind==='string'&&buttons.length)&&surface.getBoundingClientRect().height>=6;
       if(!supported){lastKey=undefined;props.setPaint(undefined);return;}
       const css=getComputedStyle(source),border=rgb(css.color),background=rgb(css.backgroundColor),outside=backdrop(surface);
       if(!border||!background||!outside){lastKey=undefined;props.setPaint(undefined);return;}
