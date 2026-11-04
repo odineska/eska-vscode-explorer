@@ -55,3 +55,32 @@ test('persisted selection identity survives loading before the restored model ar
   assert.deepEqual(saved.selection,identity);assert.equal(saved.ui.selected,previous.ui.selected);
   controller.dispose();
 });
+
+
+test('shared preview navigation is restored before rendering without sharing layout or echoing updates', async () => {
+  const bundle=await build({entryPoints:[fileURLToPath(new URL('../webview/forms/controller.js',import.meta.url))],bundle:true,write:false,platform:'browser',format:'cjs',conditions:['browser','production'],define:{'process.env.NODE_ENV':'"production"'}});
+  const listeners=new Map(),messages=[],module={exports:{}};
+  let callback,saved;
+  const context=createContext({module,exports:module.exports,console,requestAnimationFrame:value=>{callback=value;return 1;},cancelAnimationFrame:()=>{},window:{addEventListener:(name,value)=>listeners.set(name,value),removeEventListener:name=>listeners.delete(name)}});
+  runInContext(bundle.outputFiles[0].text,context);
+  const initial={ui:{pages:{'own:current:1':'own:current:2'},collapsed:{'own:current:10':true},zoom:150}};
+  const controller=module.exports.controller({getState:()=>runInContext(`(${JSON.stringify(initial)})`,context),setState:value=>{saved=structuredClone(value);},postMessage:value=>messages.push(structuredClone(value))});
+  assert.deepEqual(messages[0],{type:'ready',previewNavigation:{pages:initial.ui.pages,collapsed:initial.ui.collapsed}});
+  const node=(kind,id,children=[])=>({kind,identity:{source:'own',part:'current',key:{kind:'xml',value:String(id)}},properties:[],children,auxiliary:[]});
+  const root=node('Form',0,[node('Pages',1,[node('Page',2),node('Page',3)])]);
+  const incoming={type:'state',sequence:1,selection:root.identity,model:{root},previewNavigation:{pages:{'own:current:1':'own:current:3'},collapsed:{}}};
+  const receive=value=>listeners.get('message')({data:runInContext(`(${JSON.stringify(value)})`,context)});
+  receive(incoming);callback();
+  assert.equal(controller.state.ui.pages['own:current:1'],'own:current:3','root selection preserves the initialized page');
+  assert.equal(controller.state.ui.collapsed['own:current:10'],undefined,'remote state replaces the old collapsed map');
+  assert.equal(controller.state.ui.zoom,150);assert.equal(messages.length,1,'received navigation must not echo');
+  context.controller=controller;
+  runInContext("controller.ui('zoom',175);controller.ui('upper',320)",context);assert.equal(messages.length,1,'window layout stays local');
+  runInContext("controller.ui('collapsed',{'own:current:10':true})",context);
+  assert.deepEqual(messages.at(-1),{type:'previewNavigation',previewNavigation:{pages:{'own:current:1':'own:current:3'},collapsed:{'own:current:10':true}}});
+  const count=messages.length;receive({type:'previewNavigation',previewNavigation:{pages:{'own:current:1':'own:current:2'},collapsed:{}}});callback();
+  assert.equal(controller.state.ui.pages['own:current:1'],'own:current:2');assert.equal(controller.state.ui.zoom,175);assert.equal(controller.state.ui.upper,320);assert.equal(messages.length,count);
+  assert.equal(saved.ui.pages['own:current:1'],'own:current:2');assert.equal(saved.ui.collapsed['own:current:10'],undefined);
+  receive({type:'previewNavigation',previewNavigation:{pages:{invalid:2},collapsed:{}}});assert.equal(controller.state.ui.pages['own:current:1'],'own:current:2');
+  controller.dispose();
+});

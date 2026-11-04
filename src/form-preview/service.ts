@@ -17,6 +17,7 @@ const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
 type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
 interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean }
+interface PreviewNavigation { pages: Record<string, string>; collapsed: Record<string, boolean> }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
@@ -24,6 +25,13 @@ interface View {
   timer: ReturnType<typeof setTimeout> | undefined; suspended: boolean; closed: boolean; watchers: vscode.Disposable[]; watchKey: string;
   inputs: Map<string, string>; generation: string; activityKey: string; navigation: number;
   inputRoots: { wire: WirePath; path: string }[]; formInputs: Map<string, FormInputSource>;
+  previewNavigation?: PreviewNavigation;
+}
+function previewNavigation(value: unknown): PreviewNavigation | undefined {
+  if (!isRecord(value) || !isRecord(value.pages) || !isRecord(value.collapsed)
+    || !Object.entries(value.pages).every(([key, page]) => key.includes(":") && typeof page === "string" && page.includes(":"))
+    || !Object.entries(value.collapsed).every(([key, collapsed]) => key.includes(":") && typeof collapsed === "boolean")) return;
+  return { pages: { ...value.pages } as Record<string, string>, collapsed: { ...value.collapsed } as Record<string, boolean> };
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
 function inside(root: string, file: string): string | undefined {
@@ -89,7 +97,19 @@ export class FormPreviewService implements vscode.Disposable {
   }
   private async receive(view: View, frame: Frame, value: unknown): Promise<void> {
     if (view.closed || this.disposed || !isRecord(value)) return;
-    if (value.type === "ready") { frame.ready = true; this.publish(view); return; }
+    if (value.type === "ready") {
+      frame.ready = true;
+      view.previewNavigation ??= previewNavigation(value.previewNavigation) ?? { pages: {}, collapsed: {} };
+      this.publish(view, true, frame); return;
+    }
+    if (value.type === "previewNavigation") {
+      if (view.frames.get(frame.role) !== frame) return;
+      const navigation = previewNavigation(value.previewNavigation); if (!navigation) return;
+      view.previewNavigation = navigation;
+      for (const target of view.frames.values()) if (target !== frame && target.ready)
+        void target.panel.webview.postMessage({ type: "previewNavigation", previewNavigation: navigation });
+      return;
+    }
     if (value.type === "refresh") { if (!this.tree()) await this.ensureTree(); view.suspended = false; this.schedule(view, 0); return; }
     if (value.type === "select" && isIdentity(value.identity) && view.nodes.has(identityKey(value.identity))) {
       view.selected = value.identity;
@@ -258,9 +278,11 @@ export class FormPreviewService implements vscode.Disposable {
       view.watchers.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
     }
   }
-  private publish(view: View, model = true): void {
+  // Only the ready handshake initializes navigation; model refreshes retain live UI state.
+  private publish(view: View, model = true, initializeNavigation?: Frame): void {
     for (const frame of view.frames.values()) if (frame.ready) void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
       role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true,
+      ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
       ...(view.selected ? { selection: view.selected } : {}), ...(model && view.snapshot ? { model: view.snapshot.model } : {}) });
   }

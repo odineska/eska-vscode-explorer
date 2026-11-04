@@ -33,7 +33,7 @@ exports.run = async function () {
     const service = explorer.formPreview;
     await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    const ui = await frame({state:{title:panel.panel.title}});
+    let ui = await frame({state:{title:panel.panel.title}});
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-form-frame')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-form-content .taxi-button,.taxi-tabs > button')].every(button=>button.style.width||button.classList.contains('taxi-button--help')||button.classList.contains('taxi-button--picture'))"),'native captions allocated');
@@ -73,7 +73,15 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')"),'true');
       await ui.evaluate("document.querySelector('.taxi-group-title button').click()");
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input').length"),0);
-      await ui.evaluate("document.querySelector('.taxi-group-title button').click()");
+      await until(()=>Object.values(view.previewNavigation?.collapsed??{}).includes(true),'collapsed navigation acknowledged');
+      await service.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'collapsed group detached');
+      const floating=await frame({state:{title:view.frames.get('preview').panel.title}});
+      await until(()=>floating.evaluate("document.querySelectorAll('.taxi-input').length===0&&document.querySelector('.taxi-group-title button')?.getAttribute('aria-expanded')==='false'"),'new floating window retains collapsed state');
+      await ui.evaluate("globalThis.__sharedGroupNavigation=undefined;window.addEventListener('message',event=>{if(event.data.type==='previewNavigation')globalThis.__sharedGroupNavigation=event.data.previewNavigation})");
+      await floating.evaluate("document.querySelector('.taxi-group-title button').click()");
+      await until(()=>ui.evaluate("Object.values(globalThis.__sharedGroupNavigation?.collapsed??{}).includes(false)"),'floating expansion reaches the owner');
+      floating.close();await service.receive(view,view.frames.get('preview'),{type:'dock'});ui.close();ui=await frame({state:{title:panel.panel.title}});
+      await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===2"),'docked group stays expanded');
     }
     if(form.kind==='PagesAuto') {
       await ui.evaluate("document.querySelector('.taxi-form-title').click()");
@@ -94,9 +102,15 @@ exports.run = async function () {
     }
     if(form.kind==='PagesLeft') {
       const session=view.client.current.formSessionId;
+      await ui.evaluate("document.querySelectorAll('.taxi-tabs>[role=tab]')[1].click();document.querySelector('.taxi-form-title').click()");
+      await until(()=>view.selected?.key?.kind==='root'&&Object.values(view.previewNavigation?.pages??{}).some(page=>page.endsWith(':5')),'shared page retained with root selected');
+      const navigation=JSON.stringify(view.previewNavigation);
+      await service.receive(view,panel,{type:'previewNavigation',previewNavigation:{pages:{invalid:7},collapsed:{}}});assert.equal(JSON.stringify(view.previewNavigation),navigation,'malformed navigation rejected');
+      await service.receive(view,{...panel},{type:'previewNavigation',previewNavigation:{pages:{},collapsed:{}}});assert.equal(JSON.stringify(view.previewNavigation),navigation,'disposed/replaced frame navigation rejected');
       await service.receive(view,panel,{type:'detach'});
       await until(()=>view.frames.get('preview')?.ready,'separate page preview ready');
       const detachedUi=await frame({state:{title:view.frames.get('preview').panel.title}});
+      await until(()=>detachedUi.evaluate("document.querySelector('.taxi-tabs>[aria-selected=true]')?.textContent==='Second page'"),'new floating window keeps page while root selected');
       const second=[...view.nodes.values()].find(node=>node.identity.key.value==='30');assert.ok(second);
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+second.identity.source+':current:30')}).click()`);
       await until(async()=>await detachedUi.evaluate("document.querySelector('.taxi-tabs [aria-selected=true]')?.textContent==='Second page'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-field-label')?.textContent==='Second:'"),'tree selection reveals its page in the separate window');
@@ -183,6 +197,6 @@ exports.run = async function () {
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:!mismatches.length,formGroups:true,locale:vscode.env.language,sourceWritesDuringViewing:false,
-    pagesKeepAllocation:true,pageTreeSelectionDetached:true,dirtySelectedPageVisibility:true,nestedPageIsolation:true,results,mismatches}));
+    pagesKeepAllocation:true,detachedPageWithRootSelection:true,collapsedGroupHandoff:true,sharedGroupExpansion:true,pageTreeSelectionDetached:true,dirtySelectedPageVisibility:true,nestedPageIsolation:true,results,mismatches}));
   assert.deepEqual(mismatches,[]);
 };

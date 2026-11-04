@@ -60,14 +60,12 @@ exports.run=async()=>{
       await ui.evaluate(remember);await change(changed);results.push(await sample(ui,target,'dirty-FreshB'));await change(original);await until(()=>ready(ui,own),'tab inputs restored');assert.equal(await ui.evaluate(retained),true);
       await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'tab preview detached');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
       const workbench=(await floating.targets()).find(t=>t.type==='page'&&t.url==='about:blank');assert.ok(workbench);
-      // Select the reference page explicitly; transfer of local navigation state is a separate T163 check.
-      await until(()=>floating.evaluate("document.querySelectorAll('.taxi-tabs>[role=tab]').length===2"),'floating tab nodes');
-      await floating.evaluate("document.querySelectorAll('.taxi-tabs>[role=tab]')[1].click();document.querySelector('.taxi-form-title').click()");
+      await until(()=>ready(floating,own),'floating keeps active page with root selected');
       results.push(await sample(floating,own,'floating-FreshA',workbench.targetId));await floating.evaluate(remember);await change(changed);results.push(await sample(floating,target,'floating-dirty-FreshB',workbench.targetId));await change(original);await until(()=>ready(floating,own),'floating tab inputs restored');assert.equal(await floating.evaluate(retained),true);
       floating.close();detached.panel.dispose();ui.close();ui=await frame({state:{title:panel.panel.title}});results.push(await sample(ui,own,'reattached-FreshA'));
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'tab session released');await Promise.all([...explorer.formPreview.closing]);
   }
-  await explorer.shutdown();const report={passed:true,locale:vscode.env.language,tabBorders:true,forms:gallery.forms.length,nativeStates:47,nativeTabs:105,dirtyPalette:true,detachedPixels:true,localNavigationStateHandoffVerified:false,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
+  await explorer.shutdown();const report={passed:true,locale:vscode.env.language,tabBorders:true,forms:gallery.forms.length,nativeStates:47,nativeTabs:105,dirtyPalette:true,detachedPixels:true,localNavigationStateHandoffVerified:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
   if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`tab-borders-measured-${vscode.env.language}.json`),JSON.stringify(report));await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
 };
