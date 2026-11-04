@@ -1,5 +1,5 @@
 /** LCD glyphs blend separately: rounding a combined mask changes overlapping pixels. */
-export function lcdCaptionPixels(raster, foreground, background) {
+export function lcdCaptionPixels(raster, foreground, background, underline = false) {
   if ([foreground, background].some(rgb => rgb.length !== 3 || rgb.some(value => !Number.isInteger(value) || value < 0 || value > 255))) {
     throw new Error('font-raster-color');
   }
@@ -16,6 +16,16 @@ export function lcdCaptionPixels(raster, foreground, background) {
         const back = rgba[index + channel], alpha = glyph.coverage[source + channel];
         rgba[index + channel] = Math.round(back + (foreground[channel] - back) * alpha / 255);
       }
+    }
+  }
+  // The calibrated Taxi link draws one solid row at the baseline across the advance.
+  if (underline) {
+    const y = raster.ascent - raster.originY;
+    if (y >= 0 && y < raster.height) for (let pen = 0; pen < raster.advance; pen++) {
+      const x = pen - raster.originX;
+      if (x < 0 || x >= raster.width) continue;
+      const index = (y * raster.width + x) * 4;
+      for (let channel = 0; channel < 3; channel++) rgba[index + channel] = foreground[channel];
     }
   }
   return rgba;

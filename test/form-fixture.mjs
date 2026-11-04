@@ -338,3 +338,8 @@ export async function createButtonTypesSource(fixture, input = process.env.ESKA_
   const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
   return {path:join(fixture.source,'CommonForms','ProbeButtons','Ext','Form.xml'),controls:matrix.controls,sources:matrix.files.map(file=>join(fixture.source,file.path.slice('source/'.length)))};
 }
+
+export async function createButtonLinksSource(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  const result=await createButtonTypesSource(fixture,input);
+  return {...result,linkPixels:JSON.parse(await readFile(join(input,'link-pixels.json'),'utf8'))};
+}
