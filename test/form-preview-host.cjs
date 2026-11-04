@@ -44,7 +44,7 @@ async function run() {
   await ui.evaluate("document.querySelector('.taxi-input').click()");
   await until(()=>view.selected?.key?.value===first.identity.key.value,'click selection reaches the extension host');
   assert.equal(view.selected.key.value, first.identity.key.value);
-  await service.receive(view, main, { type: 'detach' });
+  await Promise.all([service.receive(view, main, { type: 'detach' }),service.receive(view, main, { type: 'detach' })]);
   await until(() => view.frames.has('preview') && view.frames.get('preview').ready, 'detached panel ready');
   const detached = view.frames.get('preview');
   const detachedUi = await frame({ state: { title: detached.panel.title } });
@@ -52,6 +52,15 @@ async function run() {
   const targets = await detachedUi.targets();
   const floating=targets.find(target=>target.type==='page'&&target.url==='about:blank');assert.ok(floating,'native floating workbench exists');
   await detachedUi.captureTarget(floating.targetId,`form-detached-${vscode.env.language}.png`);
+  await detachedUi.evaluate("globalThis.__repeatPreviewRoot=document.querySelector('.taxi-form-frame')");
+  const floatingIds=targets.filter(target=>target.type==='page'&&target.url==='about:blank').map(target=>target.targetId).sort();
+  assert.equal(floatingIds.length,1,'concurrent requests open one native preview window');
+  main.panel.reveal(undefined,false);await ui.focusWorkbench();
+  await service.receive(view,main,{type:'detach'});
+  assert.equal(view.frames.get('preview'),detached,'repeat keeps the preview panel');
+  assert.deepEqual((await detachedUi.targets()).filter(target=>target.type==='page'&&target.url==='about:blank').map(target=>target.targetId).sort(),floatingIds,'repeat keeps the native window');
+  assert.equal(await detachedUi.evaluate("globalThis.__repeatPreviewRoot===document.querySelector('.taxi-form-frame')"),true,'repeat keeps the rendered preview');
+
   await replace(document, 'Изменение без сохранения', 'Оба окна');
   await until(async () => await detachedUi.evaluate("document.querySelector('.taxi-field-label')?.textContent.includes('Оба окна')"), 'dirty update in detached window');
   const revision = view.snapshot.revision;
@@ -113,7 +122,7 @@ async function run() {
   await Promise.all([...service.closing]);
   await assert.rejects(()=>explorer.connection.request(view.tree.session.sessionId,'form/get',{projectId:view.entry.project.info.projectId,generation:view.entry.project.info.generation,formSessionId:sessionId}), error=>error.details?.reason==='unknown_form_session');
   await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, dirty: true, incompleteMarkDirtyXml: true, detached: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, dirty: true, incompleteMarkDirtyXml: true, detached: true, repeatedDetachFocus: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
 }
 
 exports.run = async function () {

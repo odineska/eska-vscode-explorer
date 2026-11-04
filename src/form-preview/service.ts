@@ -131,7 +131,9 @@ export class FormPreviewService implements vscode.Disposable {
   }
   /** The native command targets only our active preview panel, after checking its identity and command availability. */
   private async detach(view: View): Promise<void> {
-    const frame = view.frames.get("preview") ?? this.frame(view, "preview"); frame.panel.reveal(vscode.ViewColumn.Beside, false); this.publish(view);
+    const existing = view.frames.get("preview");
+    if (existing) { existing.panel.reveal(undefined, false); return; }
+    const frame = this.frame(view, "preview"); frame.panel.reveal(vscode.ViewColumn.Beside, false); this.publish(view);
     if ((await vscode.commands.getCommands(true)).includes("workbench.action.moveEditorToNewWindow") && frame.panel.active) {
       await vscode.commands.executeCommand("workbench.action.moveEditorToNewWindow");
     } else { view.notice = this.strings().floatFailed!; this.publish(view); }
