@@ -81,10 +81,16 @@ export function CommandButton(props) {
     automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
+  createEffect(() => {
+    const report = props.onPreferredButtonWidth, value = measuredWidth();
+    if (!report) return;
+    report(value ? parseFloat(value) : undefined);
+    onCleanup(() => report(undefined));
+  });
   return <button ref={button} type="button" classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(),
     'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
-    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), color: foreground(), 'background-color': color(background()), ...metrics(), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : measuredWidth() }}
+    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), color: foreground(), 'background-color': color(background()), ...metrics(), width: number(props.node, 'Width') > 0 ? `${number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
     <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><NativeCaption text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/></Show>
@@ -124,10 +130,30 @@ export function Preview(props) {
 }
 export function Items(props) {
   const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping);
-  return <div classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible' }}>
-    <For each={props.node.children}>{node => <Element node={node} controller={props.controller}/>}</For>
+  const children = () => props.node.children.filter(node => node.presentation.displayed);
+  const uniform = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
+    && children().length > 0 && children().every(node => node.kind === 'Button'
+      && scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
+  const [widths, setWidths] = createSignal({});
+  const preferred = (key, value) => setWidths(previous => {
+    if (previous[key] === value) return previous;
+    const result = {...previous};
+    if (value === undefined) delete result[key]; else result[key] = value;
+    return result;
+  });
+  const width = () => uniform() ? Math.max(0, ...children().map(node => widths()[node.key] ?? 0)) : undefined;
+  const height = node => {
+    const value = buttonMetrics(node.presentation.font);
+    return Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2);
+  };
+  const maximumHeight = () => uniform() ? Math.max(...children().map(height)) : 0;
+  return <div classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform() }}>
+    <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
+      uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
+      usualButtonOffset={uniform() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
   </div>;
 }
+
 function Pages(props) {
   const node = () => props.node, state = props.controller.state;
   const pages = () => node().children.filter(node => node.presentation.displayed);
@@ -242,7 +268,7 @@ export function Element(props) {
   const node = () => props.node, state = props.controller.state;
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
   return <Show when={node().presentation.displayed}><div data-element={node().key} data-kind={node().kind} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
-    style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}
+    style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground), top: props.usualButtonOffset }}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>
       <Match when={group()}><Group {...props}/></Match>

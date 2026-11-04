@@ -362,3 +362,7 @@ button { cursor: default; }
 
 /* Include the choice border outset when the field determines an intrinsic column. */
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready]:has(> .taxi-input-button) { margin-right: 1px; }
+
+/* Usual buttons share their widest automatic allocation within a horizontal row. */
+.taxi-preview[data-os=linux] .taxi-items--usual-buttons { gap: 10px; }
+.taxi-preview[data-os=linux] .taxi-items--usual-buttons > .taxi-element { display: flex; padding: 1px 0 2px; }
