@@ -44,12 +44,12 @@ export function Table(props) {
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
   return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar">
-      <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.Copy' : undefined}/>}</For>
-      <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} iconOnly/>}</For></span></Show>
+      <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.CloneListItem' : undefined}/>}</For>
+      <Show when={movement().length}><span class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For></span></Show>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <span class="taxi-command-spacer"/>
       <Show when={layout().search}><TableSearch node={layout().search} controller={props.controller}/></Show>
-      <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.Find" iconOnly dropdown/></Show>
+      <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.SearchControl" iconOnly dropdown nativeDropdown/></Show>
       <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/></Show>
     </div></Show>
     <ViewStatus node={node()} controller={props.controller}/>

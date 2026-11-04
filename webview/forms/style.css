@@ -259,6 +259,8 @@ button { cursor: default; }
 .taxi-table-command-bar > .taxi-button { padding-left: 13px; padding-right: 13px; }
 .taxi-table-command-bar > .taxi-button--dropdown { padding-left: 8px; padding-right: 8px; }
 .taxi-table-command-bar > .taxi-button--icon-only { padding-left: 0; padding-right: 0; }
+.taxi-preview[data-os=linux] .taxi-table-command-bar > .taxi-button--icon-only > canvas[data-native-picture=ready] { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] .taxi-table-command-bar > .taxi-button--icon-only.taxi-button--dropdown > canvas[data-native-picture=ready] { left: -2px; }
 .taxi-table-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 .taxi-table-move { display: inline-flex; margin-left: 11px; }
 .taxi-table-move .taxi-button:first-child { border-radius: 2px 0 0 2px; }

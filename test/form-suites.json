@@ -805,7 +805,8 @@
         "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels",
         "ESKA_FORM_TABLE_MENU_PIXELS": "native-table-bars",
         "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search",
-        "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields"
+        "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields",
+        "ESKA_FORM_TABLE_PICTURE_PIXELS": "native-standard-pictures"
       },
       "environment": {},
       "dependencies": [
@@ -870,6 +871,26 @@
       ],
       "fixtureEnv": {
         "ESKA_FORM_FIXTURES": "native-form-titles"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "standard-pictures",
+      "driver": "test/form-standard-pictures-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-standard-pictures"
       },
       "environment": {},
       "dependencies": [

@@ -14,9 +14,17 @@ import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
+import { standardPicture } from './standard-pictures.mjs';
+import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
 export function Icon(props) {
-  return <svg class="taxi-icon" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
+  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
+  return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
+    {image => <NativeStandardPicture image={image()}/>}
+  </Show>;
+}
+function BrowserIcon(props) {
+  return <svg class="taxi-icon" data-native-picture="browser" viewBox="0 0 16 16" aria-hidden="true"><Switch fallback={<><rect x="2" y="2" width="12" height="12" rx="1" fill="#fff" stroke="#999"/><path d="M4 5h8M4 8h8M4 11h5" stroke="#658996"/></>}>
     <Match when={/Add|Create|Plus/.test(props.name)}><circle cx="8" cy="8" r="6" fill="#82ad59" stroke="#587f31"/><path d="M8 4v8M4 8h8" stroke="#fff" stroke-width="2"/></Match>
     <Match when={/Delete|Remove/.test(props.name)}><path d="M4 4l8 8M12 4l-8 8" stroke="#c64b34" stroke-width="2"/></Match>
     <Match when={/Write|Save/.test(props.name)}><path d="M2 2h11l1 1v11H2z" fill="#67a4bf" stroke="#567d90"/><path d="M4 2h6v4H4zM4 9h8v5H4z" fill="#fff" stroke="#83979f"/></Match>
@@ -25,7 +33,7 @@ export function Icon(props) {
     <Match when={/MoveDown/.test(props.name)}><path d="M6 3v6H3l5 5 5-5h-3V3z" fill="#3ea4d1" stroke="#257dab" stroke-width=".7"/></Match>
     <Match when={/Up|Back/.test(props.name)}><path d="M12 3L4 8l8 5z" fill="#729ab0"/></Match>
     <Match when={/Down|Forward/.test(props.name)}><path d="M4 3l8 5-8 5z" fill="#729ab0"/></Match>
-    <Match when={/Copy/.test(props.name)}><path d="M5 1h6l3 3v9H5zM11 1v3h3" fill="#fff" stroke="#829fb0"/><circle cx="4" cy="11" r="4" fill="#60ad48" stroke="#428931"/><path d="M4 8v6M1 11h6" stroke="#fff"/></Match>
+    <Match when={/Copy|CloneListItem|CloneObject/.test(props.name)}><path d="M5 1h6l3 3v9H5zM11 1v3h3" fill="#fff" stroke="#829fb0"/><circle cx="4" cy="11" r="4" fill="#60ad48" stroke="#428931"/><path d="M4 8v6M1 11h6" stroke="#fff"/></Match>
     <Match when={/Find|Search/.test(props.name)}><circle cx="6" cy="6" r="4" fill="none" stroke="#3287b7" stroke-width="1.5"/><path d="M9 9l4 4" stroke="#3287b7" stroke-width="2"/></Match>
     <Match when={/Calculator/.test(props.name)}><rect x="4" y="2" width="8" height="12" rx="1" fill="#fff" stroke="#777"/><path d="M5 4h6M5 7h1m1 0h1m1 0h1M5 9h1m1 0h1m1 0h1M5 11h1m1 0h1m1 0h1" stroke="#777"/></Match>
     <Match when={/Calendar/.test(props.name)}><rect x="3" y="3" width="10" height="10" rx="1" fill="#fff" stroke="#777"/><path d="M3 6h10M5 2v3m6-3v3M5 8h1m2 0h1m2 0h1M5 10h1m2 0h1m2 0h1" stroke="#777"/></Match>
@@ -36,7 +44,7 @@ export function Icon(props) {
 function Picture(props) {
   const picture = () => props.node.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
-  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name}/></Match>
+  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
     <Match when={picture()?.kind === 'common' && image()}><img class="taxi-picture-resource" src={`data:${image().mimeType};base64,${image().data}`} alt="" draggable="false"/></Match>
   </Switch>;
 }
@@ -53,8 +61,9 @@ export function CommandButton(props) {
     && !picture() && !props.dropdown && !props.menu && flag(props.node, 'Enabled');
   const primary = () => (props.primary || flag(props.node, 'DefaultButton', false))
     && !(props.controller.state.os === 'linux' && property(props.node, 'BackColor'));
-  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && !props.iconOnly && (!props.dropdown || props.nativeDropdown)
-    && !link() && representation() !== 'Picture' && !picture()
+  const nativeIcon = createMemo(() => props.iconOnly && !!standardPicture(props.picture, props.pictureVariant));
+  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!props.iconOnly || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
+    && !link() && (representation() !== 'Picture' || nativeIcon()) && (!picture() || nativeIcon())
     && (primary() || flag(props.node, 'Enabled'));
   const background = () => props.controller.state.os === 'linux' && primary()
     ? props.controller.state.model.importantColor : props.node?.presentation.background;
@@ -84,6 +93,7 @@ export function CommandButton(props) {
       }
       return { padding: '0 1px' };
     }
+    if (props.controller.state.os === 'linux' && nativeIcon()) return { 'background-image': backgroundImage() };
     if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || link() || representation() === 'Picture') return {};
     if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
@@ -106,7 +116,7 @@ export function CommandButton(props) {
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture} variant={props.pictureVariant} os={!props.node || flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
     <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;

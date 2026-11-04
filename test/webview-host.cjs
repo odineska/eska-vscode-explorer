@@ -111,6 +111,12 @@ async function frame(tab) {
     },
     /** Bring only the task's main workbench to the foreground for native editor commands. */
     async focusWorkbench() { await send('Page.bringToFront'); },
+    /** Leave native HTML tooltips outside the measured form before a pixel capture. */
+    async parkPointer(targetId) {
+      const session=targetId?await send('Target.attachToTarget',{targetId,flatten:true}):undefined;
+      try { await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0,button:'none'},session?.sessionId); }
+      finally { if(session)await send('Target.detachFromTarget',{sessionId:session.sessionId}); }
+    },
     /** Capture a specific floating workbench from this task's debugging endpoint. */
     async captureTarget(targetId, name, withData = false) {
       if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
