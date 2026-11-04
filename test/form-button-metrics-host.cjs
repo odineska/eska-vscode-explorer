@@ -64,8 +64,7 @@ exports.run = async () => {
       }
       const type = '<Type>CommandBarButton</Type>';
       await change(original.replace(type, type + '<DefaultButton>true</DefaultButton>'));
-      await until(async () => await ui.evaluate("document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !document.querySelector('.taxi-button').style.backgroundImage"), 'primary button releases plain fill');
-      assert.equal(await ui.evaluate("document.querySelector('.taxi-button [data-native-caption]').dataset.nativeCaption"), 'browser');
+      await until(async () => await ui.evaluate("(() => {const button=document.querySelector('.taxi-button'),style=getComputedStyle(button);return button.classList.contains('taxi-button--default')&&!!button.style.backgroundImage&&style.backgroundColor==='rgb(255, 225, 0)'&&style.color==='rgb(71, 71, 71)'&&button.querySelector('[data-native-caption]').dataset.nativeCaption==='ready';})()"), 'primary button retains native fill and contrast caption');
       await change(original);
       await until(async () => await ui.evaluate("!document.querySelector('.taxi-button').classList.contains('taxi-button--default') && !!document.querySelector('.taxi-button').style.backgroundImage"), 'plain fill restored');
       await until(captionsReady, 'plain WASM caption restored');
