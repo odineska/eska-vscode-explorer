@@ -1,0 +1,145 @@
+const MAX_FONT_BYTES = 4 * 1024 * 1024;
+const MAX_TEXT_WIDTH = 8192;
+const MAX_ROTATED_PIXELS = 4 * 1024 * 1024;
+
+function supportedText(text,pixels){
+  return typeof text==='string'&&text.length<=4096&&!/[\p{Mark}\p{Format}\p{Control}]/u.test(text)
+    &&/^[\p{Script=Latin}\p{Script=Cyrillic}\p{Number}\p{Punctuation}\p{Separator}\p{Symbol}]*$/u.test(text)
+    &&Number.isInteger(pixels)&&pixels>=1&&pixels<=128;
+}
+
+
+/** Owns the module, memory-backed font files and reusable glyph-slot header. */
+export function createFontRaster(bytes) {
+  const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {
+    env: { emscripten_notify_memory_growth() {} },
+    wasi_snapshot_preview1: { fd_close: () => 8, fd_read: () => 8 },
+  });
+  const api = instance.exports;
+  api._initialize();
+  let library = api.eska_ft_init();
+  if (!library || api.eska_ft_version(library) !== 0x020d02) throw new Error('font-raster-version');
+  let header = api.eska_ft_alloc(48);
+  if (!header) { api.eska_ft_done(library); throw new Error('font-raster-memory'); }
+  const faces = new Set();
+  function open(bytes) {
+    if (!library) throw new Error('font-raster-disposed');
+    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > MAX_FONT_BYTES) throw new Error('font-raster-input');
+    const data = api.eska_ft_alloc(bytes.length);
+    if (!data) throw new Error('font-raster-memory');
+    // Never retain a view across a WASM call: growing memory detaches old views.
+    new Uint8Array(api.memory.buffer).set(bytes, data);
+    let handle = api.eska_ft_open(library, data, bytes.length);
+    if (!handle) { api.eska_ft_free(data); throw new Error('font-raster-font'); }
+    const face = {
+      raster(text, pixels, ascent, descent, mode = 'gray', advances) {
+        if (!handle) throw new Error('font-raster-disposed');
+        if (!supportedText(text,pixels)
+            || !Number.isInteger(ascent) || !Number.isInteger(descent) || ascent < 1 || descent < 0 || ascent + descent > 256
+            || !['gray', 'lcd'].includes(mode)) {
+          throw new Error('font-raster-text');
+        }
+        if (advances !== undefined && (!Array.isArray(advances) || advances.length !== [...text].length
+            || [...advances].some(advance => !Number.isInteger(advance) || advance < 0 || advance > 4096))) {
+          throw new Error('font-raster-advances');
+        }
+        if (api.eska_ft_size(handle, pixels)) throw new Error('font-raster-size');
+        const glyphs = [];
+        let width = 0, inkLeft = Infinity, inkRight = -Infinity, inkTop = 0, inkBottom = ascent + descent, bitmapLeft = 0, bitmapRight = 0, previous, position = 0;
+        for (const char of text) {
+          const codepoint = char.codePointAt(0);
+          if (!advances && previous !== undefined) width += api.eska_ft_kerning(handle, previous, codepoint);
+          previous = codepoint;
+          if (api.eska_ft_glyph(handle, codepoint, header)) throw new Error('font-raster-glyph');
+          const fields = [...new Int32Array(api.memory.buffer, header, 12)];
+          const [advance, bearingX, , inkWidth, , left, top, columns, rows, pitch, address, pixelMode] = fields;
+          if (pixelMode !== 5 || advance < 0 || advance % 64 || columns < 0 || columns > 4096 || rows < 0 || rows > 4096
+              || pitch < columns * 3 || address < 0 || address + pitch * rows > api.memory.buffer.byteLength) {
+            throw new Error('font-raster-bitmap');
+          }
+          if (width + (advances?.[position] ?? advance / 64) > MAX_TEXT_WIDTH || width + (advances?.[position] ?? advance / 64) < 0) throw new Error('font-raster-width');
+          const coverage = new Uint8Array(columns * rows * (mode === 'lcd' ? 3 : 1));
+          for (let y = 0; y < rows; y++) {
+            const source = new Uint8Array(api.memory.buffer, address + y * pitch, columns * 3);
+            if (mode === 'lcd') coverage.set(source, y * columns * 3);
+            else for (let x = 0; x < columns; x++) coverage[y * columns + x] = source[x * 3];
+          }
+          if (columns) {
+            inkLeft = Math.min(inkLeft, width + bearingX / 64);
+            inkRight = Math.max(inkRight, width + (bearingX + inkWidth) / 64);
+            inkTop = Math.min(inkTop, ascent - top);
+            inkBottom = Math.max(inkBottom, ascent - top + rows);
+            bitmapLeft = Math.min(bitmapLeft, width + left);
+            bitmapRight = Math.max(bitmapRight, width + left + columns);
+          }
+          glyphs.push({ pen: width, left, top, columns, rows, coverage });
+          width += advances?.[position++] ?? advance / 64;
+        }
+        const height = inkBottom - inkTop;
+        if (height > 512) throw new Error('font-raster-height');
+        if (mode === 'lcd') return { width: Math.max(width, bitmapRight) - bitmapLeft, advance: width, height,
+          ascent, descent, originX: bitmapLeft, originY: inkTop, inkLeft, inkRight, glyphs };
+        const alpha = new Uint8Array(width * height);
+        const clipLeft = Math.max(0, inkLeft), clipRight = Math.min(width, inkRight);
+        for (const glyph of glyphs) {
+          for (let y = 0; y < glyph.rows; y++) {
+            const ty = ascent - glyph.top + y - inkTop;
+            if (ty < 0 || ty >= height) continue;
+            for (let x = 0; x < glyph.columns; x++) {
+              const tx = glyph.pen + glyph.left + x;
+              if (tx < clipLeft || tx >= clipRight) continue;
+              const index = ty * width + tx;
+              // Configurator adds LCD red-channel coverage before one tint pass.
+              alpha[index] = Math.min(255, alpha[index] + glyph.coverage[y * glyph.columns + x]);
+            }
+          }
+        }
+        return { width, height, ascent, descent, originY: inkTop, alpha };
+      },
+      /** Native 45-degree chart labels use red LCD coverage and one final tint. */
+      rotated(text, pixels) {
+        if (!handle) throw new Error('font-raster-disposed');
+        if (!supportedText(text,pixels)) throw new Error('font-raster-text');
+        if (api.eska_ft_size(handle,pixels)) throw new Error('font-raster-size');
+        const glyphs=[];let penX=0,penY=0,left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity,previous;
+        for(const char of text){
+          const codepoint=char.codePointAt(0);
+          if(previous!==undefined){const kern=api.eska_ft_kerning(handle,previous,codepoint),shift=Math.round(kern*64*46340/65536);penX+=shift;penY+=shift;}
+          previous=codepoint;
+          if(api.eska_ft_rotated_glyph(handle,codepoint,header))throw new Error('font-raster-glyph');
+          const [advanceX,advanceY,,,,bearingX,bearingY,columns,rows,pitch,address,pixelMode]=[...new Int32Array(api.memory.buffer,header,12)];
+          if(pixelMode!==5||advanceX<0||advanceY<0||columns<0||columns>4096||rows<0||rows>4096||pitch<columns*3||address<0||address+pitch*rows>api.memory.buffer.byteLength)throw new Error('font-raster-bitmap');
+          const x=Math.ceil(penX/64)+bearingX,y=Math.ceil(-penY/64)-bearingY,coverage=new Uint8Array(columns*rows);
+          for(let row=0;row<rows;row++){const source=new Uint8Array(api.memory.buffer,address+pitch*row,columns*3);for(let col=0;col<columns;col++)coverage[row*columns+col]=source[col*3];}
+          if(columns&&rows){left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x+columns);bottom=Math.max(bottom,y+rows);}
+          glyphs.push({x,y,columns,rows,coverage});penX+=advanceX;penY+=advanceY;
+          if(penX>MAX_TEXT_WIDTH*64||penY>MAX_TEXT_WIDTH*64)throw new Error('font-raster-width');
+        }
+        if(!Number.isFinite(left))return{width:0,height:0,originX:0,originY:0,advanceX:penX,advanceY:penY,alpha:new Uint8Array(0)};
+        const width=right-left,height=bottom-top;
+        if(width>MAX_TEXT_WIDTH||height>MAX_TEXT_WIDTH||width*height>MAX_ROTATED_PIXELS)throw new Error('font-raster-surface');
+        const alpha=new Uint8Array(width*height);
+        for(const g of glyphs)for(let y=0;y<g.rows;y++)for(let x=0;x<g.columns;x++){
+          const index=(g.y+y-top)*width+g.x+x-left;alpha[index]=Math.min(255,alpha[index]+g.coverage[y*g.columns+x]);
+        }
+        return{width,height,originX:left,originY:top,advanceX:penX,advanceY:penY,alpha};
+      },
+      dispose() {
+        if (!handle) return;
+        api.eska_ft_close(handle); handle = 0;
+        api.eska_ft_free(data); faces.delete(face);
+      },
+    };
+    faces.add(face);
+    return face;
+  }
+  return {
+    open,
+    dispose() {
+      if (!library) return;
+      for (const face of faces) face.dispose();
+      api.eska_ft_free(header); header = 0;
+      api.eska_ft_done(library); library = 0;
+    },
+  };
+}

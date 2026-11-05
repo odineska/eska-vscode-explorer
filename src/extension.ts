@@ -1,3 +1,4 @@
+import { FormPreviewService } from "./form-preview/service.js";
 import { FormattingService } from "./formatting/service.js";
 import { QueryDesigner } from "./query/designer.js";
 import { SupportContexts } from "./support-contexts.js";
@@ -65,6 +66,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly language: LanguageService;
   private readonly formatting: FormattingService;
   private readonly queryDesigner: QueryDesigner;
+  private readonly formPreview: FormPreviewService;
   private readonly legacyNotices = new Set<string>();
   private readonly view: vscode.TreeView<Element>;
   private readonly treeReads = new Set<Promise<Element[]>>();
@@ -141,6 +143,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     void this.tooling.ensureFormatter(undefined, false).catch(() => {});
     this.language.attachQueries(new QueryLanguage(this.queries, value => this.output.warn(value)));
     this.queryDesigner = new QueryDesigner(context, this.queries, value => this.output.warn(value));
+    this.formPreview = new FormPreviewService(context, this.connection, () => this.tree, async () => { if (!this.tree) await this.connect(false); return this.tree; },
+      () => this.language.selectedApplication, () => this.treeLanguage, path => this.support.resolveUri(path), value => this.output.warn(value));
     this.setup = new BackendSetup(context, (text, level) => { if (!this.disposed) this.output[level ?? "info"](text); },
       () => this.connection.disconnect(), () => this.connect(false));
     this.disposables.push(this.setup);
@@ -182,7 +186,9 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openXml", (entry: TreeEntry) => this.open(entry, "xml")));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.properties", (entry: TreeEntry) => this.showProperties(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openFormSource", (entry: FormSource) =>
-      this.open(entry.owner, entry.target)));
+      entry.target === "form" ? this.openForm(entry.owner) : this.open(entry.owner, entry.target)));
+    this.disposables.push(vscode.commands.registerCommand("eska.explorer.previewForm", (entry?: TreeEntry | FormSource) => this.openForm(entry)));
+    this.disposables.push(vscode.commands.registerCommand("eska.explorer.openFormXml", (entry: TreeEntry | FormSource) => this.open("owner" in entry ? entry.owner : entry, "form")));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openQuery", async (entry: QueryEntry) => {
       if (!this.tree || entry?.queryKind !== "query") return;
       try { await this.queries.show(this.tree, entry.owner, entry.header.identity); }
@@ -803,6 +809,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Activate properties or a resolved source, preserving unsaved buffers and rejecting stale positions. */
   private async open(entry: TreeEntry, target: SourceTarget = "default", property?: PropertyChoice): Promise<void> {
+    if (target === "default" && entry && isForm(entry)) { await this.openForm(entry); return; }
     const tree = this.tree;
     if (!tree || !entry || !("node" in entry) || !tree.projects.includes(entry.project)) return;
     const opening = ++this.opening;
@@ -829,6 +836,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         this.showError(error instanceof ExplorerError ? error : new ExplorerError("sourceMissing"));
       }
     }
+  }
+
+  private async openForm(value?: TreeEntry | FormSource): Promise<void> {
+    if (!this.tree) await this.connect(false);
+    const tree = this.tree; if (!tree) return;
+    try {
+      const source = value ?? (vscode.window.activeTextEditor?.document.uri.scheme === "file" ? await revealFile(tree, vscode.window.activeTextEditor.document.uri.fsPath) : undefined);
+      const entry = source && "owner" in source ? source.owner : source;
+      if (entry && isForm(entry)) await this.formPreview.show(entry);
+    } catch (error) { this.showError(error instanceof ExplorerError ? error : new ExplorerError("requestFailed")); }
   }
 
   /** Open a dedicated settings-style editor tab for this metadata object. */
@@ -1057,6 +1074,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private update(state: ConnectionState): void {
     if (this.disposed) return;
     this.queries.stale();
+    this.formPreview.changed(undefined);
     this.supportContextsPending = this.supportContexts.stop(); this.supportContextsKey = undefined;
     if (state.kind !== "ready") this.languagePolicyRoots = [];
     this.searchView?.dispose();
@@ -1074,12 +1092,13 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if (state.kind === "ready") {
       const tree = new MetadataTree(this.connection, state.session,
         (entries) => { this.support.invalidate(); this.decorations.invalidate(); this.propertiesTabs.changed(tree, entries);
-          this.protectedSources.refresh();
+          this.protectedSources.refresh(); this.formPreview.changed(tree);
           void this.repaint(entries); }, (project, reopen) => this.recover(project, reopen), async () => {
           if (this.tree !== tree) return;
           for (const watcher of this.projectWatchers.values()) await watcher.flush();
         });
       this.tree = tree;
+      this.formPreview.changed(tree);
       if (this.projectGroups?.workspace !== state.target.path) this.projectGroups = new ProjectGroups(state.target.path);
       this.projectGroups.update(this.visibleProjects(tree));
       this.files = new WorkspaceFiles(tree.projects, state.target.path, watchDirectory, entry => {
@@ -1155,7 +1174,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       for (const watcher of this.projectWatchers.values()) watcher.dispose(); this.projectWatchers.clear();
       this.view.dispose();
       this.changed.dispose();
-      const other = Promise.allSettled([this.formatting.shutdown(), this.supportContexts.stop(), this.support.shutdown(), this.setup.shutdown(), this.tooling.shutdown()]);
+      const other = Promise.allSettled([this.formPreview.shutdown(), this.formatting.shutdown(), this.supportContexts.stop(), this.support.shutdown(), this.setup.shutdown(), this.tooling.shutdown()]);
       const queries = this.queryDesigner.shutdown().then(() => Promise.allSettled([this.queries.shutdown()]));
       this.stopping = (async () => {
         const language = await Promise.allSettled([this.language.shutdown()]);

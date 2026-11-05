@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { downloadAsset, fetchBytes, hostTarget, parseRelease } from "../out/tooling/releases.js";
 import { installAnalyzer, installComponent } from "../out/tooling/install.js";
 import { inspectAnalyzer } from "../out/tooling/inspect.js";
+import { prepareFormReferences } from "./form-references.mjs";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const playground = resolve(process.env.ESKA_TEST_ROOT ?? join(repository, "../eska-playground"));
@@ -56,8 +57,12 @@ if (local && process.env.ESKA_TEST_ANALYZER_BINARY) {
 }
 const analyzer = await installAnalyzer(prefix, analyzerData, analyzerRelease, join(repository, "resources/analyzer-notices"));
 assert.deepEqual(await installAnalyzer(prefix, analyzerData, analyzerRelease, join(repository, "resources/analyzer-notices")), analyzer);
+const references = !local || process.env.ESKA_TEST_REFERENCE_ROOT
+  ? await prepareFormReferences(root, projectRelease.version, process.env.ESKA_TEST_REFERENCE_ROOT)
+  : undefined;
 const environment = { ESKA_TEST_ROOT: playground, ESKA_TEST_BINARY: project.path,
   ESKA_TEST_ANALYZER_BINARY: analyzer.path, ESKA_TEST_PYTHON_TOOLS: pythonTools, ESKA_TEST_LANGUAGE: "1" };
+if (references) environment.ESKA_TEST_REFERENCE_ROOT = references.path;
 await writeFile(join(root, "environment.json"), JSON.stringify(environment, null, 2) + "\n");
 if (process.env.GITHUB_ENV) {
   for (const [name, value] of Object.entries(environment)) {
@@ -65,4 +70,4 @@ if (process.env.GITHUB_ENV) {
     await appendFile(process.env.GITHUB_ENV, `${name}=${value}\n`);
   }
 }
-console.log(JSON.stringify({ root, project: project.version, analyzer: analyzer.version, environment }));
+console.log(JSON.stringify({ root, project: project.version, analyzer: analyzer.version, references, environment }));

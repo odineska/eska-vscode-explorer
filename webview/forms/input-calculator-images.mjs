@@ -1,0 +1,23 @@
+// Native 8.3.27 Linux raster variants when the standard image does not fit.
+export const smallCalculatorImages = {
+  "9:0": {
+    "size": 9,
+    "gray": "ffffffffffffffffffffcf8e9b9b9b98ffffffc7879b9b9b88ffffffc7bfd3cec69bffffffc7c2d8d2cd9bffffffc7c4ddd89b9bffffffcbadc4c2bf99fffffff1cbc7c7c7dcffffffffffffffffffffff"
+  },
+  "12:0": {
+    "size": 12,
+    "gray": "ffffffffffffffffffffffffffffc0a6a6a6a6a6a9ffffffffff7bd2d2d2d2d270ffffffffff7a7a7a7a7a7a58ffffffffff7ae9d2bce9d27affffffffff7af4e9ddf4e97affffffffff7addbd9bd2a67affffffffff7ae9d2bcd2a67affffffffff7af4e9ddf4e97affffffffffb17a7a7a7a7a8fffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "13:0": {
+    "size": 13,
+    "gray": "ffffffffffffffffffffffffffffffdec2c2c2c2c2c2d0ffffffffff9ba1b4b4b4b4b472ffffffffff99696f6f6f6f6f6fffffffffff99ddf8fdfcfaff6fffffffffff99dd82dcbea0fa6fffffffffff99dda9e7d2befc6fffffffffff99ddd1f2e77df86fffffffffff99dd5bd1a97df86fffffffffff9dc3dddddddddd75ffffffffffd19c9898989898beffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "15:0": {
+    "size": 15,
+    "gray": "fffffffffffffffffffffffffffffffffffceeededededededeefbffffffffffe25a6b6b6b6b6b6b5bd7ffffffffffe16dd5d5d5d5d5d576d5ffffffffffe15a8282828282825dd5ffffffffffe177ebd6e3dedae782d5ffffffffffe177e1bfd3cdc6da82d5ffffffffffe177e4c7d8d2cdde82d5ffffffffffe177e8ceded89abe82d5ffffffffffe177ddb8cec79abe82d5ffffffffffe177efdde8e4e1eb82d5ffffffffffe66e7777777777776edcfffffffffffbe6e1e1e1e1e1e1e6faffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "15:1": {
+    "size": 15,
+    "gray": "fffffffffffffffffffffffffffffffffffef6f6f6f6f6f6f6f6fdfffffffffff0aab3b3b3b3b3b3abeafffffffffff0b4eaeaeaeaeaeab9eafffffffffff0aabfbfbfbfbfbfaceafffffffffff0b9f5eaf0eeecf3bfeafffffffffff0b9efdee9e5e2ecbfeafffffffffff0b9f1e2ebe8e5eebfeafffffffffff0b9f3e6eeebcbdebfeafffffffffff0b9eedbe6e2cbdebfeafffffffffff0b9f7eef3f1eff5bfeafffffffffff2b4b9b9b9b9b9b9b5edfffffffffffdf2f0f0f0f0f0f0f2fcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+};

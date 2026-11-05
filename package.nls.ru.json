@@ -56,5 +56,7 @@
   "disableProject": "Отключить проект",
   "enableProject": "Включить проект",
   "hideDisabledProjects": "Скрыть отключенные",
-  "showDisabledProjects": "Показать отключенные"
+  "showDisabledProjects": "Показать отключенные",
+  "previewForm": "Открыть просмотр формы (beta)",
+  "openFormXml": "Открыть XML формы"
 }

@@ -22,3 +22,7 @@
 !resources/icons/support/NOTICE.md
 !resources/query/*.css
 !resources/shared/*.css
+
+!out/form-preview.css
+!out/form-fonts/*.ttf
+!out/form-fonts/*.wasm

@@ -1,0 +1,1203 @@
+{
+  "schemaVersion": 1,
+  "fixtureRoot": "tests/fixtures/forms",
+  "guiConcurrency": 1,
+  "suites": [
+    {
+      "id": "activity",
+      "driver": "test/form-activity-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "application",
+      "driver": "test/form-application-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "requiredOptions": [
+        "application-project",
+        "application-samples"
+      ]
+    },
+    {
+      "id": "button-borders",
+      "driver": "test/form-button-borders-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-borders"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-captions",
+      "driver": "test/form-button-captions-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-captions"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-colors",
+      "driver": "test/form-button-colors-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-colors"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-links",
+      "driver": "test/form-button-links-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-types"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-metrics",
+      "driver": "test/form-button-metrics-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-metrics"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-rows",
+      "driver": "test/form-button-rows-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-rows"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "button-types",
+      "driver": "test/form-button-types-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-types"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "composition",
+      "driver": "test/form-composition-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-extension-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "dependencies",
+      "driver": "test/form-dependencies-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "font-roles",
+      "driver": "test/form-font-roles-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-font-roles"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "frame-corners",
+      "driver": "test/form-frame-corners-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-design-frame"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "groups",
+      "driver": "test/form-groups-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-groups"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "handlers",
+      "driver": "test/form-handlers-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "input-borders",
+      "driver": "test/form-input-borders-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-input-borders"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "input-dates",
+      "driver": "test/form-input-dates-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-input-dates"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "input-dimensions",
+      "driver": "test/form-input-dimensions-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-input-dimensions"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "input-fonts",
+      "driver": "test/form-input-fonts-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-input-fonts"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "input-stretch",
+      "driver": "test/form-input-stretch-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-input-stretch"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "inspectors",
+      "driver": "test/form-inspectors-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "lifecycle",
+      "driver": "test/form-lifecycle-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "multiple-windows",
+      "driver": "test/form-multiple-windows-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "owners",
+      "driver": "test/form-owners-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-owner-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "palette",
+      "driver": "test/form-palette-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-palette"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "picture-composition",
+      "driver": "test/form-picture-composition-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-picture-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "pictures",
+      "driver": "test/form-pictures-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "preview",
+      "driver": "test/form-preview-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "explorerPathEnv": {
+        "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
+      }
+    },
+    {
+      "id": "primary-appearance",
+      "driver": "test/form-primary-appearance-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-primary-appearance"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "primary-buttons",
+      "driver": "test/form-primary-buttons-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-primary-buttons"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "reconnect",
+      "driver": "test/form-reconnect-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "renderer",
+      "driver": "test/form-renderer-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-bound-fields"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "restore",
+      "driver": "test/form-restore-host.cjs",
+      "mode": "restart",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {
+        "ESKA_HOST_RESTART": "1"
+      },
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "states",
+      "driver": "test/form-states-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-state-variants"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "style",
+      "driver": "test/form-style-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-style-values"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "style-color-roles",
+      "driver": "test/form-style-color-roles-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-style-color-roles"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "style-composition",
+      "driver": "test/form-style-composition-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-style-composition"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "style-palette",
+      "driver": "test/form-style-palette-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-style-palette"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "tab-borders",
+      "driver": "test/form-tab-borders-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-tab-borders"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "tab-titles",
+      "driver": "test/form-tab-titles-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-tab-appearance"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "table-pixels",
+      "driver": "test/form-table-pixels-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-tables",
+        "ESKA_FORM_TABLE_PIXELS": "native-table-pixels",
+        "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
+        "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels",
+        "ESKA_FORM_TABLE_MENU_PIXELS": "native-table-bars",
+        "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search",
+        "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields",
+        "ESKA_FORM_TABLE_PICTURE_PIXELS": "native-standard-pictures",
+        "ESKA_FORM_TABLE_MOVEMENT_PIXELS": "native-table-movement"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "tables",
+      "driver": "test/form-tables-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-tables",
+        "ESKA_FORM_STATE_FIXTURES": "native-state-variants",
+        "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
+        "ESKA_FORM_ADDITION_FIXTURES": "native-addition-variants",
+        "ESKA_FORM_TABLE_COMMAND_FIXTURES": "native-table-commands"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "usual-buttons",
+      "driver": "test/form-usual-buttons-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-usual-buttons"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "window-titles",
+      "driver": "test/form-window-titles-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-form-titles"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "standard-pictures",
+      "driver": "test/form-standard-pictures-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-standard-pictures"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "text-document",
+      "driver": "test/form-text-document-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-text-documents"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "geographical",
+      "driver": "test/form-geographical-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-geographical"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "graphical",
+      "driver": "test/form-graphical-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-graphical"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "formatted",
+      "driver": "test/form-formatted-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-formatted"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "html",
+      "driver": "test/form-html-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-html"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "pdf",
+      "driver": "test/form-pdf-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-pdf"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "spreadsheet",
+      "driver": "test/form-spreadsheet-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-spreadsheet"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "calendar",
+      "driver": "test/form-calendar-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-calendar"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "period",
+      "driver": "test/form-period-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-period"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "planner",
+      "driver": "test/form-planner-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-planner"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "dendrogram",
+      "driver": "test/form-dendrogram-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-dendrogram"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "gantt",
+      "driver": "test/form-gantt-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-gantt"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "chart",
+      "driver": "test/form-chart-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-chart"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    }
+  ],
+  "presets": {
+    "buttons": [
+      "button-borders",
+      "usual-buttons",
+      "button-metrics",
+      "font-roles",
+      "primary-buttons",
+      "button-captions",
+      "button-colors",
+      "tab-borders",
+      "preview",
+      "multiple-windows"
+    ],
+    "appearance": [
+      "button-borders",
+      "usual-buttons",
+      "button-metrics",
+      "font-roles",
+      "primary-buttons",
+      "button-captions",
+      "button-colors",
+      "tab-borders",
+      "preview",
+      "multiple-windows",
+      "tables",
+      "renderer"
+    ],
+    "sessions": [
+      "preview",
+      "dependencies",
+      "activity",
+      "inspectors",
+      "handlers",
+      "reconnect",
+      "restore"
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "version": "2.1.5",
+  "upstream": "https://github.com/liberationfonts/liberation-fonts",
+  "source": "ALT Linux fonts-ttf-liberation-2.1.5 used by the Linux 8.3.27.2342 reference",
+  "unmodified": true,
+  "files": [
+    {
+      "file": "LiberationSans-Regular.ttf",
+      "sha256": "4e8efe0f8c0fd5e98e6ec490774250b5f221cc85531f7663cb38a314ac1545d3"
+    },
+    {
+      "file": "LiberationSans-Bold.ttf",
+      "sha256": "79d2e119e50fb8a79f510b40afdbc327591986939f08b5eb4221a286101acc59"
+    },
+    {
+      "file": "LiberationSans-Italic.ttf",
+      "sha256": "26ae0c991cd0ef96650cc03b112f025f1333ec561b54a7194eca59056d5ca67c"
+    },
+    {
+      "file": "LiberationSans-BoldItalic.ttf",
+      "sha256": "e8df1e6addac0f9994b070044c5569afc3374405a2efcbb02e31ab0a7101a9cf"
+    },
+    {
+      "file": "LiberationSerif-Regular.ttf",
+      "sha256": "48732220c0e13de03d69b9fbfe3f958888fa98947f985119036a1242dd3a8cc4"
+    },
+    {
+      "file": "LiberationSerif-Bold.ttf",
+      "sha256": "19b8569ded8b36bdfeecad1395b4dc8ff3b4a3db0f69c41e10ae70dcbce2b9e3"
+    },
+    {
+      "file": "LiberationSerif-Italic.ttf",
+      "sha256": "f33ca6d1f57c005c4d47cfa80261470f7cdb0d3aa1d765bc45119ed5cf8f3d71"
+    },
+    {
+      "file": "LiberationSerif-BoldItalic.ttf",
+      "sha256": "648e1aabade6dfbf1d09ced7026d9b01f12f50149a98a9d37de2818b8c048cda"
+    },
+    {
+      "file": "LiberationMono-Regular.ttf",
+      "sha256": "e53375fe64d51b64412b613f9cdf8f54330d03cfe9ff67ff63f801723dedd2e8"
+    },
+    {
+      "file": "LiberationMono-Bold.ttf",
+      "sha256": "dae4e44cfb1a41900158b10c3dc496dc111c1dae6b89acb64826a447923c0a08"
+    },
+    {
+      "file": "LiberationMono-Italic.ttf",
+      "sha256": "582446b36bd5d214e2a78d4b194ff17cec3198e896f806f161fb94b491f3f5f2"
+    },
+    {
+      "file": "LiberationMono-BoldItalic.ttf",
+      "sha256": "6a6f7233c0443a392e59e50594e12a3cca227556b2e9233bb2c518f38255a02e"
+    }
+  ]
+}

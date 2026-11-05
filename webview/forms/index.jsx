@@ -1,0 +1,9 @@
+import { render } from 'solid-js/web';
+import { controller } from './controller.js';
+import { App } from './App.jsx';
+import { createNativeTextRuntime } from './native-text.js';
+import './style.css';
+const c = controller(acquireVsCodeApi());
+c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src);
+const dispose = render(() => <App controller={c}/>, document.getElementById('root'));
+window.addEventListener('unload', () => { dispose(); c.nativeText.dispose(); c.dispose(); }, { once: true });

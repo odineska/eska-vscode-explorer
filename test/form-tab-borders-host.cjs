@@ -1,0 +1,71 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const path=require('node:path');
+const vscode=require('vscode');
+const {until,frame}=require('./webview-host.cjs');
+
+exports.run=async()=>{
+  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture.tabBorders,results=[];
+  const explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
+  await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+  async function ready(ui,expected){return ui.evaluate(`(() => {const tabs=[...document.querySelectorAll('.taxi-tabs>[role=tab]')];return tabs.length===${expected.tabs.length}&&!document.querySelector('[data-native-label=pending]')&&${JSON.stringify(expected.tabs)}.every((tab,index)=>tabs[index].dataset.nativeTabBorder==='ready'&&tabs[index].getAttribute('aria-selected')===String(tab.active)&&getComputedStyle(tabs[index]).backgroundColor==='rgb('+tab.background.join(', ')+')');})()`);}
+  async function sample(ui,expected,label,targetId){
+    await until(()=>ready(ui,expected),'native tab colors and glyphs');await ui.evaluate('document.fonts.ready.then(()=>true)');
+    await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),tabs:[...document.querySelectorAll('.taxi-tabs>[role=tab]')].map(rect),inputs:[...document.querySelectorAll('.taxi-input')].filter(node=>getComputedStyle(node).visibility!=='hidden').map(rect)};})()`),regions=[];
+    assert.deepEqual([geometry.frame.width,geometry.frame.height],expected.frame,label+' form allocation');
+    if(expected.automaticInputMaximum){const input=geometry.inputs[0];assert.deepEqual([input.x-geometry.frame.x,input.y-geometry.frame.y,input.width,input.height],expected.automaticInputMaximum.rect,label+' native automatic string maximum');}
+    for(const [index,tab] of geometry.tabs.entries()){
+      const native=expected.tabs[index],x=tab.x-geometry.frame.x,y=tab.y-geometry.frame.y;
+      assert.deepEqual([x,y,tab.width,tab.height],native.rect,label+' '+native.name+' geometry');
+      for(const [name,r] of Object.entries(native.regions)){const [x,y,width,height]=r.rect;regions.push({name:native.name+' '+name,x,y,width,height,hex:r.rgb});}
+      regions.push({name:native.name+' whole',x,y,width:tab.width,height:tab.height,sha:native.wholeTabRgbSha256});
+    }
+    if(expected.wholeFormWithShadowRgbSha256)regions.push({name:'whole form and shadow',x:0,y:0,width:expected.frame[0]+4,height:expected.frame[1]+4,sha:expected.wholeFormWithShadowRgbSha256});
+    const filename=`tab-borders-${label}-${vscode.env.language}.png`,png=targetId?await ui.captureTarget(targetId,filename,true):await ui.screenshot(filename,true);
+    const actual=await ui.evaluate(`(async()=>{
+      if(devicePixelRatio!==1)throw new Error('tab-reference-dpi');
+      const image=await createImageBitmap(new Blob([Uint8Array.from(atob(${JSON.stringify(png)}),value=>value.charCodeAt(0))],{type:'image/png'}));
+      const canvas=new OffscreenCanvas(image.width,image.height),context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();
+      const data=context.getImageData(0,0,canvas.width,canvas.height).data,blue=new Set(),frames=[];
+      for(let p=0;p<canvas.width*canvas.height;p++)if(data[p*4]===30&&data[p*4+1]===144&&data[p*4+2]===255)blue.add(p);
+      while(blue.size){const stack=[blue.values().next().value];blue.delete(stack[0]);let left=canvas.width,top=canvas.height,right=0,bottom=0;
+        while(stack.length){const p=stack.pop(),x=p%canvas.width,y=Math.floor(p/canvas.width);left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);
+          for(const n of [x?p-1:-1,x+1<canvas.width?p+1:-1,y?p-canvas.width:-1,y+1<canvas.height?p+canvas.width:-1])if(blue.delete(n))stack.push(n);}
+        if(right-left+1===${expected.frame[0]}-2&&bottom-top+1===${expected.frame[1]}-2)frames.push({x:left-1,y:top-1});}
+      if(frames.length!==1)throw new Error('tab-reference-selection');const origin=frames[0],results=[],hex=a=>[...a].map(v=>v.toString(16).padStart(2,'0')).join('');
+      for(const r of ${JSON.stringify(regions)}){const rgb=new Uint8Array(r.width*r.height*3);let offset=0;
+        for(let y=0;y<r.height;y++)for(let x=0;x<r.width;x++){const i=((origin.y+r.y+y)*canvas.width+origin.x+r.x+x)*4;rgb.set(data.slice(i,i+3),offset);offset+=3;}
+        results.push({name:r.name,hex:r.hex?hex(rgb):undefined,sha:r.sha?hex(new Uint8Array(await crypto.subtle.digest('SHA-256',rgb))):undefined});}
+      return results;
+    })()`),mismatches=actual.flatMap((r,i)=>{const e=regions[i];return(e.hex?r.hex!==e.hex:r.sha!==e.sha)?[{actual:r,expected:e}]:[];});
+    if(mismatches.length&&process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`tab-borders-failure-${vscode.env.language}.json`),JSON.stringify({label,mismatches,geometry},null,2));
+    assert.deepEqual(mismatches,[],label+' native tab pixels');
+    return {name:label,geometry,cornerPixelsCompared:regions.filter(r=>r.hex).reduce((v,r)=>v+r.width*r.height,0),wholeTabPixelsCompared:regions.filter(r=>r.name.endsWith(' whole')).reduce((v,r)=>v+r.width*r.height,0),wholeFormPixelsCompared:regions.filter(r=>r.name==='whole form and shadow').reduce((v,r)=>v+r.width*r.height,0),differentRgbPixels:0};
+  }
+  for(const form of gallery.forms){
+    const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
+    await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'tab border form');
+    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({state:{title:panel.panel.title}});
+    for(const expected of form.expected.states){
+      await until(()=>ui.evaluate(`document.querySelectorAll('.taxi-tabs>[role=tab]').length===${expected.tabs.length}`),'tab nodes');
+      await ui.evaluate(`document.querySelectorAll('.taxi-tabs>[role=tab]')[${expected.selected}].click();document.querySelector('.taxi-form-title').click()`);
+      await until(()=>view.selected?.key?.kind==='root','root selection after page navigation');
+      results.push(await sample(ui,expected,form.kind+'-'+expected.selected));
+    }
+    if(form.kind==='ColorFreshA'){
+      const original=document.getText(),other=gallery.forms.find(f=>f.kind==='ColorFreshB'),changed=await fs.readFile(other.path,'utf8'),own=form.expected.states[1],target=other.expected.states[1];
+      const change=async(text)=>{const revision=view.snapshot.revision,edit=new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),text);assert.equal(await vscode.workspace.applyEdit(edit),true);await until(()=>view.phase==='ready'&&view.snapshot.revision!==revision&&!view.running&&!view.timer,'dirty tab revision');};
+      const remember="globalThis.__tabButton=document.querySelector('.taxi-tabs>[role=tab]');globalThis.__tabCorner=document.querySelector('.taxi-tab-corner')",retained="globalThis.__tabButton===document.querySelector('.taxi-tabs>[role=tab]')&&globalThis.__tabCorner===document.querySelector('.taxi-tab-corner')";
+      await ui.evaluate(remember);await change(changed);results.push(await sample(ui,target,'dirty-FreshB'));await change(original);await until(()=>ready(ui,own),'tab inputs restored');assert.equal(await ui.evaluate(retained),true);
+      await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'tab preview detached');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
+      const workbench=await floating.nativeWindow({detached:true});assert.equal(workbench.url,'about:blank');
+      await until(()=>ready(floating,own),'floating keeps active page with root selected');
+      results.push(await sample(floating,own,'floating-FreshA',workbench.targetId));await floating.evaluate(remember);await change(changed);results.push(await sample(floating,target,'floating-dirty-FreshB',workbench.targetId));await change(original);await until(()=>ready(floating,own),'floating tab inputs restored');assert.equal(await floating.evaluate(retained),true);
+      floating.close();detached.panel.dispose();ui.close();ui=await frame({state:{title:panel.panel.title}});results.push(await sample(ui,own,'reattached-FreshA'));
+    }
+    assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'tab session released');await Promise.all([...explorer.formPreview.closing]);
+  }
+  await explorer.shutdown();const report={passed:true,locale:vscode.env.language,tabBorders:true,forms:gallery.forms.length,nativeStates:47,nativeTabs:105,dirtyPalette:true,detachedPixels:true,localNavigationStateHandoffVerified:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
+  if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`tab-borders-measured-${vscode.env.language}.json`),JSON.stringify(report));await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
+};

@@ -11,15 +11,22 @@ async function until(condition, label) {
 /** Attach to a packaged webview by its visible title and retain screenshot evidence. */
 async function frame(tab) {
   const targets = await (await fetch(`http://127.0.0.1:${process.env.ESKA_HOST_DEBUG_PORT}/json/list`)).json();
-  const socket = new WebSocket(targets.find(item => item.type === 'page' && item.url.startsWith('vscode-file:')).webSocketDebuggerUrl);
+  const workbenchTarget=targets.find(item=>item.type==='page'&&item.url.startsWith('vscode-file:'));
+  const socket = new WebSocket(workbenchTarget.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
   let serial = 0;
   const pending = new Map(), contexts = [];
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
-    if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId });
+    if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId, frameId:message.params.context.auxData?.frameId });
     const promise = pending.get(message.id);
-    if (promise) { pending.delete(message.id); clearTimeout(promise.timer); message.error ? promise.reject(message.error) : promise.resolve(message.result); }
+    if (promise) {
+      pending.delete(message.id); clearTimeout(promise.timer);
+      if (message.error) {
+        promise.error.message = `${message.error.message} (${promise.method})`;
+        promise.reject(Object.assign(promise.error, { code: message.error.code, data: message.error.data }));
+      } else promise.resolve(message.result);
+    }
   });
   socket.addEventListener('close', () => {
     for (const value of pending.values()) { clearTimeout(value.timer); value.reject(new Error('native debug connection closed')); }
@@ -30,8 +37,8 @@ async function frame(tab) {
     return new Promise((resolve, reject) => {
       const id = ++serial;
       // Hidden Windows webviews can suspend evaluation; they must not block discovery of the active frame.
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`native debug timeout: ${method}`)); }, 5000);
-      pending.set(id, { resolve, reject, timer }); socket.send(JSON.stringify({ id, method, params, sessionId }));
+      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`native debug timeout: ${method}`),{code:'native_debug_timeout',method,sessionId})); }, 5000);
+      pending.set(id, { resolve, reject, timer, method, error: new Error(`native debug failure: ${method}`) }); socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
   await send('Runtime.enable');
@@ -45,9 +52,12 @@ async function frame(tab) {
         attached.add(target.targetId);
         await send('Runtime.enable', {}, sessionId);
       } catch (error) {
-        // A newly shown Windows webview can replace its iframe between enumeration and attachment.
+        // A newly shown webview can replace its iframe between enumeration and attachment.
+        // A hidden renderer may suspend domain enablement. Keep its session so
+        // late context events remain observable, and discover the visible frame.
+        if(error?.code==='native_debug_timeout'&&error.method==='Runtime.enable')continue;
         attached.delete(target.targetId);
-        if (!([-32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
+        if (!([-32602, -32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
       }
     }
     for (const candidate of contexts) {
@@ -102,6 +112,73 @@ async function frame(tab) {
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result?.value;
     },
+    /** Bring only the task's main workbench to the foreground for native editor commands. */
+    async focusWorkbench() { await send('Page.bringToFront'); },
+    /** Leave native HTML tooltips outside the measured form before a pixel capture. */
+    async parkPointer(targetId) {
+      const session=targetId?await send('Target.attachToTarget',{targetId,flatten:true}):undefined;
+      try { await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0,button:'none'},session?.sessionId); }
+      finally { if(session)await send('Target.detachFromTarget',{sessionId:session.sessionId}); }
+    },
+    /** Capture a specific floating workbench from this task's debugging endpoint. */
+    async captureTarget(targetId, name, withData = false) {
+      if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
+      const {sessionId} = await send('Target.attachToTarget', {targetId,flatten:true});
+      try {
+        // The move command can resolve before the auxiliary workbench has painted.
+        await send('Page.bringToFront',{},sessionId);
+        let editorTabs;
+        try { await until(async()=>{
+          const result=await send('Runtime.evaluate',{expression:"[...document.querySelectorAll('.tabs-container .tab')].map(tab=>tab.textContent)",returnByValue:true},sessionId);
+          editorTabs=result.result?.value;
+          return editorTabs?.includes(tab.state.title);
+        },'native floating editor identity'); }
+        catch(error){throw new Error(error.message+' '+JSON.stringify({expected:tab.state.title,actual:editorTabs}));}
+        await send('Runtime.evaluate',{expression:'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',awaitPromise:true},sessionId);
+        const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
+        if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
+        if (withData) return result.data;
+      } finally { await send('Target.detachFromTarget',{sessionId}); }
+    },
+    /** Resolve the native window containing this exact webview frame, even with several previews. */
+    async nativeWindow({ detached = false } = {}) {
+      if(!context.frameId)throw new Error('native webview frame identity missing');
+      const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
+      let owner,observation;
+      try{await until(async()=>{
+        const parents=new Map(),windows=new Map(),all=(await send('Target.getTargets')).targetInfos;
+        const record=(node,parent)=>{
+          if(node.frame.parentId||parent)parents.set(node.frame.id,node.frame.parentId??parent);
+          for(const child of node.childFrames??[])record(child,node.frame.id);
+        };
+        // OOPIF subtrees are reported by their own targets; parentId joins them to the native page.
+        for(const target of all.filter(target=>['page','iframe'].includes(target.type))){
+          let sessionId;
+          try {
+            if(target.targetId!==workbenchTarget.id)({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true}));
+            const result=await send('Page.getFrameTree',{},sessionId);
+            record(result.frameTree);
+            if(target.type==='page')windows.set(result.frameTree.frame.id,target);
+          } catch(error){if(!gone(error))throw error;}
+          finally {if(sessionId)try{await send('Target.detachFromTarget',{sessionId});}catch(error){if(!gone(error))throw error;}}
+        }
+        observation={frameId:context.frameId,parents:[...parents].slice(0,64),pageFrames:[...windows].slice(0,32).map(([id,target])=>[id,target.targetId]),targets:all.slice(0,64).map(({targetId,type})=>({targetId,type})),counts:{parents:parents.size,pageFrames:windows.size,targets:all.length}};
+        const seen=new Set();let id=context.frameId;owner=undefined;
+        while(id&&!seen.has(id)){
+          if(windows.has(id)){
+            owner=windows.get(id);
+            // The native move command can finish before the webview is reparented.
+            return !detached||owner.targetId!==workbenchTarget.id;
+          }
+          seen.add(id);id=parents.get(id);
+        }
+        return false;
+      },'native window containing the webview frame');}
+      catch(error){error.message+=' '+JSON.stringify(observation);throw error;}
+      return owner;
+    },
+    /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
+    async targets() { return (await send('Target.getTargets')).targetInfos; },
     /** Observe the native QuickPick outside the property iframe before sending keyboard commands. */
     async workbench(expression) {
       const result = await send('Runtime.evaluate', { expression, returnByValue: true });
@@ -124,10 +201,11 @@ async function frame(tab) {
       await send('Input.dispatchMouseEvent', {type:'mouseReleased',...point,button:'left',clickCount:1});
     },
     /** Preserve visual evidence from the actual native editor window. */
-    async screenshot(name) {
-      if (!process.env.ESKA_SCREENSHOT_DIR) return;
+    async screenshot(name, withData = false) {
+      if (!process.env.ESKA_SCREENSHOT_DIR && !withData) return;
       const result = await send('Page.captureScreenshot', { format: 'png' });
-      await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR, name), Buffer.from(result.data, 'base64'));
+      if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR, name), Buffer.from(result.data, 'base64'));
+      if (withData) return result.data;
     },
     close() { socket.close(); },
   };

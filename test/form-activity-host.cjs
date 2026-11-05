@@ -1,0 +1,53 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const path=require('node:path');
+const vscode=require('vscode');
+const {until,frame}=require('./webview-host.cjs');
+
+exports.run=async()=>{
+  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),files=fixture.formActivity;
+  const extension=vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer');
+  const explorer=await extension.activate();await vscode.commands.executeCommand('eska.explorer.connect');
+  assert.equal(explorer.connection.state.kind,'ready',JSON.stringify(explorer.connection.state));
+  await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+  const sourceFiles=[path.join(fixture.root,'eska.toml'),files.base.path,files.extension.path,...[files.base,files.extension].flatMap(member=>[path.join(member.source,'Configuration.xml'),path.join(member.source,'CommonForms','Preview.xml')])];
+  const before=await Promise.all(sourceFiles.map(file=>fs.readFile(file)));
+  const base=await vscode.workspace.openTextDocument(vscode.Uri.file(files.base.path));await vscode.window.showTextDocument(base,{preview:false});
+  await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
+  await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','open application form');
+  const view=[...service.views.values()][0],main=view.frames.get('main'),mainUi=await frame({state:{title:main.panel.title}});
+  await mainUi.evaluate("window.addEventListener('message',event=>{if(event.data.type==='state'&&event.data.model)globalThis.__activityModel=event.data.model})");
+  await service.receive(view,main,{type:'detach'});
+  await until(()=>view.frames.get('preview')?.ready,'detached activity preview');
+  const detached=view.frames.get('preview'),ui=await frame({state:{title:detached.panel.title}});
+  const caption=()=>ui.evaluate("document.querySelector('.taxi-label')?.textContent");
+  await until(async()=>await caption()==='Extension caption','active extension shown');
+  await ui.evaluate("globalThis.__activityRoot=document.querySelector('.taxi-form-frame')");
+  const dirty=await vscode.workspace.openTextDocument(vscode.Uri.file(files.extension.path));
+  async function replace(from,to){const text=dirty.getText();assert.ok(text.includes(from));const edit=new vscode.WorkspaceEdit();edit.replace(dirty.uri,new vscode.Range(dirty.positionAt(0),dirty.positionAt(text.length)),text.replaceAll(from,to));assert.equal(await vscode.workspace.applyEdit(edit),true);}
+  async function activity(enabled,name='extension'){const project=explorer.tree.projects.find(project=>project.info.scope.name===name);assert.ok(project);await vscode.commands.executeCommand('eska.explorer.'+(enabled?'enableProject':'disableProject'),{project});await until(()=>project.info.activity.enabled===enabled,'activity acknowledged');}
+  await replace('Extension caption','Unsaved extension');
+  await until(async()=>view.phase==='ready'&&await caption()==='Unsaved extension','dirty active extension');
+  await activity(false);
+  await until(async()=>view.phase==='ready'&&await caption()==='Base caption','dirty extension excluded without stale model');
+  assert.equal(dirty.isDirty,true);
+  await replace('Unsaved extension','Edited while disabled');
+  assert.equal(await caption(),'Base caption');
+  await activity(true);
+  await until(async()=>view.phase==='ready'&&await caption()==='Edited while disabled','latest dirty extension returns');
+  await until(async()=>await mainUi.evaluate("globalThis.__activityModel?.root.children[0]?.presentation.caption.items[0].content==='Edited while disabled'"),'owner frame receives the same composed model');
+  assert.equal(dirty.isDirty,true);assert.equal(await ui.evaluate("globalThis.__activityRoot===document.querySelector('.taxi-form-frame')"),true);
+  await activity(false,'base');await until(()=>view.phase==='disconnected','owner suspended');
+  assert.equal(await caption(),'Edited while disabled');
+  await activity(true,'base');
+  await until(async()=>view.phase==='ready'&&await caption()==='Edited while disabled','owner resumes with dirty extension');
+  const session=view.client.current.formSessionId;
+  await vscode.commands.executeCommand('eska.explorer.hideDisabledProjects');await until(()=>explorer.tree.session.activity.hideDisabled,'filter hidden');
+  await vscode.commands.executeCommand('eska.explorer.showDisabledProjects');await until(()=>!explorer.tree.session.activity.hideDisabled,'filter visible');
+  await until(()=>!view.running&&!view.timer,'filter refresh settled');
+  assert.equal(view.client.current.formSessionId,session,'filter-only changes retain the form session');
+  assert.equal(await caption(),'Edited while disabled');
+  assert.deepEqual(await Promise.all(sourceFiles.map(file=>fs.readFile(file))),before);
+  await ui.screenshot(`form-activity-${vscode.env.language}.png`);
+  await explorer.shutdown();await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formActivity:true,locale:vscode.env.language,sourceWritesDuringViewing:false,dirtyPreserved:true,stableDom:true,filterRetainsSession:true,detached:true,ownerResume:true}));
+};
