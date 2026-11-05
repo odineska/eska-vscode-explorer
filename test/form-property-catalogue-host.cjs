@@ -7,6 +7,7 @@ const { until, frame } = require('./webview-host.cjs');
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), file = fixture.form.path;
   const expectedCatalogue = process.env.ESKA_HOST_PROPERTY_CATALOGUE !== 'legacy';
+  const expectedInputCatalogue = process.env.ESKA_HOST_PROPERTY_CATALOGUE !== 'group-only';
   const before = await fs.readFile(file);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');
@@ -98,7 +99,62 @@ exports.run = async () => {
     assert.equal(await ui.evaluate(`globalThis.__catalogueTitle===document.querySelector('[data-palette-id="platform:Title"] details') && globalThis.__catalogueTitle.open`),true);
     cases.push('removed-override-restores-default');
     await select(input);
-    await until(() => ui.evaluate("!!document.querySelector('[data-property-name=DataPath]') && !document.querySelector('[data-palette-id]')"), 'unverified context shows XML');
+    if (expectedInputCatalogue) {
+      const inputRows = () => ui.evaluate(`(() => {
+        const row = id => document.querySelector('[data-palette-id="platform:'+id+'"]');
+        const text = id => row(id)?.querySelector('td').textContent;
+        return {count:document.querySelectorAll('.form-properties [data-palette-id^="platform:"]').length,
+          categories:[...document.querySelectorAll('.form-property-category')].map(category=>category.textContent),
+          type:text('Type'),mask:!!row('Mask'),min:!!row('MinValue'),wrap:row('Wrap')?.querySelector('input')?.checked,
+          width:text('Width'),maxWidth:text('MaxWidth'),titleLocation:text('TitleLocation'),
+          change:text('OnChange'),changeSource:row('OnChange')?.dataset.paletteSource,
+          choiceTab:row('StartChoice')?.getAttribute('tabindex')};
+      })()`);
+      await until(async () => (await inputRows()).count===88, 'native string field catalogue');
+      const baseline = await inputRows();
+      assert.deepEqual(baseline.categories,ru?['Основные','Использование','Оформление','Расположение','События']
+        :['General','Use','Appearance','Layout','Events']);
+      assert.equal(baseline.type,ru?'Поле ввода':'Text box');
+      assert.equal(baseline.mask,true);
+      assert.equal(baseline.min,false);
+      assert.equal(baseline.wrap,true);
+      assert.equal(baseline.change,'');
+      assert.equal(baseline.choiceTab,null);
+      cases.push('native-field-catalogue-and-unbound-events');
+
+      const eventXml = '<Events><Event name="OnChange">TestChange</Event></Events>';
+      const dirty = original.replace('>xs:string</v8:Type>','>xs:decimal</v8:Type>')
+        .replace('<Width>20</Width></InputField>',`<Width>0</Width><TitleLocation>Top</TitleLocation><AutoMaxWidth>false</AutoMaxWidth>${eventXml}</InputField>`);
+      assert.ok(dirty.includes(eventXml));
+      const selected = view.selected.key.value, previousRevision = view.snapshot.revision;
+      await edit(dirty);
+      await until(async () => view.phase==='ready' && view.snapshot.revision!==previousRevision
+        && (await inputRows()).change==='TestChange', 'dirty field event and type');
+      const numeric = await inputRows();
+      assert.equal(numeric.count,88);
+      assert.equal(numeric.mask,false);
+      assert.equal(numeric.min,true);
+      assert.equal(numeric.maxWidth,'0');
+      assert.equal(numeric.width,'0');
+      assert.equal(numeric.titleLocation,ru?'Верх':'Top');
+      assert.equal(numeric.changeSource,'form');
+      assert.equal(numeric.choiceTab,null);
+      assert.equal(view.selected.key.value,selected);
+      cases.push('dirty-type-maximum-and-event-rows');
+      await ui.evaluate(`document.querySelector('[data-palette-id="platform:OnChange"]').dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true}))`);
+      await until(() => vscode.window.activeTextEditor?.document.uri.fsPath===file
+        && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===eventXml, 'event XML wrapper selected');
+      main.panel.reveal();
+      cases.push('event-row-navigates-existing-xml');
+      await edit(original);
+      await until(async () => view.phase==='ready' && (await inputRows()).mask && (await inputRows()).change==='', 'dirty event cleared and string catalogue restored');
+    } else {
+      await until(() => ui.evaluate("!!document.querySelector('[data-property-name=DataPath]') && !document.querySelector('[data-palette-id]')"), 'earlier 1.41 field fallback');
+      cases.push('earlier-1.41-field-fallback');
+    }
+    const button = group.children.find(node => node.name === 'Action');
+    await select(button);
+    await until(() => ui.evaluate("!!document.querySelector('[data-property-name=Title]') && !document.querySelector('[data-palette-id]')"), 'unverified context shows XML');
     await select(group);
     await until(() => ui.evaluate("document.querySelectorAll('[data-palette-id]').length===35"), 'selection returns to verified catalogue');
     cases.push('rapid-context-switch-and-raw-fallback');

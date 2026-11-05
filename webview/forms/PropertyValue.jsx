@@ -14,6 +14,7 @@ export function PropertyValue(props) {
   const fields = () => value().kind === 'record' ? value().fields : [];
   return <div class="form-property-value">
     <Switch>
+      <Match when={props.scalarCaption !== undefined && value().kind === 'text'}><span title={value().text}>{props.scalarCaption}</span></Match>
       <Match when={boolean() !== undefined}><input type="checkbox" disabled checked={boolean()} aria-label={translated(props.field, language(), props.field.key.name)} title={value().text}/></Match>
       <Match when={localizations() !== undefined && localizations().length < 2}><span>{localizations()[0]?.content ?? ''}</span></Match>
       <Match when={localizations()?.length > 1}>

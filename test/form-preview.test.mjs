@@ -202,3 +202,27 @@ test('a selected property palette requires an exact revision and real XML indice
     {rows:[{...absent,value:{...absent.value,default:{kind:'boolean',value:'true'}}},...data.rows.slice(1)]},
   ]) assert.throws(() => parsePropertyPalette({...data,...patch},snapshot,node));
 });
+
+test('a projected event must reference a matching field in its real XML wrapper', () => {
+  const snapshot = fixture(), node = snapshot.model.root;
+  const namespace = 'http://v8.1c.ru/8.3/xcf/logform';
+  const event = { key:{namespace,name:'Event'}, qualifiers:[{key:{namespace:null,name:'name'},value:'OnChange'}],
+    value:{kind:'text',text:'HandleChange'} };
+  node.properties = [{ key:{namespace,name:'Events'}, value:{kind:'record',fields:[event]} }];
+  const caption = {'ru-RU':'События','en-US':'Events'};
+  const projected = {id:'platform:OnChange',category:'events',editor:'event',caption,
+    value:{kind:'declaredEvent',propertyIndex:0,entryIndex:0,occurrence:0,sourceKind:'form'}};
+  const declared = {id:'xml:events',category:null,editor:null,caption:null,
+    value:{kind:'declared',propertyIndex:0,occurrence:0,sourceKind:'form'}};
+  const data = {formSessionId:snapshot.formSessionId,revision:snapshot.revision,identity:node.identity,
+    categories:[{id:'events',caption}],rows:[projected,declared]};
+  assert.deepEqual(parsePropertyPalette(data,snapshot,node),data);
+  for (const value of [
+    {...projected.value,entryIndex:1},
+    {...projected.value,propertyIndex:1},
+    {...projected.value,occurrence:1},
+    {...projected.value,sourceKind:'metadata'},
+  ]) assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,value},declared]},snapshot,node));
+  assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,id:'platform:StartChoice'},declared]},snapshot,node));
+  assert.throws(() => parsePropertyPalette({...data,rows:[projected]},snapshot,node));
+});

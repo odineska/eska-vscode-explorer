@@ -3,6 +3,7 @@ import type { PropertyField, PropertyKey } from "../properties.js";
 import { picturePreview, type PicturePreview } from "../picture.js";
 
 export const MAX_FORM_DEPENDENCIES = 1024;
+const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
 export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
@@ -28,7 +29,8 @@ export interface FormNode { identity: ElementIdentity; origin: Origin; kind: str
 type PaletteCaption = { "ru-RU": string; "en-US": string };
 type PaletteDefault = { kind: "boolean"; value: boolean } | { kind: "number"; value: number } | { kind: "choice"; value: string }
   | { kind: "auto" | "autoStretch" | "empty" | "dialog" | "unknown" };
-type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: number; sourceKind: "form" | "extension" }
+type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: number; sourceKind: "form" | "extension"; caption?: PaletteCaption }
+  | { kind: "declaredEvent"; propertyIndex: number; occurrence: number; entryIndex: number; sourceKind: "form" | "extension" }
   | { kind: "absent"; default: PaletteDefault; caption: PaletteCaption | null }
   | { kind: "name"; value: string | null } | { kind: "elementKind"; value: string; caption: PaletteCaption }
   | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin };
@@ -184,8 +186,21 @@ export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, nod
       case "declared": {
         const index = data.propertyIndex;
         if (typeof index !== "number" || !Number.isSafeInteger(index) || !node.properties[index] || indices.has(index)
-          || data.occurrence !== occurrences[index] || !["form", "extension"].includes(String(data.sourceKind))) invalid();
+          || data.occurrence !== occurrences[index] || !["form", "extension"].includes(String(data.sourceKind))
+          || !caption(data.caption)) invalid();
         indices.add(index); break;
+      }
+      case "declaredEvent": {
+        const index = data.propertyIndex, entryIndex = data.entryIndex;
+        if (typeof index !== "number" || !Number.isSafeInteger(index) || data.occurrence !== occurrences[index]
+          || typeof entryIndex !== "number" || !Number.isSafeInteger(entryIndex) || row.category !== "events"
+          || data.sourceKind !== "form" && data.sourceKind !== "extension") invalid();
+        const property = node.properties[index];
+        if (property?.key.namespace !== FORM_NAMESPACE || property.key.name !== "Events" || property.value.kind !== "record") invalid();
+        const entry = property.value.fields[entryIndex];
+        if (entry?.key.namespace !== FORM_NAMESPACE || entry.key.name !== "Event" || entry.value.kind !== "text"
+          || !entry.qualifiers.some(({ key, value }) => key.namespace === null && key.name === "name" && row.id === `platform:${value}`)) invalid();
+        break;
       }
       case "absent": {
         if (!(data.caption === null || data.caption !== undefined && caption(data.caption)) || !isRecord(data.default)) invalid();

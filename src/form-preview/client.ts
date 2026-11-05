@@ -70,7 +70,7 @@ export class FormSession {
     if (this.closed || this.current !== snapshot) throw new ExplorerError("obsolete");
     if (!this.limits.propertyPalette) throw new ExplorerError("incompatible");
     const generation = this.entry.project.info.generation;
-    const value = await this.request("form/inspect", { formSessionId: snapshot.formSessionId, revision: snapshot.revision, identity: node.identity }, generation);
+    const value = await this.request("form/inspect", { formSessionId: snapshot.formSessionId, revision: snapshot.revision, identity: node.identity, includeEventRows: true }, generation);
     this.check(value, generation);
     if (this.current !== snapshot) throw new ExplorerError("obsolete");
     return parsePropertyPalette(value, snapshot, node);

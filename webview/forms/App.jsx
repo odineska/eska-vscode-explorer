@@ -69,6 +69,27 @@ function Properties(props) {
     && key({identity: state.palette.identity}) === node().key ? state.palette : null);
   const locate = target => c.post({ type: 'locate', revision: state.revision, formSessionId: state.formSessionId,
     target: { ...target, identity: node().identity } });
+  const paletteHandlers = createMemo(() => {
+    const links = new Map();
+    for (const row of palette()?.rows ?? []) {
+      const value = row.value;
+      if (value.kind !== 'declaredEvent') continue;
+      const property = node().properties[value.propertyIndex];
+      const name = property?.value.fields?.[value.entryIndex]?.value.text.trim();
+      if (name === undefined) continue;
+      const origin = property.origin;
+      const link = handlers().find(({ handler }) => row.id === `platform:${handler.event}`
+        && handler.name === name && handler.origin.source === origin.source
+        && handler.origin.range.start === origin.range.start && handler.origin.range.end === origin.range.end);
+      if (link) links.set(row.id, link);
+    }
+    return links;
+  });
+  const extraHandlers = createMemo(() => {
+    const linked = new Set([...paletteHandlers().values()].map(entry => entry.index));
+    return handlers().filter(entry => !linked.has(entry.index));
+  });
+  const openHandler = index => c.post({ type: 'handler', index });
   const locateProperty = field => locate({ kind: 'property', property: field.key });
   return <><div class="form-pane-title">{state.strings.properties}<span>{node().name || state.strings.form}</span></div><div class="form-table-scroll"><table class="form-properties"><tbody>
     <Show when={palette()?.rows} fallback={<>
@@ -78,10 +99,11 @@ function Properties(props) {
       onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locateProperty(field); } }}>
       <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th><td><PropertyValue field={field} state={state}/></td>
     </tr>}</For></>}>
-      <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}/>
+      <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}
+        handlers={paletteHandlers()} openHandler={openHandler}/>
     </Show>
-    <Show when={handlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
-    <For each={handlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={()=>c.post({type:'handler',index:entry.index})}>{entry.handler.name}</button></td></tr>}</For>
+    <Show when={extraHandlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
+    <For each={extraHandlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>}</For>
   </tbody></table></div><div class="form-property-actions"><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: node().identity } })}>{state.strings.source}</button>
     <Show when={node().presentation.binding}><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'binding', identity: node().identity } })}>{state.strings.binding}</button></Show></div></>;
 }

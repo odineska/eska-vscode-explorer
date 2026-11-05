@@ -593,6 +593,24 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "property-catalogue",
+      "driver": "test/form-property-catalogue-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "reconnect",
       "driver": "test/form-reconnect-host.cjs",
       "mode": "installed",

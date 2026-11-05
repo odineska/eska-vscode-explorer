@@ -9,13 +9,16 @@ function Row(props) {
   const row = () => props.row;
   const value = () => row().value;
   const state = props.state;
-  const field = () => value().kind === 'declared' ? props.node.properties[value().propertyIndex] : undefined;
+  const field = () => ['declared', 'declaredEvent'].includes(value().kind) ? props.node.properties[value().propertyIndex] : undefined;
+  const eventText = () => value().kind === 'declaredEvent' ? field()?.value.fields?.[value().entryIndex]?.value.text : undefined;
+  const handler = () => props.handlers.get(row().id);
   const xmlKey = () => field()?.key ?? (value().kind === 'qualifier' ? value().key : undefined);
   const label = () => caption(row().caption ?? field()?.caption, state) ?? xmlKey()?.name ?? row().id;
   const declaredSource = () => value().sourceKind === 'extension' ? state.strings.paletteExtension : state.strings.paletteForm;
   const source = () => {
     switch (value().kind) {
-      case 'declared': return declaredSource();
+      case 'declared':
+      case 'declaredEvent': return declaredSource();
       case 'qualifier': return `${state.strings.paletteQualifier} · ${declaredSource()}`;
       case 'absent': return state.strings.paletteDefault;
       default: return state.strings.paletteIntrinsic;
@@ -27,15 +30,17 @@ function Row(props) {
     if (value().kind === 'qualifier') return { kind: 'attribute', attribute: value().key };
   };
   const locate = () => { const selection = target(); if (selection) props.locate(selection); };
-  return <tr data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
-    data-property-name={xmlKey()?.name} data-property-namespace={xmlKey() ? xmlKey().namespace ?? '' : undefined}
+  return <tr classList={{ 'form-event': value().kind === 'declaredEvent' }} data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
+    data-property-name={value().kind === 'declaredEvent' ? 'Event' : xmlKey()?.name} data-property-namespace={xmlKey() ? xmlKey().namespace ?? '' : undefined}
     tabindex={target() ? '0' : undefined}
     title={xmlKey() ? `{${xmlKey().namespace ?? ''}}${xmlKey().name} — ${source()}` : source()}
     onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(); }}
     onKeyDown={event => { if (target() && event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(); } }}>
     <th>{label()}</th><td classList={{ 'form-property-default': value().kind === 'absent' }}>
       <Switch>
-        <Match when={field()}><PropertyValue field={field()} state={state}/></Match>
+        <Match when={handler()}><button class="form-handler" type="button" title={state.strings.handler} onClick={() => props.openHandler(handler().index)}>{handler().handler.name}</button></Match>
+        <Match when={eventText() !== undefined}>{eventText()}</Match>
+        <Match when={field()}><PropertyValue field={field()} state={state} scalarCaption={caption(value().caption, state)}/></Match>
         <Match when={value().kind === 'absent' && value().default.kind === 'boolean'}>
           <input type="checkbox" disabled checked={value().default.value} aria-label={label()}/>
         </Match>
@@ -49,7 +54,8 @@ function Row(props) {
 
 export function PropertyPalette(props) {
   const rows = category => props.palette.rows.filter(row => row.category === category);
-  const render = row => <Row row={row} node={props.node} state={props.state} locate={props.locate}/>;
+  const render = row => <Row row={row} node={props.node} state={props.state} locate={props.locate}
+    handlers={props.handlers} openHandler={props.openHandler}/>;
   return <>
     <For each={props.palette.categories}>{category => <>
       <tr class="form-property-category"><th colspan="2">{caption(category.caption, props.state)}</th></tr>
