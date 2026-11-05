@@ -36,9 +36,7 @@ function Sheet(props) {
     <tbody><For each={Array.from({ length: 30 }, (_, index) => index + 1)}>{row => <tr><Show when={flag(props.node, 'ShowHeaders', false)}><th>{row}</th></Show><For each={columns}>{(_, index) => <td classList={{ 'taxi-sheet-cell-selected': row === 1 && index() === 0 }}/>}</For></tr>}</For></tbody></table></div>;
 }
 function DocumentToolbar(props) { return <Show when={flag(props.node, 'ShowToolbar', false)}>
-  <div class="taxi-document-toolbar"><Show when={props.node.kind === 'FormattedDocumentField'} fallback={<><Icon name="Write"/><Icon name="Print"/><span>−</span><span>100%</span><span>+</span></>}>
-    <span class="taxi-format-face">Arial ▾</span><span>10 ▾</span><b>B</b><i>I</i><u>U</u><span>▾</span><span>≡</span><span>≡</span>
-  </Show></div></Show>; }
+  <div class="taxi-document-toolbar"><Icon name="Write"/><Icon name="Print"/><span>−</span><span>100%</span><span>+</span></div></Show>; }
 function Planner(props) {
   const state = props.controller.state, now = new Date(), date = new Intl.DateTimeFormat(state.culture, { dateStyle: 'long' }).format(now);
   return <div class="taxi-planner"><div class="taxi-planner-date">{date}</div><div class="taxi-planner-scroll"><div class="taxi-planner-hours">
@@ -48,7 +46,7 @@ function Planner(props) {
 }
 /** Static surfaces belong to the design-time view. Bound runtime documents and handlers never execute. */
 export function SpecialField(props) {
-  const document = createMemo(() => ['TextDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
+  const document = createMemo(() => ['TextDocumentField','FormattedDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
   createEffect(()=>props.controller.nativeText?.issue(owner,props.controller.state.os==='linux'&&document()&&!document().calibrated));
   onCleanup(()=>props.controller.nativeText?.issue(owner,false));
   const width = () => document()?.width ?? (number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500);
@@ -60,7 +58,8 @@ export function SpecialField(props) {
       <Match when={props.node.kind === 'PeriodField'}><Period {...props}/></Match>
       <Match when={props.node.kind === 'SpreadSheetDocumentField'}><Sheet {...props}/></Match>
       <Match when={props.node.kind === 'PlannerField'}><Planner {...props}/></Match>
-      <Match when={['TextDocumentField', 'FormattedDocumentField'].includes(props.node.kind)}><DocumentToolbar {...props}/><div classList={{ 'taxi-document-surface': true, 'taxi-text-document': props.node.kind === 'TextDocumentField' }} style={{'background-color':document()?color(props.node.presentation.background):undefined}}/></Match>
+      <Match when={props.node.kind === 'TextDocumentField'}><DocumentToolbar {...props}/><div class="taxi-document-surface taxi-text-document" style={{'background-color':document()?color(props.node.presentation.background):undefined}}/></Match>
+      <Match when={props.node.kind === 'FormattedDocumentField'}><div class="taxi-document-surface"/></Match>
       <Match when={props.node.kind === 'PDFDocumentField'}><DocumentToolbar {...props}/><Pdf/></Match>
       <Match when={props.node.kind === 'ChartField'}><Chart width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
       <Match when={props.node.kind === 'DendrogramField'}><Dendrogram width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
