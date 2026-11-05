@@ -61,7 +61,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (Object.keys(next).some(key => size()[key] !== next[key])) { setSize(next); schedule(); }
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
-      const children = [...items.children], required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue('--taxi-preferred-width') || '0'), 0) + Math.max(0, children.length - 1) * 8;
+      const children = [...items.children];
+      const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
+      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue('--taxi-preferred-width') || '0'), 0)
+        + Math.max(0, children.length - 1) * gap;
       if (rect(items).width + .5 < required) wrap.add(items.dataset.layoutOwner);
     }
     setWrapped(previous => {

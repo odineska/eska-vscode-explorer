@@ -30,6 +30,10 @@ function measure(ui, keys) {
 
 const sameRow = boxes => Math.abs(boxes.A2.y - boxes.B2.y) <= 1;
 const belowLeft = boxes => boxes.B2.y >= boxes.A2.y + boxes.A2.height;
+const linuxGaps = {
+  ColumnsFF:[60,60],ColumnsFT:[64,32],ColumnsTF:[60,92],ColumnsTT:[60,32],
+  NestedFF:[60,60],NestedFT:[60,92],
+};
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
@@ -61,7 +65,14 @@ exports.run = async () => {
     const currentWidths = [boxes.A1.width,boxes.A2.width,boxes.B1.width,boxes.B2.width];
     widths ??= currentWidths;
     assert.deepEqual(currentWidths,widths,input.kind+' preserves natural column widths');
-    results.push({kind:input.kind,leftGap:boxes.A2.y-boxes.A1.y,rightGap:boxes.B2.y-boxes.B1.y,widths:currentWidths});
+    const leftGap = boxes.A2.y-boxes.A1.y, rightGap = boxes.B2.y-boxes.B1.y;
+    const horizontalGap = boxes.B1.x-boxes.A1.x;
+    if (process.platform === 'linux') {
+      assert.deepEqual([leftGap,rightGap],linuxGaps[input.kind],input.kind+' native row distances');
+      assert.equal(horizontalGap,349,input.kind+' native column offset');
+      assert.deepEqual(currentWidths,[151,151,191,191],input.kind+' native input widths');
+    }
+    results.push({kind:input.kind,leftGap,rightGap,horizontalGap,widths:currentWidths});
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+left)}).click()`);

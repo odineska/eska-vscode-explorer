@@ -60,6 +60,7 @@ export function alignUnitedRows(root, model, wrapped, collapsed) {
     if (items && ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping)
       && children.length > 1 && children.every(ordinaryVerticalGroup)) {
       owners.add(node.key);
+      if (scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto') mark(items, 'data-united-auto-spacing');
       if (!wrapped.has(node.key)) shareRows(items, children);
     }
     for (const child of node.children) visit(child);
