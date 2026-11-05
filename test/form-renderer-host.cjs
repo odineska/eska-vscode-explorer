@@ -118,10 +118,11 @@ async function checkRadioChoices(ui, service, view, document) {
     properties + '<TitleLocation>None</TitleLocation>' + options(labels));
   const measure = `(() => {
     const frame = document.querySelector('.taxi-form-frame');
+    const control = document.querySelector('.taxi-radios');
+    if (!frame || !control) return null;
     const form = frame.getBoundingClientRect(), css = getComputedStyle(frame);
     const settled = Math.abs(form.width - parseFloat(css.getPropertyValue('--taxi-form-preferred-width'))) <= .5
       && Math.abs(form.height - parseFloat(css.getPropertyValue('--taxi-form-preferred-height'))) <= .5;
-    const control = document.querySelector('.taxi-radios');
     const origin = control.getBoundingClientRect();
     const glyphs = [...control.querySelectorAll('.taxi-radio')].map(glyph => {
       const box = glyph.getBoundingClientRect();
@@ -135,7 +136,7 @@ async function checkRadioChoices(ui, service, view, document) {
   await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
   await until(async () => {
     const result = await ui.evaluate(measure);
-    return result.settled && result.captions.length === labels.length;
+    return result?.settled && result.captions.length === labels.length;
   }, 'radio columns rendered at the preferred size');
   const buttons = await ui.evaluate(measure);
   assert.deepEqual(buttons.captions, labels);
@@ -151,11 +152,12 @@ async function checkRadioChoices(ui, service, view, document) {
   const detached = view.frames.get('preview');
   const floating = await frame({ detached: true, fixedFormArea: true, state: { title: detached.panel.title } });
   assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+  await until(() => floating.evaluate("!!document.querySelector('.taxi-radios')"), 'initial choices rendered in the detached window');
   await floating.evaluate("globalThis.__radioChoices = document.querySelector('.taxi-radios'); true");
   await change(editOptions('<RadioButtonType>Tumbler</RadioButtonType><ColumnsCount>1</ColumnsCount><Enabled>false</Enabled>', ['Update  ', 'Skip']));
   await until(async () => {
     const result = await floating.evaluate(measure);
-    return result.settled && result.mode === 'segments';
+    return result?.settled && result.mode === 'segments';
   }, 'segments rendered at the preferred size in detached preview');
   const segments = await floating.evaluate(measure);
   assert.deepEqual(segments.captions, ['Update', 'Skip']);
@@ -166,8 +168,8 @@ async function checkRadioChoices(ui, service, view, document) {
   if (process.platform === 'linux') assert.deepEqual(segments.size, [95, 99]);
   await service.receive(view, detached, { type: 'dock' });
   await until(() => !view.frames.has('preview'), 'radio preview docked');
-  await until(async () => (await ui.evaluate(measure)).settled, 'docked radio geometry settled');
+  await until(async () => (await ui.evaluate(measure))?.settled, 'docked radio geometry settled');
   assert.deepEqual(await ui.evaluate(measure), segments);
   await change(original);
-  await until(async () => (await ui.evaluate(measure)).glyphs.length === 3, 'automatic sample restored');
+  await until(async () => (await ui.evaluate(measure))?.glyphs.length === 3, 'automatic sample restored');
 }
