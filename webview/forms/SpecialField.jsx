@@ -1,6 +1,8 @@
 import { For, Show, Switch, Match, createMemo, createEffect, onCleanup } from 'solid-js';
 import { number, flag, scalar, color } from './model.mjs';
 import { documentSurfaceMetrics } from './document-surface.mjs';
+import { pdfSurfaceMetrics } from './pdf-surface.mjs';
+import { Pdf } from './Pdf.jsx';
 import { Geographical } from './Geographical.jsx';
 import { Icon } from './Preview.jsx';
 import { Chart } from './Chart.jsx';
@@ -11,12 +13,6 @@ function Period(props) {
   const state = props.controller.state, now = new Date();
   const months = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat(state.culture, { month: 'short' }).format(new Date(2026, index, 1)));
   return <div class="taxi-period"><i class="taxi-period-previous"/><For each={[-1, 0, 1]}>{offset => <div class="taxi-period-year"><b>{now.getFullYear() + offset}</b><div class="taxi-period-months"><For each={months}>{(month, index) => <span classList={{ current: offset === 0 && index() === now.getMonth() }}>{month}</span>}</For></div></div>}</For><i class="taxi-period-next"/></div>;
-}
-
-function Pdf() {
-  return <div class="taxi-pdf"><div class="taxi-pdf-page"/>
-    <div class="taxi-pdf-scroll-vertical"><i/><b/></div><div class="taxi-pdf-scroll-horizontal"><i/><b/></div>
-  </div>;
 }
 
 function Calendar(props) {
@@ -46,7 +42,7 @@ function Planner(props) {
 }
 /** Static surfaces belong to the design-time view. Bound runtime documents and handlers never execute. */
 export function SpecialField(props) {
-  const document = createMemo(() => ['TextDocumentField','FormattedDocumentField','HTMLDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
+  const document = createMemo(() => props.node.kind==='PDFDocumentField'?pdfSurfaceMetrics(props.node,props.controller.state.os):['TextDocumentField','FormattedDocumentField','HTMLDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
   createEffect(()=>props.controller.nativeText?.issue(owner,props.controller.state.os==='linux'&&document()&&!document().calibrated));
   onCleanup(()=>props.controller.nativeText?.issue(owner,false));
   const width = () => document()?.width ?? (number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500);
@@ -60,7 +56,7 @@ export function SpecialField(props) {
       <Match when={props.node.kind === 'PlannerField'}><Planner {...props}/></Match>
       <Match when={props.node.kind === 'TextDocumentField'}><DocumentToolbar {...props}/><div class="taxi-document-surface taxi-text-document" style={{'background-color':document()?color(props.node.presentation.background):undefined}}/></Match>
       <Match when={props.node.kind === 'FormattedDocumentField'}><div class="taxi-document-surface"/></Match>
-      <Match when={props.node.kind === 'PDFDocumentField'}><DocumentToolbar {...props}/><Pdf/></Match>
+      <Match when={props.node.kind === 'PDFDocumentField'}><Pdf node={props.node} controller={props.controller} metrics={document()}/></Match>
       <Match when={props.node.kind === 'ChartField'}><Chart width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
       <Match when={props.node.kind === 'DendrogramField'}><Dendrogram width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
       <Match when={props.node.kind === 'GanttChartField'}><Gantt width={width() - 2} height={height() - 2} controller={props.controller}/></Match>
