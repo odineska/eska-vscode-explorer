@@ -55,7 +55,10 @@ exports.run = async function () {
     if (form.kind === 'CalendarField') { assert.equal(geometry.control.width,338); assert.equal(geometry.control.height,300); assert.equal(geometry.title,'Top'); }
     if (['ChartField','HTMLDocumentField','FormattedDocumentField'].includes(form.kind)) {assert.equal(geometry.control.width,500);assert.equal(geometry.control.height,243);assert.equal(geometry.title,'Top');}
     if (form.kind === 'FormattedDocumentField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-document-toolbar').length"),0);
-    if (form.kind === 'ChartField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-chart rect').length"),20);
+    if(form.kind==='ChartField'){
+      if(process.platform==='linux'&&await ui.evaluate("Intl.DateTimeFormat().resolvedOptions().locale==='en-US'"))await until(()=>ui.evaluate("document.querySelector('[data-native-chart]')?.dataset.nativeChart==='ready'"),'native Chart paint');
+      else assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-chart rect').length"),20);
+    }
     if (['TextDocumentField','PDFDocumentField','DendrogramField','GanttChartField','GeographicalSchemaField','GraphicalSchemaField'].includes(form.kind)) {
       assert.deepEqual([geometry.control.width,geometry.control.height],[500,243]);assert.equal(geometry.title,'Top');
     }

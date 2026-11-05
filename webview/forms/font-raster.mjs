@@ -1,5 +1,13 @@
 const MAX_FONT_BYTES = 4 * 1024 * 1024;
 const MAX_TEXT_WIDTH = 8192;
+const MAX_ROTATED_PIXELS = 4 * 1024 * 1024;
+
+function supportedText(text,pixels){
+  return typeof text==='string'&&text.length<=4096&&!/[\p{Mark}\p{Format}\p{Control}]/u.test(text)
+    &&/^[\p{Script=Latin}\p{Script=Cyrillic}\p{Number}\p{Punctuation}\p{Separator}\p{Symbol}]*$/u.test(text)
+    &&Number.isInteger(pixels)&&pixels>=1&&pixels<=128;
+}
+
 
 /** Owns the module, memory-backed font files and reusable glyph-slot header. */
 export function createFontRaster(bytes) {
@@ -26,9 +34,7 @@ export function createFontRaster(bytes) {
     const face = {
       raster(text, pixels, ascent, descent, mode = 'gray', advances) {
         if (!handle) throw new Error('font-raster-disposed');
-        if (typeof text !== 'string' || text.length > 4096 || /[\p{Mark}\p{Format}\p{Control}]/u.test(text)
-            || !/^[\p{Script=Latin}\p{Script=Cyrillic}\p{Number}\p{Punctuation}\p{Separator}\p{Symbol}]*$/u.test(text)
-            || !Number.isInteger(pixels) || pixels < 1 || pixels > 128
+        if (!supportedText(text,pixels)
             || !Number.isInteger(ascent) || !Number.isInteger(descent) || ascent < 1 || descent < 0 || ascent + descent > 256
             || !['gray', 'lcd'].includes(mode)) {
           throw new Error('font-raster-text');
@@ -89,6 +95,34 @@ export function createFontRaster(bytes) {
           }
         }
         return { width, height, ascent, descent, originY: inkTop, alpha };
+      },
+      /** Native 45-degree chart labels use red LCD coverage and one final tint. */
+      rotated(text, pixels) {
+        if (!handle) throw new Error('font-raster-disposed');
+        if (!supportedText(text,pixels)) throw new Error('font-raster-text');
+        if (api.eska_ft_size(handle,pixels)) throw new Error('font-raster-size');
+        const glyphs=[];let penX=0,penY=0,left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity,previous;
+        for(const char of text){
+          const codepoint=char.codePointAt(0);
+          if(previous!==undefined){const kern=api.eska_ft_kerning(handle,previous,codepoint),shift=Math.round(kern*64*46340/65536);penX+=shift;penY+=shift;}
+          previous=codepoint;
+          if(api.eska_ft_rotated_glyph(handle,codepoint,header))throw new Error('font-raster-glyph');
+          const [advanceX,advanceY,,,,bearingX,bearingY,columns,rows,pitch,address,pixelMode]=[...new Int32Array(api.memory.buffer,header,12)];
+          if(pixelMode!==5||advanceX<0||advanceY<0||columns<0||columns>4096||rows<0||rows>4096||pitch<columns*3||address<0||address+pitch*rows>api.memory.buffer.byteLength)throw new Error('font-raster-bitmap');
+          const x=Math.ceil(penX/64)+bearingX,y=Math.ceil(-penY/64)-bearingY,coverage=new Uint8Array(columns*rows);
+          for(let row=0;row<rows;row++){const source=new Uint8Array(api.memory.buffer,address+pitch*row,columns*3);for(let col=0;col<columns;col++)coverage[row*columns+col]=source[col*3];}
+          if(columns&&rows){left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x+columns);bottom=Math.max(bottom,y+rows);}
+          glyphs.push({x,y,columns,rows,coverage});penX+=advanceX;penY+=advanceY;
+          if(penX>MAX_TEXT_WIDTH*64||penY>MAX_TEXT_WIDTH*64)throw new Error('font-raster-width');
+        }
+        if(!Number.isFinite(left))return{width:0,height:0,originX:0,originY:0,advanceX:penX,advanceY:penY,alpha:new Uint8Array(0)};
+        const width=right-left,height=bottom-top;
+        if(width>MAX_TEXT_WIDTH||height>MAX_TEXT_WIDTH||width*height>MAX_ROTATED_PIXELS)throw new Error('font-raster-surface');
+        const alpha=new Uint8Array(width*height);
+        for(const g of glyphs)for(let y=0;y<g.rows;y++)for(let x=0;x<g.columns;x++){
+          const index=(g.y+y-top)*width+g.x+x-left;alpha[index]=Math.min(255,alpha[index]+g.coverage[y*g.columns+x]);
+        }
+        return{width,height,originX:left,originY:top,advanceX:penX,advanceY:penY,alpha};
       },
       dispose() {
         if (!handle) return;

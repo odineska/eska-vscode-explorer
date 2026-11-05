@@ -9,5 +9,5 @@ export function fixedChartSurfaceMetrics(node,os){
   pixels:13,ascent:12,descent:3,calibrated:linux&&recordedAxes.has(`${width}:${height}`)};
 }
 
-/** Both settled tree and Gantt charts ignore requested BorderColor in this profile. */
+/** The settled chart surfaces ignore requested BorderColor in this profile. */
 export function fixedChartBorderColor(node){return !flag(node,'Enabled')||flag(node,'ReadOnly',false)?'#e8e8e8':'#a0a0a0';}

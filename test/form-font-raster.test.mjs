@@ -145,6 +145,22 @@ test('rasterizer validates unsupported text and releases owned faces idempotentl
   assert.throws(() => engine.open(regular), /font-raster-disposed/);
 });
 
+test('rotated native glyph keeps LCD coverage and restores the shared face',()=>{
+  const engine=createFontRaster(binary),face=engine.open(regular);
+  try{
+    const before=face.raster('Форма MM',43,39,10),glyph=face.rotated('P',13);
+    assert.deepEqual([glyph.width,glyph.height,glyph.originX,glyph.originY,glyph.advanceX,glyph.advanceY],[10,12,-7,-12,407,407]);
+    assert.equal(sha(glyph.alpha),'ef5765380075e522853a90f9f2b064ceacdc9bd5e15d5f0fadca037893c806a3');
+    assert.deepEqual(face.raster('Форма MM',43,39,10),before);
+    assert.equal(face.rotated('',13).alpha.length,0);
+    for(const text of ['e\u0301','a\u200d','\n','مرحبا','🚀','a'.repeat(4097)])assert.throws(()=>face.rotated(text,13),/font-raster-(text|glyph)/);
+    for(const pixels of [0,129,13.5,Infinity,NaN])assert.throws(()=>face.rotated('M',pixels),/font-raster-text/);
+    assert.throws(()=>face.rotated('M'.repeat(1000),128),/font-raster-(width|surface)/);
+    assert.deepEqual(face.raster('Форма MM',43,39,10),before);
+  }finally{engine.dispose();}
+  assert.throws(()=>face.rotated('P',13),/font-raster-disposed/);
+});
+
 test('memory growth preserves existing font data and refreshes glyph views', () => {
   const engine = createFontRaster(binary);
   try {

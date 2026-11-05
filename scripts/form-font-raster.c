@@ -52,16 +52,7 @@ int eska_ft_size(uint32_t handle, uint32_t pixels) {
     return FT_Set_Pixel_Sizes((FT_Face)(uintptr_t)handle, 0, pixels);
 }
 
-int eska_ft_glyph(uint32_t handle, uint32_t codepoint, uint32_t address) {
-    int32_t *out = (int32_t *)(uintptr_t)address;
-    if (!handle || !out || codepoint > 0x10ffff) return FT_Err_Invalid_Argument;
-    FT_Face face = (FT_Face)(uintptr_t)handle;
-    FT_UInt index = FT_Get_Char_Index(face, codepoint);
-    if (!index) return FT_Err_Invalid_Glyph_Index;
-    FT_Int32 flags = FT_LOAD_TARGET_LCD | FT_LOAD_COLOR | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH | FT_LOAD_RENDER;
-    FT_Error error = FT_Load_Glyph(face, index, flags);
-    if (error) return error;
-    FT_GlyphSlot glyph = face->glyph;
+static int write_glyph(FT_GlyphSlot glyph, int32_t *out) {
     FT_Bitmap *bitmap = &glyph->bitmap;
     if (bitmap->pixel_mode != FT_PIXEL_MODE_LCD || bitmap->width % 3 || bitmap->pitch < 0
         || bitmap->width > 12288 || bitmap->rows > 4096) return FT_Err_Cannot_Render_Glyph;
@@ -78,6 +69,38 @@ int eska_ft_glyph(uint32_t handle, uint32_t codepoint, uint32_t address) {
     out[10] = (int32_t)(uintptr_t)bitmap->buffer;
     out[11] = bitmap->pixel_mode;
     return 0;
+}
+
+int eska_ft_glyph(uint32_t handle, uint32_t codepoint, uint32_t address) {
+    int32_t *out = (int32_t *)(uintptr_t)address;
+    if (!handle || !out || codepoint > 0x10ffff) return FT_Err_Invalid_Argument;
+    FT_Face face = (FT_Face)(uintptr_t)handle;
+    FT_UInt index = FT_Get_Char_Index(face, codepoint);
+    if (!index) return FT_Err_Invalid_Glyph_Index;
+    FT_Int32 flags = FT_LOAD_TARGET_LCD | FT_LOAD_COLOR | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH | FT_LOAD_RENDER;
+    FT_Error error = FT_Load_Glyph(face, index, flags);
+    return error ? error : write_glyph(face->glyph, out);
+}
+
+int eska_ft_rotated_glyph(uint32_t handle, uint32_t codepoint, uint32_t address) {
+    int32_t *out = (int32_t *)(uintptr_t)address;
+    if (!handle || !out || codepoint > 0x10ffff) return FT_Err_Invalid_Argument;
+    FT_Face face = (FT_Face)(uintptr_t)handle;
+    FT_UInt index = FT_Get_Char_Index(face, codepoint);
+    if (!index) return FT_Err_Invalid_Glyph_Index;
+    /* Native chart labels truncate the 45-degree matrix to 16.16 precision. */
+    FT_Matrix matrix = { 46340, -46340, 46340, 46340 };
+    FT_Set_Transform(face, &matrix, NULL);
+    FT_Error error = FT_Load_Glyph(face, index,
+        FT_LOAD_TARGET_LCD | FT_LOAD_COLOR | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH);
+    /* The shared face must remain usable by every ordinary caption after errors, too. */
+    FT_Set_Transform(face, NULL, NULL);
+    if (error) return error;
+    error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_LCD);
+    if (error) return error;
+    error = write_glyph(face->glyph, out);
+    if (!error) out[1] = (int32_t)face->glyph->advance.y;
+    return error;
 }
 
 void eska_ft_close(uint32_t face) {
