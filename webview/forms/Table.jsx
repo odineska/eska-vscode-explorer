@@ -1,6 +1,6 @@
-import { For, Show, Switch, Match, createMemo } from 'solid-js';
+import { For, Show, Switch, Match } from 'solid-js';
 import { scalar, flag, caption, font, color, text } from './model.mjs';
-import { tableLayout } from './table-model.mjs';
+import { createTableLayout } from './table-layout.js';
 import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
@@ -41,7 +41,7 @@ function Header(props) {
 /** Empty design-time collections do not fabricate runtime rows or values. */
 export function Table(props) {
   let movementGroup;
-  const state = props.controller.state, node = () => props.node, layout = createMemo(() => tableLayout(node(), state.locale));
+  const state = props.controller.state, node = () => props.node, layout = createTableLayout(node, () => state.locale);
   const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
   return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>

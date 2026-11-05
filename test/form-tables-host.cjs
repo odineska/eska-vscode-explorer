@@ -95,10 +95,57 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("!!document.querySelector('.taxi-menu')"), false);
       assert.equal(document.isDirty, true);
     }
+    let identity;
+    if (['Default', 'GridFooter', 'HorizontalTitled', 'Vertical', 'InCell'].includes(form.kind)) {
+      identity = await verifyGeometryIdentity(document, view, ui, form.kind);
+    }
     assert.deepEqual(await fs.readFile(form.path), before);
-    results.push({kind:form.kind,...geometry}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(identity ? {identity} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({passed:true,formTables:true,locale:vscode.env.language,results}));
 };
+
+/** A width edit must retain the actual header/footer DOM, including the changed column. */
+async function verifyGeometryIdentity(document, view, ui, kind) {
+  async function replace(text) {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), text);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+  }
+  const original = document.getText();
+  const footer = original.includes('<Footer>true</Footer>') ? original
+    : original.replace('<Table name="Rows" id="1">', '<Table name="Rows" id="1"><Footer>true</Footer>');
+  assert.ok(footer.includes('<Footer>true</Footer>'));
+  if (footer !== original) await replace(footer);
+  await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-footer')"), 'identity footer ready');
+  const captured = await ui.evaluate(`(() => {
+    globalThis.__tableIdentity = {
+      headers: [...document.querySelectorAll('.taxi-table-head [data-column]')],
+      footer: [...document.querySelectorAll('.taxi-table-footer [role=cell]')],
+      tracks: document.querySelector('.taxi-table-head').style.gridTemplateColumns
+    };
+    return {headers: __tableIdentity.headers.length, footer: __tableIdentity.footer.length};
+  })()`);
+  assert.ok(captured.headers >= 3 && captured.footer >= 2);
+  const changed = footer.replace(/<InputField\b[^>]*\bname="Text"[^>]*>/,
+    opening => opening + '<Width>32</Width>');
+  assert.notEqual(changed, footer, 'controlled Text column fixture exists');
+  await replace(changed);
+  await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns !== __tableIdentity.tracks"), 'dirty column width rendered');
+  const retained = await ui.evaluate(`({
+    headers: __tableIdentity.headers.filter(node => node.isConnected).length,
+    footer: __tableIdentity.footer.filter(node => node.isConnected).length
+  })`);
+  await ui.screenshot(`table-identity-${kind}-${vscode.env.language}.png`);
+  assert.equal(retained.headers, captured.headers, `${kind}: Width retains all header DOM nodes`);
+  assert.equal(retained.footer, captured.footer, `${kind}: Width retains all footer DOM nodes`);
+  await ui.evaluate("document.querySelector('.taxi-table-head [data-column$=\":4\"]').click()");
+  await until(() => view.selected?.key?.value === '4', 'retained header selects its original source column');
+  await replace(original);
+  await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns === __tableIdentity.tracks"), 'width restored');
+  assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
+  assert.equal(document.getText(), original);
+  return {headers: retained.headers, footerCells: retained.footer, widthEdit: 32, selection: '4', restored: true};
+}
