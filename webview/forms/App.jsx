@@ -2,6 +2,7 @@ import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMou
 import { Preview } from './Preview.jsx';
 import { inspectorLayout } from './inspector-layout.mjs';
 import { PropertyValue } from './PropertyValue.jsx';
+import { PropertyPalette } from './PropertyPalette.jsx';
 import { flatten, treeChildren, find, property, automaticCommands, text, key } from './model.mjs';
 
 function handlerLinks(model, matches) {
@@ -64,14 +65,21 @@ function Properties(props) {
   const c = props.controller, state = c.state;
   const node = createMemo(() => find(state.model.root, state.selected) ?? state.model.root);
   const handlers = createMemo(() => state.handlerNavigation ? handlerLinks(state.model,handler=>handler.owner.kind==='element'&&key({identity:handler.owner.identity})===node().key) : []);
-  const locate = field => c.post({ type: 'locate', target: { kind: 'property', identity: node().identity, property: field.key } });
+  const palette = createMemo(() => state.palette?.revision === state.revision && state.palette?.formSessionId === state.formSessionId
+    && key({identity: state.palette.identity}) === node().key ? state.palette : null);
+  const locate = target => c.post({ type: 'locate', revision: state.revision, formSessionId: state.formSessionId,
+    target: { ...target, identity: node().identity } });
+  const locateProperty = field => locate({ kind: 'property', property: field.key });
   return <><div class="form-pane-title">{state.strings.properties}<span>{node().name || state.strings.form}</span></div><div class="form-table-scroll"><table class="form-properties"><tbody>
+    <Show when={palette()?.rows} fallback={<>
     <tr><th>{state.strings.name}</th><td>{node().name ?? state.strings.form}</td></tr><tr><th>{state.strings.kind}</th><td>{node().kind}</td></tr>
     <For each={node().properties}>{field => <tr tabindex="0" data-property-name={field.key.name} data-property-namespace={field.key.namespace ?? ''} title={`{${field.key.namespace ?? ''}}${field.key.name} — ${state.strings.source}`}
-      onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(field); }}
-      onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(field); } }}>
+      onDblClick={event => { if (!event.target.closest('summary,button,input')) locateProperty(field); }}
+      onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locateProperty(field); } }}>
       <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th><td><PropertyValue field={field} state={state}/></td>
-    </tr>}</For>
+    </tr>}</For></>}>
+      <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}/>
+    </Show>
     <Show when={handlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
     <For each={handlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={()=>c.post({type:'handler',index:entry.index})}>{entry.handler.name}</button></td></tr>}</For>
   </tbody></table></div><div class="form-property-actions"><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: node().identity } })}>{state.strings.source}</button>

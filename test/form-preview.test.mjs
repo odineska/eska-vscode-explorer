@@ -2,7 +2,7 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource } from '../out/form-preview/protocol.js';
+import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
@@ -179,4 +179,26 @@ test('form image assets require checked source ownership, bounded image MIME and
   const absent=structuredClone(model);absent.model.assets=[];assert.throws(()=>parseFormSnapshot(absent));
   const html=structuredClone(model);html.model.assets[0].picture.mimeType='text/html';assert.throws(()=>parseFormSnapshot(html));
   const foreign=structuredClone(model);foreign.model.assets[0].id='c'.repeat(64);assert.throws(()=>parseFormSnapshot(foreign));
+});
+
+
+test('a selected property palette requires an exact revision and real XML indices', () => {
+  const snapshot = fixture(), node = snapshot.model.root;
+  const field = {key:{namespace:'urn:test',name:'Width'}};
+  node.properties = [field, field];
+  const label = {'ru-RU':'Основные','en-US':'General'};
+  const declared = (index, occurrence) => ({id:'xml:'+index,category:null,editor:null,caption:null,
+    value:{kind:'declared',propertyIndex:index,occurrence,sourceKind:'form'}});
+  const absent = {id:'platform:United',category:'main',editor:'boolean',caption:label,
+    value:{kind:'absent',default:{kind:'boolean',value:true},caption:null}};
+  const data = {formSessionId:snapshot.formSessionId,revision:snapshot.revision,identity:node.identity,
+    categories:[{id:'main',caption:label}],rows:[absent,declared(0,0),declared(1,1)]};
+  assert.deepEqual(parsePropertyPalette(data,snapshot,node),data);
+  assert.equal(parsePropertyPalette({...data,rows:null,categories:null},snapshot,node).rows,null);
+  for (const patch of [
+    {formSessionId:'other'}, {revision:'8'}, {identity:{...data.identity,source:'b'.repeat(64)}},
+    {rows:[absent,declared(1,0)]}, {rows:[absent,declared(1,1),declared(2,0)]},
+    {rows:[absent,declared(0,0),declared(0,0)]}, {categories:[]},
+    {rows:[{...absent,value:{...absent.value,default:{kind:'boolean',value:'true'}}},...data.rows.slice(1)]},
+  ]) assert.throws(() => parsePropertyPalette({...data,...patch},snapshot,node));
 });

@@ -1,4 +1,6 @@
 const en = {
+  paletteXml: "Additional XML", paletteDefault: "Platform default", paletteIntrinsic: "Element definition",
+  paletteQualifier: "XML attribute", paletteExtension: "Extension source", paletteForm: "Form source",
   events: "Events", action: "Action", handler: "Go to handler", handlerUnavailable: "The handler is missing, ambiguous, or its module is incomplete.",
   chartElement: "Element", chartValue: "Value",
   "table.LineNumber": "#",
@@ -24,6 +26,8 @@ const en = {
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
 const ru: Record<keyof typeof en, string> = {
+  paletteXml: "Дополнительный XML", paletteDefault: "Значение платформы", paletteIntrinsic: "Описание элемента",
+  paletteQualifier: "Атрибут XML", paletteExtension: "Источник в расширении", paletteForm: "Источник в форме",
   events: "События", action: "Действие", handler: "Перейти к обработчику", handlerUnavailable: "Обработчик не найден, неоднозначен или его модуль пока некорректен.",
   chartElement: "Элемент", chartValue: "Значение",
   "table.LineNumber": "N",

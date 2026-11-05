@@ -2,7 +2,7 @@ import type { Connection } from "../connection.js";
 import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
 import { withQueryText } from "../query/text-transfer.js";
-import { parseFormSnapshot, parseFormPreparation, parseLocation, parseHandlerSource, MAX_FORM_DEPENDENCIES, type FormHandlerSource, type FormInput, type FormPreparation, type FormLimits, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
+import { parseFormSnapshot, parseFormPreparation, parsePropertyPalette, parseLocation, parseHandlerSource, MAX_FORM_DEPENDENCIES, type FormHandlerSource, type FormInput, type FormPreparation, type FormLimits, type FormNode, type FormPalette, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
 
 function checkContext(connection: Connection, tree: MetadataTree, entry: TreeEntry, value: unknown, generation: string): void {
   const state = connection.state;
@@ -65,11 +65,24 @@ export class FormSession {
     });
     this.pending = action.catch(() => {}); return action;
   }
-  async locate(target: FormTarget): Promise<Location> {
+  async inspect(snapshot: FormSnapshot, node: FormNode): Promise<FormPalette> {
     await this.pending;
+    if (this.closed || this.current !== snapshot) throw new ExplorerError("obsolete");
+    if (!this.limits.propertyPalette) throw new ExplorerError("incompatible");
     const generation = this.entry.project.info.generation;
-    const value = await this.request("form/locate", { formSessionId: this.current.formSessionId, revision: this.current.revision, target }, generation);
-    this.check(value, generation); return parseLocation(value);
+    const value = await this.request("form/inspect", { formSessionId: snapshot.formSessionId, revision: snapshot.revision, identity: node.identity }, generation);
+    this.check(value, generation);
+    if (this.current !== snapshot) throw new ExplorerError("obsolete");
+    return parsePropertyPalette(value, snapshot, node);
+  }
+  async locate(snapshot: FormSnapshot, target: FormTarget): Promise<Location> {
+    await this.pending;
+    if (this.closed || this.current !== snapshot) throw new ExplorerError("obsolete");
+    const generation = this.entry.project.info.generation;
+    const value = await this.request("form/locate", { formSessionId: snapshot.formSessionId, revision: snapshot.revision, target }, generation);
+    this.check(value, generation);
+    if (this.current !== snapshot) throw new ExplorerError("obsolete");
+    return parseLocation(value);
   }
   async handlerSource(index: number, revision = this.current.revision): Promise<FormHandlerSource> {
     await this.pending;
