@@ -84,3 +84,97 @@ test('shared preview navigation is restored before rendering without sharing lay
   receive({type:'previewNavigation',previewNavigation:{pages:{invalid:2},collapsed:{}}});assert.equal(controller.state.ui.pages['own:current:1'],'own:current:2');
   controller.dispose();
 });
+
+test('each incoming message publishes one coherent reactive snapshot', async () => {
+  const repository = fileURLToPath(new URL('../', import.meta.url));
+  const bundle = await build({
+    stdin: {
+      contents: `export { controller } from './webview/forms/controller.js';
+        export { createRoot, createEffect } from 'solid-js';`,
+      resolveDir: repository,
+    },
+    bundle: true,
+    write: false,
+    platform: 'browser',
+    format: 'cjs',
+    conditions: ['browser', 'production'],
+    define: { 'process.env.NODE_ENV': '"production"' },
+  });
+  const listeners = new Map();
+  const snapshots = [];
+  const module = { exports: {} };
+  const context = createContext({
+    module,
+    exports: module.exports,
+    console,
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    observe: value => snapshots.push(structuredClone(value)),
+    window: {
+      addEventListener: (name, callback) => listeners.set(name, callback),
+      removeEventListener: name => listeners.delete(name),
+    },
+  });
+  runInContext(bundle.outputFiles[0].text, context);
+  context.controller = module.exports.controller({
+    getState: () => undefined,
+    setState: () => {},
+    postMessage: () => {},
+  });
+  const receive = value => listeners.get('message')({
+    data: runInContext(`(${JSON.stringify(value)})`, context),
+  });
+  const node = (kind, id, children = []) => ({
+    kind,
+    identity: { source: 'own', part: 'current', key: { kind: 'xml', value: String(id) } },
+    properties: [],
+    children,
+    auxiliary: [],
+  });
+  const root = node('Form', 0, [node('Pages', 1, [node('Page', 2), node('Page', 3)]), node('UsualGroup', 10)]);
+  root.properties.push({ key: { namespace: 'form', name: 'Width' }, value: { kind: 'text', text: '10' } });
+  receive({ type: 'state', sequence: 1, culture: 'en-US', model: { root } });
+  runInContext(`module.exports.createRoot(dispose => {
+    globalThis.stopObserving = dispose;
+    module.exports.createEffect(() => observe({
+      sequence: controller.state.sequence,
+      culture: controller.state.culture,
+      width: controller.state.model.root.properties[0].value.text,
+      selected: controller.state.selected,
+      page: controller.state.ui.pages['own:current:1'],
+      collapsed: controller.state.ui.collapsed['own:current:10']
+    }));
+  });`, context);
+  snapshots.length = 0;
+
+  const changed = structuredClone(root);
+  changed.properties[0].value.text = '20';
+  receive({
+    type: 'state',
+    sequence: 2,
+    culture: 'ru-RU',
+    model: { root: changed },
+    selection: changed.children[0].children[1].identity,
+    previewNavigation: { pages: { 'own:current:1': 'own:current:3' }, collapsed: { 'own:current:10': true } },
+  });
+  const expected = {
+    sequence: 2, culture: 'ru-RU', width: '20', selected: 'own:current:3',
+    page: 'own:current:3', collapsed: true,
+  };
+  assert.deepEqual(snapshots, [expected], 'effects must never observe a new revision with old model or navigation');
+
+  snapshots.length = 0;
+  receive({ type: 'state', sequence: 3, phase: 'updating' });
+  assert.deepEqual(snapshots, [{ ...expected, sequence: 3 }]);
+  snapshots.length = 0;
+  receive({ type: 'state', sequence: 1, culture: 'en-US', model: { root } });
+  assert.deepEqual(snapshots, [], 'an older message cannot partially replace the current state');
+
+  receive({
+    type: 'previewNavigation',
+    previewNavigation: { pages: { 'own:current:1': 'own:current:2' }, collapsed: { 'own:current:10': false } },
+  });
+  assert.deepEqual(snapshots, [{ ...expected, sequence: 3, page: 'own:current:2', collapsed: false }]);
+  runInContext('stopObserving(); controller.dispose();', context);
+  assert.equal(listeners.size, 0);
+});

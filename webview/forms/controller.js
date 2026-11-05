@@ -1,5 +1,5 @@
 import { createStore, reconcile, unwrap } from 'solid-js/store';
-import { createSignal } from 'solid-js';
+import { batch, createSignal } from 'solid-js';
 import { prepare, key, pageSelections } from './model.mjs';
 
 function previewNavigation(value) {
@@ -34,15 +34,35 @@ export function controller(api) {
   let persistFrame;
   const persist = () => { cancelAnimationFrame(persistFrame); persistFrame = requestAnimationFrame(() => api.setState({ schemaVersion: 1, ...unwrap(state.restore), selection: unwrap(selection()), ui: { ...unwrap(state.ui), selected: state.selected } })); };
   function receive(event) {
-    const value = event.data; if (!value || typeof value !== 'object') return;
-    if (value.type === 'previewNavigation') { applyNavigation(value.previewNavigation);persist();return; }
-    if (value.type === 'selection') { if (value.identity) { selectIdentity(value.identity); persist(); } return; }
-    if (value.type !== 'state' || !Number.isSafeInteger(value.sequence) || value.sequence < state.sequence) return;
-    if (value.previewNavigation) applyNavigation(value.previewNavigation);
-    for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'notice', 'restore', 'title']) if (value[field] !== undefined) set(field, value[field]);
-    if (value.model) { set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true })); if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root)); }
-    if (value.selection) selectIdentity(value.selection);
-    persist();
+    const value = event.data;
+    if (!value || typeof value !== 'object') return;
+
+    batch(() => {
+      if (value.type === 'previewNavigation') {
+        applyNavigation(value.previewNavigation);
+        persist();
+        return;
+      }
+      if (value.type === 'selection') {
+        if (value.identity) {
+          selectIdentity(value.identity);
+          persist();
+        }
+        return;
+      }
+      if (value.type !== 'state' || !Number.isSafeInteger(value.sequence) || value.sequence < state.sequence) return;
+
+      if (value.previewNavigation) applyNavigation(value.previewNavigation);
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'notice', 'restore', 'title']) {
+        if (value[field] !== undefined) set(field, value[field]);
+      }
+      if (value.model) {
+        set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true }));
+        if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root));
+      }
+      if (value.selection) selectIdentity(value.selection);
+      persist();
+    });
   }
   window.addEventListener('message', receive);
   const select = node => { selectIdentity(node.identity); post({ type: 'select', identity: node.identity }); persist(); };
