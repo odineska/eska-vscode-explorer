@@ -24,6 +24,11 @@ function Row(props) {
       default: return state.strings.paletteIntrinsic;
     }
   };
+  const hint = () => {
+    const key = xmlKey();
+    const origin = key ? `{${key.namespace ?? ''}}${key.name} — ${source()}` : source();
+    return row().available === false ? `${origin} · ${state.strings.paletteUnavailable}` : origin;
+  };
   const target = () => {
     if (state.phase !== 'ready') return;
     if (field()) return { kind: 'property', property: field().key, occurrence: value().occurrence };
@@ -33,7 +38,8 @@ function Row(props) {
   return <tr classList={{ 'form-event': value().kind === 'declaredEvent' }} data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
     data-property-name={value().kind === 'declaredEvent' ? 'Event' : xmlKey()?.name} data-property-namespace={xmlKey() ? xmlKey().namespace ?? '' : undefined}
     tabindex={target() ? '0' : undefined}
-    title={xmlKey() ? `{${xmlKey().namespace ?? ''}}${xmlKey().name} — ${source()}` : source()}
+    data-palette-available={row().available === false ? 'false' : undefined}
+    title={hint()}
     onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(); }}
     onKeyDown={event => { if (target() && event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(); } }}>
     <th>{label()}</th><td classList={{ 'form-property-default': value().kind === 'absent' }}>

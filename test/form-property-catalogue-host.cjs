@@ -108,7 +108,9 @@ exports.run = async () => {
           type:text('Type'),dataPath:text('DataPath'),mask:!!row('Mask'),min:!!row('MinValue'),wrap:row('Wrap')?.querySelector('input')?.checked,
           format:!!row('Format'),editFormat:!!row('EditFormat'),choiceLinks:!!row('ChoiceParameterLinks'),
           choiceForm:!!row('ChoiceForm'),listEdit:row('MultipleValuesExtendedEdit')?.querySelector('input')?.checked,
-          listColor:text('MultipleValuesBackColor'),
+          listColor:text('MultipleValuesBackColor'),allowEmpty:row('AllowInputEmptyMultipleValues')?.querySelector('input')?.checked,
+          choiceAvailable:row('ChoiceList')?.dataset.paletteAvailable !== 'false',choiceSource:row('ChoiceList')?.dataset.paletteSource,
+          choiceTitle:row('ChoiceList')?.title,hyperlink:text('MultipleValuesHyperlink'),
           width:text('Width'),maxWidth:text('MaxWidth'),titleLocation:text('TitleLocation'),
           change:text('OnChange'),changeSource:row('OnChange')?.dataset.paletteSource,
           choiceTab:row('StartChoice')?.getAttribute('tabindex')};
@@ -153,12 +155,18 @@ exports.run = async () => {
       const reference = '<v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:CatalogRef.Товары</v8:Type>';
       const withTypes = types => original.replace(xs('string'),types);
       assert.ok(original.includes(xs('string')));
+      const list = withTypes('<v8:Type>v8:ValueListType</v8:Type>');
+      const choiceXml = '<ChoiceList xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xs="http://www.w3.org/2001/XMLSchema"><xr:Item><xr:Value xsi:type="xs:string">Existing</xr:Value></xr:Item></ChoiceList>';
+      const extendedList = list.replace('<DataPath>Name</DataPath>',
+        '<DataPath>Name</DataPath><ExtendedEditMultipleValues>true</ExtendedEditMultipleValues>'+choiceXml);
       const bindings = [
         {name:'unbound',xml:original.replace('<DataPath>Name</DataPath>',''),expect:{count:92,type:'',dataPath:'',mask:true,min:true}},
         {name:'mixed-number',xml:withTypes(xs('string')+xs('decimal')),expect:{count:92,type:baseline.type,mask:true,min:true,editFormat:true,choiceForm:false}},
         {name:'catalog-reference',xml:withTypes(reference),expect:{count:87,type:baseline.type,mask:false,min:false,choiceLinks:true,choiceForm:true}},
         {name:'mixed-reference',xml:withTypes(xs('string')+reference),expect:{count:94,type:baseline.type,mask:true,min:true,choiceLinks:true,choiceForm:false}},
-        {name:'value-list',xml:withTypes('<v8:Type>v8:ValueListType</v8:Type>'),expect:{count:101,type:baseline.type,format:true,listEdit:false,listColor:ru?'Авто':'Auto'}},
+        {name:'value-list',xml:list,expect:{count:101,type:baseline.type,format:true,listEdit:false,listColor:ru?'Авто':'Auto',choiceAvailable:true}},
+        {name:'value-list-extended',xml:extendedList,expect:{count:105,type:baseline.type,listEdit:true,allowEmpty:false,
+          choiceAvailable:false,choiceSource:'form',hyperlink:ru?'Авто':'Default'}},
       ];
       for (const {name,xml,expect} of bindings) {
         const revision = view.snapshot.revision;
@@ -173,8 +181,18 @@ exports.run = async () => {
         assert.equal(view.selected.key.value,selected);
         cases.push('dirty-binding-'+name);
       }
+      const unavailable = await inputRows();
+      assert.ok(unavailable.choiceTitle.endsWith(ru?'Недоступно в этом режиме':'Unavailable in this mode'));
+      await ui.evaluate(`document.querySelector('[data-palette-id="platform:ChoiceList"]').dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true}))`);
+      await until(() => vscode.window.activeTextEditor?.document.uri.fsPath===file
+        && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===choiceXml, 'disabled property source selected');
+      main.panel.reveal();
+      cases.push('unavailable-choice-list-keeps-xml-source');
       await edit(original);
-      await until(async () => view.phase==='ready' && (await inputRows()).mask && (await inputRows()).change==='', 'dirty event cleared and string catalogue restored');
+      await until(async () => {
+        const rows = await inputRows();
+        return view.phase==='ready' && rows.count===88 && rows.mask && rows.change==='' && rows.choiceAvailable;
+      }, 'string catalogue and choice list availability restored');
     } else {
       await until(() => ui.evaluate("!!document.querySelector('[data-property-name=DataPath]') && !document.querySelector('[data-palette-id]')"), 'earlier 1.41 field fallback');
       cases.push('earlier-1.41-field-fallback');

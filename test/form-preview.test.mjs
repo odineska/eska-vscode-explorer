@@ -195,11 +195,14 @@ test('a selected property palette requires an exact revision and real XML indice
     categories:[{id:'main',caption:label}],rows:[absent,declared(0,0),declared(1,1)]};
   assert.deepEqual(parsePropertyPalette(data,snapshot,node),data);
   assert.equal(parsePropertyPalette({...data,rows:null,categories:null},snapshot,node).rows,null);
+  const unavailable = {...data,rows:[{...absent,available:false},...data.rows.slice(1)]};
+  assert.deepEqual(parsePropertyPalette(unavailable,snapshot,node),unavailable);
   for (const patch of [
     {formSessionId:'other'}, {revision:'8'}, {identity:{...data.identity,source:'b'.repeat(64)}},
     {rows:[absent,declared(1,0)]}, {rows:[absent,declared(1,1),declared(2,0)]},
     {rows:[absent,declared(0,0),declared(0,0)]}, {categories:[]},
     {rows:[{...absent,value:{...absent.value,default:{kind:'boolean',value:'true'}}},...data.rows.slice(1)]},
+    {rows:[{...absent,available:'false'},...data.rows.slice(1)]},
   ]) assert.throws(() => parsePropertyPalette({...data,...patch},snapshot,node));
 });
 

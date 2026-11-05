@@ -54,6 +54,7 @@ button { cursor: default; }
 .form-properties .form-property-category th { font-weight: 600; background: var(--vscode-sideBarSectionHeader-background, #eee); }
 .form-properties .form-property-default { color: var(--vscode-descriptionForeground, #666); }
 .form-properties .form-property-default input { margin: 0; vertical-align: middle; }
+.form-properties tr[data-palette-available=false] > :is(th,td) { color: var(--vscode-disabledForeground, #888); }
 .form-properties tr:focus-visible, .form-definitions tr:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
 .form-property-value { white-space: normal; overflow-wrap: anywhere; }
 .form-property-value input[type=checkbox] { margin: 0; vertical-align: middle; }

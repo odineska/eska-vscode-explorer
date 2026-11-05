@@ -34,7 +34,7 @@ type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: numbe
   | { kind: "absent"; default: PaletteDefault; caption: PaletteCaption | null }
   | { kind: "name"; value: string | null } | { kind: "elementKind"; value: string; caption: PaletteCaption }
   | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin };
-export interface PaletteRow { id: string; category: string | null; editor: string | null; caption: PaletteCaption | null; value: PaletteValue }
+export interface PaletteRow { id: string; category: string | null; editor: string | null; caption: PaletteCaption | null; available?: boolean; value: PaletteValue }
 export interface FormPalette {
   formSessionId: string; revision: string; identity: ElementIdentity;
   categories: { id: string; caption: PaletteCaption }[] | null; rows: PaletteRow[] | null;
@@ -177,6 +177,7 @@ export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, nod
   });
   for (const row of value.rows) {
     if (!isRecord(row) || typeof row.id !== "string" || rowIds.has(row.id)
+      || (row.available !== undefined && typeof row.available !== "boolean")
       || !(row.category === null ? row.editor === null && row.caption === null
         : typeof row.category === "string" && categories.has(row.category) && typeof row.editor === "string"
           && row.caption !== undefined && caption(row.caption)) || !isRecord(row.value)) invalid();
