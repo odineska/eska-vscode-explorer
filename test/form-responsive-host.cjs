@@ -214,7 +214,35 @@ exports.run=async function(){
     assert.ok(lines[0] < lines[1]);
     labelLineBreaks.push({wrap, lines});
   }
+  const authoredHeights = [];
+  if (process.platform === 'linux') {
+    const rootWidth = '<Width>80</Width>\n  <CommandBarLocation>None</CommandBarLocation>';
+    let declaration = rootWidth;
+    await ui.evaluate("globalThis.__heightOwners=[...document.querySelectorAll('.taxi-element')];true");
+    for (const [units, height] of [[10, 212], [1, 68], [35, 612]]) {
+      const next = `${rootWidth}\n  <Height>${units}</Height>`;
+      await replace(document, declaration, next, 1);
+      declaration = next;
+      let measured;
+      await until(async () => {
+        measured = await ui.evaluate(`(() => {
+          const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-content');
+          return { height: frame.getBoundingClientRect().height, authored: frame.hasAttribute('data-authored-height'),
+            scrolls: body.scrollHeight > body.clientHeight, sameOwners: __heightOwners.every(node => node.isConnected) };
+        })()`);
+        return measured.authored && measured.height === height;
+      }, 'authored form height');
+      assert.equal(measured.sameOwners, true);
+      if (units === 1) {
+        assert.equal(measured.scrolls, true);
+        assert.ok(await ui.evaluate("(() => {const body=document.querySelector('.taxi-form-content');body.scrollTop=20;return body.scrollTop;})()") > 0);
+      }
+      authoredHeights.push({units, ...measured});
+    }
+    await replace(document, declaration, rootWidth + '\n  <Height>0</Height>', 1);
+    await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').hasAttribute('data-authored-height')"), 'automatic form height restored');
+  }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
   assert.equal(service.views.size,1);main.panel.dispose();await until(()=>service.views.size===0,'responsive session released');await Promise.all([...service.closing]);await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,labelLineBreaks,results}));
+  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,labelLineBreaks,authoredHeights,results}));
 };

@@ -16,8 +16,13 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
   const [minimum, setMinimum] = createSignal({ width: 28, height: 28 });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
+  const authoredHeight = createMemo(() => {
+    const units = number(state.model.root, 'Height');
+    // Linux Designer adds 16 pixels per authored unit to the form's 52-pixel base.
+    return state.os === 'linux' && units > 0 ? 52 + 16 * units : 0;
+  });
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
-  const preferredY = createMemo(() => atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
+  const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
@@ -110,7 +115,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
   });
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
-    allocation: () => formAllocation(size(), preferred(), minimum(), state.ui.zoom),
+    allocation: () => {
+      const allocated = formAllocation(size(), preferred(), minimum(), state.ui.zoom);
+      return { width: allocated.width, height: authoredHeight() || allocated.height };
+    },
+    authoredHeight,
     invalidate: () => { needsPreferred = true; schedule(); },
     preferred, minimumFor: node => minima().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),

@@ -149,13 +149,15 @@ export function Preview(props) {
     width: `${Math.max(28, layout.allocation().width - 4)}px`,
     height: `${Math.max(0, layout.allocation().height - 4)}px`,
     '--taxi-form-initial-width': layout.initialWidth(),
+    '--taxi-form-initial-height': layout.authoredHeight() ? `${layout.authoredHeight() - 4}px` : undefined,
     '--taxi-form-preferred-width': `${layout.preferred().width}px`,
     '--taxi-form-preferred-height': `${layout.preferred().height}px`,
     'min-width': '28px',
   });
   return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
-      <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={frameStyle()}
+      <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }}
+        data-authored-height={layout.authoredHeight() ? '' : undefined} style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
