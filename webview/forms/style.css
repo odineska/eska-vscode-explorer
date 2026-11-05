@@ -133,6 +133,7 @@ button { cursor: default; }
 .taxi-native-label { position: absolute; pointer-events: none; }
 .taxi-input:has(> [data-native-value=ready]) > input { -webkit-text-fill-color: transparent; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: calc-size(max-content, round(nearest, size, 1px)); }
+.taxi-field-row[data-multiline] { padding-block: 1px; }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }

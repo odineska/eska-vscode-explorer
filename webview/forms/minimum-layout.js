@@ -46,6 +46,7 @@ export function minimumFormLayout(root, scale = 1) {
       const vertical = ['Top', 'Bottom'].includes(location), gap = label ? pixels(getComputedStyle(field)[vertical ? 'rowGap' : 'columnGap']) : 0;
       value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }
         : { width: title.width + gap + content.width, height: Math.max(title.height, content.height) };
+      value = add(value, insets(field));
       value.height = Math.max(value.height, pixels(getComputedStyle(field).minHeight));
     } else if (table) {
       const children = [...table.children].map(marginBox);

@@ -115,6 +115,16 @@ export function inputHeight(node, os) {
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
   return os === 'linux' ? Math.round(line * 20 / 13) : Math.ceil(line * 1.5);
 }
+export function inputControlHeight(node, os) {
+  const single = inputHeight(node, os);
+  if (!flag(node, 'MultiLine', false)) return single;
+  if (os !== 'linux') return Math.max(2, number(node, 'Height', 3)) * 20;
+  const explicit = number(node, 'Height');
+  const rows = explicit > 0 ? Math.max(1, explicit) : 2;
+  // Linux Designer height units use the control height plus a gap measured at 8–20pt.
+  const step = single + (single < 29 ? 5 : 6);
+  return single + (rows - 1) * step;
+}
 export function inputRowHeight(node, os, captioned = true) {
   const height=inputHeight(node,os)+2;
   return os==='linux'&&captioned&&['Left','Right'].includes(node.presentation.titleLocation)
@@ -130,14 +140,18 @@ export function inputChoiceButton(node, os) {
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
   return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && ['number','date'].includes(type.kind) && flag(node, 'ReadOnly', false)));
 }
-function linuxSimpleInput(node, os) {
+function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
   return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
-    && !flag(node, 'MultiLine', false) && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false)
+    && (kind === 'string' || !flag(node, 'MultiLine', false))
+    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false)
     && !(kind === 'string' && inputChoiceButton(node, os));
 }
+function linuxSimpleInput(node, os) {
+  return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
+}
 export function fieldWidth(node, os) {
-  const unit = inputUnit(node), native = linuxSimpleInput(node, os), width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
+  const unit = inputUnit(node), native = linuxFixedInputWidth(node, os), width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) return native ? width * 10 + 11 + (inputChoiceButton(node, os) ? 20 : 0) : Math.max(20, width * unit + 4);
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
