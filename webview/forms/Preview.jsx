@@ -16,7 +16,8 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
+import { availableTableSearchCommand } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
 export function Icon(props) {
@@ -171,7 +172,7 @@ export function Preview(props) {
 export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping) && !layout?.wrapped(props.node);
-  const children = () => props.node.children.filter(node => node.presentation.displayed);
+  const children = () => props.node.children.filter(displayedInPreview);
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
     && children().length > 0 && children().every(node => node.kind === 'Button');
   const uniform = () => buttonRow() && children().every(node => scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
@@ -250,19 +251,30 @@ function Group(props) {
 }
 function CommandBar(props) {
   const commands = createMemo(() => {
-    const children = props.node.children.filter(child => child.presentation.displayed);
-    const location = child => scalar(child, 'LocationInCommandBar', 'Auto');
-    const inline = children.filter(child => location(child) !== 'InAdditionalSubmenu');
-    const hasOverflow = inline.length < children.length;
-    const more = hasOverflow ? children.filter(child =>
-      ['InAdditionalSubmenu', 'InCommandBarAndInAdditionalSubmenu'].includes(location(child))) : [];
-    return { inline, more };
+    const inline = [], trailing = [], additional = [];
+    let hasOverflow = false;
+    for (const child of props.node.children) {
+      if (!child.presentation.displayed) continue;
+      const command = scalar(child, 'CommandName');
+      if (!availableTableSearchCommand(props.controller.state.model.root, command)) continue;
+      const customize = command === 'Form.StandardCommand.CustomizeForm';
+      const location = scalar(child, 'LocationInCommandBar', 'Auto');
+      if (location === 'InAdditionalSubmenu' || customize && location === 'Auto') {
+        additional.push(child);
+        hasOverflow = true;
+        continue;
+      }
+      (customize ? trailing : inline).push(child);
+      if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
+    }
+    return { inline, trailing, more: hasOverflow ? additional : [] };
   });
   return <div class="taxi-command-bar">
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller}/>}</For>
     <Show when={commands().more.length}>
       <PopupMenu items={commands().more} label={props.controller.state.strings.more} controller={props.controller} nativeDropdown/>
     </Show>
+    <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
 }
 function PopupMenu(props) {
@@ -368,7 +380,7 @@ export function Element(props) {
     '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
   });
-  return <Show when={node().presentation.displayed}><div data-element={node().key} data-kind={node().kind} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>

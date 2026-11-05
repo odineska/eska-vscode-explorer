@@ -1,10 +1,15 @@
 import { number, scalar, flag, fieldWidth, inputHeight } from './model.mjs';
+import { hasTableSurface } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
   'SpreadSheetDocumentField', 'TextDocumentField', 'FormattedDocumentField', 'HTMLDocumentField',
   'PDFDocumentField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PictureField']);
 const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
+
+export function displayedInPreview(node) {
+  return node.presentation.displayed && (node.kind !== 'Table' || hasTableSurface(node));
+}
 
 /** Designer's Auto belongs to the widget/type; group Auto inherits its visible descendants. */
 export function stretches(node, axis, collapsed = {}) {
@@ -13,7 +18,7 @@ export function stretches(node, axis, collapsed = {}) {
   if (['false', 'No', '0'].includes(value)) return false;
   if (containers.has(node.kind)) {
     if (axis === 'y' && collapsed[node.key]) return false;
-    return node.children.some(child => child.presentation.displayed && stretches(child, axis, collapsed));
+    return node.children.some(child => displayedInPreview(child) && stretches(child, axis, collapsed));
   }
   if (surfaces.has(node.kind)) return true;
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)

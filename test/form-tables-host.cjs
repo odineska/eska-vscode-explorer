@@ -4,6 +4,33 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
 
+async function checkEmptySourceBar(ui, view, document, english) {
+  const bar = "document.querySelector('.taxi-command-bar')";
+  const popup = `${bar}?.querySelector('.taxi-popup > button')`;
+  const buttons = `[...${bar}.querySelectorAll('.taxi-button')].map(button => button.getAttribute('aria-label'))`;
+  const customize = english ? 'Customize form...' : 'Изменить форму...';
+  await until(() => ui.evaluate(`!!${popup} && ${buttons}.length === 1 && !document.querySelector('[data-kind=Table]')`), 'empty table leaves only its additional commands');
+  assert.ok([...view.nodes.values()].some(node => node.kind === 'Table' && node.name === 'Rows'));
+  await ui.evaluate(`${popup}.click()`);
+  const menu = await ui.evaluate("[...document.querySelectorAll('.taxi-menu [role=menuitem]')].map(item => item.textContent)");
+  assert.deepEqual(menu, [customize, 'Second command']);
+  await ui.evaluate(`${popup}.click()`);
+  const source = document.getText();
+  let updated = source;
+  for (const command of ['Form.Item.Rows.StandardCommand.Find', 'Form.StandardCommand.CustomizeForm']) {
+    const field = `<CommandName>${command}</CommandName>`;
+    assert.ok(updated.includes(field));
+    updated = updated.replace(field, field + '<LocationInCommandBar>InCommandBar</LocationInCommandBar>');
+  }
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(source.length)), updated);
+  assert.equal(await vscode.workspace.applyEdit(edit), true);
+  await until(() => ui.evaluate(`${buttons}.length === 2 && ${buttons}[1] === ${JSON.stringify(customize)} && !document.querySelector('[data-kind=Table]')`),
+    'forced Customize follows More and Find remains hidden');
+  await ui.screenshot('table-empty-source-bar-' + vscode.env.language + '.png');
+  return { menu, visibleAfterEdit: await ui.evaluate(buttons), grid: false };
+}
+
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const extension = vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer');
@@ -21,6 +48,14 @@ exports.run = async function () {
     await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
     const ui = await frame({fixedFormArea:true, state: { title: panel.panel.title } });
+    if (form.kind === 'SourceBarEmpty') {
+      results.push({ kind: form.kind, ...await checkEmptySourceBar(ui, view, document, english) });
+      assert.deepEqual(await fs.readFile(form.path), before);
+      panel.panel.dispose();
+      await until(() => service.views.size === 0, form.kind + ' released');
+      await Promise.all([...service.closing]);
+      continue;
+    }
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-scroll')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-table-command-bar .taxi-button')].every(button=>button.style.width||button.classList.contains('taxi-button--picture'))"),'native table captions allocated');

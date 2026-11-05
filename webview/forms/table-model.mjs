@@ -2,6 +2,32 @@ import { flag, number, scalar, fieldWidth, viewStatusAddition } from './model.mj
 
 function visible(node) { return node.presentation.displayed !== false && flag(node, 'Visible') && (node.kind === 'ColumnGroup' || node.kind?.endsWith('Field')); }
 
+function hasColumns(table) {
+  return table.children.some(child => visible(child) && (child.kind !== 'ColumnGroup' || hasColumns(child)));
+}
+
+function commandBar(table) { return table.auxiliary?.find(node => node.kind === 'AutoCommandBar'); }
+
+export function hasTableSurface(table) {
+  const bar = commandBar(table);
+  return !bar || flag(bar, 'Autofill') || bar.children.some(child => child.presentation.displayed) || hasColumns(table);
+}
+
+function findTable(node, name) {
+  if (node.kind === 'Table' && node.name === name) return node;
+  for (const child of node.children) {
+    const table = findTable(child, name);
+    if (table) return table;
+  }
+}
+
+export function availableTableSearchCommand(root, command) {
+  const target = /^Form\.Item\.(.+)\.StandardCommand\.(?:Find|CancelSearch)$/.exec(command);
+  if (!target) return true;
+  const table = findTable(root, target[1]);
+  return !table || hasColumns(table);
+}
+
 function column(node, readOnly, dynamic) {
   const explicit = number(node, 'Width'), type = node.presentation.valueType.kind;
   if (explicit > 0) return { node, fields: [node], width: explicit * 8 + 4, flexible: false };
@@ -28,7 +54,7 @@ export function tableLayout(table, locale = 'ru') {
   }
   const children = table.children.filter(visible).map(visit), columns = children.flatMap(child => child.columns);
   const depth = Math.max(1, ...children.map(child => child.depth));
-  const bar = table.auxiliary.find(node => node.kind === 'AutoCommandBar');
+  const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
   const search = scalar(table, 'SearchStringLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node)) : undefined;
