@@ -85,7 +85,27 @@ async function checkSourceBar(ui, view, document, english) {
     await until(() => ui.evaluate(`${searchBox}.width === 161 && ${searchBox}.left >= ${advancedButton}.right + 9`),
       'the advanced search action and field keep their native widths without overlap');
   }
-  return { menu, visibleAfterEdit, projectedButtons, searchProjected: true };
+  await ui.evaluate("globalThis.__sourceGrid = document.querySelector('.taxi-table-scroll'); true");
+  const top = withColumn.replace('<SearchStringLocation>None</SearchStringLocation>', '<SearchStringLocation>Top</SearchStringLocation>');
+  await change(top);
+  const above = "document.querySelector('.taxi-table-field > .taxi-table-search--top')";
+  await until(() => ui.evaluate(`!!${above} && !${externalSearch}`), 'Top search appears above the grid');
+  const topSearch = await ui.evaluate(`(() => {
+    const form = document.querySelector('.taxi-form-frame').getBoundingClientRect();
+    const field = ${above}.getBoundingClientRect();
+    const grid = __sourceGrid.getBoundingClientRect();
+    return { width: field.width, gridWidth: grid.width, offset: field.y - form.y,
+      gap: grid.y - field.bottom, sameGrid: __sourceGrid === document.querySelector('.taxi-table-scroll') };
+  })()`);
+  assert.equal(topSearch.width, topSearch.gridWidth);
+  assert.equal(topSearch.sameGrid, true);
+  if (process.platform === 'linux') assert.deepEqual([topSearch.offset, topSearch.gap], [75, 8]);
+  await ui.evaluate("__sourceGrid.click()");
+  await until(() => view.selected?.key?.value === '1', 'the grid selects the table');
+  await ui.evaluate(`${above}.click()`);
+  await until(() => view.selected?.key?.value === '8', 'Top search selects the same source element');
+  await ui.screenshot('table-top-search-' + vscode.env.language + '.png');
+  return { menu, visibleAfterEdit, projectedButtons, searchProjected: true, topSearch };
 }
 
 exports.run = async function () {

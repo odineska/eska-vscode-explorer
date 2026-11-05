@@ -76,6 +76,7 @@ export function Table(props) {
       <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.SearchControl" iconOnly dropdown nativeDropdown/></Show>
       <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/></Show>
     </div></Show>
+    <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
       <div class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>

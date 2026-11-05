@@ -90,7 +90,9 @@ export function tableLayout(table, locale = 'ru', searchProjected = false) {
   const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
-  const search = searchProjected ? undefined : tableSearch(table);
+  const searchField = tableSearch(table);
+  const topSearch = scalar(table, 'SearchStringLocation') === 'Top' ? searchField : undefined;
+  const search = searchProjected || topSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && scalar(table, 'SearchControlLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchControlAddition' && visibleAddition(node)) : undefined;
   const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;
@@ -103,7 +105,7 @@ export function tableLayout(table, locale = 'ru', searchProjected = false) {
   const minWidth = Math.max(controlMinWidth, number(table, 'Width') * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
   const flexible = columns.some(column => column.flexible);
   const tracks = columns.map((column, index) => column.flexible || !flexible && index === 0 ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, minWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, searchControl, chips, dynamic };
+  return { children, columns, depth, header, footer, height, minWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

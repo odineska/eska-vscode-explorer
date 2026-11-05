@@ -25,7 +25,7 @@ export function TableSearch(props){
   const frame=requestAnimationFrame(draw),observer=new ResizeObserver(draw);observer.observe(surface);onCleanup(()=>{cancelAnimationFrame(frame);observer.disconnect();runtime?.issue(owner,false);});
  }));
  onCleanup(()=>props.controller.nativeText?.issue(owner,false));
- return <div ref={surface} class="taxi-table-search" data-native-search-field={paint()?'ready':'fallback'} data-element={props.node.key} onClick={event=>{event.stopPropagation();props.controller.select(props.node);}}>
+ return <div ref={surface} class="taxi-table-search" classList={{ "taxi-table-search--top": props.top }} data-native-search-field={paint()?'ready':'fallback'} data-element={props.node.key} onClick={event=>{event.stopPropagation();props.controller.select(props.node);}}>
   <input readOnly tabIndex="-1" placeholder={state.strings.searchShortcut} aria-label={state.strings.search}/>
   <span ref={clear} class="taxi-search-clear" style={{color:state.os==='linux'?color(state.model.root.presentation.foreground):undefined}}><span style={{visibility:paint()?'hidden':undefined}}>×</span>
    <Show when={paint()}><svg width="7" height="7" viewBox="0 0 7 7" aria-hidden="true" shape-rendering="crispEdges"><For each={paint().clear}>{(pixel,index)=><rect x={index()%7} y={Math.floor(index()/7)} width="1" height="1" fill={`rgb(${pixel.join(',')})`}/>}</For></svg></Show>
