@@ -36,7 +36,7 @@ exports.run = async () => {
       await until(async () => await main.evaluate("document.querySelector('.form-inspectors').style.height==='240px'&&document.querySelector('.form-zoom select').value==='125'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label').textContent==='Unsaved restored page'"), 'main UI configured');
       await main.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
       stage = 'initial-preview';
-      const preview = await frame({state:{title:previewTitle}});
+      const preview = await frame({detached:true,state:{title:previewTitle}});
       await until(async () => await preview.evaluate("!!document.querySelector('.taxi-input')"), 'detached form DOM');
       await preview.evaluate(`const zoom=document.querySelector('.form-zoom select');zoom.value='150';zoom.dispatchEvent(new Event('change',{bubbles:true}));
         document.querySelectorAll('.taxi-tabs button')[1].click();document.querySelector('.taxi-input').click();`);
@@ -59,7 +59,7 @@ exports.run = async () => {
       await until(() => document.isDirty && document.getText() === checkpoint.text, 'native hot exit restores dirty XML');
       stage = 'restored-tabs';
       await until(() => vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith('eska.formViewer')).length === 2, 'both serialized form panels restored');
-      const main = await frame({state:{title}}), preview = await frame({state:{title:previewTitle}});
+      const main = await frame({state:{title}}), preview = await frame({detached:true,state:{title:previewTitle}});
       stage = 'restored-model';
       await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.textContent===${JSON.stringify(checkpoint.caption)}`), 'restored form uses unsaved XML');
       assert.equal(await main.evaluate("document.querySelector('.form-inspectors').style.height"), '240px');

@@ -17,7 +17,7 @@ exports.run = async () => {
   const view = [...service.views.values()][0], main = view.frames.get('main');
   await service.receive(view, main, {type:'detach'});
   await until(() => view.frames.get('preview')?.ready, 'detached view ready');
-  const preview = view.frames.get('preview'), ui = await frame({state:{title:preview.panel.title}});
+  const preview = view.frames.get('preview'), ui = await frame({detached:true,state:{title:preview.panel.title}});
   await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input')"), 'detached DOM ready');
   await ui.evaluate("globalThis.__reconnectRoot=document.querySelector('.taxi-form-frame');document.querySelector('.taxi-input').click()");
   await until(() => view.selected?.key.value === '2', 'selection shared with extension host');

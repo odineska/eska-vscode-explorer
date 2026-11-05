@@ -22,7 +22,7 @@ exports.run = async () => {
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'colored button form ready');
     const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    const ui = await frame({state:{title:panel.panel.title}}), expected = form.expected.buttons[1];
+    const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}}), expected = form.expected.buttons[1];
     await until(() => ready(ui), 'primary, colored and white caption rasters');
     const actual = await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const button=document.querySelectorAll('.taxi-command-bar .taxi-button')[1],s=getComputedStyle(button);
@@ -51,9 +51,15 @@ exports.run = async () => {
       await change(changed,ui,red.glyphRgbSha256);
       await change(original,ui,expected.glyphRgbSha256);
       assert.equal(await ui.evaluate("globalThis.__coloredButton===document.querySelectorAll('.taxi-command-bar .taxi-button')[1]"),true);
+      const beforeColumn=panel.panel.viewColumn;
       await explorer.formPreview.receive(view,panel,{type:'detach'});
       await until(() => view.frames.get('preview')?.ready,'colored button detached');
-      const detached = view.frames.get('preview'), floating = await frame({state:{title:detached.panel.title}});
+      const detached = view.frames.get('preview');
+      const columns=()=>({beforeColumn,main:{column:panel.panel.viewColumn,active:panel.panel.active,visible:panel.panel.visible},preview:{column:detached.panel.viewColumn,active:detached.panel.active,visible:detached.panel.visible},groups:vscode.window.tabGroups.all.map(group=>({column:group.viewColumn,active:group.isActive,tabs:group.tabs.map(tab=>({main:tab.label===panel.panel.title,preview:tab.label===detached.panel.title,active:tab.isActive,type:tab.input?.viewType??tab.input?.constructor?.name}))}))});
+      if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`detached-columns-${vscode.env.language}.json`),JSON.stringify(columns()));
+      let floating;
+      try { floating=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}}); }
+      catch(error) {error.message+=' '+JSON.stringify(columns());throw error;}
       await until(async () => await ready(floating) && await bitmap(floating) === expected.glyphRgbSha256,'colored bitmap in detached window');
       await floating.evaluate("globalThis.__coloredButton=document.querySelectorAll('.taxi-command-bar .taxi-button')[1]");
       await change(changed,floating,red.glyphRgbSha256);

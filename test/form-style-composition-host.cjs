@@ -32,17 +32,17 @@ exports.run=async()=>{
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(file));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'style XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...service.views.values()].some(item=>item.path===file&&item.phase==='ready'),'style form ready');
-    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Caption').identity;
+    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Caption').identity;
     await until(()=>ui.evaluate("!!document.querySelector('.taxi-label')"),'main style DOM');
     await ui.evaluate("globalThis.__styleCaption=document.querySelector('.taxi-label');document.querySelector('.taxi-label').click()");await until(()=>view.selected?.key.value===identity.key.value,'style caption selected');
   }
   async function detach(){
     await ui.focusWorkbench();ui.close();await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'style detached');
-    const detached=view.frames.get('preview');ui=await frame({state:{title:detached.panel.title}});assert.equal((await ui.nativeWindow({detached:true})).url,'about:blank');
+    const detached=view.frames.get('preview');ui=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});assert.equal((await ui.nativeWindow({detached:true})).url,'about:blank');
     await until(()=>ui.evaluate("!!document.querySelector('.taxi-label')"),'floating style DOM');await ui.evaluate("globalThis.__styleCaption=document.querySelector('.taxi-label')");return detached;
   }
   async function reattach(detached){
-    assert.equal(await ui.evaluate("globalThis.__styleCaption===document.querySelector('.taxi-label')"),true);ui.close();detached.panel.dispose();await until(()=>!view.frames.has('preview'),'style reattached');ui=await frame({state:{title:main.panel.title}});
+    assert.equal(await ui.evaluate("globalThis.__styleCaption===document.querySelector('.taxi-label')"),true);ui.close();detached.panel.dispose();await until(()=>!view.frames.has('preview'),'style reattached');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   }
   await open(path.join(files.members.base.source,'CommonForms','ProbeStyleConsumer','Ext','Form.xml'));
   await check(expected('styles-active-base-items'),'initial-base-item-fallback');

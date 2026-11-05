@@ -5,6 +5,29 @@ const crypto=require('node:crypto');
 const vscode=require('vscode');
 const {until,frame}=require('./webview-host.cjs');
 
+/** Observe only the readonly application form while changing this test container's allocation. */
+async function resizeApplication(ui,index) {
+  await ui.evaluate(`globalThis.__applicationResize={style:document.querySelector('#root').style.cssText,nodes:[...document.querySelectorAll('.taxi-form-frame,.taxi-element')]};true`);
+  const samples=[];
+  try {
+    for(const [width,height] of [[480,360],[800,500],[1200,700]]) {
+      await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
+      await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
+      const sample=await ui.evaluate(`(() => {
+        const root=document.querySelector('.taxi-form-frame'),r=root.getBoundingClientRect(),v=document.querySelector('.preview-scroll');
+        const visible=[...root.querySelectorAll('.taxi-element')].filter(node=>getComputedStyle(node).visibility!=='hidden');
+        const outside=visible.filter(node=>{const box=node.getBoundingClientRect();return box.right>r.right+2||box.bottom>r.bottom+2;});
+        const bars=[...root.querySelectorAll('.taxi-tabs,.taxi-root-commands,.taxi-table-command-bar')].map(node=>({kind:node.className,width:node.clientWidth,scrollWidth:node.scrollWidth,height:node.clientHeight,overflow:getComputedStyle(node).overflowX}));
+        return {frame:{width:r.width,height:r.height},viewport:{width:v.clientWidth,height:v.clientHeight},sameNodes:__applicationResize.nodes.every(node=>node.isConnected),outsideElements:outside.map(node=>node.dataset.kind),tables:[...root.querySelectorAll('.taxi-table-content')].map(node=>({width:node.clientWidth,scrollWidth:node.scrollWidth})),bars,unsupported:root.querySelectorAll('.taxi-unsupported').length};
+      })()`);
+      assert.equal(sample.sameNodes,true);assert.equal(sample.unsupported,0);
+      assert.deepEqual(sample.outsideElements,[],'visible application controls stay inside the form frame');
+      samples.push({width,height,...sample});await ui.screenshot(`application-resize-${index}-${width}-${height}-${vscode.env.language}.png`);
+    }
+  } finally {await ui.evaluate(`document.querySelector('#root').style.cssText=__applicationResize.style;true`);}
+  return samples;
+}
+
 /** Existing application inputs are read only; all reports and screenshots belong to the runner. */
 exports.run=async function(){
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), inputs=JSON.parse(process.env.ESKA_FORM_SAMPLE_PATHS ?? '[]');
@@ -27,8 +50,9 @@ exports.run=async function(){
     assert.equal(rendered.unsupported,0);
     const elapsed=Math.round(performance.now()-started);
     await ui.screenshot(`application-form-${index}-${vscode.env.language}.png`);
+    const resize=await resizeApplication(ui,index);
     const after=crypto.createHash('sha256').update(await fs.readFile(input)).digest('hex');assert.equal(after,before,'view preserves application XML');
-    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
+    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,resize,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
       compositionDiagnostics:view.snapshot.model.diagnostics.composition.length,appearanceDiagnostics:view.snapshot.model.diagnostics.appearance.map(item=>item.code)});
     main.panel.dispose();await until(()=>service.views.size===0,'application session released');await Promise.all([...service.closing]);
   }

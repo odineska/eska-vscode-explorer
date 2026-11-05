@@ -16,7 +16,7 @@ exports.run=async()=>{
     await until(()=>mainUi.evaluate("document.querySelectorAll('.taxi-input').length===1"),'main form controls ready');
     await mainUi.focusWorkbench();mainUi.close();
     await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'independent floating panel ready');
-    const preview=view.frames.get('preview'),ui=await frame({state:{title:preview.panel.title}});
+    const preview=view.frames.get('preview'),ui=await frame({detached:true,state:{title:preview.panel.title}});
     await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===1"),'independent input ready');
     const target=await ui.nativeWindow({detached:true});assert.equal(target.url,'about:blank');
     return {file,before,document,view,main,preview,ui,target,session:view.client.current.formSessionId};

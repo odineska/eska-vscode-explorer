@@ -20,7 +20,7 @@ exports.run = async function () {
     const service = explorer.formPreview;
     await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    const ui = await frame({ state: { title: panel.panel.title } });
+    const ui = await frame({fixedFormArea:true, state: { title: panel.panel.title } });
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-scroll')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-table-command-bar .taxi-button')].every(button=>button.style.width||button.classList.contains('taxi-button--picture'))"),'native table captions allocated');

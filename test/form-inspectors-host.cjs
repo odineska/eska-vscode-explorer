@@ -15,7 +15,7 @@ exports.run = async () => {
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service = explorer.formPreview;
   await until(() => service.views.size === 1 && [...service.views.values()][0].phase === 'ready', 'inspector form ready');
-  const view = [...service.views.values()][0], main = view.frames.get('main'), ui = await frame({state:{title:main.panel.title}});
+  const view = [...service.views.values()][0], main = view.frames.get('main'), ui = await frame({fixedFormArea:true,state:{title:main.panel.title}});
   await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input')"), 'field rendered');
   await ui.evaluate("document.querySelector('.taxi-input').click()");
   await until(async () => await ui.evaluate("!!document.querySelector('.form-properties [data-property-name=Visible]')"), 'input properties selected');

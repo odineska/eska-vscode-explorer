@@ -39,10 +39,12 @@ export function tableLayout(table, locale = 'ru') {
   const height = rowCount > 0 ? header + rowCount * 28 + footer + 1 : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
-  const minWidth = Math.max(400, number(table, 'Width') * 8 + 4, columns.reduce((sum, column) => sum + column.width, 0) + (dynamic ? 2 : 16), toolbar && search ? toolbarWidth : 0);
+  const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const controlMinWidth = Math.max(400, toolbar && search ? toolbarWidth : 0);
+  const minWidth = Math.max(controlMinWidth, number(table, 'Width') * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
   const flexible = columns.some(column => column.flexible);
   const tracks = columns.map((column, index) => column.flexible || !flexible && index === 0 ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, minWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, searchControl, chips, dynamic };
+  return { children, columns, depth, header, footer, height, minWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, searchControl, chips, dynamic };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

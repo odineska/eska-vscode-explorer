@@ -59,7 +59,7 @@ exports.runGallery=async(options)=>{
   for(const form of gallery.forms){
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'input border form');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({state:{title:panel.panel.title}});
+    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
     const dirtyTo=options.dirtyCases?.[form.kind]??(form.kind===options.dirtyFrom?options.dirtyTo:undefined);
     if(dirtyTo){
@@ -68,7 +68,7 @@ exports.runGallery=async(options)=>{
       await ui.evaluate("globalThis.__borderInput=document.querySelector('.taxi-input');globalThis.__borderCorner=document.querySelector('.taxi-input-corner')");
       await change(changed,ui,other.expected);results.push(await sample(ui,other.expected,'dirty-'+other.kind));await change(original,ui,form.expected);
       assert.equal(await ui.evaluate("globalThis.__borderInput===document.querySelector('.taxi-input')&&globalThis.__borderCorner===document.querySelector('.taxi-input-corner')"),true);
-      await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'input border detached');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
+      await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'input border detached');const detached=view.frames.get('preview'),floating=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
       await until(()=>ready(floating,form.expected),'floating input values');await floating.evaluate("globalThis.__borderInput=document.querySelector('.taxi-input');globalThis.__borderCorner=document.querySelector('.taxi-input-corner')");
       const target=await floating.nativeWindow({detached:true});assert.equal(target.url,'about:blank','native floating workbench');
       results.push(await sample(floating,form.expected,'floating-'+form.kind,target.targetId));
@@ -77,7 +77,7 @@ exports.runGallery=async(options)=>{
       floating.close();detached.panel.dispose();
       await until(async()=>!(await ui.targets()).some(item=>item.targetId===target.targetId),'floating workbench closed');
       // Docking may recreate the owner's webview; reconnect to its current CDP target.
-      ui.close();ui=await frame({state:{title:panel.panel.title}});
+      ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       await until(()=>appearance(ui,form.expected),'input border reattached');results.push(await sample(ui,form.expected,'reattached-'+form.kind));
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'input session released');await Promise.all([...explorer.formPreview.closing]);

@@ -44,7 +44,7 @@ export function Table(props) {
   const state = props.controller.state, node = () => props.node, layout = createTableLayout(node, () => state.locale);
   const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
   const movement = () => layout().commands.filter(item => /\.(MoveUp|MoveDown)$/.test(item.key));
-  return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px` }}>
+  return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? 31 : 0) + 25)}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar">
       <For each={layout().commands.filter(item => !/\.(MoveUp|MoveDown)$/.test(item.key))}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} iconOnly={item.key.endsWith('.Copy')} picture={item.key.endsWith('.Copy') ? 'StdPicture.CloneListItem' : undefined}/>}</For>
       <Show when={movement().length}><span ref={movementGroup} class="taxi-table-move"><For each={movement()}>{item => <CommandButton controller={props.controller} label={text(item.caption, state.locale, state.strings)} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For><NativeTableMovement element={()=>movementGroup} commands={movement()} controller={props.controller}/></span></Show>

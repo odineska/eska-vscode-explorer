@@ -89,7 +89,7 @@ async function run() {
   await Promise.all([service.receive(view, main, { type: 'detach' }),service.receive(view, main, { type: 'detach' })]);
   await until(() => view.frames.has('preview') && view.frames.get('preview').ready, 'detached panel ready');
   const detached = view.frames.get('preview');
-  const detachedUi = await frame({ state: { title: detached.panel.title } });
+  const detachedUi = await frame({detached:true, state:{title: detached.panel.title }});
   await until(async () => await detachedUi.evaluate("document.querySelectorAll('.taxi-input').length===1"), 'detached DOM ready');
   const targets = await detachedUi.targets();
   const floating=await detachedUi.nativeWindow({detached:true});assert.equal(floating.url,'about:blank','native floating workbench exists');

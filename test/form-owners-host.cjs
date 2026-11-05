@@ -24,7 +24,7 @@ exports.run=async()=>{
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'owner XML active');
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...service.views.values()].some(item=>item.path===file&&item.phase==='ready'),'owner form ready');
-    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({state:{title:main.panel.title}});
+    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
     const expected=row.expected.captions.filter(value=>value!=='Group');
     await until(async()=>JSON.stringify(await rendered())===JSON.stringify(expected),row.id+' captions');
     const dependencies=Object.fromEntries(view.snapshot.dependencies.filter(input=>input.role==='form').map(input=>[input.id,input.member]));
@@ -51,7 +51,7 @@ exports.run=async()=>{
   await replace(document,'First own object','Dirty own object');await until(async()=>(await rendered())[0]==='Dirty own object','own form dirty updates');
   results.push({label:'dirty-own-form',stableIdentity:true});
   await ui.focusWorkbench();ui.close();await service.receive(view,main,{type:'detach'});
-  await until(()=>view.frames.get('preview')?.ready,'own form detached');const detached=view.frames.get('preview');ui=await frame({state:{title:detached.panel.title}});
+  await until(()=>view.frames.get('preview')?.ready,'own form detached');const detached=view.frames.get('preview');ui=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
   await until(async()=>(await rendered())[0]==='Dirty own object','detached own form visible');assert.equal((await ui.nativeWindow({detached:true})).url,'about:blank');
   await ui.evaluate("globalThis.__ownerCaption=document.querySelector('.taxi-label')");
   await replace(document,'Dirty own object','Floating own object');await until(async()=>(await rendered())[0]==='Floating own object','detached own dirty updates');
@@ -63,7 +63,7 @@ exports.run=async()=>{
   assert.equal(await ui.evaluate("globalThis.__ownerCaption===document.querySelector('.taxi-label')"),true);
   results.push({label:'detached-invalid-owner-recovery',stableDom:true});
   await ui.screenshot(`form-owners-${vscode.env.language}.png`);ui.close();detached.panel.dispose();await until(()=>!view.frames.has('preview'),'own form reattached');
-  ui=await frame({state:{title:main.panel.title}});await until(async()=>(await rendered())[0]==='Floating own object','reattached own caption');
+  ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});await until(async()=>(await rendered())[0]==='Floating own object','reattached own caption');
   assert.deepEqual(view.selected,identity);assert.ok(metadata.isDirty&&document.isDirty);results.push({label:'reattached-own-form',dirtyRetained:true});
   assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);
   ui.close();await explorer.shutdown();

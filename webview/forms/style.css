@@ -424,3 +424,91 @@ button { cursor: default; }
 .form-status span:first-child { flex: 1 1 160px; min-width: 0; }
 .form-status span:last-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .preview-scroll, .form-detached-placeholder { min-height: 96px; }
+
+/* Preferred geometry is measured without allocating the surrounding editor's free space. */
+.taxi-preview:is([data-form-layout=preferred],[data-form-layout=minimum]) .taxi-form-frame { height: auto !important; }
+.taxi-preview[data-form-layout=preferred] .taxi-form-frame { width: var(--taxi-form-initial-width) !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-form-frame { width: min-content !important; }
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] > .taxi-element--field { display: block; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-y=false] { min-height: var(--taxi-preferred-height); }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field) { width: var(--taxi-control-min-width, 80px) !important; min-width: 0 !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-input { height: var(--taxi-control-min-height, 40px) !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack > .taxi-special { height: var(--taxi-control-min-height, var(--taxi-surface-min-height, 64px)) !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-table-field > .taxi-table-scroll { height: var(--taxi-table-min-height, 80px) !important; }
+
+/* Allocation changes tracks and control bounds; the source and DOM owners stay intact. */
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame { display: flex; flex-direction: column; }
+.taxi-preview[data-form-layout=allocated] .taxi-form-title { flex: 0 0 24px; }
+.taxi-preview[data-form-layout=allocated] .taxi-form-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.taxi-preview[data-form-layout=allocated] .taxi-root-commands { flex: none; }
+.taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items { flex: 1; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--vertical { grid-template-rows: var(--taxi-layout-rows); align-items: stretch; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal { align-items: center; flex-wrap: nowrap; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element { flex: 0 0 var(--taxi-preferred-width); width: var(--taxi-preferred-width); }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element[data-stretch-x=true] { flex: var(--taxi-stretch-weight) 1 0 !important; width: auto; min-width: var(--taxi-min-width); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] { height: 100%; min-height: var(--taxi-min-height); align-self: stretch; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--vertical > .taxi-element[data-stretch-y=false] { align-self: start; }
+.taxi-preview[data-form-layout=allocated] .taxi-group { display: flex; flex-direction: column; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > :is(.taxi-group,.taxi-pages) { height: 100%; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; }
+.taxi-preview[data-form-layout=allocated] .taxi-group > .taxi-items { flex: 1; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages { display: flex; flex-direction: column; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnBottom] { flex-direction: column-reverse; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages:is([data-representation=TabsOnLeftHorizontal],[data-representation=TabsOnRightHorizontal]) { flex-direction: row; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnRightHorizontal] { flex-direction: row-reverse; }
+.taxi-preview[data-form-layout=allocated] .taxi-tabs { flex: none; overflow: auto; }
+.taxi-preview[data-form-layout=allocated] .taxi-tabs > button { flex: none; }
+.taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { flex: 1; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-control-min-width, 0px) !important; max-width: var(--taxi-control-max-width, 100%); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Bottom] { grid-template-rows: minmax(0, 1fr) max-content; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control { height: 100%; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-picture-field) { height: 100% !important; min-height: var(--taxi-control-min-height, 0px); max-height: var(--taxi-control-max-height, 100%); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack { height: 100%; min-height: 0; max-height: var(--taxi-control-max-height, 100%); }
+.taxi-preview[data-form-layout=allocated] .taxi-special-stack { display: flex; flex-direction: column; min-width: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-special-stack > .taxi-view-status { flex: none; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack > .taxi-special { flex: 1; height: 0 !important; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack > .taxi-special { width: 100% !important; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-table-field { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-table-field > .taxi-table-scroll { flex: 1; height: 0 !important; min-height: var(--taxi-table-min-height, 80px); }
+.taxi-preview[data-form-layout=allocated] .taxi-table-field > :not(.taxi-table-scroll) { flex-shrink: 0; }
+
+.taxi-preview[data-form-layout=allocated] { min-width: 0; }
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: max-content; max-width: none; }
+
+.taxi-preview[data-form-layout=minimum] .taxi-items--horizontal > .taxi-element { flex: 0 0 auto !important; width: max-content; max-width: none; }
+
+.taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items,
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { min-height: 0; }
+.taxi-preview[data-form-layout=allocated] .taxi-page-stack { grid-template-rows: minmax(0, 1fr); }
+.taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom],[data-title-location=None]) { grid-template-columns: minmax(0, 1fr); }
+/* Intrinsic minima must include fixed controls, even inside a zero-sized grid track. */
+.taxi-preview[data-form-layout=minimum] .taxi-items--vertical { grid-template-columns: max-content max-content; }
+.taxi-preview[data-form-layout=minimum] .taxi-field-control,
+.taxi-preview[data-form-layout=minimum] .taxi-field-control > *,
+.taxi-preview[data-form-layout=minimum] .taxi-special { max-width: none !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-group-title,
+.taxi-preview[data-form-layout=minimum] .taxi-group-title button { white-space: nowrap; }
+
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-input { width: calc(100% - var(--taxi-input-outset, 0px)) !important; }
+
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-layout-container=true] > :is(.taxi-group,.taxi-pages) { min-width: var(--taxi-group-width, 0px); min-height: var(--taxi-group-height, 0px); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-layout-container=true][data-stretch-y=false] > :is(.taxi-group,.taxi-pages) { min-height: var(--taxi-preferred-height); }
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-kind=Table][data-stretch-x=false] { width: max-content; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-kind=Table][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-button { width: 100% !important; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-button { height: 100%; }
+.taxi-preview[data-form-layout=allocated] .taxi-field-control > .taxi-input { max-width: var(--taxi-control-max-width, 100%); }
+/* The table control can shrink while its column grid remains horizontally scrollable. */
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { width: var(--taxi-table-control-min-width); min-width: var(--taxi-table-control-min-width) !important; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { min-width: var(--taxi-table-control-min-width) !important; }
+.taxi-preview[data-form-layout=allocated] .taxi-table-content { overflow-x: auto; overflow-y: hidden; }
+.taxi-preview[data-form-layout=allocated] .taxi-table-content > :is(.taxi-table-head,.taxi-table-empty,.taxi-table-footer) { min-width: var(--taxi-table-content-min-width); }
+
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack { width: var(--taxi-surface-min-width, 150px) !important; }

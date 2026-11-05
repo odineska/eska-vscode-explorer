@@ -21,7 +21,7 @@ exports.run=async()=>{
   const base=await vscode.workspace.openTextDocument(vscode.Uri.file(files.path));await vscode.window.showTextDocument(base,{preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
   await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','composed form opens');
-  const view=[...service.views.values()][0],main=view.frames.get('main');let ui=await frame({state:{title:main.panel.title}});
+  const view=[...service.views.values()][0],main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   const identity=named(view.snapshot.model.root,'Caption').identity;
   const results=[];
   const expected=id=>files.cases.find(row=>row.id===id).expected.captionsInOrder.filter(row=>row.name!=='Group').map(row=>row.title);
@@ -58,7 +58,7 @@ exports.run=async()=>{
   await check('both-reversed','external-configuration-restored',revision);
   assert.equal(await ui.evaluate("globalThis.__compositionCaption===document.querySelector('.taxi-label')"),true);
   await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'composition detached');
-  ui.close();const detached=view.frames.get('preview');ui=await frame({state:{title:detached.panel.title}});
+  ui.close();const detached=view.frames.get('preview');ui=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
   await until(async()=>JSON.stringify(await rendered())===JSON.stringify(expected('both-reversed')),'detached model visible');await observe();
   revision=view.snapshot.revision;await replace(second,'>Customization<','>AddOn<');
   await check('second-addon','detached-dirty-addon',revision);
@@ -68,7 +68,7 @@ exports.run=async()=>{
   assert.deepEqual(view.selected,identity);assert.equal(second.isDirty,true);
   await ui.screenshot(`form-composition-${vscode.env.language}.png`);
   ui.close();detached.panel.dispose();await until(()=>!view.frames.has('preview'),'composition reattached');
-  ui=await frame({state:{title:view.frames.get('main').panel.title}});await until(async()=>JSON.stringify(await rendered())===JSON.stringify(expected('purpose-default')),'reattached model visible');
+  ui=await frame({fixedFormArea:true,state:{title:view.frames.get('main').panel.title}});await until(async()=>JSON.stringify(await rendered())===JSON.stringify(expected('purpose-default')),'reattached model visible');
   assert.deepEqual(view.selected,identity);assert.equal(second.isDirty,true);
   results.push({label:'reattached-default-purpose',dirtyPreserved:true});
   assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);

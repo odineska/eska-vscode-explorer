@@ -15,6 +15,8 @@ import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
+import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
+import { stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
 export function Icon(props) {
@@ -49,6 +51,7 @@ function Picture(props) {
   </Switch>;
 }
 export function CommandButton(props) {
+  const formLayout = useFormLayout();
   let button;
   const [backgroundImage, setBackgroundImage] = createSignal();
   const [automaticForeground, setAutomaticForeground] = createSignal();
@@ -104,6 +107,7 @@ export function CommandButton(props) {
     automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
+  createEffect(() => { measuredWidth(); formLayout?.invalidate(); });
   createEffect(() => {
     const report = props.onPreferredButtonWidth, value = measuredWidth();
     if (!report) return;
@@ -138,10 +142,20 @@ function RootCommands(props) {
 }
 export function Preview(props) {
   const state = props.controller.state, root = () => state.model.root;
-  const width = () => number(root(), 'Width');
-  return <div class="preview-scroll" aria-label={state.strings.preview}>
-    <div class="taxi-preview" data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
-      <div class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={{ ...font(root().presentation.font, state.os), width: width() > 0 ? `${width() * 10.5}px` : 'max-content', 'min-width': '28px' }}
+  let viewport, preview, frame;
+  const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame);
+  const frameStyle = () => ({
+    ...font(root().presentation.font, state.os),
+    width: `${Math.max(28, layout.allocation().width - 4)}px`,
+    height: `${Math.max(0, layout.allocation().height - 4)}px`,
+    '--taxi-form-initial-width': layout.initialWidth(),
+    '--taxi-form-preferred-width': `${layout.preferred().width}px`,
+    '--taxi-form-preferred-height': `${layout.preferred().height}px`,
+    'min-width': '28px',
+  });
+  return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
+    <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
+      <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
@@ -150,10 +164,11 @@ export function Preview(props) {
         </div>
       </div>
     </div>
-  </div>;
+  </div></FormLayoutContext.Provider>;
 }
 export function Items(props) {
-  const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping);
+  const layout = useFormLayout();
+  const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping) && !layout?.wrapped(props.node);
   const children = () => props.node.children.filter(node => node.presentation.displayed);
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
     && children().length > 0 && children().every(node => node.kind === 'Button');
@@ -173,7 +188,8 @@ export function Items(props) {
     return Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) + 3;
   };
   const maximumHeight = () => buttonRow() ? Math.max(...children().map(height)) : 0;
-  return <div classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+  const rows = () => children().map(node => layout?.stretch(node, 'y') ? `minmax(${layout.minimumFor(node)?.height ?? 0}px, ${stretchWeight(node, 'y')}fr)` : 'max-content').join(' ');
+  return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key} style={{ '--taxi-layout-rows': rows() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
@@ -260,7 +276,7 @@ function Input(props) {
     return Math.round(offset)-offset;
   };
   return <div ref={surface} class="taxi-input" data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={paint()?Number(paint().choice):undefined}
-    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), top:verticalOffset()?`${verticalOffset()}px`:undefined, height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node(),state.os)}px`,
+    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), '--taxi-input-outset': fieldStyle(node(),state.os)['min-width'] === 'calc(100% - 1px)' ? '1px' : '0px', top:verticalOffset()?`${verticalOffset()}px`:undefined, height: multiline() ? `${Math.max(2, number(node(), 'Height', 3)) * 20}px` : `${inputHeight(node(),state.os)}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>
     <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}/>
     <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
@@ -291,10 +307,29 @@ function Field(props) {
   </div>;
 }
 export function Element(props) {
-  const node = () => props.node, state = props.controller.state;
+  const node = () => props.node, state = props.controller.state, layout = useFormLayout();
+  const bounds = axis => {
+    const value = controlBounds(node(), axis, undefined, state.os);
+    const manual = ['false', 'No', '0'].includes(scalar(node(), axis === 'x' ? 'AutoMaxWidth' : 'AutoMaxHeight', 'Auto'));
+    // Manual bounds do not alter Designer's initial size; automatic maxima belong to its natural preference.
+    return layout?.atPreferred(axis) && manual ? { ...value, maximum: undefined } : value;
+  };
+  const x = () => bounds('x'), y = () => bounds('y');
+  const groupSize = () => groupPreferredSize(node(), state.os);
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
-  return <Show when={node().presentation.displayed}><div data-element={node().key} data-kind={node().kind} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
-    style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground), top: props.usualButtonOffset }}
+  const layoutStyle = () => ({
+    ...font(node().presentation.font, state.os),
+    color: color(node().presentation.foreground), top: props.usualButtonOffset,
+    '--taxi-stretch-weight': stretchWeight(node(), 'x'),
+    '--taxi-group-width': `${groupSize().width || 0}px`,
+    '--taxi-group-height': `${groupSize().height || 0}px`,
+    '--taxi-control-min-width': x().minimum ? `${x().minimum}px` : undefined,
+    '--taxi-control-max-width': x().maximum ? `${x().maximum}px` : undefined,
+    '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
+    '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
+  });
+  return <Show when={node().presentation.displayed}><div data-element={node().key} data-kind={node().kind} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+    style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>
       <Match when={group()}><Group {...props}/></Match>

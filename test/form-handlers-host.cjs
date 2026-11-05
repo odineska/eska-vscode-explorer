@@ -14,7 +14,7 @@ exports.run = async () => {
   await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service=explorer.formPreview;
   await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','handler form ready');
-  const view=[...service.views.values()][0], main=view.frames.get('main'), ui=await frame({state:{title:main.panel.title}});
+  const view=[...service.views.values()][0], main=view.frames.get('main'), ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   await until(async()=>await ui.evaluate("document.querySelector('.form-event .form-handler')?.textContent==='ПриОткрытии'"),'root event link');
   const navigate=async(name,expected=name)=>{
     main.panel.reveal();

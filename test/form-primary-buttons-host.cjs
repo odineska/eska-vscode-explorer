@@ -83,7 +83,7 @@ exports.run = async (options = {}) => {
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'primary form ready');
     const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
-    let ui=await frame({state:{title:panel.panel.title}});
+    let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
     if(['FontAuto','Color000080'].includes(form.kind)) {
       const color=form.kind.startsWith('Color'),other=gallery.forms.find(item=>item.kind===(color?'ColorFF0000':'FontRegular'));
@@ -98,14 +98,14 @@ exports.run = async (options = {}) => {
       if(color){const fallback=gallery.forms.find(item=>item.kind==='ColorFFE100');await edit(configuration,selectedConfig.replace(selection,''),view);results.push(await sample(ui,reference(fallback.expected),'default-'+form.kind));await edit(configuration,selectedConfig,view);}
       assert.equal(await ui.evaluate("globalThis.__primaryButton===document.querySelector('.taxi-command-bar .taxi-button')"),true);
       await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'primary form detached');
-      const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}});
+      const detached=view.frames.get('preview'),floating=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
       await until(()=>ready(floating,form.expected),'floating primary captions');const target=await floating.nativeWindow({detached:true});
       results.push(await sample(floating,form.expected,'floating-'+form.kind,target.targetId));
       await floating.evaluate("globalThis.__primaryButton=document.querySelector('.taxi-command-bar .taxi-button')");
       await change(changed,floating,changedExpected);results.push(await sample(floating,changedExpected,'floating-dirty-'+form.kind,target.targetId));await change(original,floating,form.expected);
       assert.equal(await floating.evaluate("globalThis.__primaryButton===document.querySelector('.taxi-command-bar .taxi-button')"),true);
       floating.close();detached.panel.dispose();await until(async()=>!(await ui.targets()).some(item=>item.targetId===target.targetId),'primary native window closed');
-      ui.close();ui=await frame({state:{title:panel.panel.title}});results.push(await sample(ui,form.expected,'reattached-'+form.kind));
+      ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});results.push(await sample(ui,form.expected,'reattached-'+form.kind));
     }
     ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'primary session released');await Promise.all([...explorer.formPreview.closing]);
   }

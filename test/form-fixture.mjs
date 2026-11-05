@@ -239,6 +239,8 @@ export async function createMeasuredFormGallery(fixture, input = process.env.ESK
   return (await createGallery(fixture, metrics.rows.map(row => row.name), input)).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
 }
 
+export async function createResponsiveFormGallery(fixture) { return createGallery(fixture, ['Main']); }
+
 export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');

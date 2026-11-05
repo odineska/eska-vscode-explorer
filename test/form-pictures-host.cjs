@@ -12,7 +12,7 @@ exports.run = async function() {
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service=explorer.formPreview;
   await until(()=>[...service.views.values()][0]?.phase==='ready','picture form ready');
-  const view=[...service.views.values()][0],main=view.frames.get('main'),ui=await frame({state:{title:main.panel.title}});
+  const view=[...service.views.values()][0],main=view.frames.get('main'),ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   const image=()=>ui.evaluate("(()=>{const image=document.querySelector('.taxi-picture-resource');return image?.complete&&image.naturalWidth===16?image.src:null})()");
   await until(image,'common picture loaded as inert img');
   const first=await image();assert.equal(view.snapshot.model.assets.length,1);
