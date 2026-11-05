@@ -46,7 +46,7 @@ function Planner(props) {
 }
 /** Static surfaces belong to the design-time view. Bound runtime documents and handlers never execute. */
 export function SpecialField(props) {
-  const document = createMemo(() => ['TextDocumentField','FormattedDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
+  const document = createMemo(() => ['TextDocumentField','FormattedDocumentField','HTMLDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
   createEffect(()=>props.controller.nativeText?.issue(owner,props.controller.state.os==='linux'&&document()&&!document().calibrated));
   onCleanup(()=>props.controller.nativeText?.issue(owner,false));
   const width = () => document()?.width ?? (number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500);
