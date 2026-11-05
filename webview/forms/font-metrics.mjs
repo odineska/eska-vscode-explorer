@@ -56,3 +56,14 @@ export function segmentedTextAdvances(segments, options) {
   }
   return result;
 }
+
+/** Hinted single advances; round the design advance together with a following pair. */
+export function hintedPairTextAdvances(text,options){
+ const face=selectFace(options);if(!face)return;const chars=[...text],output=[];
+ for(const [index,char]of chars.entries()){
+  const glyph=face.characters[char];if(glyph===undefined||/[\p{Mark}\p{Format}]/u.test(char))return;
+  const pair=face.kerningPairs[char+(chars[index+1]??'')];
+  output.push(pair===undefined?hintedTextWidth(char,options):Math.round((face.classes[glyph][0]+face.kerningClasses[pair][0])*options.pixels/face.units));
+ }
+ return output;
+}
