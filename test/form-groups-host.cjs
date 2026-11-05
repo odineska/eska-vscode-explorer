@@ -206,6 +206,27 @@ exports.run = async function () {
       await replaceText(document, second + overflow, second + dual);
       await until(() => ui.evaluate(`JSON.stringify(${inlineIds})==='["10","20"]' && !${popup}`), 'dual location alone keeps both commands on the bar');
     }
+    if (form.kind === 'Decorations' && process.platform === 'linux') {
+      const text = document.getText();
+      const originalLabel = /(<LabelDecoration name="Label" id="1">)\s*<Title[^>]*>.*?<\/Title>/s.exec(text);
+      assert.ok(originalLabel);
+      await replaceText(document, originalLabel[0], originalLabel[1] + '<Width>2</Width>');
+      const bar = '<AutoCommandBar name="FormCommandBar" id="-1"/>';
+      await replaceText(document, bar, '<Group>AlwaysHorizontal</Group>' + bar);
+      const measureSpacer = `(() => {
+        const label = document.querySelector('.taxi-label'), bounds = label.getBoundingClientRect();
+        const items = label.closest('.taxi-items');
+        return { text: label.textContent, width: bounds.width, height: bounds.height,
+          gap: getComputedStyle(items).columnGap, horizontal: items.classList.contains('taxi-items--horizontal') };
+      })()`;
+      const verifySpacer = width => until(async () => {
+        const spacer = await ui.evaluate(measureSpacer);
+        return spacer.text === '' && spacer.horizontal && spacer.width === width && spacer.height === 17 && spacer.gap === '10px';
+      }, 'empty decoration keeps native dimensions');
+      await verifySpacer(20);
+      await replaceText(document, originalLabel[1] + '<Width>2</Width>', originalLabel[1] + '<Width>7</Width>');
+      await verifySpacer(70);
+    }
     if(form.kind==='BarWithPopup') {
       await replaceText(document,'Actions','Actions updated');
       await until(async()=>await ui.evaluate("document.querySelector('.taxi-popup > button')?.textContent.includes('Actions updated')"),'dirty popup title');

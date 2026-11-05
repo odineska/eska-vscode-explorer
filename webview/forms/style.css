@@ -251,6 +251,11 @@ button { cursor: default; }
 .taxi-picture-field { display: block; border: 1px solid #aaa; background: #fff; max-width: 100%; }
 .taxi-picture-decoration { display: inline-block; min-width: 16px; min-height: 16px; }
 .taxi-element[data-kind=LabelDecoration] { display: flex; align-items: center; min-height: 19px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration]:has(> .taxi-label:empty),
+.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration] > .taxi-label:empty { min-height: 17px; }
+.taxi-preview[data-os=linux] .taxi-items[data-auto-spacing]:is([data-grouping=Horizontal],[data-grouping=HorizontalIfPossible]):has(> .taxi-element[data-kind=LabelDecoration] > .taxi-label:empty) {
+  --taxi-horizontal-gap: 10px;
+}
 .taxi-element[data-kind=PictureDecoration] { line-height: 0; }
 .taxi-picture-resource { display: inline-block; max-width: 100%; vertical-align: middle; }
 .taxi-button .taxi-picture-resource { width: 16px; height: 16px; object-fit: contain; }

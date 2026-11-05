@@ -193,7 +193,8 @@ export function Items(props) {
   const rows = () => children().map(node => layout?.stretch(node, 'y') ? `minmax(${layout.minimumFor(node)?.height ?? 0}px, ${stretchWeight(node, 'y')}fr)` : 'max-content').join(' ');
   const columns = () => horizontal() ? children().map(node => layout?.stretch(node, 'x')
     ? `minmax(${layout.minimumFor(node)?.width ?? 0}px, ${stretchWeight(node, 'x')}fr)` : 'max-content').join(' ') : undefined;
-  return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key} style={{ '--taxi-layout-rows': rows(), '--taxi-layout-columns': columns() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+  return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
+    data-auto-spacing={scalar(props.node, 'HorizontalSpacing', 'Auto') === 'Auto' ? '' : undefined} style={{ '--taxi-layout-rows': rows(), '--taxi-layout-columns': columns() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
@@ -331,6 +332,20 @@ function Field(props) {
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }
+function LabelDecoration(props) {
+  const node = () => props.node, state = props.controller.state;
+  const value = () => caption(node(), state);
+  const style = () => ({
+    ...font(node().presentation.font, state.os),
+    ...(state.os === 'linux' ? {
+      'font-size': `${Math.round(node().presentation.font.points * 4 / 3)}px`,
+      width: value() === '' ? `${Math.max(0, number(node(), 'Width')) * 10}px` : undefined,
+    } : {}),
+    color: color(node().presentation.foreground),
+    'white-space': flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre',
+  });
+  return <span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={style()}>{value()}</span>;
+}
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
   const bounds = axis => {
@@ -360,7 +375,7 @@ export function Element(props) {
       <Match when={group()}><Group {...props}/></Match>
       <Match when={node().kind === 'Table'}><Table node={node()} controller={props.controller}/></Match>
       <Match when={node().kind === 'Button'}><CommandButton {...props}/></Match>
-      <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), ...(state.os==='linux'?{'font-size':`${Math.round(node().presentation.font.points*4/3)}px`}:{}), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre' }}>{caption(node(), state)}</span></Match>
+      <Match when={node().kind === 'LabelDecoration'}><LabelDecoration {...props}/></Match>
       <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Picture node={node()} controller={props.controller}/></span></Match>
       <Match when={node().kind?.endsWith('Field')}><Field {...props}/></Match>
       <Match when={node().kind?.endsWith('Addition')}><span class="taxi-addition"><Show when={node().kind !== 'ViewStatusAddition'}><input readOnly placeholder={state.strings.search} tabIndex="-1"/></Show></span></Match>
