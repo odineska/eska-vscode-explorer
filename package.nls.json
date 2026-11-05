@@ -57,6 +57,6 @@
   "enableProject": "Enable project",
   "hideDisabledProjects": "Hide disabled projects",
   "showDisabledProjects": "Show disabled projects",
-  "previewForm": "Open form preview",
+  "previewForm": "Open form preview (beta)",
   "openFormXml": "Open form XML"
 }
