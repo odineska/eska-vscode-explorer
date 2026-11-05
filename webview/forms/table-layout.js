@@ -28,11 +28,11 @@ function prune(cache, active) {
 }
 
 /** Preserve keyed header/column owners while publishing the existing geometry atomically. */
-export function createTableLayout(table, locale) {
+export function createTableLayout(table, locale, searchProjected) {
   const headers = new Map(), columns = new Map();
   const [layout, setLayout] = createStore({});
   createComputed(() => {
-    const next = tableLayout(table(), locale());
+    const next = tableLayout(table(), locale(), searchProjected?.());
     untrack(() => batch(() => {
       const activeHeaders = new Set(), activeColumns = new Set();
       function projectColumn(value) {

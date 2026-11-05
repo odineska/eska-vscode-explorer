@@ -21,7 +21,7 @@ const en = {
   "command.WriteAndClose": "Save and close", "command.Write": "Save", "command.PostAndClose": "Post and close", "command.Post": "Post", "command.Close": "Close",
   "command.Add": "Add", "command.Create": "Create", "command.Copy": "Copy", "command.Delete": "Delete", "command.MoveUp": "Move up", "command.MoveDown": "Move down",
   "command.Refresh": "Refresh", "command.Print": "Print", "command.PrintImmediately": "Print immediately", "command.PrintPreview": "Print preview", "command.PageSetup": "Page setup",
-  "command.Help": "Help", "command.CustomizeForm": "Customize form...", "command.Find": "Find", "command.FindByCurrentValue": "Find by current value", "command.CancelSearch": "Cancel search", "command.Select": "Select",
+  "command.Help": "Help", "command.CustomizeForm": "Customize form...", "command.Find": "Find...", "command.AdvancedSearch": "Advanced search", "command.FindByCurrentValue": "Find by current value", "command.CancelSearch": "Cancel search", "command.Select": "Select",
   "command.SetDeletionMark": "Mark for deletion", "command.UndoPosting": "Undo posting", "command.Change": "Edit", "command.Open": "Open", "command.EndEdit": "Finish editing",
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
@@ -48,7 +48,7 @@ const ru: Record<keyof typeof en, string> = {
   "command.WriteAndClose": "Записать и закрыть", "command.Write": "Записать", "command.PostAndClose": "Провести и закрыть", "command.Post": "Провести", "command.Close": "Закрыть",
   "command.Add": "Добавить", "command.Create": "Создать", "command.Copy": "Скопировать", "command.Delete": "Удалить", "command.MoveUp": "Переместить вверх", "command.MoveDown": "Переместить вниз",
   "command.Refresh": "Обновить", "command.Print": "Печать", "command.PrintImmediately": "Печать сразу", "command.PrintPreview": "Предварительный просмотр", "command.PageSetup": "Параметры страницы",
-  "command.Help": "Справка", "command.CustomizeForm": "Изменить форму...", "command.Find": "Найти", "command.FindByCurrentValue": "Найти по текущему значению", "command.CancelSearch": "Отменить поиск", "command.Select": "Выбрать",
+  "command.Help": "Справка", "command.CustomizeForm": "Изменить форму...", "command.Find": "Найти...", "command.AdvancedSearch": "Расширенный поиск", "command.FindByCurrentValue": "Найти по текущему значению", "command.CancelSearch": "Отменить поиск", "command.Select": "Выбрать",
   "command.SetDeletionMark": "Пометить на удаление", "command.UndoPosting": "Отменить проведение", "command.Change": "Изменить", "command.Open": "Открыть", "command.EndEdit": "Завершить редактирование",
   "command.OpenFromMainServer": "Открыть с основного сервера", "command.OpenFromStandaloneServer": "Открыть с автономного сервера",
 };

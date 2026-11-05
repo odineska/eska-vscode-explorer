@@ -1,6 +1,7 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
 import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
-import { Table } from './Table.jsx';
+import { Table, TableCommandActions } from './Table.jsx';
+import { TableSearch } from './TableSearch.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
 import { primaryForeground } from './primary-foreground.mjs';
@@ -18,7 +19,7 @@ import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
 import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
-import { availableTableSearchCommand } from './table-model.mjs';
+import { availableTableSearchCommand, commandSourceTable, tableSearchProjection, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
 export function Icon(props) {
@@ -38,6 +39,7 @@ function BrowserIcon(props) {
     <Match when={/Up|Back/.test(props.name)}><path d="M12 3L4 8l8 5z" fill="#729ab0"/></Match>
     <Match when={/Down|Forward/.test(props.name)}><path d="M4 3l8 5-8 5z" fill="#729ab0"/></Match>
     <Match when={/Copy|CloneListItem|CloneObject/.test(props.name)}><path d="M5 1h6l3 3v9H5zM11 1v3h3" fill="#fff" stroke="#829fb0"/><circle cx="4" cy="11" r="4" fill="#60ad48" stroke="#428931"/><path d="M4 8v6M1 11h6" stroke="#fff"/></Match>
+    <Match when={/CancelSearch$/.test(props.name)}><circle cx="9" cy="6" r="3.4" fill="#fff" stroke="#2878aa" stroke-width="1.4"/><path d="m11.5 8.5 3 3" stroke="#2878aa" stroke-width="1.5"/><path d="m2 9 6 6m0-6-6 6" stroke="#c64b34" stroke-width="1.8"/></Match>
     <Match when={/Find|Search/.test(props.name)}><circle cx="6" cy="6" r="4" fill="none" stroke="#3287b7" stroke-width="1.5"/><path d="M9 9l4 4" stroke="#3287b7" stroke-width="2"/></Match>
     <Match when={/Calculator/.test(props.name)}><rect x="4" y="2" width="8" height="12" rx="1" fill="#fff" stroke="#777"/><path d="M5 4h6M5 7h1m1 0h1m1 0h1M5 9h1m1 0h1m1 0h1M5 11h1m1 0h1m1 0h1" stroke="#777"/></Match>
     <Match when={/Calendar/.test(props.name)}><rect x="3" y="3" width="10" height="10" rx="1" fill="#fff" stroke="#777"/><path d="M3 6h10M5 2v3m6-3v3M5 8h1m2 0h1m2 0h1M5 10h1m2 0h1m2 0h1" stroke="#777"/></Match>
@@ -61,7 +63,10 @@ export function CommandButton(props) {
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node?.kind === 'Button' && ['Hyperlink', 'CommandBarHyperlink'].includes(scalar(props.node, 'Type'));
   const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
-  const picture = () => props.picture ?? props.node?.presentation.picture;
+  const cancelSearchPicture = () => representation() === 'Picture' && !props.node?.presentation.picture
+    && tableSearchReference(scalar(props.node, 'CommandName'))?.action === 'CancelSearch';
+  const pictureName = () => props.picture ?? (cancelSearchPicture() ? 'StdPicture.CancelSearch' : undefined);
+  const picture = () => pictureName() ?? props.node?.presentation.picture;
   const linkCalibrated = () => props.node.presentation.font.points === 10 && props.node.presentation.font.weight === 400
     && !picture() && !props.dropdown && !props.menu && flag(props.node, 'Enabled');
   const primary = () => (props.primary || flag(props.node, 'DefaultButton', false))
@@ -118,11 +123,11 @@ export function CommandButton(props) {
   });
   return <button ref={button} type="button" data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
-    'taxi-button--icon-only': props.iconOnly, 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
+    'taxi-button--icon-only': props.iconOnly || cancelSearchPicture(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !props.picture} fallback={<Icon name={props.picture} variant={props.pictureVariant} os={!props.node || flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={!props.node || flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
     <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
@@ -192,12 +197,22 @@ export function Items(props) {
     return Math.max(26, value.lineHeight + 2 * value.verticalPadding + 2) + 3;
   };
   const maximumHeight = () => buttonRow() ? Math.max(...children().map(height)) : 0;
+  const joinedTables = createMemo(() => {
+    if (horizontal()) return new Set();
+    const nodes = children();
+    return new Set(nodes.filter((table, index) => {
+      const bar = nodes[index - 1];
+      return table.kind === 'Table' && table.name && bar?.kind === 'CommandBar'
+        && (scalar(bar, 'CommandSource') === `Item.${table.name}`
+          || bar.children.some(child => child.presentation.displayed && tableSearchReference(scalar(child, 'CommandName'))?.table === table.name));
+    }).map(node => node.key));
+  });
   const rows = () => children().map(node => layout?.stretch(node, 'y') ? `minmax(${layout.minimumFor(node)?.height ?? 0}px, ${stretchWeight(node, 'y')}fr)` : 'max-content').join(' ');
   const columns = () => horizontal() ? children().map(node => layout?.stretch(node, 'x')
     ? `minmax(${layout.minimumFor(node)?.width ?? 0}px, ${stretchWeight(node, 'x')}fr)` : 'max-content').join(' ') : undefined;
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
     data-auto-spacing={scalar(props.node, 'HorizontalSpacing', 'Auto') === 'Auto' ? '' : undefined} style={{ '--taxi-layout-rows': rows(), '--taxi-layout-columns': columns() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
-    <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
+    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
   </div>;
@@ -251,29 +266,50 @@ function Group(props) {
   </Switch>;
 }
 function CommandBar(props) {
+  const state = props.controller.state, node = () => props.node;
+  const root = () => state.model.root;
+  const source = createMemo(() => commandSourceTable(root(), node()));
+  const search = createMemo(() => {
+    const projection = tableSearchProjection(root(), source());
+    return projection && projection.bar.key === node().key ? projection.search : undefined;
+  });
   const commands = createMemo(() => {
     const inline = [], trailing = [], additional = [];
-    let hasOverflow = false;
-    for (const child of props.node.children) {
+    let hasOverflow = !!source(), tableCommands = !!source(), advancedSearch = false;
+    for (const child of node().children) {
       if (!child.presentation.displayed) continue;
       const command = scalar(child, 'CommandName');
-      if (!availableTableSearchCommand(props.controller.state.model.root, command)) continue;
+      const searchReference = tableSearchReference(command);
+      if (!availableTableSearchCommand(root(), searchReference)) continue;
+      tableCommands ||= !!searchReference;
       const customize = command === 'Form.StandardCommand.CustomizeForm';
       const location = scalar(child, 'LocationInCommandBar', 'Auto');
+      const projectedSearch = search() && searchReference?.table === source()?.name;
+      if (projectedSearch && location === 'Auto') continue;
       if (location === 'InAdditionalSubmenu' || customize && location === 'Auto') {
         additional.push(child);
         hasOverflow = true;
         continue;
       }
+      if (projectedSearch && searchReference.action === 'Find') advancedSearch = true;
       (customize ? trailing : inline).push(child);
       if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
     }
-    return { inline, trailing, more: hasOverflow ? additional : [] };
+    return { inline, trailing, more: hasOverflow ? additional : [], tableCommands, advancedSearch };
   });
-  return <div class="taxi-command-bar">
-    <For each={commands().inline}>{child => <Element node={child} controller={props.controller}/>}</For>
-    <Show when={commands().more.length}>
-      <PopupMenu items={commands().more} label={props.controller.state.strings.more} controller={props.controller} nativeDropdown/>
+  const commandLabel = child => {
+    const reference = tableSearchReference(scalar(child, 'CommandName'));
+    return search() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
+      ? state.strings['command.AdvancedSearch'] : undefined;
+  };
+  return <div class="taxi-command-bar" data-table-commands={commands().tableCommands ? '' : undefined}
+    data-advanced-search={commands().advancedSearch ? '' : undefined}>
+    <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
+    <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
+    <Show when={commands().tableCommands && (source() || commands().more.length)}><span class="taxi-command-spacer"/></Show>
+    <Show when={search()}>{item => <TableSearch node={item()} controller={props.controller}/>}</Show>
+    <Show when={commands().more.length} fallback={<Show when={source()}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
+      <PopupMenu items={commands().more} label={state.strings.more} controller={props.controller} nativeDropdown/>
     </Show>
     <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
@@ -289,7 +325,7 @@ function PopupMenu(props) {
     onCleanup(() => document.removeEventListener('pointerdown', outside));
   });
   const focus = index => { const items = container.querySelectorAll(':scope > [role=menu] > [role=menuitem]'); if (!items.length) return; const next = (index + items.length) % items.length; setActive(next); items[next]?.focus(); };
-  return <div class="taxi-popup" ref={container} onKeyDown={event => {
+  return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined} ref={container} onKeyDown={event => {
     if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); container.querySelector(':scope > button')?.focus(); }
     else if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const wasOpen = open(); setOpen(true); focus(wasOpen ? active() + (event.key === 'ArrowDown' ? 1 : -1) : 0); }
   }}>
@@ -388,13 +424,13 @@ export function Element(props) {
     '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
   });
-  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>
       <Match when={group()}><Group {...props}/></Match>
       <Match when={node().kind === 'Table'}><Table node={node()} controller={props.controller}/></Match>
-      <Match when={node().kind === 'Button'}><CommandButton {...props}/></Match>
+      <Match when={node().kind === 'Button'}><CommandButton {...props} label={props.buttonLabel}/></Match>
       <Match when={node().kind === 'LabelDecoration'}><LabelDecoration {...props}/></Match>
       <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Picture node={node()} controller={props.controller}/></span></Match>
       <Match when={node().kind?.endsWith('Field')}><Field {...props}/></Match>

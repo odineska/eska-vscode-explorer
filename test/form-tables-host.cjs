@@ -4,7 +4,7 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
 
-async function checkEmptySourceBar(ui, view, document, english) {
+async function checkSourceBar(ui, view, document, english) {
   const bar = "document.querySelector('.taxi-command-bar')";
   const popup = `${bar}?.querySelector('.taxi-popup > button')`;
   const buttons = `[...${bar}.querySelectorAll('.taxi-button')].map(button => button.getAttribute('aria-label'))`;
@@ -16,19 +16,76 @@ async function checkEmptySourceBar(ui, view, document, english) {
   assert.deepEqual(menu, [customize, 'Second command']);
   await ui.evaluate(`${popup}.click()`);
   const source = document.getText();
-  let updated = source;
-  for (const command of ['Form.Item.Rows.StandardCommand.Find', 'Form.StandardCommand.CustomizeForm']) {
-    const field = `<CommandName>${command}</CommandName>`;
-    assert.ok(updated.includes(field));
-    updated = updated.replace(field, field + '<LocationInCommandBar>InCommandBar</LocationInCommandBar>');
+  async function change(xml) {
+    const edit = new vscode.WorkspaceEdit();
+    const revision = view.snapshot.revision;
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'updated table command source');
   }
-  const edit = new vscode.WorkspaceEdit();
-  edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(source.length)), updated);
-  assert.equal(await vscode.workspace.applyEdit(edit), true);
+  const find = '<CommandName>Form.Item.Rows.StandardCommand.Find</CommandName>';
+  const forced = '<LocationInCommandBar>InCommandBar</LocationInCommandBar>';
+  const customizeCommand = '<CommandName>Form.StandardCommand.CustomizeForm</CommandName>';
+  assert.ok(source.includes(find) && source.includes(customizeCommand));
+  await change(source.replace(find, find + forced).replace(customizeCommand, customizeCommand + forced));
   await until(() => ui.evaluate(`${buttons}.length === 2 && ${buttons}[1] === ${JSON.stringify(customize)} && !document.querySelector('[data-kind=Table]')`),
     'forced Customize follows More and Find remains hidden');
+  const visibleAfterEdit = await ui.evaluate(buttons);
   await ui.screenshot('table-empty-source-bar-' + vscode.env.language + '.png');
-  return { menu, visibleAfterEdit: await ui.evaluate(buttons), grid: false };
+
+  const add = english ? 'Add' : 'Добавить';
+  const up = english ? 'Move up' : 'Переместить вверх';
+  const down = english ? 'Move down' : 'Переместить вниз';
+  const findCaption = english ? 'Find...' : 'Найти...';
+  const cancel = english ? 'Cancel search' : 'Отменить поиск';
+  const more = english ? 'More actions' : 'Еще';
+  const advanced = english ? 'Advanced search' : 'Расширенный поиск';
+  const input = '<InputField name="Text" id="3"><DataPath>Rows.Text</DataPath></InputField>';
+  const withColumn = source.replace('</Table>', '<ChildItems>' + input + '</ChildItems></Table>');
+  const grid = "!!document.querySelector('.taxi-table-scroll')";
+  const externalSearch = "document.querySelector('.taxi-command-bar > .taxi-table-search')";
+  await change(withColumn);
+  await until(() => ui.evaluate(`${grid} && ${buttons}.length === 6`), 'table source adds automatic and explicit actions');
+  const projectedButtons = await ui.evaluate(buttons);
+  assert.deepEqual(projectedButtons, [add, up, down, findCaption, cancel, more]);
+  if (process.platform === 'linux') {
+    const tableOffset = "document.querySelector('.taxi-table-scroll').getBoundingClientRect().y - document.querySelector('.taxi-form-frame').getBoundingClientRect().y";
+    await until(() => ui.evaluate(tableOffset + ' === 75'), 'table starts at the native offset below its separate command bar');
+  }
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] svg')"), true);
+  await ui.evaluate("globalThis.__tableSourceBar = document.querySelector('.taxi-command-bar'); true");
+
+  await change(withColumn.replace(input, input.replace('</InputField>', '<Visible>false</Visible></InputField>')));
+  await until(() => ui.evaluate(`!${grid} && ${buttons}.length === 6`), 'declared but hidden columns keep source commands');
+  assert.deepEqual(await ui.evaluate(buttons), projectedButtons);
+  assert.equal(await ui.evaluate("document.querySelector('.taxi-command-bar') === __tableSourceBar"), true);
+
+  const exclusions = '<CommandSet><ExcludedCommand>Add</ExcludedCommand><ExcludedCommand>MoveDown</ExcludedCommand><ExcludedCommand>Find</ExcludedCommand></CommandSet>';
+  await change(withColumn.replace('<RowFilter', exclusions + '<RowFilter'));
+  await until(() => ui.evaluate(`${grid} && ${buttons}.length === 3`), 'source actions use the table command exclusions');
+  assert.deepEqual(await ui.evaluate(buttons), [up, cancel, more]);
+
+  const withSearch = withColumn.replace('<SearchStringLocation>None</SearchStringLocation>', '')
+    .replace('<Autofill>false</Autofill>', '');
+  assert.notEqual(withSearch, withColumn);
+  await change(withSearch);
+  await until(() => ui.evaluate(`!!${externalSearch} && !!document.querySelector('.taxi-table-command-bar')`), 'search is projected with both command bars visible');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, more]);
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-command-bar .taxi-table-search')"), false);
+  await ui.evaluate(`${externalSearch}.click()`);
+  await until(() => view.selected?.key?.value === '8', 'projected search selects its table source element');
+  await ui.screenshot('table-source-search-' + vscode.env.language + '.png');
+
+  await change(withSearch.replace(find, find + forced));
+  await until(() => ui.evaluate(`!!${externalSearch} && ${buttons}.includes(${JSON.stringify(advanced)})`), 'forced Find keeps the advanced search action');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, advanced, more]);
+  if (process.platform === 'linux') {
+    const searchBox = `${externalSearch}.getBoundingClientRect()`;
+    const advancedButton = `${bar}.querySelector('[aria-label="${advanced}"]').getBoundingClientRect()`;
+    await until(() => ui.evaluate(`${searchBox}.width === 161 && ${searchBox}.left >= ${advancedButton}.right + 9`),
+      'the advanced search action and field keep their native widths without overlap');
+  }
+  return { menu, visibleAfterEdit, projectedButtons, searchProjected: true };
 }
 
 exports.run = async function () {
@@ -49,7 +106,7 @@ exports.run = async function () {
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
     const ui = await frame({fixedFormArea:true, state: { title: panel.panel.title } });
     if (form.kind === 'SourceBarEmpty') {
-      results.push({ kind: form.kind, ...await checkEmptySourceBar(ui, view, document, english) });
+      results.push({ kind: form.kind, ...await checkSourceBar(ui, view, document, english) });
       assert.deepEqual(await fs.readFile(form.path), before);
       panel.panel.dispose();
       await until(() => service.views.size === 0, form.kind + ' released');

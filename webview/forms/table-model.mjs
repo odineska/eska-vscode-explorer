@@ -2,8 +2,9 @@ import { flag, number, scalar, fieldWidth, viewStatusAddition } from './model.mj
 
 function visible(node) { return node.presentation.displayed !== false && flag(node, 'Visible') && (node.kind === 'ColumnGroup' || node.kind?.endsWith('Field')); }
 
-function hasColumns(table) {
-  return table.children.some(child => visible(child) && (child.kind !== 'ColumnGroup' || hasColumns(child)));
+function hasColumns(table, includeHidden = false) {
+  return table.children.some(child => (includeHidden || visible(child)) &&
+    (child.kind === 'ColumnGroup' ? hasColumns(child, includeHidden) : child.kind?.endsWith('Field')));
 }
 
 function commandBar(table) { return table.auxiliary?.find(node => node.kind === 'AutoCommandBar'); }
@@ -21,11 +22,43 @@ function findTable(node, name) {
   }
 }
 
-export function availableTableSearchCommand(root, command) {
-  const target = /^Form\.Item\.(.+)\.StandardCommand\.(?:Find|CancelSearch)$/.exec(command);
-  if (!target) return true;
-  const table = findTable(root, target[1]);
-  return !table || hasColumns(table);
+export function tableSearchReference(command) {
+  const match = /^Form\.Item\.(.+)\.StandardCommand\.(Find|CancelSearch)$/.exec(command);
+  return match ? { table: match[1], action: match[2] } : undefined;
+}
+
+export function availableTableSearchCommand(root, reference) {
+  const table = reference && findTable(root, reference.table);
+  return !table || hasColumns(table, true);
+}
+
+export function commandSourceTable(root, bar) {
+  const match = /^Item\.(.+)$/.exec(scalar(bar, 'CommandSource'));
+  const table = match && findTable(root, match[1]);
+  return table && hasColumns(table, true) ? table : undefined;
+}
+
+function tableSearch(table) {
+  return scalar(table, 'SearchStringLocation') !== 'None'
+    ? table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node))
+    : undefined;
+}
+
+export function tableSearchProjection(root, table) {
+  if (!table || !['Auto', 'CommandBar'].includes(scalar(table, 'SearchStringLocation', 'Auto'))) return;
+  const search = tableSearch(table);
+  if (!search || !hasColumns(table, true)) return;
+  const source = `Item.${table.name}`;
+  function findBar(node) {
+    if (node.presentation.displayed === false) return;
+    if (node.kind === 'CommandBar' && scalar(node, 'CommandSource') === source) return node;
+    for (const child of node.children) {
+      const bar = findBar(child);
+      if (bar) return bar;
+    }
+  }
+  const bar = findBar(root);
+  return bar ? { bar, search } : undefined;
 }
 
 function column(node, readOnly, dynamic) {
@@ -39,7 +72,7 @@ function column(node, readOnly, dynamic) {
 }
 
 /** Physical columns differ from logical fields for Vertical and InCell groups. */
-export function tableLayout(table, locale = 'ru') {
+export function tableLayout(table, locale = 'ru', searchProjected = false) {
   const readOnly = flag(table, 'ReadOnly', false);
   const dynamic = table.presentation.valueType?.types?.some(type => type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && type.name === 'DynamicList') ?? false;
   function visit(node) {
@@ -57,7 +90,7 @@ export function tableLayout(table, locale = 'ru') {
   const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
-  const search = scalar(table, 'SearchStringLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node)) : undefined;
+  const search = searchProjected ? undefined : tableSearch(table);
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && scalar(table, 'SearchControlLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchControlAddition' && visibleAddition(node)) : undefined;
   const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;

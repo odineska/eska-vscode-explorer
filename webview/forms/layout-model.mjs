@@ -1,5 +1,5 @@
 import { number, scalar, flag, fieldWidth, inputHeight } from './model.mjs';
-import { hasTableSurface } from './table-model.mjs';
+import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -21,6 +21,8 @@ export function stretches(node, axis, collapsed = {}) {
     return node.children.some(child => displayedInPreview(child) && stretches(child, axis, collapsed));
   }
   if (surfaces.has(node.kind)) return true;
+  if (axis === 'x' && node.kind === 'CommandBar') return scalar(node, 'CommandSource').startsWith('Item.')
+    || node.children.some(child => !!tableSearchReference(scalar(child, 'CommandName')));
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
   return ['InputField', 'LabelField'].includes(node.kind) && number(node, 'Height') > 1;
