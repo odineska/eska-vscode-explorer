@@ -1,16 +1,7 @@
-import {number} from './model.mjs';
+export {fixedChartSurfaceMetrics as plannerSurfaceMetrics} from './fixed-chart-surface.mjs';
 import {hintedTextWidth} from './font-metrics.mjs';
 
 const paint={"verticalThumbStart":[[255,239,210,204,204,210,241,255],[248,206,204,204,204,204,207,248],[227,204,204,204,204,204,204,228],[213,204,204,204,204,204,204,214],[207,204,204,204,204,204,204,207]],"verticalThumbEnd":[[207,204,204,204,204,204,204,207],[213,204,204,204,204,204,204,214],[227,204,204,204,204,204,204,228],[248,206,204,204,204,204,207,248],[245,238,210,204,204,210,240,245]],"verticalTrackEnd":[[235,234,234,234,234,234,234,236],[238,234,234,234,234,234,234,238],[244,234,234,234,234,234,234,244],[252,235,234,234,234,234,235,252],[255,248,236,234,234,237,249,255]],"horizontalThumbStart":[[255,248,227,213,207],[239,206,204,204,204],[210,204,204,204,204],[204,204,204,204,204],[204,204,204,204,204],[210,204,204,204,204],[241,207,204,204,204],[255,248,227,213,207]],"horizontalThumbEnd":[[207,213,227,248,245],[204,204,204,206,238],[204,204,204,204,210],[204,204,204,204,204],[204,204,204,204,204],[204,204,204,204,210],[204,204,204,207,240],[207,214,228,248,245]],"horizontalTrackEnd":[[235,238,244,252,255],[234,234,234,235,248],[234,234,234,234,237],[234,234,234,234,234],[234,234,234,234,234],[234,234,234,234,237],[234,234,234,235,249],[235,238,244,252,255]],"axisJoin":[[246,241,241],[251,241,241],[250,241,241],[244,241,241]],"scrollbarCorner":[230,227,224]};
-const recordedAxes=new Set(['0:0','20:5','35:9','15:3','60:20']);
-
-/** Native PlannerField ignores the generic Font, BackColor and BorderColor properties. */
-export function plannerSurfaceMetrics(node,os){
- const width=number(node,'Width'),height=number(node,'Height'),linux=os==='linux';
- return {width:width>0?Math.max(15,width)*(linux?10:8)+(linux?0:4):500,height:height>0?Math.max(2,height)*(linux?25:20)+(linux?-7:3):243,
-  pixels:13,ascent:12,descent:3,calibrated:linux&&recordedAxes.has(`${width}:${height}`)};
-}
-
 /** The recorded planner captions use hinted single advances, including an unkerned 11. */
 export function plannerTextAdvances(text){return [...text].map(char=>hintedTextWidth(char,{family:'ESKA Taxi Sans',pixels:13,weight:400}));}
 

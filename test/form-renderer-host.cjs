@@ -68,7 +68,10 @@ exports.run = async function () {
         assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-period-months > .current').length"),1);
       }
     }
-    if (form.kind === 'DendrogramField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-dendrogram-label').length"),4);
+    if (form.kind==='DendrogramField') {
+      if(process.platform==='linux'&&await ui.evaluate("Intl.DateTimeFormat().resolvedOptions().locale==='en-US'"))await until(()=>ui.evaluate("document.querySelector('[data-native-dendrogram]')?.dataset.nativeDendrogram==='ready'"),'native dendrogram paint');
+      else assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-dendrogram-label').length"),4);
+    }
     if (form.kind === 'GanttChartField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-gantt-interval').length"),vscode.env.language.startsWith('ru') ? 3 : 5);
     if (form.kind === 'GraphicalSchemaField') assert.equal(await ui.evaluate("getComputedStyle(document.querySelector('.taxi-graphical-schema')).backgroundSize"),'20px 20px, 20px 20px');
     if (form.kind === 'TextDocumentField') assert.equal(await ui.evaluate("getComputedStyle(document.querySelector('.taxi-text-document'),'::before').width"),'16px');
