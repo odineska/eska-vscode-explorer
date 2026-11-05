@@ -15,6 +15,7 @@ export type FormText = { kind: "literal"; items: { language: string; content: st
 export interface Font { face: string | null; points: number; weight: number; italic: boolean; underline: boolean; strikeout: boolean }
 export interface Color { kind: "rgb" | "role" | "web" | "system"; value: string }
 export interface Presentation {
+  united?: boolean | null;
   markIncomplete?: boolean;
   footerText?: FormText | null;
   picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
@@ -86,6 +87,7 @@ function presentation(value: unknown): boolean {
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
     && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
+    && (value.united === undefined || value.united === null || typeof value.united === "boolean")
     && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string")
     && (value.autoCommandItems === undefined || Array.isArray(value.autoCommandItems) && value.autoCommandItems.length <= 16_384 && value.autoCommandItems.every(item => isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean" && (item.origin === null || origin(item.origin))));
 }

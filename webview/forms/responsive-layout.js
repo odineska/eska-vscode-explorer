@@ -2,6 +2,7 @@ import { createContext, useContext, createSignal, createMemo, createEffect, onMo
 import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
+import { alignUnitedRows } from './united-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 
 export const FormLayoutContext = createContext();
@@ -18,6 +19,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
+  let unitedRows;
   const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
   const rect = borderBoxSize;
   function measure() {
@@ -32,6 +34,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
 
       const elements = [...root.querySelectorAll('.taxi-element')];
       content.dataset.formLayout = 'preferred';
+      unitedRows?.clear();
+      unitedRows = alignUnitedRows(root, state.model.root, wrapped(), state.ui.collapsed);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -62,6 +66,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     }
     setWrapped(previous => {
       if (previous.size === wrap.size && [...previous].every(key => wrap.has(key))) return previous;
+      if (unitedRows && [...unitedRows.owners].some(key => previous.has(key) !== wrap.has(key))) needsPreferred = true;
       needsMinimum = true; schedule(); return wrap;
     });
   }
@@ -83,7 +88,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     schedule();
     onCleanup(() => observer.disconnect());
   });
-  onCleanup(() => { active = false; cancelAnimationFrame(scheduled); });
+  onCleanup(() => { active = false; cancelAnimationFrame(scheduled); unitedRows?.clear(); });
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
     allocation: () => formAllocation(size(), preferred(), minimum(), state.ui.zoom),

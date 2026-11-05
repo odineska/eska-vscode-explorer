@@ -515,3 +515,37 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-table-content > :is(.taxi-table-head,.taxi-table-empty,.taxi-table-footer) { min-width: var(--taxi-table-content-min-width); }
 
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack { width: var(--taxi-surface-min-width, 150px) !important; }
+
+/* Ordinary vertical groups in one horizontal layout use the same row tracks. */
+.taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
+  display: grid;
+  grid-template-columns: repeat(var(--taxi-united-column-count), max-content);
+  grid-template-rows: repeat(var(--taxi-united-row-count), max-content);
+  align-items: start;
+  row-gap: 7px;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] {
+  grid-template-columns: var(--taxi-layout-columns);
+  grid-template-rows: var(--taxi-united-tracks);
+}
+.taxi-preview[data-form-layout] .taxi-element[data-united-cell] {
+  grid-row: var(--taxi-united-row);
+  grid-column: 1 / -1;
+}
+.taxi-preview[data-form-layout] .taxi-items[data-united-columns] > .taxi-element {
+  grid-column: var(--taxi-united-column);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] > .taxi-element[data-stretch-x=true] { width: auto; }
+.taxi-preview[data-form-layout] .taxi-element[data-united-branch] {
+  display: grid; grid-template-rows: subgrid; align-self: stretch; height: auto;
+}
+.taxi-preview[data-form-layout] .taxi-group[data-united-group] {
+  display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-height: 0;
+}
+.taxi-preview[data-form-layout] .taxi-group[data-united-group] > .taxi-group-title { grid-row: 1; align-self: start; }
+.taxi-preview[data-form-layout] .taxi-items[data-united-items] {
+  grid-row: var(--taxi-united-start) / -1; grid-template-rows: subgrid; row-gap: normal;
+}
+.taxi-preview[data-form-layout=allocated][data-preferred-x] .taxi-items[data-united-columns] {
+  grid-template-columns: var(--taxi-united-preferred-columns);
+}

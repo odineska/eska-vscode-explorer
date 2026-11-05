@@ -154,7 +154,7 @@ export function Preview(props) {
     'min-width': '28px',
   });
   return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
-    <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
+    <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }} style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
@@ -189,7 +189,9 @@ export function Items(props) {
   };
   const maximumHeight = () => buttonRow() ? Math.max(...children().map(height)) : 0;
   const rows = () => children().map(node => layout?.stretch(node, 'y') ? `minmax(${layout.minimumFor(node)?.height ?? 0}px, ${stretchWeight(node, 'y')}fr)` : 'max-content').join(' ');
-  return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key} style={{ '--taxi-layout-rows': rows() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+  const columns = () => horizontal() ? children().map(node => layout?.stretch(node, 'x')
+    ? `minmax(${layout.minimumFor(node)?.width ?? 0}px, ${stretchWeight(node, 'x')}fr)` : 'max-content').join(' ') : undefined;
+  return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key} style={{ '--taxi-layout-rows': rows(), '--taxi-layout-columns': columns() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>

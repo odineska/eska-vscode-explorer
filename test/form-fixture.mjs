@@ -269,6 +269,10 @@ export async function createTableGallery(fixture) {
   return result;
 }
 
+export function createUnitedGallery(fixture) {
+  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT']);
+}
+
 async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTURES) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
   const forms = [];

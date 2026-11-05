@@ -24,12 +24,16 @@ export function minimumFormLayout(root, scale = 1) {
   function items(element) {
     if (!element) return { width: 0, height: 0 };
     const children = [...element.children].filter(child => child.classList.contains('taxi-element')).map(item);
-    const horizontal = getComputedStyle(element).display === 'flex';
+    const horizontal = element.hasAttribute('data-united-columns') || getComputedStyle(element).display === 'flex';
     const css = getComputedStyle(element), gap = pixels(horizontal ? css.columnGap : css.rowGap) * Math.max(0, children.length - 1);
     const value = horizontal
       ? { width: children.reduce((sum, value) => sum + value.width, gap), height: Math.max(0, ...children.map(value => value.height)) }
       : { width: Math.max(0, ...children.map(value => value.width)), height: children.reduce((sum, value) => sum + value.height, gap) };
-    return add(value, insets(element));
+    const padding = insets(element);
+    if (element.hasAttribute('data-united-columns')) {
+      value.height = Math.max(value.height, size(element).height - padding.height);
+    }
+    return add(value, padding);
   }
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
