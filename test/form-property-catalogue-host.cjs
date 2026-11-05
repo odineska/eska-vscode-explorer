@@ -105,7 +105,10 @@ exports.run = async () => {
         const text = id => row(id)?.querySelector('td').textContent;
         return {count:document.querySelectorAll('.form-properties [data-palette-id^="platform:"]').length,
           categories:[...document.querySelectorAll('.form-property-category')].map(category=>category.textContent),
-          type:text('Type'),mask:!!row('Mask'),min:!!row('MinValue'),wrap:row('Wrap')?.querySelector('input')?.checked,
+          type:text('Type'),dataPath:text('DataPath'),mask:!!row('Mask'),min:!!row('MinValue'),wrap:row('Wrap')?.querySelector('input')?.checked,
+          format:!!row('Format'),editFormat:!!row('EditFormat'),choiceLinks:!!row('ChoiceParameterLinks'),
+          choiceForm:!!row('ChoiceForm'),listEdit:row('MultipleValuesExtendedEdit')?.querySelector('input')?.checked,
+          listColor:text('MultipleValuesBackColor'),
           width:text('Width'),maxWidth:text('MaxWidth'),titleLocation:text('TitleLocation'),
           change:text('OnChange'),changeSource:row('OnChange')?.dataset.paletteSource,
           choiceTab:row('StartChoice')?.getAttribute('tabindex')};
@@ -146,6 +149,30 @@ exports.run = async () => {
         && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===eventXml, 'event XML wrapper selected');
       main.panel.reveal();
       cases.push('event-row-navigates-existing-xml');
+      const xs = value => `<v8:Type xmlns:xs="http://www.w3.org/2001/XMLSchema">xs:${value}</v8:Type>`;
+      const reference = '<v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:CatalogRef.Товары</v8:Type>';
+      const withTypes = types => original.replace(xs('string'),types);
+      assert.ok(original.includes(xs('string')));
+      const bindings = [
+        {name:'unbound',xml:original.replace('<DataPath>Name</DataPath>',''),expect:{count:92,type:'',dataPath:'',mask:true,min:true}},
+        {name:'mixed-number',xml:withTypes(xs('string')+xs('decimal')),expect:{count:92,type:baseline.type,mask:true,min:true,editFormat:true,choiceForm:false}},
+        {name:'catalog-reference',xml:withTypes(reference),expect:{count:87,type:baseline.type,mask:false,min:false,choiceLinks:true,choiceForm:true}},
+        {name:'mixed-reference',xml:withTypes(xs('string')+reference),expect:{count:94,type:baseline.type,mask:true,min:true,choiceLinks:true,choiceForm:false}},
+        {name:'value-list',xml:withTypes('<v8:Type>v8:ValueListType</v8:Type>'),expect:{count:101,type:baseline.type,format:true,listEdit:false,listColor:ru?'Авто':'Auto'}},
+      ];
+      for (const {name,xml,expect} of bindings) {
+        const revision = view.snapshot.revision;
+        await edit(xml);
+        await until(async () => {
+          if (view.phase!=='ready' || view.snapshot.revision===revision) return false;
+          const rows = await inputRows();
+          return rows.count===expect.count && rows.type===expect.type;
+        }, 'input catalogue for '+name);
+        const rows = await inputRows();
+        for (const [key,value] of Object.entries(expect)) assert.equal(rows[key],value,`${name}: ${key}`);
+        assert.equal(view.selected.key.value,selected);
+        cases.push('dirty-binding-'+name);
+      }
       await edit(original);
       await until(async () => view.phase==='ready' && (await inputRows()).mask && (await inputRows()).change==='', 'dirty event cleared and string catalogue restored');
     } else {
