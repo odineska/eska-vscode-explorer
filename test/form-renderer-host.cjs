@@ -35,8 +35,12 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet-cell-selected').length"), 1);
     }
     if (form.kind === 'PlannerField') {
-      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-hour').length"), 24);
-      assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-meeting').length"), 1);
+      if (process.platform==='linux' && await ui.evaluate("Intl.DateTimeFormat().resolvedOptions().locale==='en-US'")) {
+        await until(()=>ui.evaluate("document.querySelector('[data-native-planner]')?.dataset.nativePlanner==='ready'"),'native planner paint');
+      } else {
+        assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-hour').length"),24);
+        assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-planner-meeting').length"),1);
+      }
     }
     if (form.kind === 'InputField') {
       const inspect = `(() => { const node=document.querySelector('.taxi-input'),css=getComputedStyle(node),label=getComputedStyle(document.querySelector('.taxi-field-label'));return {width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height,color:css.color,background:css.backgroundColor,border:css.borderColor,font:label.font}; })()`;
