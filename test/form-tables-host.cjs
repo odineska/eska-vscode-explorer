@@ -169,14 +169,27 @@ exports.run = async function () {
     }
     if (form.kind === 'Default') {
       const searchWidth = "document.querySelector('.taxi-table-search').getBoundingClientRect().width";
+      const initialSearchWidth = await ui.evaluate(searchWidth);
       if(process.platform==='linux') {
         assert.equal(geometry.buttons[0].width,english?51:85);
         assert.equal(geometry.buttons.at(-1).width,english?108:60);
-        assert.equal(Math.round(await ui.evaluate(searchWidth)),172);
+        assert.equal(Math.round(initialSearchWidth),172);
       }
-      await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='1000px'");
-      assert.equal(await ui.evaluate(searchWidth), 260, 'search stays bounded in a wide table');
-      await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='max-content'");
+      const wide = await ui.evaluate(`(async () => {
+        const viewport = document.querySelector('.preview-scroll'), width = viewport.style.width;
+        try {
+          viewport.style.width = '1000px';
+          for (let tick = 0; tick < 30 && ${searchWidth} !== 260; tick++) {
+            await new Promise(requestAnimationFrame);
+          }
+          return {search: ${searchWidth}, viewport: viewport.clientWidth,
+            frame: document.querySelector('.taxi-form-frame').getBoundingClientRect().width};
+        } finally {
+          viewport.style.width = width;
+        }
+      })()`);
+      assert.equal(wide.search, 260, 'search stays bounded in a wide table '+JSON.stringify(wide));
+      await until(async () => await ui.evaluate(searchWidth)===initialSearchWidth, 'restored table search width');
     }
     await ui.screenshot(`table-${form.kind}-${vscode.env.language}.png`);
     if (form.kind === 'TableButtonGroup') {
