@@ -43,6 +43,10 @@ export function minimumFormLayout(root, scale = 1) {
       const label = field.querySelector(':scope > .taxi-field-label'), control = field.querySelector(':scope > .taxi-field-control');
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
+      if (label && location === 'Left') {
+        const sharedWidth = pixels(element.parentElement.style.getPropertyValue('--taxi-through-label-width'));
+        title.width = Math.max(title.width, sharedWidth);
+      }
       const vertical = ['Top', 'Bottom'].includes(location), gap = label ? pixels(getComputedStyle(field)[vertical ? 'rowGap' : 'columnGap']) : 0;
       value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }
         : { width: title.width + gap + content.width, height: Math.max(title.height, content.height) };

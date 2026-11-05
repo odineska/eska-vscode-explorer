@@ -494,6 +494,12 @@ button { cursor: default; }
 .taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom],[data-title-location=None]) { grid-template-columns: minmax(0, 1fr); }
 /* Intrinsic minima must include fixed controls, even inside a zero-sized grid track. */
 .taxi-preview[data-form-layout=minimum] .taxi-items--vertical { grid-template-columns: max-content max-content; }
+.taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+  grid-template-columns: var(--taxi-through-label-width) minmax(0, 1fr);
+}
+.taxi-preview[data-form-layout=minimum] .taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+  grid-template-columns: var(--taxi-through-label-width) max-content;
+}
 .taxi-preview[data-form-layout=minimum] .taxi-field-control,
 .taxi-preview[data-form-layout=minimum] .taxi-field-control > *,
 .taxi-preview[data-form-layout=minimum] .taxi-special { max-width: none !important; }

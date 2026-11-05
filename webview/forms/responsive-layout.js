@@ -3,6 +3,7 @@ import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
+import { alignThroughLabels } from './through-align.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 
 export const FormLayoutContext = createContext();
@@ -19,7 +20,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows;
+  let unitedRows, clearThroughLabels;
   const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
   const rect = borderBoxSize;
   function measure() {
@@ -33,9 +34,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
       needsPreferred = false;
 
       const elements = [...root.querySelectorAll('.taxi-element')];
+      const elementByKey = new Map(elements.map(element => [element.dataset.element, element]));
+      const containers = new Map([...root.querySelectorAll('.taxi-items[data-layout-owner]')]
+        .map(items => [items.dataset.layoutOwner, items]));
       content.dataset.formLayout = 'preferred';
       unitedRows?.clear();
-      unitedRows = alignUnitedRows(root, state.model.root, wrapped(), state.ui.collapsed);
+      clearThroughLabels?.();
+      clearThroughLabels = alignThroughLabels(state.model.root, containers);
+      unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -91,7 +97,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
     schedule();
     onCleanup(() => observer.disconnect());
   });
-  onCleanup(() => { active = false; cancelAnimationFrame(scheduled); unitedRows?.clear(); });
+  onCleanup(() => {
+    active = false;
+    cancelAnimationFrame(scheduled);
+    unitedRows?.clear();
+    clearThroughLabels?.();
+  });
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
     allocation: () => formAllocation(size(), preferred(), minimum(), state.ui.zoom),

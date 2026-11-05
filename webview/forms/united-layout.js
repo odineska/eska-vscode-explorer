@@ -8,9 +8,7 @@ function ordinaryVerticalGroup(node) {
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
-export function alignUnitedRows(root, model, wrapped, collapsed) {
-  const elements = new Map([...root.querySelectorAll('[data-element]')].map(element => [element.dataset.element, element]));
-  const containers = new Map([...root.querySelectorAll('.taxi-items[data-layout-owner]')].map(items => [items.dataset.layoutOwner, items]));
+export function alignUnitedRows(model, elements, containers, wrapped, collapsed) {
   const undo = [], owners = new Set();
   const mark = (element, attribute) => {
     element.setAttribute(attribute, '');
@@ -82,8 +80,11 @@ export function alignUnitedRows(root, model, wrapped, collapsed) {
   }
 
   visit(model);
-  for (const items of root.querySelectorAll('.taxi-items[data-united-columns]')) {
-    style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+  for (const owner of owners) {
+    const items = containers.get(owner);
+    if (items.hasAttribute('data-united-columns')) {
+      style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+    }
   }
   return { owners, clear: () => { for (const restore of undo) restore(); } };
 }
