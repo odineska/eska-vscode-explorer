@@ -94,11 +94,42 @@ exports.run = async () => {
   await floating.evaluate(nextPaint);
   await verify(floating, true, 'parent flag preserves alignment within the group');
   assert.equal(await floating.evaluate('__throughFields.every(field => field.isConnected)'), true);
-  assert.deepEqual(await fs.readFile(form.path), original);
   await floating.screenshot(`through-align-dirty-${vscode.env.language}.png`);
   await service.receive(view, detached, { type: 'dock' });
   await until(() => !view.frames.has('preview'), 'dock completed');
   await verify(ui, true, 'aligned after return');
+
+  const source = original.toString('utf8');
+  async function replaceSource(text) {
+    const revision = view.snapshot.revision;
+    const edit = new vscode.WorkspaceEdit();
+    const range = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
+    edit.replace(document.uri, range, text);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'updated form scope');
+    await ui.rendered();
+  }
+
+  const outer = /<UsualGroup name="Outer"[^>]*>.*?<ChildItems>(.*)<\/ChildItems>\s*<\/UsualGroup>(?=\s*<\/ChildItems>\s*<Attributes>)/s.exec(source);
+  assert.ok(outer);
+  await replaceSource(source.replace(outer[0], outer[1]));
+  await verify(ui, true, 'titles align across groups in the form root');
+  const page = `<Pages name="Pages" id="31"><ChildItems><Page name="ProbePage" id="33">
+    <Group>Vertical</Group><ChildItems>${outer[1]}</ChildItems></Page></ChildItems></Pages>`;
+  await replaceSource(source.replace(outer[0], page));
+  await verify(ui, true, 'titles align across groups on a page');
+
+  const left = /<UsualGroup name="Left"[^>]*>.*?(?=<ChildItems>)/s.exec(source);
+  assert.ok(left);
+  await replaceSource(source.replace(left[0], `${left[0]}<BackColor>#F0F6FC</BackColor>`));
+  const painted = await verify(ui, true, 'painted group accounts for its left inset');
+  if (process.platform === 'linux') assert.equal(painted[2].width - painted[0].width, 5);
+  const framed = left[0].replace('<Representation>None</Representation>',
+    '<Representation>StrongSeparation</Representation><ThroughAlign>Use</ThroughAlign>');
+  assert.notEqual(framed, left[0]);
+  await replaceSource(source.replace(left[0], framed));
+  await verify(ui, true, 'explicit Use crosses the strong divider');
+  assert.deepEqual(await fs.readFile(form.path), original);
   main.panel.dispose();
   await until(() => service.views.size === 0, 'preview released');
   await Promise.all([...service.closing]);

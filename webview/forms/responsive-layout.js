@@ -40,7 +40,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'preferred';
       unitedRows?.clear();
       clearThroughLabels?.();
-      clearThroughLabels = alignThroughLabels(state.model.root, containers);
+      clearThroughLabels = alignThroughLabels(state.model.root, containers, boundingScale(root));
       unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
