@@ -40,7 +40,7 @@ async function trees(root) {
 const entries=()=>Object.fromEntries(Object.entries(runtime).map(([path,bytes])=>['extension/'+path,bytes]));
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
-  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,56);
+  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,57);
   const eska=resolve(repository,'../eska'),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
   for(const suite of catalog.suites){
     await readFile(join(repository,suite.driver));assert.equal(suite.caseSelection,'whole-suite-with-existing-transitions');

@@ -1,9 +1,5 @@
-import {flag} from './model.mjs';
 import {hintedTextWidth} from './font-metrics.mjs';
-export {fixedChartSurfaceMetrics as dendrogramSurfaceMetrics} from './fixed-chart-surface.mjs';
-
-/** Native border paint ignores BorderColor, including explicitly requested web colors. */
-export function dendrogramBorderColor(node){return !flag(node,'Enabled')||flag(node,'ReadOnly',false)?'#e8e8e8':'#a0a0a0';}
+export {fixedChartSurfaceMetrics as dendrogramSurfaceMetrics,fixedChartBorderColor as dendrogramBorderColor} from './fixed-chart-surface.mjs';
 
 const font={family:'ESKA Taxi Sans',pixels:13,weight:400};
 function labelText(value,width){

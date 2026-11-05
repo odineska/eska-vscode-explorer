@@ -1,4 +1,4 @@
-import {number} from './model.mjs';
+import {number,flag} from './model.mjs';
 
 const recordedAxes=new Set(['0:0','20:5','35:9','15:3','60:20']);
 
@@ -9,3 +9,5 @@ export function fixedChartSurfaceMetrics(node,os){
   pixels:13,ascent:12,descent:3,calibrated:linux&&recordedAxes.has(`${width}:${height}`)};
 }
 
+/** Both settled tree and Gantt charts ignore requested BorderColor in this profile. */
+export function fixedChartBorderColor(node){return !flag(node,'Enabled')||flag(node,'ReadOnly',false)?'#e8e8e8':'#a0a0a0';}

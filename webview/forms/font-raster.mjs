@@ -72,7 +72,7 @@ export function createFontRaster(bytes) {
         const height = inkBottom - inkTop;
         if (height > 512) throw new Error('font-raster-height');
         if (mode === 'lcd') return { width: Math.max(width, bitmapRight) - bitmapLeft, advance: width, height,
-          ascent, descent, originX: bitmapLeft, originY: inkTop, glyphs };
+          ascent, descent, originX: bitmapLeft, originY: inkTop, inkLeft, inkRight, glyphs };
         const alpha = new Uint8Array(width * height);
         const clipLeft = Math.max(0, inkLeft), clipRight = Math.min(width, inkRight);
         for (const glyph of glyphs) {
