@@ -1,7 +1,7 @@
 import { For, Show, Switch, Match, createMemo } from 'solid-js';
 import { scalar, flag, caption, font, color, text } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
-import { tableSearchProjection } from './table-model.mjs';
+import { tableAdditionsProjection } from './table-model.mjs';
 import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
@@ -61,19 +61,32 @@ export function TableCommandActions(props) {
   </>;
 }
 
+/** Put the search controls in the order of the native toolbar. */
+export function TableToolbarSearch(props) {
+  const state = props.controller.state;
+  const searchControl = () => <CommandButton node={props.control} controller={props.controller}
+    label={state.strings.search} picture="StdPicture.SearchControl" iconOnly dropdown nativeDropdown/>;
+  return <>
+    <Show when={props.control && !props.search}>{searchControl()}</Show>
+    <Show when={props.spacer}><span class="taxi-command-spacer"
+      classList={{ 'taxi-command-spacer--wide': !!props.control && !props.search }}/></Show>
+    <Show when={props.search}>{search => <TableSearch node={search()} controller={props.controller}/>}</Show>
+    <Show when={props.control && props.search}>{searchControl()}</Show>
+  </>;
+}
+
 /** Empty design-time collections do not fabricate runtime rows or values. */
 export function Table(props) {
   const state = props.controller.state, node = () => props.node;
-  const searchProjected = createMemo(() => !!tableSearchProjection(state.model.root, node()));
-  const layout = createTableLayout(node, () => state.locale, searchProjected);
+  const additions = createMemo(() => tableAdditionsProjection(state.model.root, node()));
+  const layout = createTableLayout(node, () => state.locale, additions);
+  const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
   const select = (event, item) => { event.stopPropagation(); props.controller.select(item); };
-  return <div class="taxi-table-field" style={{ 'min-width': `${layout().minWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? 31 : 0) + 25)}px` }}>
-    <Show when={layout().toolbar}><div class="taxi-table-command-bar">
+  return <div class="taxi-table-field" data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': `${layout().minWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? 31 : 0) + 25)}px` }}>
+    <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? "" : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
-      <span class="taxi-command-spacer"/>
-      <Show when={layout().search}><TableSearch node={layout().search} controller={props.controller}/></Show>
-      <Show when={layout().searchControl}><CommandButton node={layout().searchControl} controller={props.controller} label={state.strings.search} picture="StdPicture.SearchControl" iconOnly dropdown nativeDropdown/></Show>
+      <TableToolbarSearch search={layout().search} control={layout().searchControl} controller={props.controller} spacer/>
       <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/></Show>
     </div></Show>
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>

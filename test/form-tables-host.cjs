@@ -90,6 +90,7 @@ async function checkSourceBar(ui, view, document, english) {
   await change(top);
   const above = "document.querySelector('.taxi-table-field > .taxi-table-search--top')";
   await until(() => ui.evaluate(`!!${above} && !${externalSearch}`), 'Top search appears above the grid');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, more]);
   const topSearch = await ui.evaluate(`(() => {
     const form = document.querySelector('.taxi-form-frame').getBoundingClientRect();
     const field = ${above}.getBoundingClientRect();
@@ -211,8 +212,9 @@ exports.run = async function () {
     if (['Default', 'GridFooter', 'HorizontalTitled', 'Vertical', 'InCell'].includes(form.kind)) {
       identity = await verifyGeometryIdentity(document, view, ui, form.kind);
     }
+    const dynamicSearch = form.kind === 'DynamicList' ? await verifyDynamicSearch(document, view, ui, english) : undefined;
     assert.deepEqual(await fs.readFile(form.path), before);
-    results.push({kind:form.kind,...geometry,...(identity ? {identity} : {})}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(identity ? {identity} : {}), ...(dynamicSearch ? {dynamicSearch} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
@@ -260,4 +262,49 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
   assert.equal(document.getText(), original);
   return {headers: retained.headers, footerCells: retained.footer, widthEdit: 32, selection: '4', restored: true};
+}
+
+
+async function verifyDynamicSearch(document, view, ui, english) {
+  const original = document.getText();
+  const source = '<CommandBar name="Separate" id="910"><CommandSource>Item.Rows</CommandSource></CommandBar>';
+  const withoutString = original.replace('<ChildItems>', '<ChildItems>' + source)
+    .replace('<DataPath>Rows</DataPath>', '<DataPath>Rows</DataPath><SearchStringLocation>None</SearchStringLocation><SearchControlLocation>CommandBar</SearchControlLocation>');
+  const create = english ? 'Create' : 'Создать';
+  const copy = english ? 'Copy' : 'Скопировать';
+  const find = english ? 'Find...' : 'Найти...';
+  const cancel = english ? 'Cancel search' : 'Отменить поиск';
+  const search = english ? 'Search' : 'Поиск';
+  const more = english ? 'More actions' : 'Еще';
+  async function change(xml) {
+    const edit = new vscode.WorkspaceEdit();
+    const revision = view.snapshot.revision;
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'dynamic list command layout recomposed');
+  }
+  const outer = "document.querySelector('.taxi-command-bar[data-table-commands]')";
+  const inner = "document.querySelector('.taxi-table-command-bar')";
+  const actions = bar => `[...(${bar}?.querySelectorAll('.taxi-button') ?? [])].map(button => button.getAttribute('aria-label'))`;
+  await change(withoutString);
+  await until(() => ui.evaluate(`!!${outer} && ${actions(outer)}.includes(${JSON.stringify(search)})`), 'search control moved to the linked bar');
+  const projected = await ui.evaluate(actions(outer));
+  assert.deepEqual(projected, [create, copy, find, cancel, search, more]);
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, find, cancel, more]);
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-search')"), false);
+  await ui.evaluate(`${outer}.querySelector('[aria-label="${search}"]').click()`);
+  await until(() => view.selected?.key?.value === '13', 'projected dropdown selects the actual SearchControlAddition');
+  await ui.screenshot('table-dynamic-search-source-' + vscode.env.language + '.png');
+
+  await change(withoutString.replace('<SearchStringLocation>None</SearchStringLocation>', '<SearchStringLocation>Top</SearchStringLocation>'));
+  await until(() => ui.evaluate("!!document.querySelector('.taxi-table-search--top')"), 'dynamic list shows Top search');
+  assert.deepEqual(await ui.evaluate(actions(outer)), [create, copy, search, more]);
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, more]);
+  assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-table-search').length"), 1);
+
+  await change(original);
+  await until(() => ui.evaluate(`!${outer} && ${actions(inner)}.includes(${JSON.stringify(search)})`), 'removing the source bar restores the local search control');
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, search, more]);
+  assert.equal(document.getText(), original);
+  return { projected, sourceIdentity: '13', restored: true };
 }

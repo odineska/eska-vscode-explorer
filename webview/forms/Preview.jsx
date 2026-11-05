@@ -1,7 +1,6 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
 import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
-import { Table, TableCommandActions } from './Table.jsx';
-import { TableSearch } from './TableSearch.jsx';
+import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
 import { primaryForeground } from './primary-foreground.mjs';
@@ -19,7 +18,7 @@ import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
 import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
-import { availableTableSearchCommand, commandSourceTable, tableSearchProjection, tableSearchReference } from './table-model.mjs';
+import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
 export function Icon(props) {
@@ -269,10 +268,11 @@ function CommandBar(props) {
   const state = props.controller.state, node = () => props.node;
   const root = () => state.model.root;
   const source = createMemo(() => commandSourceTable(root(), node()));
-  const search = createMemo(() => {
-    const projection = tableSearchProjection(root(), source());
-    return projection && projection.bar.key === node().key ? projection.search : undefined;
+  const additions = createMemo(() => {
+    const projection = tableAdditionsProjection(root(), source());
+    return projection?.bar.key === node().key ? projection : undefined;
   });
+  const hasSearch = () => !!tableSearch(source());
   const commands = createMemo(() => {
     const inline = [], trailing = [], additional = [];
     let hasOverflow = !!source(), tableCommands = !!source(), advancedSearch = false;
@@ -284,14 +284,14 @@ function CommandBar(props) {
       tableCommands ||= !!searchReference;
       const customize = command === 'Form.StandardCommand.CustomizeForm';
       const location = scalar(child, 'LocationInCommandBar', 'Auto');
-      const projectedSearch = search() && searchReference?.table === source()?.name;
-      if (projectedSearch && location === 'Auto') continue;
+      const usesSearch = hasSearch() && searchReference?.table === source()?.name;
+      if (usesSearch && location === 'Auto') continue;
       if (location === 'InAdditionalSubmenu' || customize && location === 'Auto') {
         additional.push(child);
         hasOverflow = true;
         continue;
       }
-      if (projectedSearch && searchReference.action === 'Find') advancedSearch = true;
+      if (usesSearch && searchReference.action === 'Find') advancedSearch = true;
       (customize ? trailing : inline).push(child);
       if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
     }
@@ -299,15 +299,15 @@ function CommandBar(props) {
   });
   const commandLabel = child => {
     const reference = tableSearchReference(scalar(child, 'CommandName'));
-    return search() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
+    return hasSearch() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
   return <div class="taxi-command-bar" data-table-commands={commands().tableCommands ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
-    <Show when={commands().tableCommands && (source() || commands().more.length)}><span class="taxi-command-spacer"/></Show>
-    <Show when={search()}>{item => <TableSearch node={item()} controller={props.controller}/>}</Show>
+    <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
+      spacer={commands().tableCommands && (source() || commands().more.length)}/>
     <Show when={commands().more.length} fallback={<Show when={source()}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
       <PopupMenu items={commands().more} label={state.strings.more} controller={props.controller} nativeDropdown/>
     </Show>

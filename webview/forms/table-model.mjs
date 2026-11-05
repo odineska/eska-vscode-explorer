@@ -38,16 +38,27 @@ export function commandSourceTable(root, bar) {
   return table && hasColumns(table, true) ? table : undefined;
 }
 
-function tableSearch(table) {
-  return scalar(table, 'SearchStringLocation') !== 'None'
-    ? table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node))
-    : undefined;
+export function tableSearch(table) {
+  if (!table || scalar(table, 'SearchStringLocation') === 'None') return;
+  return table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node));
 }
 
-export function tableSearchProjection(root, table) {
-  if (!table || !['Auto', 'CommandBar'].includes(scalar(table, 'SearchStringLocation', 'Auto'))) return;
-  const search = tableSearch(table);
-  if (!search || !hasColumns(table, true)) return;
+function isDynamicList(table) {
+  return table.presentation.valueType?.types?.some(type =>
+    type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && type.name === 'DynamicList') ?? false;
+}
+
+function tableSearchControl(table) {
+  if (scalar(table, 'SearchControlLocation') === 'None') return;
+  return table.auxiliary.find(node => node.kind === 'SearchControlAddition' && visibleAddition(node));
+}
+
+export function tableAdditionsProjection(root, table) {
+  if (!table?.name || !hasColumns(table, true)) return;
+  const inCommandBar = name => ['Auto', 'CommandBar'].includes(scalar(table, name, 'Auto'));
+  const search = inCommandBar('SearchStringLocation') ? tableSearch(table) : undefined;
+  const control = isDynamicList(table) && inCommandBar('SearchControlLocation') ? tableSearchControl(table) : undefined;
+  if (!search && !control) return;
   const source = `Item.${table.name}`;
   function findBar(node) {
     if (node.presentation.displayed === false) return;
@@ -58,7 +69,7 @@ export function tableSearchProjection(root, table) {
     }
   }
   const bar = findBar(root);
-  return bar ? { bar, search } : undefined;
+  return bar ? { bar, search, control } : undefined;
 }
 
 function column(node, readOnly, dynamic) {
@@ -72,9 +83,9 @@ function column(node, readOnly, dynamic) {
 }
 
 /** Physical columns differ from logical fields for Vertical and InCell groups. */
-export function tableLayout(table, locale = 'ru', searchProjected = false) {
+export function tableLayout(table, locale = 'ru', additions) {
   const readOnly = flag(table, 'ReadOnly', false);
-  const dynamic = table.presentation.valueType?.types?.some(type => type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && type.name === 'DynamicList') ?? false;
+  const dynamic = isDynamicList(table);
   function visit(node) {
     if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1, columns: [column(node, readOnly, dynamic)], children: [] };
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
@@ -92,9 +103,9 @@ export function tableLayout(table, locale = 'ru', searchProjected = false) {
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
   const searchField = tableSearch(table);
   const topSearch = scalar(table, 'SearchStringLocation') === 'Top' ? searchField : undefined;
-  const search = searchProjected || topSearch ? undefined : searchField;
+  const search = additions?.search || topSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
-  const searchControl = dynamic && scalar(table, 'SearchControlLocation') !== 'None' ? table.auxiliary.find(node => node.kind === 'SearchControlAddition' && visibleAddition(node)) : undefined;
+  const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
   const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;
   const rowCount = number(table, 'HeightInTableRows');
   const height = rowCount > 0 ? header + rowCount * 28 + footer + 1 : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);

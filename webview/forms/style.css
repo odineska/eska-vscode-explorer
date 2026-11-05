@@ -287,11 +287,12 @@ button { cursor: default; }
 .taxi-table-field { max-width: 100%; }
 /* The table model supplies the minimum width; the search field shrinks within it. */
 .taxi-table-command-bar { gap: 9px; height: 26px; min-height: 26px; margin-bottom: 9px; contain: inline-size; }
+.taxi-table-command-bar[data-table-lookup] { contain: none; min-width: max-content; }
 .taxi-table-command-bar > .taxi-button { padding-left: 13px; padding-right: 13px; }
 .taxi-table-command-bar > .taxi-button--dropdown { padding-left: 8px; padding-right: 8px; }
 .taxi-table-command-bar > .taxi-button--icon-only { padding-left: 0; padding-right: 0; }
-.taxi-preview[data-os=linux] .taxi-table-command-bar > .taxi-button--icon-only > canvas[data-native-picture=ready] { position: relative; left: -1px; }
-.taxi-preview[data-os=linux] .taxi-table-command-bar > .taxi-button--icon-only.taxi-button--dropdown > canvas[data-native-picture=ready] { left: -2px; }
+.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only > canvas[data-native-picture=ready] { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only.taxi-button--dropdown > canvas[data-native-picture=ready] { left: -2px; }
 .taxi-table-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 .taxi-table-move { position: relative; display: inline-flex; margin-left: 11px; }
 .taxi-table-move:first-child { margin-left: 0; }
@@ -300,6 +301,7 @@ button { cursor: default; }
 .taxi-command-bar[data-table-commands] { --taxi-projected-search-width: 172px; }
 .taxi-command-bar[data-advanced-search] { --taxi-projected-search-width: 161px; }
 .taxi-command-bar[data-table-commands] > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
+:is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-command-spacer--wide { min-width: 11px; }
 .taxi-command-bar[data-table-commands] > .taxi-element { flex-shrink: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-table-move + .taxi-element { margin-left: 11px; }
 .taxi-command-bar[data-table-commands] > .taxi-table-search { min-width: var(--taxi-projected-search-width); }
@@ -449,6 +451,7 @@ button { cursor: default; }
 .taxi-table-search--top { width: 100%; align-self: stretch; flex: 0 0 auto; margin: 0 0 8px; }
 .taxi-preview[data-os=linux] .taxi-table-search--top { align-self: stretch; margin-top: 0; }
 .taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field:has(> .taxi-table-search--top) { padding-top: 1px; }
+.taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field[data-search-location=None]:has(> .taxi-table-command-bar[data-autofill]) { padding-block: 1px; }
 .taxi-preview[data-os=linux] .taxi-table-search:has(> [data-native-label=ready]) input::placeholder { color: transparent; }
 
 .taxi-preview[data-os=linux] .taxi-table-search[data-native-search-field=ready] { border-radius: 0; }
