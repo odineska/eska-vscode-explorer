@@ -52,6 +52,13 @@ exports.run = async () => {
   const ui = await frame({ fixedFormArea: true, state: { title: main.panel.title } });
   await until(async () => (await rectangles(ui, keys)).every(Boolean), 'initial inputs');
   await ui.evaluate('document.fonts.ready.then(() => true)');
+  await until(() => ui.evaluate(`(() => {
+    const form = document.querySelector('.taxi-form-frame'), bounds = form.getBoundingClientRect();
+    const css = getComputedStyle(form);
+    const width = parseFloat(css.getPropertyValue('--taxi-form-preferred-width'));
+    const height = parseFloat(css.getPropertyValue('--taxi-form-preferred-height'));
+    return Math.abs(bounds.width - width) <= .5 && Math.abs(bounds.height - height) <= .5;
+  })()`), 'preferred form size settled');
   const results = [];
   async function verify(layout, aligned, label) {
     let boxes;
