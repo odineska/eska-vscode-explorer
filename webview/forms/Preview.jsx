@@ -339,7 +339,7 @@ export function Element(props) {
       <Match when={group()}><Group {...props}/></Match>
       <Match when={node().kind === 'Table'}><Table node={node()} controller={props.controller}/></Match>
       <Match when={node().kind === 'Button'}><CommandButton {...props}/></Match>
-      <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), ...(state.os==='linux'?{'font-size':`${Math.round(node().presentation.font.points*4/3)}px`}:{}), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'normal' : 'nowrap' }}>{caption(node(), state)}</span></Match>
+      <Match when={node().kind === 'LabelDecoration'}><span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={{ ...font(node().presentation.font, state.os), ...(state.os==='linux'?{'font-size':`${Math.round(node().presentation.font.points*4/3)}px`}:{}), color: color(node().presentation.foreground), 'white-space': flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre' }}>{caption(node(), state)}</span></Match>
       <Match when={node().kind === 'PictureDecoration'}><span class="taxi-picture-decoration"><Picture node={node()} controller={props.controller}/></span></Match>
       <Match when={node().kind?.endsWith('Field')}><Field {...props}/></Match>
       <Match when={node().kind?.endsWith('Addition')}><span class="taxi-addition"><Show when={node().kind !== 'ViewStatusAddition'}><input readOnly placeholder={state.strings.search} tabIndex="-1"/></Show></span></Match>

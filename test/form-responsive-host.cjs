@@ -104,13 +104,13 @@ async function nativeCycle(ui, label) {
   return samples;
 }
 function sourceTitle(value) { return `<v8:content>${value}</v8:content>`; }
-async function replace(document, from, to) {
+async function replace(document, from, to, expectedCount = 2) {
   const text=document.getText(),edit=new vscode.WorkspaceEdit();let offset=text.indexOf(from),count=0;
   while(offset>=0) {
     edit.replace(document.uri,new vscode.Range(document.positionAt(offset),document.positionAt(offset+from.length)),to);
     count++;offset=text.indexOf(from,offset+from.length);
   }
-  assert.equal(count,2,'both localized title values found independently of XML whitespace');
+  assert.equal(count, expectedCount, 'expected XML values found independently of surrounding whitespace');
   assert.equal(await vscode.workspace.applyEdit(edit),true);
 }
 exports.run=async function(){
@@ -193,11 +193,28 @@ exports.run=async function(){
     await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
     await settled(ui);
     const sample=await ui.evaluate(`(() => {const label=document.querySelector('.taxi-label'),r=label.getBoundingClientRect(),root=document.querySelector('.taxi-form-frame').getBoundingClientRect(),close=[...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close').getBoundingClientRect();return {text:label.textContent,wrap:getComputedStyle(label).whiteSpace,width:r.width,height:r.height,inside:r.right<=root.right&&r.bottom<=root.bottom,followingControl:close.top>=r.bottom,expanded:document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')==='true'}})()`);
-    assert.ok(sample.text.length>55&&sample.width>0&&sample.height>0);assert.equal(sample.wrap,'normal');
+    assert.ok(sample.text.length>55&&sample.width>0&&sample.height>0);assert.equal(sample.wrap,'pre-wrap');
     assert.equal(sample.inside,true,'expanded long caption stays within the scrollable form');assert.equal(sample.followingControl,true,'caption never overlaps the following button');assert.equal(sample.expanded,true);
     longCaptionResults.push({width,height,...sample});
   }
+  const multilineCaption = 'First line\nSecond line';
+  await replace(document, sourceTitle('Long caption remains available when the viewing area is narrow.'), sourceTitle(multilineCaption));
+  const labelLineBreaks = [];
+  for (const wrap of ['pre-wrap', 'pre']) {
+    if (wrap === 'pre') await replace(document, '<Wrap>true</Wrap>', '<Wrap>false</Wrap>', 1);
+    let lines;
+    await until(async () => (lines = await ui.evaluate(`(() => {
+      const label = document.querySelector('.taxi-label');
+      if (label?.textContent !== ${JSON.stringify(multilineCaption)} || getComputedStyle(label).whiteSpace !== ${JSON.stringify(wrap)}) return false;
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      return [...new Set([...range.getClientRects()].filter(rect => rect.width > 0).map(rect => rect.top))];
+    })()`)) !== false, 'dirty XML label keeps explicit line break');
+    assert.equal(lines.length, 2);
+    assert.ok(lines[0] < lines[1]);
+    labelLineBreaks.push({wrap, lines});
+  }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
   assert.equal(service.views.size,1);main.panel.dispose();await until(()=>service.views.size===0,'responsive session released');await Promise.all([...service.closing]);await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,results}));
+  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,labelLineBreaks,results}));
 };
