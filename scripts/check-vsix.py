@@ -3,8 +3,27 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 import zipfile
+
+
+def form_runtime_assets(root, manifest):
+    """Require every emitted form asset without accepting stale or unreferenced font files."""
+    commands = manifest.get('contributes', {}).get('commands', [])
+    if not any(command.get('command') == 'eska.explorer.previewForm' for command in commands):
+        return []
+    outputs = set(json.loads((root / 'out/query-designer-meta.json').read_text(encoding='utf-8'))['outputs'])
+    entrypoints = {'out/query-designer.js', 'out/form-preview.js'}
+    required = entrypoints | {'out/form-preview.css'}
+    assert required <= outputs, 'Missing form browser output metadata'
+    fonts = outputs - required
+    assert all(re.fullmatch(r'out/form-fonts/[A-Za-z0-9_-]+\.(?:ttf|wasm)', name) for name in fonts), 'Unexpected form browser output'
+    assert any(name.endswith('.ttf') for name in fonts), 'Missing form font output'
+    assert any(name.endswith('.wasm') for name in fonts), 'Missing form rasterizer output'
+    for name in outputs:
+        assert (root / name).is_file(), f'Missing bundled browser asset: {name}'
+    return sorted(outputs - entrypoints)
 
 
 def check(archive, source=None):
@@ -26,6 +45,7 @@ def check(archive, source=None):
         if manifest.get('icon'):
             required.append(manifest['icon'])
         required += [path.relative_to(root).as_posix() for pattern in ['out/*.js', 'out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/shared/*.css', 'resources/query/*.css', 'docs/*.md', 'docs/images/*.png', 'docs/measurements/*.json'] for path in root.glob(pattern)]
+        required += form_runtime_assets(root, manifest)
         # vsce publishes a LICENSE without an extension as LICENSE.txt.
         packaged = {name: 'extension/' + ('LICENSE.txt' if name == 'LICENSE' else name) for name in required}
         expected = set(packaged.values()) | {'extension.vsixmanifest', '[Content_Types].xml'}
