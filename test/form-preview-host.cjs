@@ -9,6 +9,47 @@ async function replace(document, from, to) {
   const edit = new vscode.WorkspaceEdit(); edit.replace(document.uri, new vscode.Range(document.positionAt(offset), document.positionAt(offset + from.length)), to);
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
+/** Resize only this isolated test webview's CSS container. */
+async function shellResize(ui, service, view) {
+  const snapshot=view.snapshot, session=view.client.current.formSessionId, views=service.views.size;
+  const messages=[], receive=service.receive, samples=[];
+  service.receive=function(...args){ messages.push(args[2]?.type); return receive.apply(this,args); };
+  await ui.evaluate(`globalThis.__shellResize={style:document.querySelector('#root').style.cssText,
+    nodes:[...document.querySelectorAll('.taxi-form-frame,.taxi-element')],
+    preferred:document.querySelector('.form-inspectors').getBoundingClientRect().height};true`);
+  try {
+    for(const [width,height] of [[420,360],[420,180],[980,500]]) {
+      await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
+      await until(async()=>await ui.evaluate(`(() => {
+        const shell=document.querySelector('.form-shell'), inspector=document.querySelector('.form-inspectors');
+        const h=selector=>document.querySelector(selector).getBoundingClientRect().height;
+        const available=Math.max(84,shell.clientHeight-h('.form-toolbar')-h('.form-status')-5-96);
+        return Math.abs(inspector.getBoundingClientRect().height-Math.max(84,Math.min(__shellResize.preferred,available)))<1;
+      })()`),'inspector follows the CSS allocation');
+      const sample=await ui.evaluate(`(() => {
+        const rect=selector=>document.querySelector(selector).getBoundingClientRect(), shell=document.querySelector('.form-shell'), inspector=document.querySelector('.form-inspectors');
+        return {width:shell.getBoundingClientRect().width,height:shell.getBoundingClientRect().height,contentWidth:shell.clientWidth,inspector:rect('.form-inspectors').height,
+          preview:rect('.preview-scroll').height,toolbar:rect('.form-toolbar').height,
+          tracks:getComputedStyle(inspector).gridTemplateColumns.split(' ').map(parseFloat),
+          shellScrollable:shell.scrollHeight>shell.clientHeight,inspectorScrollable:inspector.scrollWidth>inspector.clientWidth,
+          sameNodes:__shellResize.nodes.every(node=>node.isConnected),
+          controls:[...document.querySelectorAll('.form-toolbar button,.form-zoom')].every(node=>rect('.form-toolbar').bottom>=node.getBoundingClientRect().bottom)};
+      })()`);
+      assert.equal(sample.width,width); assert.equal(sample.height,height); assert.ok(sample.preview>=96);
+      assert.ok(sample.tracks[0]>=120&&sample.tracks[2]>=120&&sample.tracks[4]>=180);
+      assert.equal(sample.sameNodes,true); assert.equal(sample.controls,true);
+      if(width<428)assert.equal(sample.inspectorScrollable,true);
+      if(height===180)assert.equal(sample.shellScrollable,true);
+      samples.push(sample); await ui.screenshot(`form-shell-${width}-${height}-${vscode.env.language}.png`);
+    }
+  } finally {
+    await ui.evaluate(`document.querySelector('#root').style.cssText=__shellResize.style;true`);
+    await until(async()=>await ui.evaluate(`Math.abs(document.querySelector('.form-inspectors').getBoundingClientRect().height-__shellResize.preferred)<1`),'original inspector size restored');
+    service.receive=receive;
+  }
+  assert.equal(view.snapshot,snapshot); assert.equal(view.client.current.formSessionId,session); assert.equal(service.views.size,views);
+  assert.deepEqual(messages,[],'resizing publishes no webview action'); return samples;
+}
 async function run() {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), form = fixture.form;
   assert.ok(form);
@@ -28,6 +69,7 @@ async function run() {
   if(process.platform==='linux'){assert.equal(geometry.input.width,geometry.controlWidth);assert.ok(geometry.input.width>211,'automatic string fills the wider column');}
   else assert.equal(geometry.input.width,164);
   assert.equal(geometry.script,true);
+  const shellGeometry = await shellResize(ui, service, view);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
   assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input--incomplete').length"), 1);
   await replace(document, '<AutoMarkIncomplete>true</AutoMarkIncomplete>', '<AutoMarkIncomplete>false</AutoMarkIncomplete>');
@@ -122,7 +164,7 @@ async function run() {
   await Promise.all([...service.closing]);
   await assert.rejects(()=>explorer.connection.request(view.tree.session.sessionId,'form/get',{projectId:view.entry.project.info.projectId,generation:view.entry.project.info.generation,formSessionId:sessionId}), error=>error.details?.reason==='unknown_form_session');
   await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, dirty: true, incompleteMarkDirtyXml: true, detached: true, repeatedDetachFocus: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, formPreview: true, locale: vscode.env.language, geometry, shellGeometry, dirty: true, incompleteMarkDirtyXml: true, detached: true, repeatedDetachFocus: true, invalidXml: true, undo: true, external: true, navigation: true, initialInvalidRecovery: true, ownerClosedBeforeDock: true, independentForms: true, sourceWritesDuringViewing: false }));
 }
 
 exports.run = async function () {

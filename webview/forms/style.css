@@ -410,3 +410,17 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-table-search[data-native-search-field=ready] { border-radius: 0; }
 .taxi-preview[data-os=linux] .taxi-search-clear { position: relative; }
 .taxi-search-clear > svg { display: block; position: absolute; left: 6px; top: 6px; pointer-events: none; }
+
+/* Inspector preferences are clamped locally; tiny windows scroll the shell instead of clipping controls. */
+.form-shell { overflow: auto; min-width: 0; min-height: 0; }
+.form-toolbar { flex-wrap: wrap; }
+.form-toolbar #title { flex: 1 1 160px; min-width: 0; }
+.form-inspectors { min-height: 84px; overflow: auto; grid-template-rows: minmax(0, 1fr); }
+.form-pane { min-height: 0; overflow: auto; }
+.form-tree { min-height: 22px; }
+.form-table-scroll { min-height: 26px; }
+.form-property-actions { flex-wrap: wrap; }
+.form-status { flex-wrap: wrap; }
+.form-status span:first-child { flex: 1 1 160px; min-width: 0; }
+.form-status span:last-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.preview-scroll, .form-detached-placeholder { min-height: 96px; }
