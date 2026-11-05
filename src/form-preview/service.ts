@@ -12,6 +12,7 @@ import { FormSession } from "./client.js";
 import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormTarget } from "./protocol.js";
 import { formStrings } from "./strings.js";
 import { formEditorRange } from "./source.js";
+import { movePreviewToNewWindow } from "./window.js";
 
 const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
@@ -129,14 +130,12 @@ export class FormPreviewService implements vscode.Disposable {
     }
     if (value.type === "locate" && isRecord(value.target)) await this.locate(view, value.target as unknown as FormTarget);
   }
-  /** The native command targets only our active preview panel, after checking its identity and command availability. */
+  /** Resolve the asynchronous editor activation before invoking the native move command. */
   private async detach(view: View): Promise<void> {
     const existing = view.frames.get("preview");
     if (existing) { existing.panel.reveal(undefined, false); return; }
-    const frame = this.frame(view, "preview"); frame.panel.reveal(vscode.ViewColumn.Beside, false); this.publish(view);
-    if ((await vscode.commands.getCommands(true)).includes("workbench.action.moveEditorToNewWindow") && frame.panel.active) {
-      await vscode.commands.executeCommand("workbench.action.moveEditorToNewWindow");
-    } else { view.notice = this.strings().floatFailed!; this.publish(view); }
+    const frame = this.frame(view, "preview"); this.publish(view);
+    if (!await movePreviewToNewWindow(frame.panel)) { view.notice = this.strings().floatFailed!; this.publish(view); }
   }
   private async documentChanged(document: vscode.TextDocument): Promise<void> {
     if (this.disposed || document.uri.scheme !== "file") return;
