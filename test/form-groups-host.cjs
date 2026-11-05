@@ -184,6 +184,27 @@ exports.run = async function () {
       await replaceText(document,'First command','Second command');
       await until(async()=>await ui.evaluate("document.querySelector('.taxi-command-bar .taxi-button')?.textContent==='Second command'"),'dirty command caption');
       if(process.platform==='linux')await until(async()=>await ui.evaluate("document.querySelector('.taxi-command-bar .taxi-button')?.getBoundingClientRect().width===133"),'dirty native caption width');
+
+      const bar = "document.querySelector('.taxi-command-bar')";
+      const inlineIds = `[...${bar}.querySelectorAll(':scope > [data-element]')].map(element => element.dataset.element.split(':').at(-1))`;
+      const popup = `${bar}.querySelector(':scope > .taxi-popup')`;
+      const first = '<CommandName>Form.Command.First</CommandName>';
+      const second = '<CommandName>Form.Command.Second</CommandName>';
+      const dual = '<LocationInCommandBar>InCommandBarAndInAdditionalSubmenu</LocationInCommandBar>';
+      const overflow = '<LocationInCommandBar>InAdditionalSubmenu</LocationInCommandBar>';
+      const inline = '<LocationInCommandBar>InCommandBar</LocationInCommandBar>';
+      await replaceText(document, first, first + dual);
+      await replaceText(document, second, second + overflow);
+      await until(() => ui.evaluate(`JSON.stringify(${inlineIds})==='["10"]' && !!${popup}`), 'only the visible command stays on the bar');
+      await ui.evaluate(`${popup}.querySelector('button').click()`);
+      assert.equal(await ui.evaluate(`${popup}.querySelectorAll('[role=menuitem]').length`), 2);
+      await ui.evaluate(`${popup}.querySelectorAll('[role=menuitem]')[1].click()`);
+      await until(() => view.selected?.key?.value === '20', 'overflow item keeps its source identity');
+      await replaceText(document, first + dual, first + overflow);
+      await until(() => ui.evaluate(`${inlineIds}.length===0 && !!${popup}`), 'bar only shows More when both commands move');
+      await replaceText(document, first + overflow, first + inline);
+      await replaceText(document, second + overflow, second + dual);
+      await until(() => ui.evaluate(`JSON.stringify(${inlineIds})==='["10","20"]' && !${popup}`), 'dual location alone keeps both commands on the bar');
     }
     if(form.kind==='BarWithPopup') {
       await replaceText(document,'Actions','Actions updated');

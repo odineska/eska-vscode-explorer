@@ -235,7 +235,8 @@ function Group(props) {
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
-    <Match when={['CommandBar', 'ButtonGroup'].includes(node().kind)}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
+    <Match when={node().kind === 'CommandBar'}><CommandBar {...props}/></Match>
+    <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
     <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible(), 'taxi-group--painted': painted() }}
       style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
       <Show when={title()}><div class="taxi-group-title" style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
@@ -244,10 +245,27 @@ function Group(props) {
     </div></Match>
   </Switch>;
 }
+function CommandBar(props) {
+  const commands = createMemo(() => {
+    const children = props.node.children.filter(child => child.presentation.displayed);
+    const location = child => scalar(child, 'LocationInCommandBar', 'Auto');
+    const inline = children.filter(child => location(child) !== 'InAdditionalSubmenu');
+    const hasOverflow = inline.length < children.length;
+    const more = hasOverflow ? children.filter(child =>
+      ['InAdditionalSubmenu', 'InCommandBarAndInAdditionalSubmenu'].includes(location(child))) : [];
+    return { inline, more };
+  });
+  return <div class="taxi-command-bar">
+    <For each={commands().inline}>{child => <Element node={child} controller={props.controller}/>}</For>
+    <Show when={commands().more.length}>
+      <PopupMenu items={commands().more} label={props.controller.state.strings.more} controller={props.controller} nativeDropdown/>
+    </Show>
+  </div>;
+}
 function PopupMenu(props) {
   const [open, setOpen] = createSignal(false), [active, setActive] = createSignal(0);
   let container;
-  const children = () => props.node.children.filter(node => node.presentation.displayed);
+  const children = () => props.items ?? props.node.children.filter(node => node.presentation.displayed);
   createEffect(() => {
     if (!open()) return;
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
@@ -259,7 +277,8 @@ function PopupMenu(props) {
     if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); container.querySelector(':scope > button')?.focus(); }
     else if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const wasOpen = open(); setOpen(true); focus(wasOpen ? active() + (event.key === 'ArrowDown' ? 1 : -1) : 0); }
   }}>
-    <CommandButton node={props.node} controller={props.controller} dropdown menu expanded={open()} onClick={() => { setOpen(!open()); if (open()) focus(0); }}/>
+    <CommandButton node={props.node} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
+      onClick={() => { setOpen(!open()); if (open()) focus(0); }}/>
     <Show when={open()}><div role="menu" class="taxi-menu"><For each={children()}>{(child, index) => <button type="button" role="menuitem" classList={{ active: active() === index() }}
       aria-disabled={!flag(child, 'Enabled')} onMouseEnter={() => setActive(index())} onClick={event => { event.stopPropagation(); props.controller.select(child); setOpen(false); }}>
       <Show when={child.presentation.picture}><Picture node={child} controller={props.controller}/></Show>{caption(child, props.controller.state)}
