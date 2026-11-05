@@ -61,7 +61,9 @@ export function minimumFormLayout(root, scale = 1) {
       const title = group.querySelector(':scope > .taxi-group-title');
       if (title) {
         const box = marginBox(title), range = document.createRange(); range.selectNodeContents(title);
-        value.height += box.height; value.width = Math.max(value.width, range.getBoundingClientRect().width / scale);
+        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, box.height);
+        else value.height += box.height;
+        value.width = Math.max(value.width, range.getBoundingClientRect().width / scale);
       }
       value = add(value, insets(group));
     } else if (pages) {
@@ -77,6 +79,8 @@ export function minimumFormLayout(root, scale = 1) {
       const child = element.firstElementChild;
       value = child ? marginBox(child) : { width: 0, height: 0 };
     }
+    const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-width'));
+    value.width = Math.max(value.width, columnWidth);
     if (element.dataset.layoutContainer === 'true') {
       if (element.dataset.stretchX === 'false') value.width = Math.max(value.width, pixels(element.style.getPropertyValue('--taxi-preferred-width')));
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));

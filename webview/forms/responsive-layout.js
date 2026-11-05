@@ -3,6 +3,7 @@ import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
+import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels } from './through-align.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 
@@ -20,7 +21,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, clearThroughLabels;
+  let unitedRows, clearThroughLabels, clearUnitedColumns;
   const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
   const rect = borderBoxSize;
   function measure() {
@@ -40,8 +41,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'preferred';
       unitedRows?.clear();
       clearThroughLabels?.();
-      clearThroughLabels = alignThroughLabels(state.model.root, containers, boundingScale(root));
+      clearUnitedColumns?.();
+      const scale = boundingScale(root);
+      clearThroughLabels = alignThroughLabels(state.model.root, containers, scale);
       unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed);
+      clearUnitedColumns = alignUnitedColumns(state.model.root, elementByKey, containers, state.os, state.ui.collapsed, scale);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -102,6 +106,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     cancelAnimationFrame(scheduled);
     unitedRows?.clear();
     clearThroughLabels?.();
+    clearUnitedColumns?.();
   });
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),

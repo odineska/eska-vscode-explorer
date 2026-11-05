@@ -270,7 +270,7 @@ export async function createTableGallery(fixture) {
 }
 
 export function createUnitedGallery(fixture) {
-  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT']);
+  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
 }
 
 export function createThroughAlignGallery(fixture) {
