@@ -37,7 +37,7 @@ async function frame(tab) {
     return new Promise((resolve, reject) => {
       const id = ++serial;
       // Hidden Windows webviews can suspend evaluation; they must not block discovery of the active frame.
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error(`native debug timeout: ${method}`)); }, 5000);
+      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`native debug timeout: ${method}`),{code:'native_debug_timeout',method,sessionId})); }, 5000);
       pending.set(id, { resolve, reject, timer, method, error: new Error(`native debug failure: ${method}`) }); socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
@@ -53,6 +53,9 @@ async function frame(tab) {
         await send('Runtime.enable', {}, sessionId);
       } catch (error) {
         // A newly shown webview can replace its iframe between enumeration and attachment.
+        // A hidden renderer may suspend domain enablement. Keep its session so
+        // late context events remain observable, and discover the visible frame.
+        if(error?.code==='native_debug_timeout'&&error.method==='Runtime.enable')continue;
         attached.delete(target.targetId);
         if (!([-32602, -32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
       }
@@ -141,8 +144,8 @@ async function frame(tab) {
     async nativeWindow({ detached = false } = {}) {
       if(!context.frameId)throw new Error('native webview frame identity missing');
       const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
-      let owner;
-      await until(async()=>{
+      let owner,observation;
+      try{await until(async()=>{
         const parents=new Map(),windows=new Map(),all=(await send('Target.getTargets')).targetInfos;
         const record=(node,parent)=>{
           if(node.frame.parentId||parent)parents.set(node.frame.id,node.frame.parentId??parent);
@@ -159,6 +162,7 @@ async function frame(tab) {
           } catch(error){if(!gone(error))throw error;}
           finally {if(sessionId)try{await send('Target.detachFromTarget',{sessionId});}catch(error){if(!gone(error))throw error;}}
         }
+        observation={frameId:context.frameId,parents:[...parents].slice(0,64),pageFrames:[...windows].slice(0,32).map(([id,target])=>[id,target.targetId]),targets:all.slice(0,64).map(({targetId,type})=>({targetId,type})),counts:{parents:parents.size,pageFrames:windows.size,targets:all.length}};
         const seen=new Set();let id=context.frameId;owner=undefined;
         while(id&&!seen.has(id)){
           if(windows.has(id)){
@@ -169,7 +173,8 @@ async function frame(tab) {
           seen.add(id);id=parents.get(id);
         }
         return false;
-      },'native window containing the webview frame');
+      },'native window containing the webview frame');}
+      catch(error){error.message+=' '+JSON.stringify(observation);throw error;}
       return owner;
     },
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
