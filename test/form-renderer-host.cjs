@@ -29,7 +29,7 @@ exports.run = async function () {
       TextDocumentField:314, PDFDocumentField:344, DendrogramField:314, GanttChartField:314, GeographicalSchemaField:314, GraphicalSchemaField:314, PeriodField:280 };
     if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
     if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
-    if (form.kind === 'RadioButtonField') assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-radio').length"), 3);
+    if (form.kind === 'RadioButtonField') await checkRadioChoices(ui, service, view, document);
     if (form.kind === 'SpreadSheetDocumentField') {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet th').length"), 0);
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet-cell-selected').length"), 1);
@@ -100,3 +100,74 @@ exports.run = async function () {
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formRenderer:true,locale:vscode.env.language,results}));
 };
+
+async function checkRadioChoices(ui, service, view, document) {
+  assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-radio').length"), 3);
+  const original = document.getText();
+  const options = labels => '<ChoiceList>' + labels.map((label, index) =>
+    `<xr:Item><xr:Presentation/><xr:CheckState>0</xr:CheckState><xr:Value xsi:type="FormChoiceListDesTimeValue"><Presentation><v8:item><v8:lang>en</v8:lang><v8:content>${label}</v8:content></v8:item></Presentation><Value xsi:type="xs:string">Choice${index}</Value></xr:Value></xr:Item>`
+  ).join('') + '</ChoiceList>';
+  async function change(xml) {
+    const edit = new vscode.WorkspaceEdit();
+    const revision = view.snapshot.revision;
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'dirty radio properties applied');
+  }
+  const editOptions = (properties, labels) => original.replace('<RadioButtonType>Auto</RadioButtonType>',
+    properties + '<TitleLocation>None</TitleLocation>' + options(labels));
+  const measure = `(() => {
+    const frame = document.querySelector('.taxi-form-frame');
+    const form = frame.getBoundingClientRect(), css = getComputedStyle(frame);
+    const settled = Math.abs(form.width - parseFloat(css.getPropertyValue('--taxi-form-preferred-width'))) <= .5
+      && Math.abs(form.height - parseFloat(css.getPropertyValue('--taxi-form-preferred-height'))) <= .5;
+    const control = document.querySelector('.taxi-radios');
+    const origin = control.getBoundingClientRect();
+    const glyphs = [...control.querySelectorAll('.taxi-radio')].map(glyph => {
+      const box = glyph.getBoundingClientRect();
+      return [box.x - origin.x, box.y - origin.y, box.width, box.height];
+    });
+    return { settled, size: [form.width, form.height], mode: control.dataset.representation, glyphs,
+      disabled: control.getAttribute('aria-disabled'), captions: [...control.children].map(option => option.getAttribute('aria-label')),
+      checked: [...control.children].filter(option => option.getAttribute('aria-checked') === 'true').length };
+  })()`;
+  const labels = ['First', 'Second long', 'Third', 'Fourth', 'Fifth'];
+  await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
+  await until(async () => {
+    const result = await ui.evaluate(measure);
+    return result.settled && result.captions.length === labels.length;
+  }, 'radio columns rendered at the preferred size');
+  const buttons = await ui.evaluate(measure);
+  assert.deepEqual(buttons.captions, labels);
+  assert.equal(buttons.checked, 1);
+  assert.equal(buttons.mode, 'buttons');
+  if (process.platform === 'linux') {
+    assert.deepEqual(buttons.size, [255, 95]);
+    assert.deepEqual(buttons.glyphs, [[1, 2, 15, 15], [1, 28, 15, 15], [105, 2, 15, 15], [105, 28, 15, 15], [174, 2, 15, 15]]);
+  }
+  const workbench = await ui.nativeWindow();
+  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await until(() => view.frames.get('preview')?.ready, 'detached radio preview ready');
+  const detached = view.frames.get('preview');
+  const floating = await frame({ detached: true, fixedFormArea: true, state: { title: detached.panel.title } });
+  assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+  await floating.evaluate("globalThis.__radioChoices = document.querySelector('.taxi-radios'); true");
+  await change(editOptions('<RadioButtonType>Tumbler</RadioButtonType><ColumnsCount>1</ColumnsCount><Enabled>false</Enabled>', ['Update  ', 'Skip']));
+  await until(async () => {
+    const result = await floating.evaluate(measure);
+    return result.settled && result.mode === 'segments';
+  }, 'segments rendered at the preferred size in detached preview');
+  const segments = await floating.evaluate(measure);
+  assert.deepEqual(segments.captions, ['Update', 'Skip']);
+  assert.equal(segments.checked, 0);
+  assert.equal(segments.disabled, 'true');
+  assert.deepEqual(segments.glyphs, []);
+  assert.equal(await floating.evaluate("__radioChoices === document.querySelector('.taxi-radios')"), true);
+  if (process.platform === 'linux') assert.deepEqual(segments.size, [95, 99]);
+  await service.receive(view, detached, { type: 'dock' });
+  await until(() => !view.frames.has('preview'), 'radio preview docked');
+  await until(async () => (await ui.evaluate(measure)).settled, 'docked radio geometry settled');
+  assert.deepEqual(await ui.evaluate(measure), segments);
+  await change(original);
+  await until(async () => (await ui.evaluate(measure)).glyphs.length === 3, 'automatic sample restored');
+}

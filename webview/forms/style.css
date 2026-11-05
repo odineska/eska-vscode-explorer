@@ -227,10 +227,32 @@ button { cursor: default; }
 .taxi-pages[data-representation=TabsOnRightHorizontal] > .taxi-page-stack { margin-right: -1px; }
 .taxi-pages[data-representation=TabsOnLeftHorizontal] > .taxi-page-stack > .taxi-page, .taxi-pages[data-representation=TabsOnRightHorizontal] > .taxi-page-stack > .taxi-page { margin-top: 0; padding-top: 8px; }
 .taxi-checkbox { display: inline-block; width: 15px; height: 15px; border: 1px solid #a0a0a0; border-radius: 2px; background: linear-gradient(#fff, #fafafa); vertical-align: middle; }
-.taxi-radios { display: flex; gap: 10px; align-items: flex-start; min-height: 19px; }
-.taxi-radios > span { display: inline-flex; align-items: center; gap: 6px; min-height: 19px; white-space: nowrap; }
-.taxi-radio { display: inline-block; width: 15px; height: 15px; border: 1px solid #aaa; border-radius: 50%; background: #fff; }
-.taxi-radio.checked::after { content: ''; display: block; margin: 4px; width: 5px; height: 5px; border-radius: 50%; background: #008941; }
+.taxi-radios { display: inline-grid; vertical-align: top; grid-auto-columns: max-content; grid-auto-rows: max-content; gap: 7px 10px; }
+.taxi-radio-option { display: flex; align-items: center; gap: 6px; min-height: var(--taxi-radio-height); white-space: pre; }
+.taxi-preview[data-os=linux] .taxi-radios[data-representation=buttons] > .taxi-radio-option { padding-inline-start: 1px; }
+.taxi-radio-caption { position: relative; display: flex; align-items: center; align-self: stretch; }
+.taxi-radio { display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid #aaa; border-radius: 50%; background: #fff; }
+.taxi-radio.checked::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #009646; }
+.taxi-radios[data-representation=segments] { gap: 0; padding-block: 1px; }
+.taxi-radios[data-representation=segments]:not([data-rows="1"]) { padding-bottom: 2px; }
+.taxi-radios[data-representation=segments] > .taxi-radio-option {
+  justify-content: center; min-height: var(--taxi-segment-height); border: 1px solid #a0a0a0;
+  background: linear-gradient(#fff, #e5e5e5);
+}
+.taxi-radios[data-representation=segments] > [data-top][data-left] { border-top-left-radius: 3px; }
+.taxi-radios[data-representation=segments] > [data-top][data-right] { border-top-right-radius: 3px; }
+.taxi-radios[data-representation=segments] > [data-bottom][data-left] { border-bottom-left-radius: 3px; }
+.taxi-radios[data-representation=segments] > [data-bottom][data-right] { border-bottom-right-radius: 3px; }
+.taxi-radios[aria-disabled=true] { color: #a0a0a0 !important; }
+.taxi-radios[aria-disabled=true][data-representation=segments] { color: #808080 !important; }
+.taxi-radios[aria-disabled=true] .taxi-radio { border-color: #d7d7d7; }
+.taxi-radios[aria-disabled=true] .taxi-radio.checked::after { background: #d1d1d1; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] .taxi-field-label {
+  width: var(--taxi-radio-title-width, auto);
+}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] > .taxi-field-row[data-title-location=Top] { row-gap: 3px; }
+.taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left],[data-title-location=Right]):has(> .taxi-field-control > .taxi-radios:not([data-rows="1"]))
+  > .taxi-field-label { align-self: start; }
 .taxi-progress { display: block; height: 21px; max-width: 100%; padding: 1px; border: 1px solid #a0a0a0; background: #fff; }
 .taxi-progress i { display: block; width: 50%; height: 100%; background: #facc1f; }
 .taxi-track { display: block; height: 28px; max-width: 100%; position: relative; }

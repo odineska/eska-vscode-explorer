@@ -48,7 +48,7 @@ export function NativeLabel(props) {
           : (height + metrics.ascent - metrics.descent) / 2;
         if(input)baseline=inputTextBaseline(height,value);
         if(tableHeader)baseline=Math.floor((30+metrics.ascent-metrics.descent)/2)-1;
-        if(search)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
+        if(search||props.placement==='radioChoice')baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(tableFooter)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
