@@ -18,7 +18,12 @@ exports.run = async () => {
   const view = [...service.views.values()][0], main = view.frames.get('main'), ui = await frame({fixedFormArea:true,state:{title:main.panel.title}});
   await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input')"), 'field rendered');
   await ui.evaluate("document.querySelector('.taxi-input').click()");
-  await until(async () => await ui.evaluate("!!document.querySelector('.form-properties [data-property-name=Visible]')"), 'input properties selected');
+  const field = view.snapshot.model.root.children.find(node => node.name === 'Group').children.find(node => node.name === 'Name');
+  await until(() => view.selected?.key.value === field.identity.key.value && (!view.client.limits.propertyPalette
+    || view.palette?.revision === view.snapshot.revision && view.palette.identity.key.value === field.identity.key.value), 'input palette request completed');
+  const catalogued = view.palette?.rows?.some(row => row.id === 'platform:Visible') === true;
+  const visibleRow = catalogued ? '[data-palette-id="platform:Visible"]' : '[data-property-name=Visible]';
+  await until(() => ui.evaluate(`!!document.querySelector(${JSON.stringify('.form-properties '+visibleRow)})`), 'input properties selected');
   const ru = vscode.env.language.startsWith('ru');
   await ui.evaluate("document.querySelector('.form-properties [data-property-name=Events] summary').click()");
   await until(async () => await ui.evaluate("document.querySelectorAll('.form-properties [data-property-name=Events] details[open] .form-property-qualifiers').length===2"), 'nested event annotations expanded');
@@ -31,7 +36,7 @@ exports.run = async () => {
       foreignTitle:foreign.querySelector('th').textContent,foreign:foreign.querySelector('td').textContent,foreignCheckbox:!!foreign.querySelector('input'),
       font:row('Font').querySelector('td').textContent,events:events.textContent,
       types:document.querySelector('.form-definitions tbody tr td:nth-child(2)').textContent};})()`);
-  assert.equal(shown.visibleTitle, ru ? 'Видимость' : 'Visibility');
+  assert.equal(shown.visibleTitle, ru ? 'Видимость' : catalogued ? 'Visible' : 'Visibility');
   assert.equal(shown.checked, true); assert.equal(shown.disabled, true);
   assert.equal(shown.literal, 'true'); assert.equal(shown.literalCheckbox, false);
   assert.equal(shown.foreignTitle, 'Width'); assert.equal(shown.foreign, 'false'); assert.equal(shown.foreignCheckbox, false);
