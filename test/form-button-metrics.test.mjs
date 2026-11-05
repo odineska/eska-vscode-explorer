@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -5,7 +6,7 @@ import { buttonMetrics, buttonBackground } from '../webview/forms/model.mjs';
 import { hintedTextWidth } from '../webview/forms/font-metrics.mjs';
 
 test('raised button heights follow all sixteen native font references',async()=>{
-  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-metrics/metrics.json',import.meta.url)));
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-metrics/metrics.json',formReferenceRoot)));
   for(const row of reference.rows){
     const metrics=buttonMetrics({points:row.points});
     assert.equal(Math.max(26,metrics.lineHeight+2*metrics.verticalPadding+2),row.buttons[0].height,row.name);
@@ -13,7 +14,7 @@ test('raised button heights follow all sixteen native font references',async()=>
 });
 
 test('discrete button fills match every native background row without dithering', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-metrics/backgrounds.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-metrics/backgrounds.json',formReferenceRoot)));
   for (const row of reference.rows) {
     const height = row.buttonHeight - 2, colors = Array(height);
     for (const match of buttonBackground(height).matchAll(/rgb\((\d+), (\d+), (\d+)\) (\d+)px (\d+)px/g)) {
@@ -26,7 +27,7 @@ test('discrete button fills match every native background row without dithering'
 });
 
 test('colored fills match every native RGB row including non-primary channel values', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-colors/metrics.json',import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-colors/metrics.json',formReferenceRoot)));
   for (const row of reference.rows) {
     const background = row.background.slice(1).match(/../g).map(value => parseInt(value,16)), colors = Array(row.backgroundRows.length);
     for (const match of buttonBackground(row.backgroundRows.length,background).matchAll(/rgb\((\d+), (\d+), (\d+)\) (\d+)px (\d+)px/g)) {
@@ -38,7 +39,7 @@ test('colored fills match every native RGB row including non-primary channel val
 });
 
 test('hinted caption advances match all forty-eight native button widths', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-metrics/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-metrics/metrics.json',formReferenceRoot)));
   for (const row of reference.rows) {
     const pixels = Math.round(row.points * 4 / 3), padding = buttonMetrics({ points: row.points }).horizontalPadding;
     for (const [index, caption] of ['WW', 'MM', 'First command'].entries()) {
@@ -49,7 +50,7 @@ test('hinted caption advances match all forty-eight native button widths', async
 });
 
 test('rounded unattenuated kerning matches native Cyrillic and Latin caption widths', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-captions/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-captions/metrics.json',formReferenceRoot)));
   for (const row of reference.rows) for (const button of row.buttons) {
     const pixels = Math.round(row.points * 4 / 3);
     assert.equal(hintedTextWidth(button.caption, { family: 'ESKA Taxi Sans', pixels, weight: row.weight === 'bold' ? 700 : 400 })

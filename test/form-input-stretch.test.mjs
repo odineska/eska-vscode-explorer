@@ -1,8 +1,9 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {FORM_NS,fieldWidth,fieldStyle,inputHeight} from '../webview/forms/model.mjs';
-const fixture=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-input-stretch/metrics.json',import.meta.url)));
+const fixture=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-input-stretch/metrics.json',formReferenceRoot)));
 test('stretching retains measured intrinsic preferences before filling the native column',()=>{
   let fields=0;
   for(const form of fixture.forms)for(const field of form.fields){

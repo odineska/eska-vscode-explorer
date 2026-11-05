@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ import { lcdCaptionPixels } from '../webview/forms/lcd-caption.mjs';
 import { designTextAdvances } from '../webview/forms/font-metrics.mjs';
 
 test('window captions match native Latin, Cyrillic, kerning, diacritics and clipped long text', async()=>{
-  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-form-titles/metrics.json',import.meta.url)));
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-form-titles/metrics.json',formReferenceRoot)));
   const resource=name=>new URL(`../resources/forms/${name}`,import.meta.url);
   const engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
   try {

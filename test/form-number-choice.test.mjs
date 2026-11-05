@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import {test} from 'node:test';
 import {calculatorRects} from '../webview/forms/input-calculator.mjs';
 
 test('numeric-choice mark and separator match native normal and enlarged inputs',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-state-variants/number-choice-pixels.json',import.meta.url)));
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-state-variants/number-choice-pixels.json',formReferenceRoot)));
  for(const row of reference.rows){
   const [,,w,h]=row.region,image=Buffer.alloc(w*h*3,255);
   for(let y=0;y<h;y++)image.set(reference.separator,y*w*3);

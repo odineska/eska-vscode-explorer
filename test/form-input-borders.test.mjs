@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import {inputBorderPixels,disabledInputForeground} from '../webview/forms/input-
 import {calculatorRects,calculatorFill} from '../webview/forms/input-calculator.mjs';
 import {FORM_NS,inputChoiceButton,fieldWidth,inputHeight} from '../webview/forms/model.mjs';
 
-const fixture=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-input-borders/metrics.json',import.meta.url)));
+const fixture=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-input-borders/metrics.json',formReferenceRoot)));
 const node=field=>({kind:'InputField',properties:Object.entries(field.properties).map(([name,text])=>({key:{namespace:FORM_NS,name},value:{kind:'text',text}})),presentation:{font:field.font,valueType:field.type}});
 
 test('input palette and all 6228 corner pixels match forty-eight native forms',()=>{

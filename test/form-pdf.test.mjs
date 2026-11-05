@@ -1,9 +1,10 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {pdfSurfaceMetrics,pdfSurfaceRgba} from '../webview/forms/pdf-surface.mjs';
-const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('../../eska/tests/fixtures/forms/native-pdf/',import.meta.url);
+const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('tests/fixtures/forms/native-pdf/',formReferenceRoot);
 async function matrix(){return JSON.parse(await readFile(new URL('metrics.json',base)));}
 function node(row){const properties=[];for(const name of ['Width','Height']){const m=row.nativeProperties.match(new RegExp('<'+name+'>([^<]+)</'+name+'>'));if(m)properties.push({key:{namespace,name},value:{kind:'text',text:m[1]}});}return {properties,presentation:{font:{points:10,weight:400}},auxiliary:[{kind:'ViewStatusAddition',presentation:{displayed:row.viewStatusVisible},properties:[]}]};}
 test('PDF dimensions respect the measured view-status minimum and short height axes',async()=>{

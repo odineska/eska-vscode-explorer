@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ import { lcdCaptionPixels } from '../webview/forms/lcd-caption.mjs';
 import { fontLineMetrics } from '../webview/forms/model.mjs';
 
 test('hyperlink captions include all 2100 native LCD and underline pixels', async () => {
-  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-types/link-pixels.json',import.meta.url)));
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-types/link-pixels.json',formReferenceRoot)));
   const resource=name=>new URL(`../resources/forms/${name}`,import.meta.url);
   const engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
   try {
@@ -27,7 +28,7 @@ test('hyperlink captions include all 2100 native LCD and underline pixels', asyn
 });
 
 test('mixed button rows add six complete native LCD captions and 3330 pixels', async () => {
-  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-rows/metrics.json',import.meta.url))).linkCaptions;
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-rows/metrics.json',formReferenceRoot))).linkCaptions;
   const resource=name=>new URL(`../resources/forms/${name}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
   try {
     const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let compared=0;

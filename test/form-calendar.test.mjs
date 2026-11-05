@@ -1,10 +1,11 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {calendarSurfaceMetrics,calendarSurfaceRgba,calendarTextAdvances} from '../webview/forms/calendar-surface.mjs';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
-const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('../../eska/tests/fixtures/forms/native-calendar/',import.meta.url);
+const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('tests/fixtures/forms/native-calendar/',formReferenceRoot);
 async function matrix(){return JSON.parse(await readFile(new URL('metrics.json',base)));}
 function node(row){return {properties:Object.entries(row.renderProperties).map(([name,text])=>({key:{namespace,name},value:{kind:'text',text}})),presentation:{font:{face:null,...row.font}}};}
 test('calendar month counts and recorded fonts size every full native control',async()=>{

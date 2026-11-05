@@ -1,8 +1,9 @@
+import {formReferenceRoot} from './form-references.mjs';
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buttonBorderShade, buttonBorderTail, buttonBorderPaint } from '../webview/forms/button-border.mjs';
-const fixture = name => readFile(new URL(`../../eska/tests/fixtures/forms/native-button-borders/${name}.json`,import.meta.url),'utf8').then(JSON.parse);
+const fixture = name => readFile(new URL(`tests/fixtures/forms/native-button-borders/${name}.json`,formReferenceRoot),'utf8').then(JSON.parse);
 
 test('button border colors match 384 native exported blend results',async () => {
   const oracle = await fixture('color-vectors');

@@ -1,10 +1,11 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {chartSurfaceMetrics,chartSurfaceRgba,chartBorderColor,chartLayout,chartSampleValues} from '../webview/forms/chart-surface.mjs';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
-const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('../../eska/tests/fixtures/forms/native-chart/',import.meta.url);
+const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('tests/fixtures/forms/native-chart/',formReferenceRoot);
 async function matrix(){return JSON.parse(await readFile(new URL('metrics.json',base)));}
 function node(row){return {properties:Object.entries(row.renderProperties).map(([name,text])=>({key:{namespace,name},value:{kind:'text',text}})),presentation:{font:{face:null,...row.font}}};}
 function fullRgb(row,rgba){const [w,h]=row.nativeSize,rgb=new Uint8Array(w*h*3);let index=0;for(let y=0;y<h;y++)for(let x=0;x<w;x++)for(let c=0;c<3;c++)rgb[index++]=x===0||y===0||x===w-1||y===h-1?row.outerBorder[c]:rgba[((y-1)*(w-2)+x-1)*4+c];return rgb;}

@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -27,7 +28,7 @@ function interiorPixels(face, caption, points, width, height, foreground, backgr
 }
 
 test('WASM button captions match all 275213 native interior pixels exactly', async () => {
-  const fixture = new URL('../../eska/tests/fixtures/forms/native-button-metrics/', import.meta.url);
+  const fixture = new URL('tests/fixtures/forms/native-button-metrics/',formReferenceRoot);
   const metrics = JSON.parse(await readFile(new URL('metrics.json', fixture)));
   const reference = JSON.parse(await readFile(new URL('caption-interiors.json', fixture)));
   const engine = createFontRaster(binary);
@@ -48,7 +49,7 @@ test('WASM button captions match all 275213 native interior pixels exactly', asy
 });
 
 test('kerning, Cyrillic and explicit RGB captions match all eighteen native interiors', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-captions/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-captions/metrics.json',formReferenceRoot)));
   const engine = createFontRaster(binary);
   try {
     const faces = { normal: engine.open(regular), bold: engine.open(bold) };
@@ -63,7 +64,7 @@ test('kerning, Cyrillic and explicit RGB captions match all eighteen native inte
 });
 
 test('five Taxi style colors match native caption interiors with and without a selected style', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-style-palette/caption-interiors.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-style-palette/caption-interiors.json',formReferenceRoot)));
   const engine = createFontRaster(binary);
   try {
     const face = engine.open(regular);
@@ -78,7 +79,7 @@ test('five Taxi style colors match native caption interiors with and without a s
 });
 
 test('ordinary button backgrounds and captions match twenty-eight native RGB and font interiors', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-button-colors/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-button-colors/metrics.json',formReferenceRoot)));
   const engine = createFontRaster(binary);
   try {
     const face = engine.open(regular);
@@ -94,7 +95,7 @@ test('ordinary button backgrounds and captions match twenty-eight native RGB and
 });
 
 test('predefined and named fonts match all twenty-one native mixed-row button interiors', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-font-roles/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-font-roles/metrics.json',formReferenceRoot)));
   const engine = createFontRaster(binary);
   try {
     const faces = { regular:engine.open(regular), bold:engine.open(bold) };
@@ -109,7 +110,7 @@ test('predefined and named fonts match all twenty-one native mixed-row button in
 });
 
 test('primary button fonts, palette contrast and ordinary overrides match 153 native interiors', async () => {
-  const reference = JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-primary-buttons/metrics.json', import.meta.url)));
+  const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-primary-buttons/metrics.json',formReferenceRoot)));
   const { primaryForeground } = await import('../webview/forms/primary-foreground.mjs');
   const engine = createFontRaster(binary);
   try {

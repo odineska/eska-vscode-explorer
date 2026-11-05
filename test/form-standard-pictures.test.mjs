@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -5,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {standardPicture} from '../webview/forms/standard-pictures.mjs';
 
 test('six standard pictures preserve all 4608 native pixels on three mattes',async()=>{
- const matrix=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-standard-pictures/metrics.json',import.meta.url)));let pixels=0;
+ const matrix=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-standard-pictures/metrics.json',formReferenceRoot)));let pixels=0;
  for(const row of matrix.rows)for(const expected of row.pictures){
   const image=standardPicture('StdPicture.'+expected.name),rgb=Buffer.alloc(16*16*3);
   assert.deepEqual([image.width,image.height],[16,16]);

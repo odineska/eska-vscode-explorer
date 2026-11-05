@@ -204,8 +204,14 @@ test("backend preparation installs native tools and exports verified paths for s
     components: { "eska-project": { archive: "component.zip", size: packed.data.length, sha256: packed.release.asset.sha256 } } }));
   const bootstrap = ["components.py", "component_installation.py", "component_package.py"];
   for (const name of bootstrap) await copyFile(join(pythonTools, name), join(root, name));
+  const references = join(root, "references");
+  await mkdir(join(references, "tests/fixtures/forms"), { recursive: true });
+  for (const name of ["catalog.json", "coverage.json"]) {
+    await writeFile(join(references, "tests/fixtures/forms", name), "{}\n");
+  }
   const { stdout } = await run("node", [join(repository, "scripts/prepare-backends.mjs"), root], {
-    cwd: repository, env: { ...process.env, ESKA_TEST_ROOT: root, GITHUB_ENV: githubEnv }, timeout: 120_000,
+    cwd: repository, env: { ...process.env, ESKA_TEST_ROOT: root, GITHUB_ENV: githubEnv,
+      ESKA_TEST_REFERENCE_ROOT: references }, timeout: 120_000,
   });
   const prepared = JSON.parse(stdout), prefix = join(prepared.root, "installation"), environment = prepared.environment;
   assert.equal(prepared.project, contract.version); assert.equal(prepared.analyzer, analyzerVersion);
@@ -213,6 +219,8 @@ test("backend preparation installs native tools and exports verified paths for s
   assert.equal(environment.ESKA_TEST_BINARY, managedPath(prefix, "project"));
   assert.equal(environment.ESKA_TEST_ANALYZER_BINARY, managedPath(prefix, "analyzer"));
   assert.equal(environment.ESKA_TEST_LANGUAGE, "1");
+  assert.equal(environment.ESKA_TEST_REFERENCE_ROOT, references);
+  assert.deepEqual(prepared.references, { path: references, ref: null, commit: null, source: "provided" });
   assert.equal(await managedVersion(prefix, "project"), contract.version);
   assert.equal(await managedVersion(prefix, "analyzer"), analyzerVersion);
   assert.deepEqual(JSON.parse(await readFile(join(prepared.root, "environment.json"), "utf8")), environment);

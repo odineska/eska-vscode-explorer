@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -5,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {documentSurfaceMetrics} from '../webview/forms/document-surface.mjs';
 import {spreadsheetSurfaceRgba,spreadsheetSurfaceSize} from '../webview/forms/spreadsheet-surface.mjs';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
-const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('../../eska/tests/fixtures/forms/native-spreadsheet/',import.meta.url);
+const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('tests/fixtures/forms/native-spreadsheet/',formReferenceRoot);
 async function matrix(){return JSON.parse(await readFile(new URL('metrics.json',base)));}
 test('spreadsheet dimensions and omitted defaults match twelve native XML inputs',async()=>{
  const m=await matrix();assert.equal(m.rows.length,12);

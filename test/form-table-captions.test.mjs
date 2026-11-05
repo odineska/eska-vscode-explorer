@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
 
 test('native table captions preserve fragment boundaries and all 3885 LCD pixels',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-pixels/metrics.json',import.meta.url)));
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-pixels/metrics.json',formReferenceRoot)));
  const resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
  try{
   const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let compared=0;
@@ -29,7 +30,7 @@ test('native table captions preserve fragment boundaries and all 3885 LCD pixels
 });
 
 test('native DynamicList pagination preserves all 198 glyph pixels in both locales',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-context-pixels/metrics.json',import.meta.url))),rows=reference.paginationGlyphs.rows;
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-context-pixels/metrics.json',formReferenceRoot))),rows=reference.paginationGlyphs.rows;
  assert.deepEqual(reference.paginationGlyphs.nativeLocalesVerified,['en','ru']);assert.equal(tablePaginationGlyphs.length,4);let pixels=0;
  for(const [index,glyph]of tablePaginationGlyphs.entries()){
   assert.deepEqual([glyph.width,glyph.height],rows[index].region.slice(2));const rgb=Buffer.from(glyph.grays.flatMap(gray=>[gray,gray,gray]));
@@ -39,7 +40,7 @@ test('native DynamicList pagination preserves all 198 glyph pixels in both local
 });
 
 test('native table menus preserve complete caption bitmaps and dropdown stencils',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-bars/metrics.json',import.meta.url))).menuCaptions;
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-bars/metrics.json',formReferenceRoot))).menuCaptions;
  const resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm'))),rgb=rgba=>Buffer.from([...rgba].filter((value,index)=>index%4!==3));
  try{
   const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let pixels=0;
@@ -54,7 +55,7 @@ test('native table menus preserve complete caption bitmaps and dropdown stencils
 });
 
 test('native table search preserves the complete initial 13px LCD variant',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-search/metrics.json',import.meta.url))),resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-search/metrics.json',formReferenceRoot))),resource=n=>new URL(`../resources/forms/${n}`,import.meta.url),engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
  try{
   const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));let pixels=0;
   for(const form of reference.rows)for(const [locale,row]of Object.entries(form.locales)){
@@ -66,7 +67,7 @@ test('native table search preserves the complete initial 13px LCD variant',async
 });
 
 test('native search fields reuse choice-input corners and preserve the clear glyph',async()=>{
- const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-search-fields/metrics.json',import.meta.url))),corners=reference.corners;
+ const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-search-fields/metrics.json',formReferenceRoot))),corners=reference.corners;
  assert.deepEqual(inputBorderPixels(corners.border,corners.background,corners.outside,{choice:true}).corners,corners.rgbCorners);
  const rgb=Buffer.from(searchClearPixels([77,77,77],[255,255,255]).flat());assert.equal(createHash('sha256').update(rgb).digest('hex'),reference.clearStencil.rgbSha256);
  for(const row of reference.rows)for(const entry of Object.values(row.locales))assert.equal(entry.clearRgbSha256,reference.clearStencil.rgbSha256);
@@ -74,7 +75,7 @@ test('native search fields reuse choice-input corners and preserve the clear gly
 });
 
 test('native automatic movement preserves all 25920 group pixels in sixteen native references',async()=>{
- const matrix=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-table-movement/metrics.json',import.meta.url))),rgba=tableMovementRgba(),rgb=Buffer.from([...rgba].filter((value,index)=>index%4!==3));let compared=0;
+ const matrix=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-movement/metrics.json',formReferenceRoot))),rgba=tableMovementRgba(),rgb=Buffer.from([...rgba].filter((value,index)=>index%4!==3));let compared=0;
  for(const row of matrix.rows)for(const [locale,expected]of Object.entries(row.locales)){
   assert.equal(createHash('sha256').update(rgb).digest('hex'),expected.rgbSha256,row.name+'/'+locale);compared+=60*27;
  }

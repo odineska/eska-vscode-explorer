@@ -1,8 +1,9 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {FORM_NS,fieldWidth,inputHeight,inputRowHeight} from '../webview/forms/model.mjs';
-const fixture=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-input-fonts/metrics.json',import.meta.url)));
+const fixture=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-input-fonts/metrics.json',formReferenceRoot)));
 test('line allocations match thirty-four native font cases, including thirteen independent normal sizes',()=>{
   let fields=0,independent=0;
   for(const form of fixture.forms)for(const field of form.fields){
@@ -18,7 +19,7 @@ test('line allocations match thirty-four native font cases, including thirteen i
 test('small calculator raster variants match native RGB samples before SVG rendering',async()=>{
   const {calculatorImage}=await import('../webview/forms/input-calculator.mjs');
   const {createHash}=await import('node:crypto');
-  const reference=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-input-fonts/calculator-images.json',import.meta.url)));
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-input-fonts/calculator-images.json',formReferenceRoot)));
   for(const sample of reference.images){
     const drawing=calculatorImage(sample.size+2,sample.inactive),rgb=Buffer.alloc(sample.size*sample.size*3,255);
     assert.equal(drawing.width,sample.size);assert.equal(drawing.height,sample.size);

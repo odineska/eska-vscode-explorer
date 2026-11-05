@@ -1,10 +1,11 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {dendrogramSurfaceMetrics,dendrogramSurfaceRgba,dendrogramBorderColor} from '../webview/forms/dendrogram-surface.mjs';
 import {createFontRaster} from '../webview/forms/font-raster.mjs';
-const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('../../eska/tests/fixtures/forms/native-dendrogram/',import.meta.url);
+const namespace='http://v8.1c.ru/8.3/xcf/logform',base=new URL('tests/fixtures/forms/native-dendrogram/',formReferenceRoot);
 async function matrix(){return JSON.parse(await readFile(new URL('metrics.json',base)));}
 function node(row){return {properties:Object.entries(row.renderProperties).map(([name,text])=>({key:{namespace,name},value:{kind:'text',text}})),presentation:{font:{face:null,...row.font}}};}
 test('dendrogram native dimensions ignore unsupported appearance properties',async()=>{

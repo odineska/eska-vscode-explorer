@@ -1,3 +1,4 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,writeFile,readdir,mkdir,mkdtemp,rm} from 'node:fs/promises';
@@ -41,7 +42,7 @@ const entries=()=>Object.fromEntries(Object.entries(runtime).map(([path,bytes])=
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
   const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,58);
-  const eska=resolve(repository,'../eska'),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
+  const eska=fileURLToPath(formReferenceRoot),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
   for(const suite of catalog.suites){
     await readFile(join(repository,suite.driver));assert.equal(suite.caseSelection,'whole-suite-with-existing-transitions');
     for(const path of Object.values(suite.fixtureEnv))assert.ok((await readdir(join(eska,catalog.fixtureRoot,path))).length,path);

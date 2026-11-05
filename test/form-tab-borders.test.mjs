@@ -1,8 +1,9 @@
+import {formReferenceRoot} from './form-references.mjs';
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {tabBackground,tabCornerPixels} from '../webview/forms/tab-border.mjs';
-const fixture=JSON.parse(await readFile(new URL('../../eska/tests/fixtures/forms/native-tab-borders/metrics.json',import.meta.url)));
+const fixture=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-tab-borders/metrics.json',formReferenceRoot)));
 
 test('native active and inactive tab fills include explicit colors and inherited backdrops',()=>{
   let tabs=0;

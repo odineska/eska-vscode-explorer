@@ -19,9 +19,9 @@ test('browser controller unwraps Solid store proxies before selection and naviga
   // Browser JSON inputs and controller values must share their Object prototype.
   listeners.get('message')({data:runInContext(`(${JSON.stringify(incoming)})`,context)});
   const node = controller.state.model.root;
-  assert.throws(()=>structuredClone(node.identity),/could not be cloned/,'the browser build must expose the real Solid proxy');
-  context.controller=controller;
-  runInContext("controller.select(controller.state.model.root);controller.post({type:'locate',target:{kind:'property',identity:controller.state.model.root.identity,property:controller.state.model.root.properties[0].key}})",context);
+  assert.throws(()=>structuredClone(node.identity),{name:'DataCloneError'},'the browser build must expose the real Solid proxy');
+  context.formController=controller;
+  runInContext("formController.select(formController.state.model.root);formController.post({type:'locate',target:{kind:'property',identity:formController.state.model.root.identity,property:formController.state.model.root.properties[0].key}})",context);
   assert.deepEqual(messages,[{type:'ready'},{type:'select',identity},{type:'locate',target:{kind:'property',identity,property:property.key}}]);
   assert.equal(controller.state.selected,'own:current:-9223372036854775808');
   const oldProperty = node.properties[0];
@@ -74,9 +74,9 @@ test('shared preview navigation is restored before rendering without sharing lay
   assert.equal(controller.state.ui.pages['own:current:1'],'own:current:3','root selection preserves the initialized page');
   assert.equal(controller.state.ui.collapsed['own:current:10'],undefined,'remote state replaces the old collapsed map');
   assert.equal(controller.state.ui.zoom,150);assert.equal(messages.length,1,'received navigation must not echo');
-  context.controller=controller;
-  runInContext("controller.ui('zoom',175);controller.ui('upper',320)",context);assert.equal(messages.length,1,'window layout stays local');
-  runInContext("controller.ui('collapsed',{'own:current:10':true})",context);
+  context.formController=controller;
+  runInContext("formController.ui('zoom',175);formController.ui('upper',320)",context);assert.equal(messages.length,1,'window layout stays local');
+  runInContext("formController.ui('collapsed',{'own:current:10':true})",context);
   assert.deepEqual(messages.at(-1),{type:'previewNavigation',previewNavigation:{pages:{'own:current:1':'own:current:3'},collapsed:{'own:current:10':true}}});
   const count=messages.length;receive({type:'previewNavigation',previewNavigation:{pages:{'own:current:1':'own:current:2'},collapsed:{}}});callback();
   assert.equal(controller.state.ui.pages['own:current:1'],'own:current:2');assert.equal(controller.state.ui.zoom,175);assert.equal(controller.state.ui.upper,320);assert.equal(messages.length,count);
@@ -116,7 +116,7 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     },
   });
   runInContext(bundle.outputFiles[0].text, context);
-  context.controller = module.exports.controller({
+  context.formController = module.exports.controller({
     getState: () => undefined,
     setState: () => {},
     postMessage: () => {},
@@ -137,12 +137,12 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   runInContext(`module.exports.createRoot(dispose => {
     globalThis.stopObserving = dispose;
     module.exports.createEffect(() => observe({
-      sequence: controller.state.sequence,
-      culture: controller.state.culture,
-      width: controller.state.model.root.properties[0].value.text,
-      selected: controller.state.selected,
-      page: controller.state.ui.pages['own:current:1'],
-      collapsed: controller.state.ui.collapsed['own:current:10']
+      sequence: formController.state.sequence,
+      culture: formController.state.culture,
+      width: formController.state.model.root.properties[0].value.text,
+      selected: formController.state.selected,
+      page: formController.state.ui.pages['own:current:1'],
+      collapsed: formController.state.ui.collapsed['own:current:10']
     }));
   });`, context);
   snapshots.length = 0;
@@ -175,6 +175,6 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     previewNavigation: { pages: { 'own:current:1': 'own:current:2' }, collapsed: { 'own:current:10': false } },
   });
   assert.deepEqual(snapshots, [{ ...expected, sequence: 3, page: 'own:current:2', collapsed: false }]);
-  runInContext('stopObserving(); controller.dispose();', context);
+  runInContext('stopObserving(); formController.dispose();', context);
   assert.equal(listeners.size, 0);
 });
