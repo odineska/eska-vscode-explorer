@@ -19,7 +19,7 @@ button { cursor: default; }
 .form-toolbar { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, #ccc); flex: 0 0 auto; }
 .form-toolbar #title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .form-toolbar-spacer { flex: 1; }
-.form-toolbar button, .form-property-actions button, .form-detached-placeholder button { border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #e7e7e7); color: var(--vscode-button-secondaryForeground, #333); padding: 3px 8px; white-space: nowrap; }
+.form-toolbar button, .form-property-actions button { border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #e7e7e7); color: var(--vscode-button-secondaryForeground, #333); padding: 3px 8px; white-space: nowrap; }
 .form-toolbar button:hover, .form-property-actions button:hover { background: var(--vscode-button-secondaryHoverBackground, #d7d7d7); }
 .form-toolbar button:focus-visible, .form-tabs button:focus-visible, .form-tree:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
 .form-zoom { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -66,7 +66,7 @@ button { cursor: default; }
 .form-status--stale { color: var(--vscode-editorWarning-foreground, #bf8803); }
 .form-status span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .form-status span:last-child { white-space: nowrap; }
-.form-empty, .form-detached-placeholder { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.form-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .preview-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; background: #fff; padding: 8px; }
 /* The form profile is isolated from the VS Code theme and from the inspector's typography. */
 .taxi-preview { color-scheme: light; color: #555; font: 13.333333px/1.2 Arial, sans-serif; width: max-content; min-width: 100%;
@@ -423,7 +423,7 @@ button { cursor: default; }
 .form-status { flex-wrap: wrap; }
 .form-status span:first-child { flex: 1 1 160px; min-width: 0; }
 .form-status span:last-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.preview-scroll, .form-detached-placeholder { min-height: 96px; }
+.preview-scroll { min-height: 96px; }
 
 /* Preferred geometry is measured without allocating the surrounding editor's free space. */
 .taxi-preview:is([data-form-layout=preferred],[data-form-layout=minimum]) .taxi-form-frame { height: auto !important; }

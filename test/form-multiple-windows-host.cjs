@@ -18,6 +18,9 @@ exports.run=async()=>{
     await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'independent floating panel ready');
     const preview=view.frames.get('preview'),ui=await frame({detached:true,state:{title:preview.panel.title}});
     await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===1"),'independent input ready');
+    const inspectors=await frame({state:{title:main.panel.title}});
+    await until(()=>inspectors.evaluate(`(() => {const shell=document.querySelector('.form-shell'),area=document.querySelector('.form-inspectors');return !document.querySelector('.preview-scroll,.form-detached-placeholder,.form-shell > .form-splitter')&&Math.abs(area.getBoundingClientRect().height-Math.max(84,shell.clientHeight-document.querySelector('.form-toolbar').getBoundingClientRect().height-document.querySelector('.form-status').getBoundingClientRect().height))<1})()`),'independent main inspectors fill their own window');
+    inspectors.close();
     const target=await ui.nativeWindow({detached:true});assert.equal(target.url,'about:blank');
     return {file,before,document,view,main,preview,ui,target,session:view.client.current.formSessionId};
   }

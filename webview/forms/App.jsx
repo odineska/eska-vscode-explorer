@@ -88,7 +88,7 @@ export function App(props) {
   const c = props.controller, state = c.state;
   let shell, toolbar, status;
   const [size, setSize] = createSignal({ width: 0, height: 0, toolbar: 34, status: 23 });
-  const inspectors = createMemo(() => inspectorLayout(size(), state.ui));
+  const inspectors = createMemo(() => inspectorLayout(size(), state.ui, state.role === 'main' && state.detached));
   onMount(() => {
     let scheduled, active = true;
     const measure = () => {
@@ -121,8 +121,8 @@ export function App(props) {
         <section class="form-pane"><Definitions controller={c}/></section>
         <Splitter vertical value={() => inspectors().right} factor={() => 100 / inspectors().width} change={value => c.ui('right', Math.max(inspectors().rightMinimum, Math.min(inspectors().rightMaximum, value)))}/>
         <section class="form-pane"><Properties controller={c}/></section>
-      </div><Splitter value={() => inspectors().height} change={value => c.ui('upper', Math.max(inspectors().minimumHeight, Math.min(inspectors().maximumHeight, value)))}/></Show>
-      <Show when={state.role === 'preview' || !state.detached} fallback={<div class="form-detached-placeholder"><button type="button" onClick={() => c.post({ type: 'revealPreview' })}>{state.strings.revealPreview}</button></div>}><Preview controller={c}/></Show>
+      </div><Show when={!state.detached}><Splitter value={() => inspectors().height} change={value => c.ui('upper', Math.max(inspectors().minimumHeight, Math.min(inspectors().maximumHeight, value)))}/></Show></Show>
+      <Show when={state.role === 'preview' || !state.detached}><Preview controller={c}/></Show>
     </Show>
     <footer ref={status} classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
   </main>;

@@ -50,3 +50,21 @@ test('outdated or extreme preferences cannot create negative or overlapping trac
     assert.ok(result.tracks.split(' ').every(value => parseFloat(value) > 0));
   }
 });
+
+
+test('detached inspectors fill the space after actual toolbar and status without reserving preview or splitter', () => {
+  for (const [width, height, toolbar, status] of [[1000,700,34,23],[420,360,59,36],[420,180,90,50]]) {
+    const result = inspectorLayout(size(width,height,toolbar,status), ui, true);
+    assert.equal(result.height, Math.max(84,height-toolbar-status));
+    assert.deepEqual(ui, { upper:230,left:40,right:65 });
+  }
+});
+
+test('dock restores the saved split and clamps it only for the current available height', () => {
+  const normal=inspectorLayout(size(1000,700),ui);
+  inspectorLayout(size(1000,700),ui,true);
+  inspectorLayout(size(420,320,59,36),ui,true);
+  assert.equal(inspectorLayout(size(420,320,59,36),ui).height,124);
+  assert.deepEqual(inspectorLayout(size(1000,700),ui),normal);
+  assert.deepEqual(ui, { upper:230,left:40,right:65 });
+});
