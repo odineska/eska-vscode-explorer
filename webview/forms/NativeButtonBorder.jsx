@@ -1,6 +1,6 @@
 import { For, Show, createEffect, on, onCleanup } from 'solid-js';
 import { buttonBorderPaint } from './button-border.mjs';
-import { observeTableRasterPosition } from './table-raster-position.js';
+import { observeRasterPosition } from './raster-position.js';
 import { useFormLayout } from './responsive-layout.js';
 
 const REGIONS = [['topLeft',false,false,3],['topRight',true,false,3],['bottomLeft',false,true,4],['bottomRight',true,true,4]];
@@ -24,7 +24,7 @@ export function NativeButtonBorder(props) {
       props.setPaint(buttonBorderPaint({height,background,outside,primary:props.primary,position:position(height,props.controller.state.ui.zoom)}));
     };
     const frame = requestAnimationFrame(draw), observer = new ResizeObserver(draw);
-    const position = observeTableRasterPosition(button,observer);
+    const position = observeRasterPosition(button,observer);
     observer.observe(button);
     onCleanup(() => { cancelAnimationFrame(frame); observer.disconnect(); });
   }));

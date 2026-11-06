@@ -1,6 +1,6 @@
 import {createEffect,createSignal,on,onCleanup} from 'solid-js';
 import {tableMovementRgba} from './table-movement.mjs';
-import {observeTableRasterPosition} from './table-raster-position.js';
+import {observeRasterPosition} from './raster-position.js';
 import {useFormLayout} from './responsive-layout.js';
 
 function whiteBackdrop(element) {
@@ -26,7 +26,7 @@ export function NativeTableMovement(props) {
    setReady(calibrated);runtime?.issue(owner,!calibrated);
   };
   const resize=new ResizeObserver(draw);
-  const position=observeTableRasterPosition(group,resize);
+  const position=observeRasterPosition(group,resize);
   resize.observe(group);
   const frame=requestAnimationFrame(draw);
   draw();

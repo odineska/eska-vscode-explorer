@@ -213,14 +213,27 @@ export async function createTabBordersGallery(fixture) {
   return {forms};
 }
 
+async function readButtonPaintOrigins() {
+  const input=process.env.ESKA_FORM_BUTTON_PAINT_ORIGINS;
+  if(!input)return;
+  if(!isAbsolute(input))throw new Error('ESKA_FORM_BUTTON_PAINT_ORIGINS must be absolute.');
+  return JSON.parse(await readFile(join(input,'positioned.json'),'utf8'));
+}
+
 export async function createPrimaryButtonGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const style = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
   const metrics = JSON.parse(await readFile(join(input,'metrics.json'),'utf8')), forms = [];
+  const origins=await readButtonPaintOrigins();
   for (const row of metrics.rows) {
     const source = join(input,row.file), [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
-    forms.push({...form,kind:row.name,expected:row,...(row.styleFile?{styleText:await readFile(join(input,row.styleFile),'utf8')}:{})});
+    const poses=row.name===origins?.primaryButtonForm ? origins.buttonPoses.map(pose=>({
+      ...row,paintOrigin:pose.paintFrameOrigin,pose:pose.pose,
+      buttons:row.buttons.map((button,index)=>({...button,wholeRgbSha256:pose.buttons[index].wholeRgbSha256,
+        bottomBorder:pose.buttons[index].bottom})),
+    })) : undefined;
+    forms.push({...form,kind:row.name,expected:row,poses,...(row.styleFile?{styleText:await readFile(join(input,row.styleFile),'utf8')}:{})});
   }
   return {forms,style:style.style,configuration:join(fixture.source,'Configuration.xml')};
 }
@@ -358,7 +371,10 @@ export async function createButtonRowsSource(fixture, input = process.env.ESKA_F
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   await rm(fixture.source,{recursive:true});await cp(join(input,'source'),fixture.source,{recursive:true});
   const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
-  return {cases:matrix.cases.map(row=>({...row,path:join(fixture.source,row.path)})),sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
+  const origins=await readButtonPaintOrigins();
+  const cases=matrix.cases.map(row=>({...row,path:join(fixture.source,row.path),
+    frameRaster:origins?.formFrames.find(frame=>frame.form===row.name)}));
+  return {cases,sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
 }
 
 export async function createTablePixelsGallery(fixture) {

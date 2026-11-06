@@ -1,11 +1,10 @@
-/** Match table-border raster coordinates while the surrounding preview resizes. */
-export function observeTableRasterPosition(element, observer) {
+/** Match native raster coordinates as the surrounding preview resizes. */
+export function observeRasterPosition(element, observer) {
   let viewport, shell;
   return (height, zoom) => {
     // A Solid branch may paint once before all its ancestors are attached.
     if (!viewport) {
-      const bar = element.closest('.taxi-table-command-bar, .taxi-command-bar[data-table-commands]');
-      viewport = bar?.closest('.preview-scroll');
+      viewport = element.closest('.preview-scroll');
       shell = viewport?.closest('.form-shell');
       const inspectors = shell?.querySelector('.form-inspectors');
       if (viewport) observer.observe(viewport);

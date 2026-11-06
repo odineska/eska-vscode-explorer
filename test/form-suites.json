@@ -52,7 +52,8 @@
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-button-borders"
+        "ESKA_FORM_FIXTURES": "native-button-borders",
+        "ESKA_FORM_BUTTON_PAINT_ORIGINS": "native-button-poses"
       },
       "environment": {},
       "dependencies": [
@@ -152,7 +153,8 @@
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-button-rows"
+        "ESKA_FORM_FIXTURES": "native-button-rows",
+        "ESKA_FORM_BUTTON_PAINT_ORIGINS": "native-button-poses"
       },
       "environment": {},
       "dependencies": [

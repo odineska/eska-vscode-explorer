@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
+const {matchFormRasterOrigin}=require('./form-raster-origin.cjs');
 
 exports.run = async (options = {}) => {
   const prefix = options.prefix ?? 'primary-buttons';
@@ -32,6 +33,7 @@ exports.run = async (options = {}) => {
           &&style.fontWeight===(target[index].weight==='bold'?'700':'400');});})()`);
   }
   async function sample(ui,expected,label,targetId) {
+    if (options.wholeWidgets) await matchFormRasterOrigin(ui,expected.paintOrigin??expected.nativeOrigin);
     try { await until(() => ready(ui,expected),'three native primary/ordinary captions'); }
     catch (error) {
       const debug = await ui.evaluate("[...document.querySelectorAll('.taxi-command-bar .taxi-button')].map(button=>({font:getComputedStyle(button).font,color:getComputedStyle(button).color,background:getComputedStyle(button).backgroundColor,caption:button.querySelector('[data-native-caption]')?.dataset.nativeCaption,rect:button.getBoundingClientRect().toJSON()}))");
@@ -85,6 +87,14 @@ exports.run = async (options = {}) => {
     const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
     let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
+    if(options.wholeWidgets&&form.poses) {
+      await ui.evaluate("globalThis.__posedButtons=[...document.querySelectorAll('.taxi-command-bar .taxi-button')]");
+      for(const pose of form.poses) {
+        const sampleResult=await sample(ui,pose,'native-pose-'+pose.pose);
+        assert.equal(await ui.evaluate("globalThis.__posedButtons.every((button,index)=>button===document.querySelectorAll('.taxi-command-bar .taxi-button')[index])"),true);
+        results.push({...sampleResult,positionedWholeWidgets:true,paintOrigin:pose.paintOrigin});
+      }
+    }
     if(['FontAuto','Color000080'].includes(form.kind)) {
       const color=form.kind.startsWith('Color'),other=gallery.forms.find(item=>item.kind===(color?'ColorFF0000':'FontRegular'));
       const owner=color?style:document,original=owner.getText(),changed=color?other.styleText:await fs.readFile(other.path,'utf8');

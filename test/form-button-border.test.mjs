@@ -54,6 +54,11 @@ test('all corners and straight edge colors match 153 native buttons',async () =>
     assert.deepEqual(paint.bottom,button.bottomBorder,form.name+' bottom');
     assert.deepEqual(paint.shadow,button.shadow,form.name+' shadow');
     assert.deepEqual(paint.corners,button.corners,form.name+' corners');
+    const [x,y]=form.nativeOrigin;
+    const positioned=buttonBorderPaint({height:button.height,background,outside:button.outside,primary:button.primary,
+      position:{x:x+button.x,y:y+button.y,width:button.width}});
+    assert.deepEqual(positioned.bottom,button.bottomBorder,form.name+' positioned bottom');
+    assert.deepEqual(positioned.corners,button.corners,form.name+' positioned corners');
   }
 });
 
