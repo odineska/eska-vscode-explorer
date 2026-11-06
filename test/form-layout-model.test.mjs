@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds } from '../webview/forms/layout-model.mjs';
+import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds, horizontalInputMaximum } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -95,7 +95,7 @@ test('reference-axis detection uses the outer area before native scrollbars and 
 
 test('explicit group sizes are separated from stretch weights and converted through the OS profile',()=>{
   const group=node('UsualGroup',{Width:35,Height:3,HorizontalStretch:false,VerticalStretch:false});
-  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:75});
+  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:48});
   assert.deepEqual(groupPreferredSize(group,'win32'),{width:280,height:60});
   assert.deepEqual(groupPreferredSize(node('InputField',{Width:35}),'linux'),{});
 });
@@ -150,6 +150,23 @@ test('manual limits on measured automatic lanes keep their preferred trailing bo
   const raised = node('InputField', {AutoMaxWidth:false, MaxWidth:30});
   raised.presentation = field.presentation;
   assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, narrowMinimum:113, maximum:310, valueWeight:98});
+});
+
+test('a manual maximum on a horizontal text field includes the native control inset', () => {
+  const field = node('InputField', {AutoMaxWidth:false, MaxWidth:14});
+  field.presentation.valueType.length = 13;
+  assert.equal(horizontalInputMaximum(field, 'linux'), 150);
+  assert.equal(horizontalInputMaximum(field, 'win32'), undefined);
+  assert.equal(horizontalInputMaximum(node('InputField', {MaxWidth:14}), 'linux'), undefined);
+  assert.equal(horizontalInputMaximum(node('InputField', {AutoMaxWidth:false, MaxWidth:14, Width:20}), 'linux'), undefined);
+});
+
+test('the cap on a reference beside a date follows the measured Linux widths', () => {
+  for (const [maxWidth, measured] of [[8, 91], [12, 131], [16, 203]]) {
+    const field = node('InputField', {AutoMaxWidth:false, MaxWidth:maxWidth});
+    field.presentation.valueType.kind = 'reference';
+    assert.equal(horizontalInputMaximum(field, 'linux'), measured);
+  }
 });
 
 

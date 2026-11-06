@@ -49,8 +49,9 @@ export function alignUnitedRows(model, context, wrapped) {
   function visit(node) {
     const children = mountedChildren(node);
     const items = containers.get(node.key);
-    if (items && horizontalGrouping(node)
-      && children.length > 1 && children.every(ordinaryVerticalGroup)) {
+    const separatedColumn = children.some(child => ordinaryVerticalGroup(child) && child.presentation.united === false);
+    if (items && horizontalGrouping(node) && children.length > 1
+      && (children.every(ordinaryVerticalGroup) || separatedColumn)) {
       owners.add(node.key);
       if (automaticHorizontalSpacing(node)) mark(items, 'data-united-auto-spacing');
       if (!wrapped.has(node.key)) shareRows(items, children, node.presentation.grouping === 'Horizontal');

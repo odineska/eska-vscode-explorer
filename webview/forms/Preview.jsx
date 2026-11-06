@@ -20,7 +20,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum } from './layout-model.mjs';
 import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
@@ -480,6 +480,7 @@ export function Element(props) {
   const bounds = axis => controlBounds(node(), axis, undefined, state.os, layout?.atPreferred(axis));
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
+  const horizontalMaximum = createMemo(() => horizontalInputMaximum(node(), state.os));
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
   const layoutStyle = () => ({
     ...font(node().presentation.font, state.os),
@@ -491,8 +492,9 @@ export function Element(props) {
     '--taxi-control-max-width': x().maximum ? `${x().maximum}px` : undefined,
     '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
+    '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
-  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>

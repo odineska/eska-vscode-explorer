@@ -47,6 +47,11 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions) {
       value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }
         : { width: title.width + gap + content.width, height: Math.max(title.height, content.height) };
       value = add(value, insets(field));
+      if (element.hasAttribute('data-horizontal-input-limit')) {
+        // Keep the caption outside the control limit when allocating the entire field.
+        const reserve = vertical ? 0 : value.width - content.width;
+        element.style.setProperty('--taxi-horizontal-input-reserve', `${reserve}px`);
+      }
       value.height = Math.max(value.height, pixels(getComputedStyle(field).minHeight));
     } else if (table) {
       const children = [...table.children].map(marginBox);

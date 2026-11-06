@@ -630,6 +630,13 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-button { width: 100% !important; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-button { height: 100%; }
 .taxi-preview[data-form-layout=allocated] .taxi-field-control > .taxi-input { max-width: var(--taxi-control-max-width, 100%); }
+.taxi-preview[data-form-layout=preferred] :is(.taxi-items--horizontal, .taxi-items[data-grouping=HorizontalIfPossible]):not([data-united-columns]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) > .taxi-field-row > .taxi-field-control > .taxi-input,
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) > .taxi-field-row > .taxi-field-control > .taxi-input {
+  max-width: min(100%, var(--taxi-horizontal-input-maximum));
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns], [data-united-horizontal-lane], [data-numeric-label-row]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) {
+  max-width: calc(var(--taxi-horizontal-input-maximum) + var(--taxi-horizontal-input-reserve));
+}
 .taxi-preview[data-form-layout] .taxi-element[data-lane-input-maximum] > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: var(--taxi-lane-input-max-width) !important;
 }

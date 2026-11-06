@@ -5,7 +5,10 @@ import { pixels, updateStyle } from './layout-box.mjs';
 export const inputCaptionInset = 1;
 
 export function throughCaptionWidth(element) {
-  return pixels(element.parentElement.style.getPropertyValue('--taxi-through-label-width'));
+  const items = element.parentElement;
+  const mode = items.dataset.throughLabels;
+  return mode === 'all' || mode === 'leading' && items.firstElementChild === element
+    ? pixels(items.style.getPropertyValue('--taxi-through-label-width')) : 0;
 }
 
 /** Allocate the label track while keeping its original accessible name. */

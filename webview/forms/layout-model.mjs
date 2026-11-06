@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -8,6 +8,9 @@ const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartF
 const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
 const explicitNo = value => ['false', 'No', '0'].includes(value);
 const explicitYes = value => ['true', 'Yes', '1'].includes(value);
+
+// In Linux Designer, authored heights of forms and ordinary groups use a 16 px unit.
+export const linuxContainerHeightUnit = 16;
 
 export function horizontalGrouping(node) {
   return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
@@ -85,6 +88,28 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   return { minimum: minimum || undefined, maximum: maximum ? Math.max(numericLabel?.preferred ?? minimum, maximum) : undefined };
 }
 
+function manualLaneMaximum(node) {
+  if (number(node, 'Width') > 0 || !explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))) return;
+  const limit = positive(number(node, 'MaxWidth'));
+  if (limit) return limit * 10 + 10;
+}
+
+/** A manually bounded input in a Linux horizontal row reserves only its usable width. */
+export function horizontalInputMaximum(node, os) {
+  if (os !== 'linux' || node.kind !== 'InputField' || !stretches(node, 'x')) return;
+  const maximum = manualLaneMaximum(node);
+  if (maximum === undefined) return;
+  const intrinsic = fieldWidth(node, os);
+  const minimum = controlBounds(node, 'x', intrinsic, os).minimum;
+  if (nativeReferenceInput(node, os)) {
+    // A cap that accommodates the native value area preserves the preferred buttons.
+    // Smaller caps include the buttons and the trailing border in the capped box.
+    return maximum >= intrinsic - referenceButtonWidth
+      ? Math.max(intrinsic, maximum) : Math.max(minimum, maximum + 1);
+  }
+  if (node.presentation.valueType.kind === 'string' && linuxFixedInputWidth(node, os)) return Math.max(maximum, minimum);
+}
+
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */
 export function laneInputBounds(node, os) {
   const type = node.presentation.valueType;
@@ -93,9 +118,7 @@ export function laneInputBounds(node, os) {
   if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
   const intrinsic = fieldWidth(node, os);
   const bounds = controlBounds(node, 'x', intrinsic, os);
-  const limit = number(node, 'Width') <= 0 && explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))
-    ? positive(number(node, 'MaxWidth')) : 0;
-  const maximum = limit ? limit * 10 + 10 : automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
+  const maximum = manualLaneMaximum(node) ?? automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
   // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
   const preferred = Math.min(intrinsic, maximum + 1);
   const narrowMinimum = Math.min(reference ? 113 : 71, preferred);
@@ -225,5 +248,5 @@ export function atPreferredAxis(outerSize, preferredSize, zoom = 100) {
 export function groupPreferredSize(node, os) {
   if (!containers.has(node.kind) || node.kind === 'Form') return {};
   return { width: positive(number(node,'Width')) * (os === 'linux' ? 10 : 8),
-    height: positive(number(node,'Height')) * (os === 'linux' ? 25 : 20) };
+    height: positive(number(node,'Height')) * (os === 'linux' ? linuxContainerHeightUnit : 20) };
 }

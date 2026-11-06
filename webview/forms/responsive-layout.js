@@ -1,6 +1,6 @@
 import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup, batch } from 'solid-js';
 import { number } from './model.mjs';
-import { stretches, formAllocation, atPreferredAxis } from './layout-model.mjs';
+import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
@@ -20,8 +20,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
     const units = number(state.model.root, 'Height');
-    // Linux Designer adds 16 pixels per authored unit to the form's 52-pixel base.
-    return state.os === 'linux' && units > 0 ? 52 + 16 * units : 0;
+    return state.os === 'linux' && units > 0 ? 52 + linuxContainerHeightUnit * units : 0;
   });
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));

@@ -44,7 +44,8 @@ function check(sample, baseline, label) {
   assert.ok(sample.limited.width>=79.9&&sample.limited.width<=250.1,label+' applies horizontal bounds');
   assert.ok(sample.memo.height>=39.9&&sample.memo.height<=160.1,label+' applies vertical bounds');
   assert.ok(Math.abs(sample.close.height-baseline.close.height)<.001,label+' keeps fixed button height');
-  assert.ok(Math.abs(sample.fixedGroup.width-350)<.01&&Math.abs(sample.fixedGroup.height-75)<.01,label+' retains explicit non-stretch group dimensions');
+  assert.ok(Math.abs(sample.fixedGroup.width-350)<.01 && Math.abs(sample.fixedGroup.height-baseline.fixedGroup.height)<.01,label+' retains explicit non-stretch group dimensions');
+  assert.ok(sample.fixedGroup.height>=48 && sample.fixedGroup.height<=50,label+' retains the native unit and the content minimum');
 
   assert.ok(sample.table.right <= sample.chart.x + .5, label+' keeps table and chart separate');
   assert.ok(sample.close.bottom <= sample.frame.bottom + .5, label+' keeps the last button inside the form');
@@ -113,6 +114,28 @@ async function replace(document, from, to, expectedCount = 2) {
   assert.equal(count, expectedCount, 'expected XML values found independently of surrounding whitespace');
   assert.equal(await vscode.workspace.applyEdit(edit),true);
 }
+
+async function checkCappedHeader(ui, document) {
+  const fixed = '<Width>35</Width>\n        </InputField>';
+  const capped = '<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>14</MaxWidth>\n        </InputField>';
+  await replace(document, fixed, capped, 1);
+  let gap;
+  for (const width of [1000, 1250]) {
+    await ui.evaluate(`document.querySelector('#root').style.width = '${width}px';true`);
+    await until(async () => {
+      const sample = await ui.evaluate(geometry);
+      return sample?.name?.width === 150 && sample.headerDirection === 'flex';
+    }, 'the capped field keeps its native width in a horizontal row');
+    const sample = await settled(ui);
+    const next = sample.amount.x - sample.name.right;
+    assert.ok(next >= 0 && next < 80, 'the second field follows the cap and its own caption');
+    assert.equal(sample.amount.y, sample.name.y);
+    if (gap !== undefined) assert.equal(next, gap, 'spare row width stays after the capped fields');
+    gap = next;
+  }
+  await replace(document, capped, fixed, 1);
+}
+
 exports.run=async function(){
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), form=fixture.formGallery[0], original=await fs.readFile(form.path);
   const explorer=await vscode.extensions.all.find(extension=>extension.packageJSON.name==='eska-explorer').activate();
@@ -241,6 +264,7 @@ exports.run=async function(){
     }
     await replace(document, declaration, rootWidth + '\n  <Height>0</Height>', 1);
     await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').hasAttribute('data-authored-height')"), 'automatic form height restored');
+    await checkCappedHeader(ui, document);
   }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
   assert.equal(service.views.size,1);main.panel.dispose();await until(()=>service.views.size===0,'responsive session released');await Promise.all([...service.closing]);await explorer.shutdown();

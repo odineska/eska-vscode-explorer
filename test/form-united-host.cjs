@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource } = require('./webview-host.cjs');
 
 const key = node => `${node.identity.source}:current:${node.identity.key.value}`;
 
@@ -53,6 +53,24 @@ function verifyColumns(kind, boxes) {
       : [[0, 0, 191, 51], [276, 0, 151, 23], [0, 60, 191, 23], [276, 60, 151, 23]];
     assert.deepEqual(relative, expected, kind + ' native field rectangles');
   }
+}
+
+async function verifyMixedRow(ui, view, document, original, keys) {
+  const right = original.match(/<UsualGroup name="Right"[^>]*>[\s\S]+?<\/UsualGroup>/u)?.[0];
+  const field = right?.match(/<InputField name="B1"[^>]*>[\s\S]+?<\/InputField>/u)?.[0];
+  assert.ok(field, 'fixture has a standalone field to reuse beside the left group');
+  const mixed = original.replace(right, field);
+  const selection = { A1: keys.A1, A2: keys.A2, B1: keys.B1 };
+  await editFormSource(document, view, mixed);
+  await until(async () => {
+    const boxes = await measure(ui, selection);
+    return boxes && Math.abs(boxes.A1.y - boxes.B1.y) <= 2 && boxes.B1.y + boxes.B1.height < boxes.A2.y;
+  }, 'a standalone field aligns with the first row of a separated group');
+  await editFormSource(document, view, mixed.replace('<United>false</United>', '<United>true</United>'));
+  await until(async () => {
+    const boxes = await measure(ui, selection);
+    return boxes && boxes.B1.y > boxes.A1.y + 2;
+  }, 'a united group aligns as a single box');
 }
 
 async function editColumns(service, view, main, ui, keys, document) {
@@ -166,6 +184,8 @@ exports.run = async () => {
       assert.equal(await floating.evaluate("__unitedNodes.every(node=>node.isConnected)"),true);
       await floating.screenshot('united-dirty-floating-'+vscode.env.language+'.png');
       preview.panel.dispose();
+      main.panel.reveal();
+      await verifyMixedRow(ui, view, document, before.toString('utf8'), keys);
     }
     assert.deepEqual(await fs.readFile(input.path),before);
     main.panel.dispose();
