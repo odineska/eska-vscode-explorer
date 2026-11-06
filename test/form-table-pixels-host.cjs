@@ -26,6 +26,49 @@ exports.run=async()=>{
    if(restore){await ui.evaluate("document.querySelector('.taxi-table-empty').click()");await until(()=>view.selected?.key.value==='1','table identity restored after capture');}return passed;
   }
   const passed=await sample(reference(form),form.kind);
+  const toolbar=reference(form).wholeToolbar;
+  if(passed&&toolbar){
+   if(form.kind==='DynamicList'){
+    const captured=results.at(-1).additionalRegions.find(region=>region.name==='toolbar');
+    assert.equal(captured.rgbSha256,toolbar.rgbSha256,'complete DynamicList toolbar remains exact');
+    results.at(-1).wholeToolbarPixelParity=true;
+   }else{
+    const beforePose=await ui.evaluate(`(()=>{
+     const bar=document.querySelector('.taxi-table-command-bar'),viewport=bar.closest('.preview-scroll');
+     const inspectors=document.querySelector('.form-inspectors'),button=bar.querySelector(':scope > .taxi-button');
+     const rect=bar.getBoundingClientRect(), [targetX,targetY]=${JSON.stringify(toolbar.nativeRegion)};
+     globalThis.__tableToolbarPose={bar,button,inspectors,viewport,height:inspectors.style.height,margin:viewport.style.marginLeft};
+     inspectors.style.height=(inspectors.getBoundingClientRect().height+targetY-rect.y)+'px';
+     viewport.style.marginLeft=(targetX-rect.x)+'px';
+     return {position:[rect.x,rect.y],bottom:getComputedStyle(button).borderBottomColor};
+    })()`);
+    try{
+     const [x,y]=toolbar.nativeRegion;
+     await until(()=>ui.evaluate(`(()=>{
+      const {bar,button}=globalThis.__tableToolbarPose,r=bar.getBoundingClientRect();
+      return bar===document.querySelector('.taxi-table-command-bar')&&r.x===${x}&&r.y===${y}
+       &&getComputedStyle(button).borderBottomColor==='rgb(156, 156, 156)';
+     })()`),'whole toolbar uses the measured raster pose');
+     await sample({...reference(form),additionalRegions:[toolbar]},form.kind+'-native-toolbar-pose');
+     const result=results.at(-1);
+     result.nativeToolbarPose=[x,y];
+     result.wholeToolbarPixelParity=result.additionalRegions[0].passed;
+     result.beforeToolbarPose=beforePose;
+    }finally{
+     await ui.evaluate(`(()=>{
+      const {inspectors,viewport,height,margin}=globalThis.__tableToolbarPose;
+      inspectors.style.height=height;
+      viewport.style.marginLeft=margin;
+     })()`);
+    }
+    await until(()=>ui.evaluate(`(()=>{
+     const {bar,button}=globalThis.__tableToolbarPose,r=bar.getBoundingClientRect();
+     return button===bar.querySelector(':scope > .taxi-button')&&r.x===${beforePose.position[0]}&&r.y===${beforePose.position[1]}
+      &&getComputedStyle(button).borderBottomColor===${JSON.stringify(beforePose.bottom)};
+    })()`),'toolbar position and border restored on the same node');
+    results.at(-1).toolbarPositionRestored=true;
+   }
+  }
   if(passed&&form.kind==='Default'){
    await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'native movement ready');await ui.evaluate("(()=>{globalThis.__movementCanvas=document.querySelector('[data-native-table-movement]');const select=document.querySelector('.form-zoom select');select.value='200';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='browser'"),'unmeasured movement zoom uses fallback');assert.match(await ui.evaluate("document.querySelector('.form-status').textContent"),locale==='ru'?/Часть элементов формы/:/Some form elements/);await ui.evaluate("(()=>{const select=document.querySelector('.form-zoom select');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'movement profile restored');assert.equal(await ui.evaluate("globalThis.__movementCanvas===document.querySelector('[data-native-table-movement]')"),true);results.at(-1).movementZoomFallbackVerified=true;
    const hit=await ui.evaluate("(()=>{const n=document.querySelector('.taxi-table-search input'),r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+10,r.y+r.height/2);return n===hit})()");assert.equal(hit,true,'LCD placeholder leaves the input hit-testable');

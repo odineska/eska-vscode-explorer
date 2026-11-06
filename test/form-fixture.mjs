@@ -376,7 +376,7 @@ export async function createTablePixelsGallery(fixture) {
     for(const toolbar of JSON.parse(await readFile(join(bars,'metrics.json'),'utf8')).rows){
       const row=reference.rows.find(row=>row.name===toolbar.name);
       if(!row)throw new Error(`Missing table for native toolbar ${toolbar.name}.`);
-      for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].additionalRegions=[region];
+      for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].wholeToolbar=region;
     }
   }
   const menus=process.env.ESKA_FORM_TABLE_MENU_PIXELS;

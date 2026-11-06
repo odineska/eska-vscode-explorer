@@ -12,15 +12,30 @@ function backdrop(element) {
 }
 
 export function NativeButtonBorder(props) {
-  createEffect(on(() => [props.enabled,props.primary,props.controller.state.sequence],() => {
+  createEffect(on(() => [props.enabled,props.primary,props.controller.state.sequence,props.controller.state.ui.zoom],() => {
     const button = props.button();
     if (!props.enabled) { props.setPaint(undefined); return; }
+    const tableBar = button.closest('.taxi-table-command-bar, .taxi-command-bar[data-table-commands]');
+    const viewport = tableBar?.closest('.preview-scroll'), shell = viewport?.closest('.form-shell');
+    const inspectors = shell?.querySelector('.form-inspectors');
+    const position = height => {
+      if (!viewport || props.controller.state.ui.zoom !== 100 || devicePixelRatio !== 1) return;
+      const rect = button.getBoundingClientRect();
+      // Keep the paint origin in the scrolled content's logical coordinates.
+      const x = rect.x + viewport.scrollLeft + (shell?.scrollLeft ?? 0);
+      const y = rect.y + viewport.scrollTop + (shell?.scrollTop ?? 0);
+      if (rect.height === height && rect.width >= 7 && [x,y,rect.width].every(value => Number.isInteger(value) && Math.abs(value) < 16000))
+        return {x,y,width:rect.width};
+    };
     const draw = () => {
       const css = getComputedStyle(button), height = parseFloat(css.height), background = rgb(css.backgroundColor), outside = backdrop(button);
       if (!Number.isInteger(height) || height < 7 || height > 4096 || !background || !outside) { props.setPaint(undefined); return; }
-      props.setPaint(buttonBorderPaint({height,background,outside,primary:props.primary}));
+      props.setPaint(buttonBorderPaint({height,background,outside,primary:props.primary,position:position(height)}));
     };
-    const frame = requestAnimationFrame(draw), observer = new ResizeObserver(draw); observer.observe(button);
+    const frame = requestAnimationFrame(draw), observer = new ResizeObserver(draw);
+    observer.observe(button);
+    if (viewport) observer.observe(viewport);
+    if (inspectors) observer.observe(inspectors);
     onCleanup(() => { cancelAnimationFrame(frame); observer.disconnect(); });
   }));
   return <span class="taxi-button-border" data-native-button-border={props.paint ? 'ready' : 'fallback'} aria-hidden="true">
