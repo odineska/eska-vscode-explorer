@@ -1,4 +1,4 @@
-import { fieldWidth, flag, number } from './model.mjs';
+import { fieldWidth, flag, linuxFixedInputWidth, number } from './model.mjs';
 import { horizontalLaneWidths, laneInputBounds, stretches } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, updateStyle } from './layout-box.mjs';
 import { designCaptionWidth, fieldCaptionProfile } from './font-metrics.mjs';
@@ -35,12 +35,20 @@ function preferredTrack(width, fields) {
     growthWeight: weights.every(weight => weight !== undefined) ? Math.max(0, ...weights) : undefined };
 }
 
-function narrowTrack(track, fields, scale) {
+function narrowTrack(track, fields, scale, os) {
   const titled = !!fields[0].label;
-  if (fields.some(({node, label, title, bounds}) => !bounds || !!label !== titled
+  if (fields.some(({node, label, title}) => !!label !== titled
       || !['Left', 'None'].includes(node.presentation.titleLocation) || /[\r\n]/u.test(title)
       || flag(node, 'MultiLine', false))) return;
-  const profiled = fields.map(field => ({ ...field, caption: fieldCaptionProfile(field.title, field.node.presentation.titleFont) }));
+  const profiled = fields.map(field => {
+    const caption = fieldCaptionProfile(field.title, field.node.presentation.titleFont);
+    // A fixed text or date field in this native profile includes the trailing border.
+    const fixedBorder = !field.stretch && !field.bounds && linuxFixedInputWidth(field.node, os)
+      && ['string', 'date'].includes(field.node.presentation.valueType.kind)
+      && (field.node.presentation.font?.points ?? 10) === 10;
+    const minimum = field.stretch ? field.bounds.narrowMinimum : field.preferred + Number(fixedBorder);
+    return { ...field, caption, minimum, fixedBorder };
+  });
   if (profiled.some(field => !field.caption)) return;
 
   const width = metric => Math.max(...profiled.map(field => field.caption[metric]));
@@ -51,11 +59,24 @@ function narrowTrack(track, fields, scale) {
   const reserve = Math.round(track.reserve - labelWidth) + (titled ? inputCaptionInset : 0);
   const stretch = fields.some(field => field.stretch);
   if (reserve < 0 || !stretch && caption.minimum < caption.preferred) return;
-  const minimum = Math.max(...fields.map(field => field.stretch ? field.bounds.narrowMinimum : field.preferred));
-  const preferred = track.preferred - track.reserve;
-  const maximum = track.maximum - track.reserve;
-  const valueWeight = Math.max(...fields.map(field => field.bounds.valueWeight));
-  return { reserve, caption, value: { minimum, preferred, maximum }, valueWeight, growthWeight: track.growthWeight, fields: profiled };
+  const minimum = Math.max(...profiled.map(field => field.minimum));
+  const preferred = Math.max(minimum, track.preferred - track.reserve);
+  const maximum = Math.max(preferred, track.maximum - track.reserve);
+  const minimumWidth = reserve + Math.max(...profiled.map(field => field.caption.minimum + field.minimum));
+  const valueWeight = Math.max(1, ...fields.map(field => field.bounds?.valueWeight ?? 0));
+  return { reserve, caption, value: { minimum, preferred, maximum }, minimumWidth, valueWeight,
+    growthWeight: track.growthWeight, fields: profiled };
+}
+
+function captionWidth(track, field, size, atMinimum) {
+  if (!size) return;
+  if (!size.independent) return atMinimum ? field.caption.minimum : size.caption;
+  if (!field.stretch) {
+    return size.width >= track.reserve + size.caption + field.minimum ? size.caption : field.caption.minimum;
+  }
+  const growth = size.width - track.minimumWidth;
+  const share = field.caption.minimum / (track.minimumWidth - track.reserve);
+  return Math.min(field.caption.preferred, field.caption.minimum + Math.round(growth * share));
 }
 
 /** Column allocation is independent of which descendant rows share a vertical track. */
@@ -91,21 +112,26 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
       style(field.element, '--taxi-lane-input-max-width', `${field.bounds.maximum}px`);
     }
     const tracks = fields.map((row, index) => preferredTrack(borderBoxSize(elements.get(children[index].key), scale).width, row));
-    const candidates = allowWrap && stretch.length ? tracks.map((track, index) => narrowTrack(track, fields[index], scale)) : [];
+    const candidates = allowWrap && stretch.length ? tracks.map((track, index) => narrowTrack(track, fields[index], scale, os)) : [];
     const narrow = candidates.every(Boolean) && candidates.some(track => track.caption.minimum < track.caption.preferred) ? candidates : undefined;
     for (const field of stretch) {
       const minimum = narrow ? field.bounds.narrowMinimum : field.bounds.minimum;
       style(field.element, '--taxi-lane-input-min-width', `${minimum}px`);
     }
     for (const track of narrow ?? []) {
-      for (const { element, key, label, caption } of track.fields) {
+      for (const { element, key, label, caption, fixedBorder, minimum } of track.fields) {
+        if (fixedBorder) {
+          mark(element, 'data-lane-fixed-border');
+          style(element, '--taxi-lane-fixed-width', `${minimum}px`);
+        }
         if (!label) continue;
         minimumCaptions.set(key, caption.minimum + inputCaptionInset);
         style(element, '--taxi-field-caption-width', '');
         style(element, '--taxi-field-columns', '');
       }
     }
-    const minimum = narrow?.reduce((total, track) => total + track.reserve + track.caption.minimum + track.value.minimum, 0);
+    const minimum = narrow?.reduce((total, track) => total + track.minimumWidth, 0);
+    if (minimum !== undefined) style(items, '--taxi-input-lane-minimum', `${minimum}px`);
     allocations.push({ items, tracks, narrow, minimum });
     style(items, '--taxi-united-allocated-columns', '');
   }
@@ -124,9 +150,7 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
         const size = reflow?.[column];
         for (const field of track.fields) {
           if (!field.label) continue;
-          // At the absolute minimum, narrower titles keep their own track within the lane.
-          const width = size && (atMinimum ? field.caption.minimum : size.caption);
-          allocateFieldCaption(captions, field, width, inputCaptionInset);
+          allocateFieldCaption(captions, field, captionWidth(track, field, size, atMinimum), inputCaptionInset);
           updateStyle(field.element, '--taxi-field-columns', size ? 'var(--taxi-field-caption-width) minmax(0, 1fr)' : '');
         }
       }

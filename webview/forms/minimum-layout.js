@@ -25,6 +25,9 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions) {
       : { width: Math.max(0, ...children.map(value => value.width)), height: children.reduce((sum, value) => sum + value.height, gap) };
     const padding = insets(element);
     if (element.hasAttribute('data-united-columns')) {
+      // Use the allocator's lower bound for this row, including independent captions.
+      const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
+      if (laneMinimum) value.width = laneMinimum + gap;
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     return add(value, padding);

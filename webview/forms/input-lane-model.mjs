@@ -1,7 +1,28 @@
 import { cappedTrackGrowth, fitCaptionWidths, roundTrackWidths } from './layout-model.mjs';
 
+function independentLaneWidths(available, tracks) {
+  const aligned = tracks.map(track => track.reserve + track.caption.minimum + track.value.minimum);
+  const alignedMinimum = aligned.reduce((sum, width) => sum + width, 0);
+  if (available >= alignedMinimum) return;
+  const widths = tracks.map((track, index) => track.minimumWidth ?? aligned[index]);
+  const minimum = widths.reduce((sum, width) => sum + width, 0);
+  if (minimum === alignedMinimum) return;
+
+  // Before shared captions fit, use the measured growth of independent title tracks.
+  const limits = tracks.map((track, index) => ({
+    weight: track.valueWeight + (track.caption.minimum < track.caption.preferred ? track.caption.minimum / 4 : 0),
+    limit: track.reserve + track.caption.preferred + track.value.maximum - widths[index],
+  }));
+  const growth = roundTrackWidths(cappedTrackGrowth(Math.max(0, available - minimum), limits));
+  return tracks.map((track, index) => ({
+    caption: track.caption.minimum, width: widths[index] + growth[index], independent: true,
+  }));
+}
+
 /** Preserve the minimum value width while compressing titles in a horizontal row of columns. */
 export function narrowInputLaneWidths(available, tracks) {
+  const independent = independentLaneWidths(available, tracks);
+  if (independent) return independent;
   const fit = fitCaptionWidths(available, tracks, true);
   if (!fit) return;
   const { captions, valueSpace, preferredValues, minimumValues } = fit;

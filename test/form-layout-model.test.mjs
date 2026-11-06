@@ -179,3 +179,24 @@ test('reference and string lanes retain their own minimum value boxes', () => {
   assert.deepEqual(narrowInputLaneWidths(300, tracks), [{ width: 195, caption: 77 }, { width: 139, caption: 63 }]);
   assert.deepEqual(narrowInputLaneWidths(510, tracks), [{ width: 281, caption: 77 }, { width: 229, caption: 63 }]);
 });
+
+
+test('fixed date fields allow independent captions before shared columns fit', () => {
+  const tracks = ['Организация:', 'Валюта взиморасчетов:'].map((title, index) => ({
+    caption: fieldCaptionProfile(title, { points: 10, weight: 400 }),
+    reserve: 5,
+    value: { minimum: [182, 113][index], preferred: [353, 203][index], maximum: 410 },
+    minimumWidth: [220, 212][index],
+    valueWeight: 98,
+    growthWeight: [undefined, 168][index],
+  }));
+  assert.deepEqual(narrowInputLaneWidths(390, tracks), [
+    { width: 220, caption: 80, independent: true }, { width: 212, caption: 94, independent: true },
+  ]);
+  assert.deepEqual(narrowInputLaneWidths(470, tracks), [
+    { width: 237, caption: 80, independent: true }, { width: 233, caption: 94, independent: true },
+  ]);
+  assert.deepEqual(narrowInputLaneWidths(480, tracks), [
+    { width: 268, caption: 80 }, { width: 212, caption: 94 },
+  ]);
+});

@@ -532,6 +532,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-y=false] { min-height: var(--taxi-preferred-height); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field) { width: var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 80px)) !important; min-width: 0 !important; }
+.taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-element[data-lane-fixed-border] > .taxi-field-row > .taxi-field-control > .taxi-input { width: var(--taxi-lane-fixed-width) !important; max-width: var(--taxi-lane-fixed-width); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > [data-numeric-label] { width: var(--taxi-control-min-width) !important; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-input { height: var(--taxi-control-min-height, 40px) !important; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack > .taxi-special { height: var(--taxi-control-min-height, var(--taxi-surface-min-height, 64px)) !important; }

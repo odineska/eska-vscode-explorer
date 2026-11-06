@@ -126,7 +126,7 @@ exports.run = async () => {
         await replace(sourceVariant(original,expected.edit));
         results.push(await pose(ui,keys,expected));
       }
-      if (form.kind === 'Columns' || form.kind === 'AutoReference') {
+      if (['Columns', 'AutoReference', 'AutoFixedSiblings'].includes(form.kind)) {
         await replace(original);
         const identity = nodes.find(node => node.name === 'B').identity;
         const sample = name => form.cases.find(row => row.name === name);
@@ -144,6 +144,15 @@ exports.run = async () => {
             await pose(floating, keys, wide);
           });
           results.push({label:'detached-column-resize-dirty', ...observation});
+        } else if (form.kind === 'AutoFixedSiblings') {
+          const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+            const narrow = sample('FixedFieldsMinimum'), wide = sample('FixedFields94');
+            await pose(floating, keys, narrow);
+            await pose(floating, keys, wide);
+            await pose(floating, keys, { ...narrow, name: 'fixed fields below minimum', viewport: [narrow.frame[0]-40, narrow.frame[1]] });
+            assert.equal(await floating.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
+          });
+          results.push({label:'detached-fixed-siblings-resize', ...observation});
         } else {
           const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
             const wide = sample('Standard94'), narrow = sample('NarrowMinimum');
