@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, allocateFormViewport } = require('./webview-host.cjs');
 
 async function editText(document, from, to) {
   const offset = document.getText().indexOf(from);
@@ -10,6 +10,47 @@ async function editText(document, from, to) {
   const edit = new vscode.WorkspaceEdit();
   edit.replace(document.uri, new vscode.Range(document.positionAt(offset), document.positionAt(offset + from.length)), to);
   assert.equal(await vscode.workspace.applyEdit(edit), true);
+}
+
+async function exerciseRootMore(ui, view) {
+  const more = '.taxi-root-commands [data-root-menu] > button';
+  const rows = '.taxi-root-commands [data-root-menu] [role=menuitem]';
+  const clickMore = () => ui.evaluate(`document.querySelector(${JSON.stringify(more)}).click()`);
+  const placement = await ui.evaluate(`(() => {
+    const surface = document.querySelector('.preview-scroll');
+    const style = surface.style.cssText;
+    globalThis.__generatedButton = document.querySelector('[data-command-key$="/command:GeneratedIcon"]');
+    surface.style.width = '320px';
+    return style;
+  })()`);
+  const snapshot = view.snapshot, selected = view.selected;
+  await until(() => ui.evaluate("globalThis.__generatedButton.getBoundingClientRect().width === 0"),
+    'generated command moves out of the narrowed bar');
+  await clickMore();
+  await until(() => ui.evaluate(`[...document.querySelectorAll(${JSON.stringify(rows)})]
+    .some(row => row.getAttribute('aria-label') === 'GeneratedIcon' && row.querySelector('img'))`),
+    'More includes the hidden generated command and its picture');
+  const rendered = await ui.evaluate(`(() => {
+    const menu = document.querySelector('[data-root-menu-level]');
+    const rect = menu.getBoundingClientRect();
+    const button = [...menu.querySelectorAll('[role=menuitem]')].find(row => row.getAttribute('aria-label') === 'PrintProbe');
+    button.focus();
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
+  })()`);
+  assert.equal(rendered, true, 'floating More stays in the webview');
+  await until(() => ui.evaluate(`[...document.querySelectorAll('[data-root-menu-level] [data-root-menu-level] [role=menuitem]')]
+    .map(row => row.getAttribute('aria-label')).join('|') === 'Invoice|Local receipt'`),
+    'keyboard opens the nested metadata group');
+  await ui.evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await until(() => ui.evaluate("document.activeElement?.getAttribute('aria-label') === 'PrintProbe'"),
+    'Escape returns focus to the group row');
+  await ui.evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.querySelector('.preview-scroll').style.cssText = ${JSON.stringify(placement)};`);
+  await until(() => ui.evaluate(`!document.querySelector('[data-root-menu-level]') && globalThis.__generatedButton.getBoundingClientRect().width > 0`),
+    'widening restores the same inline button');
+  assert.equal(view.snapshot, snapshot, 'resize and menu navigation preserve the snapshot');
+  assert.deepEqual(view.selected, selected, 'navigating automatic groups does not execute commands');
 }
 
 exports.run = async function() {
@@ -25,7 +66,9 @@ exports.run = async function() {
   const service = explorer.formPreview;
   await until(() => [...service.views.values()][0]?.phase === 'ready', 'picture form ready');
   const view = [...service.views.values()][0], main = view.frames.get('main');
-  let ui = await frame({ fixedFormArea: true, state: { title: main.panel.title } });
+  let ui = await frame({ state: { title: main.panel.title } });
+  await until(() => ui.evaluate("!!document.querySelector('.preview-scroll')"), 'picture preview surface');
+  await allocateFormViewport(ui, [1160, 640]);
   const image = () => ui.evaluate(`(() => {
     const image = document.querySelector('[data-kind=PictureDecoration] .taxi-picture-resource');
     return image?.complete && image.naturalWidth === 16 ? image.src : null;
@@ -33,7 +76,7 @@ exports.run = async function() {
   const command = label => ui.evaluate(`(() => {
     const button = [...document.querySelectorAll('.taxi-root-commands button')]
       .find(node => node.getAttribute('aria-label') === ${JSON.stringify(label)});
-    if (!button) return null;
+    if (!button?.getClientRects().length) return null;
     const image = button.querySelector('img');
     const mask = button.querySelector('.taxi-picture-template');
     const paint = mask && getComputedStyle(mask, '::after');
@@ -74,7 +117,7 @@ exports.run = async function() {
         pictureInset: icon.left - mixedBox.left, pictureWidth: icon.width,
       };
     })()`);
-    assert.deepEqual(geometry, { top: 29, writeGap: 9, generatedGap: 20, pictureInset: 6, pictureWidth: 16 });
+    assert.deepEqual(geometry, { top: 29, writeGap: 9, generatedGap: 9, pictureInset: 6, pictureWidth: 16 });
   }
 
   const groupTrigger = '.taxi-root-commands [data-command-group] > button';
@@ -94,6 +137,7 @@ exports.run = async function() {
   await ui.evaluate("document.querySelector('.taxi-root-commands [role=menuitem]').click()");
   await until(async () => (await groupItems()).length === 0, 'selecting an automatic menu item closes the menu');
   assert.deepEqual(view.selected, selection, 'preview menu does not execute a command');
+  await exerciseRootMore(ui, view);
 
   await fs.writeFile(form.one, original.replace('red', 'green'));
   const saved = await dataUrl(form.one);
@@ -109,7 +153,9 @@ exports.run = async function() {
   await service.receive(view, main, { type: 'detach' });
   await until(() => view.frames.get('preview')?.ready, 'picture preview detached');
   const detached = view.frames.get('preview');
-  ui = await frame({ detached: true, fixedFormArea: true, state: { title: detached.panel.title } });
+  ui = await frame({ detached: true, state: { title: detached.panel.title } });
+  await until(() => ui.evaluate("!!document.querySelector('.preview-scroll')"), 'detached picture preview surface');
+  await allocateFormViewport(ui, [1160, 640]);
   await until(async () => await matches('Local icon', '', dirty) && await matches('GeneratedIcon', '', generated), 'detached preview retains effective pictures');
   const owner = await vscode.workspace.openTextDocument(vscode.Uri.file(form.owner));
   await editText(owner, '<Representation>Picture</Representation>', '<Representation>PictureAndText</Representation>');
@@ -152,6 +198,7 @@ exports.run = async function() {
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, formPictures: true, locale: vscode.env.language, externalPayload: true,
     dirtyPictureDescriptor: true, commandPictures: true, generatedPictureAsset: true,
-    detachedRepresentationUpdates: true, templatePictureTint: true, rootCommandMenu: true, dirtyBasedOnTarget: true, sourceWritesDuringViewing: false,
+    detachedRepresentationUpdates: true, templatePictureTint: true, rootCommandMenu: true, rootMoreOverflow: true,
+    dirtyBasedOnTarget: true, sourceWritesDuringViewing: false,
   }));
 };

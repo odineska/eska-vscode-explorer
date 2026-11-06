@@ -45,3 +45,21 @@ test('the exchange-plan picture matches Linux Configurator on three mattes', () 
   assert.equal(compositeHash(image, () => matte), expected);
  }
 });
+
+test('additional-menu pictures match the recorded white and selected Linux rows', () => {
+ for (const [name, white, selected] of [
+  ['PostAndClose', '4aa100412baed98331a3cf87fa964b454b0bcf06547b8b219fe5902b9ac827d4', 'b1acb1c90ca800d3b7e8800a3fbf130bce60afc449d56c7b980c46bc6cfcc7fe'],
+  ['Write', 'cfb6a69bb8869f1e64b8c751fe034a22abdff0ebfc6d9004cbe14a966afb7de2'],
+  ['MarkObjectForDeletion', '16b89a4e98e0bd8faae1c6193cc7853ac671d5daf5ada2b8e8a40b59902b225e', '8dd000bd08d1a3f3622a23363f8794d7d98972b5224a237618a1cd7d5672b443'],
+  ['UndoPosting', 'faa8cd80aafd9445508e38e8e34d3d17f8c21aaca48484ad7a8339a9ea609f54', 'f785fcd9833678bb78ca81045cabc2011eaa71d0813c733485babeb2f454fab3'],
+  ['ShowInList', '6fce299a2ecf68d6b0eadd8b5bb8bc2fc2d9d5ae5698269bc05c8bd673eec147', 'cfbdb208cbd94a4f929a8aac9eb75ee82491fb47976a23afd229e3bf86f190e2'],
+  ['ChangeHistory', '70db1c221cbf9f11053692cf276951615bf7480e55f781ff23c4a4848c161030', 'cc6a696388f15b065d53523f2ac6105735abdc5a141084ba85aa23f0d6bb8382'],
+  ['CustomizeForm', '343625ace762a677d58ed21abdb608b0432cb417abf92f8ab18dbe5f564f3847', '7841aa2ea3c481cc8b822c2a0cf9a3e49552acd7993190da9c72771809d474e0'],
+  ['Help', '4ce995460c62e4d9b64b4b3b5aaf3053cc8c2cd8f5219f585bff168ee857e076'],
+ ]) {
+  const image = standardPicture(name);
+  assert.deepEqual([image.width, image.height], [16, 16]);
+  assert.equal(compositeHash(image, () => [255, 255, 255]), white, name + ' on white');
+  if (selected) assert.equal(compositeHash(image, () => [250, 204, 31]), selected, name + ' on selection');
+ }
+});

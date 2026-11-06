@@ -18,9 +18,12 @@ function prepareCommand(command) {
 }
 export function prepare(model) {
   const visit = node => {
-    const commands = node.presentation?.autoCommandItems;
-    return { ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties),
-      ...(commands ? { presentation: { ...node.presentation, autoCommandItems: commands.map(prepareCommand) } } : {}),
+    const { autoCommandItems, objectCommandMenu } = node.presentation ?? {};
+    const presentation = autoCommandItems || objectCommandMenu ? { ...node.presentation,
+      ...(autoCommandItems ? { autoCommandItems: autoCommandItems.map(prepareCommand) } : {}),
+      ...(objectCommandMenu ? { objectCommandMenu: objectCommandMenu.map(group => group.map(prepareCommand)) } : {}),
+    } : node.presentation;
+    return { ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), presentation,
       children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) };
   };
   const result = { ...model, root: visit(model.root) };

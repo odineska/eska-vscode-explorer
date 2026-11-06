@@ -25,6 +25,7 @@ const en = {
   "command.Refresh": "Refresh", "command.Print": "Print", "command.PrintImmediately": "Print immediately", "command.PrintPreview": "Print preview", "command.PageSetup": "Page setup",
   "command.Help": "Help", "command.CustomizeForm": "Customize form...", "command.Find": "Find...", "command.AdvancedSearch": "Advanced search", "command.FindByCurrentValue": "Find by current value", "command.CancelSearch": "Cancel search", "command.Select": "Select",
   "command.SetDeletionMark": "Mark for deletion", "command.UndoPosting": "Undo posting", "command.Change": "Edit", "command.Open": "Open", "command.EndEdit": "Finish editing",
+  "command.ToggleDeletionMark": "Mark for deletion / Unmark", "command.Reread": "Reread", "command.ShowInList": "Show in list", "command.ChangeHistory": "Change history",
   "command.OpenFromMainServer": "Open from main server", "command.OpenFromStandaloneServer": "Open from standalone server",
 };
 const ru: Record<keyof typeof en, string> = {
@@ -54,6 +55,7 @@ const ru: Record<keyof typeof en, string> = {
   "command.Refresh": "Обновить", "command.Print": "Печать", "command.PrintImmediately": "Печать сразу", "command.PrintPreview": "Предварительный просмотр", "command.PageSetup": "Параметры страницы",
   "command.Help": "Справка", "command.CustomizeForm": "Изменить форму...", "command.Find": "Найти...", "command.AdvancedSearch": "Расширенный поиск", "command.FindByCurrentValue": "Найти по текущему значению", "command.CancelSearch": "Отменить поиск", "command.Select": "Выбрать",
   "command.SetDeletionMark": "Пометить на удаление", "command.UndoPosting": "Отменить проведение", "command.Change": "Изменить", "command.Open": "Открыть", "command.EndEdit": "Завершить редактирование",
+  "command.ToggleDeletionMark": "Пометить на удаление / Снять пометку", "command.Reread": "Перечитать", "command.ShowInList": "Показать в списке", "command.ChangeHistory": "История изменений",
   "command.OpenFromMainServer": "Открыть с основного сервера", "command.OpenFromStandaloneServer": "Открыть с автономного сервера",
 };
 export function formStrings(locale: string): Record<string, string> { return { ...(locale.toLowerCase().startsWith("ru") ? ru : en) }; }

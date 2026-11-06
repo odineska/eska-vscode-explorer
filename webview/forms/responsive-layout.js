@@ -7,6 +7,7 @@ import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
+import { measureRootCommands } from './root-command-layout.mjs';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -28,7 +29,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, minimumCaptions;
+  let unitedRows, numericRows, minimumCaptions, rootCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -66,6 +67,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
       const scale = boundingScale(root);
+      rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       alignUnitedColumns(state.model.root, context);
       alignThroughLabels(state.model.root, context);
@@ -84,7 +86,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions);
+      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth);
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -100,6 +102,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if ((refresh || resized) && minimumCaptions.size) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
+    rootCommands?.allocate();
     const captions = new Map(), previousCaptions = fieldCaptions();
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);

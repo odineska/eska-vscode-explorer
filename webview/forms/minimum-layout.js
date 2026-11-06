@@ -2,7 +2,7 @@ import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
 import { throughCaptionWidth } from './field-caption-layout.js';
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale = 1, minimumCaptions) {
+export function minimumFormLayout(root, scale = 1, minimumCaptions, commandWidth) {
   const minima = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -95,9 +95,8 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions) {
   const content = root.querySelector(':scope > .taxi-form-content'), title = root.querySelector(':scope > .taxi-form-title');
   const value = items(content.querySelector(':scope > .taxi-items')), commands = content.querySelector(':scope > .taxi-root-commands');
   if (commands) {
-    const box = marginBox(commands), children = [...commands.children].map(marginBox), gap = pixels(getComputedStyle(commands).columnGap);
-    const width = children.reduce((sum, child) => sum + child.width, Math.max(0, children.length - 1) * gap);
-    value.width = Math.max(value.width, width); value.height += box.height;
+    value.width = Math.max(value.width, commandWidth ?? 0);
+    value.height += marginBox(commands).height;
   }
   return { minimum: add(add(value, insets(content)), { width: insets(root).width, height: insets(root).height + size(title).height }), minima };
 }

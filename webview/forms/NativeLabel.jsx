@@ -25,6 +25,7 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   const placement = props.placement;
   const tab = placement === 'tab', link = placement === 'buttonLink', title = placement === 'formTitle', input = placement === 'input';
   const search = placement === 'tableSearch', tableHeader = placement === 'tableHeader', table = tableHeader || placement === 'tableFooter';
+  const menuItem = placement === 'menuItem';
   const alignedLeft = ['left', 'start'].includes(style.textAlign);
   const alignedRight = ['right', 'end'].includes(style.textAlign);
   if (!tab && !link && !alignedLeft && !((input || table) && alignedRight) && !(table && style.textAlign === 'center')) {
@@ -37,7 +38,7 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   if (input) baseline = inputTextBaseline(height, props.font);
   // Adjacent captions keep their own baseline when another column enlarges the band.
   if (table) baseline = metrics.ascent + (tableHeader ? 6 : 7);
-  if (search || placement === 'radioChoice') baseline = Math.floor(baseline);
+  if (search || menuItem || placement === 'radioChoice') baseline = Math.floor(baseline);
   if (fieldFrame) {
     const scale = parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom) || 1;
     const top = (label.getBoundingClientRect().top - fieldFrame.getBoundingClientRect().top) / scale;
@@ -48,7 +49,7 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   let left = 0;
   if (tab || link) left = Math.round((width - raster.advance) / 2) - borderLeft;
   else if (search) left = 2;
-  else if (title || table) left = parseFloat(style.paddingLeft);
+  else if (title || table || menuItem) left = parseFloat(style.paddingLeft);
   else if (input) left = label.offsetLeft + (alignedLeft ? 3 : width - 3 - raster.advance);
   if (table && !alignedLeft) {
     left = (alignedRight ? width - raster.advance - (tableHeader ? 9 : 8)
