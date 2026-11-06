@@ -25,9 +25,11 @@ exports.run = async () => {
   const input = group.children.find(node => node.name === 'Name');
   const select = async node => {
     const identity = node.identity;
-    const id = `form-row-${identity.source}:current:${identity.key.value}`;
+    const key = identity.key.kind === 'root' ? 'root' : identity.key.value;
+    const id = `form-row-${identity.source}:current:${key}`;
     await ui.evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
-    await until(() => view.selected?.key.value === identity.key.value, 'selected ' + node.name);
+    await until(() => view.selected?.source === identity.source && view.selected.key.kind === identity.key.kind
+      && view.selected.key.value === identity.key.value, 'selected ' + (node.name ?? key));
   };
   await until(() => ui.evaluate("!!document.querySelector('.form-tree-row')"), 'element tree rendered');
   await select(group);
@@ -36,6 +38,9 @@ exports.run = async () => {
     await until(() => ui.evaluate("!!document.querySelector('.form-properties [data-property-name=ShowTitle]')"), 'legacy XML properties');
     assert.equal(await ui.evaluate("document.querySelectorAll('.form-properties [data-palette-id]').length"), 0);
     cases.push('api-1.40-raw-properties');
+    await select(view.snapshot.model.root);
+    await until(() => ui.evaluate("!!document.querySelector('.form-properties [data-property-name=Title]') && !document.querySelector('[data-palette-id]')"), 'API 1.40 root XML');
+    cases.push('api-1.40-root-xml-fallback');
   } else {
     await until(() => ui.evaluate("document.querySelectorAll('.form-properties [data-palette-id]').length===35"), '35 native rows');
     const baseline = await ui.evaluate(`(() => {
@@ -196,6 +201,76 @@ exports.run = async () => {
     } else {
       await until(() => ui.evaluate("!!document.querySelector('[data-property-name=DataPath]') && !document.querySelector('[data-palette-id]')"), 'earlier 1.41 field fallback');
       cases.push('earlier-1.41-field-fallback');
+    }
+    if (expectedInputCatalogue && process.env.ESKA_HOST_PROPERTY_CATALOGUE !== 'input-only') {
+      await select(view.snapshot.model.root);
+      const rootRows = () => ui.evaluate(`(() => {
+        const row = id => document.querySelector('[data-palette-id="platform:'+id+'"]');
+        const value = id => row(id)?.querySelector('td').textContent;
+        return {
+          count:document.querySelectorAll('.form-properties [data-palette-id^="platform:"]').length,
+          categories:[...document.querySelectorAll('.form-property-category')].slice(0,5).map(item=>item.textContent),
+          grouping:value('Group'),location:value('CommandBarLocation'),scaling:value('ScalingMode'),
+          scale:value('Scale'),autoTitle:row('AutoTitle')?.querySelector('input')?.checked,
+          storage:value('SettingsStorage') ?? null,conditional:value('ConditionalAppearance'),
+          conditionalSource:row('ConditionalAppearance')?.dataset.paletteSource,
+          open:value('OnOpen'),lastEvent:row('OnPasteFromClipboard')?.querySelector('th').textContent,
+        };
+      })()`);
+      await until(async () => (await rootRows()).count===58, 'native root catalogue');
+      assert.deepEqual(await rootRows(),{
+        count:58,categories:ru?['Основные','Использование','Оформление','Расположение','События']:['General','Use','Appearance','Layout','Events'],
+        grouping:ru?'Вертикальная':'Vertical',location:ru?'Нет':'None',scaling:ru?'Авто':'Auto',scale:'100',autoTitle:true,
+        storage:null,conditional:ru?'Открыть':'Open',conditionalSource:'absent',open:'',
+        lastEvent:ru?'ПриВставкеИзБуфераОбмена':'OnPasteFromClipboard'
+      });
+      cases.push('native-form-root-properties-and-events');
+
+      const appearance = '<ConditionalAppearance xmlns:dcsset="http://v8.1c.ru/8.1/data-composition-system/settings"><dcsset:item/></ConditionalAppearance>';
+      const events = '<Events><Event name="OnOpen">InspectOpen</Event></Events>';
+      const stored = '<SettingsStorage>SettingsStorage.ProbeFormSettings</SettingsStorage>';
+      const explicit = original.replace('<Width>50</Width>',
+        '<Width>50</Width><AutoTitle>false</AutoTitle><Group>HorizontalIfPossible</Group><SaveDataInSettings>UseList</SaveDataInSettings>'
+        +'<ScalingMode>Normal</ScalingMode><Scale>110</Scale>'+stored)
+        .replace('<Attributes>','<Attributes>'+appearance).replace('</Form>',events+'</Form>');
+      assert.ok(explicit.includes(appearance) && explicit.includes(stored) && explicit.includes(events));
+      const rootRevision = view.snapshot.revision;
+      await edit(explicit);
+      await until(async () => {
+        if (view.phase!=='ready' || view.snapshot.revision===rootRevision) return false;
+        const rows = await rootRows();
+        return rows.count===59 && rows.conditionalSource==='form' && rows.open==='InspectOpen';
+      }, 'dirty root catalogue includes settings storage and existing event');
+      const root = await rootRows();
+      assert.equal(root.autoTitle,false);
+      assert.equal(root.grouping,ru?'Горизонтальная если возможно':'Horizontal if possible');
+      assert.equal(root.scaling,ru?'Обычный':'Standard');
+      assert.equal(root.scale,'110');
+      assert.equal(root.storage,'SettingsStorage.ProbeFormSettings');
+      assert.equal(view.selected.key.kind,'root');
+      cases.push('dirty-form-root-settings-storage-and-scaling');
+
+      for (const [id,xml] of [['ConditionalAppearance',appearance],['OnOpen',events],['SettingsStorage',stored]]) {
+        await ui.evaluate(`document.querySelector('[data-palette-id="platform:${id}"]').dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true}))`);
+        await until(() => vscode.window.activeTextEditor?.document.uri.fsPath===file
+          && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===xml,
+          'exact form source for '+id);
+        main.panel.reveal();
+      }
+      cases.push('root-settings-and-events-navigate-to-existing-xml');
+      await edit(original);
+      await until(async () => {
+        const rows = await rootRows();
+        return view.phase==='ready' && rows.count===58 && rows.autoTitle && rows.scale==='100'
+          && rows.storage===null && rows.open==='' && rows.conditionalSource==='absent';
+      }, 'root palette defaults restored');
+      cases.push('form-root-restores-defaults');
+    } else {
+      await select(view.snapshot.model.root);
+      await until(() => view.palette?.identity.key.kind==='root' && view.palette.revision===view.snapshot.revision
+        && view.palette.rows===null, 'earlier backend root catalogue unavailable');
+      await until(() => ui.evaluate("!!document.querySelector('.form-properties [data-property-name=Title]') && !document.querySelector('[data-palette-id]')"), 'earlier API 1.41 root XML');
+      cases.push('earlier-1.41-root-xml-fallback');
     }
     const button = group.children.find(node => node.name === 'Action');
     await select(button);
