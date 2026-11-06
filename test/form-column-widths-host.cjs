@@ -142,6 +142,13 @@ exports.run = async () => {
             await pose(floating, keys, form.cases.find(row => row.edit === 'fixRight'));
             await replace(original);
             await pose(floating, keys, wide);
+            const group = '<UsualGroup name="Left" id="11">';
+            const noGrowth = original.replace(group, group + '<HorizontalStretch>false</HorizontalStretch>');
+            assert.notEqual(noGrowth, original);
+            await replace(noGrowth);
+            results.push(await pose(floating, keys, { ...narrow, name:'automatic-width group shrinks without growing' }));
+            await replace(original);
+            await pose(floating, keys, wide);
           });
           results.push({label:'detached-column-resize-dirty', ...observation});
         } else if (form.kind === 'AutoFixedSiblings') {

@@ -1,5 +1,5 @@
 import { fieldWidth, flag, linuxFixedInputWidth, number } from './model.mjs';
-import { horizontalLaneWidths, laneInputBounds, stretches } from './layout-model.mjs';
+import { horizontalLaneWidths, laneInputBounds, stretches, groupCanShrink } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, updateStyle } from './layout-box.mjs';
 import { designCaptionWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, throughCaptionWidth } from './field-caption-layout.js';
@@ -26,11 +26,11 @@ function automaticFieldWeight({node, title, bounds}) {
   if (width !== undefined) return bounds.valueWeight + Math.floor(width / 2);
 }
 
-function preferredTrack(width, fields) {
+function preferredTrack(width, fields, grows) {
   const reserve = Math.max(0, width - Math.max(...fields.map(field => field.preferred)));
   const minimum = reserve + Math.max(...fields.map(field => field.stretch ? field.bounds.minimum : field.preferred));
-  const maximum = reserve + Math.max(...fields.map(field => field.stretch ? field.bounds.maximum : field.preferred));
-  const weights = fields.filter(field => field.stretch).map(automaticFieldWeight);
+  const maximum = grows ? reserve + Math.max(...fields.map(field => field.stretch ? field.bounds.maximum : field.preferred)) : width;
+  const weights = grows ? fields.filter(field => field.stretch).map(automaticFieldWeight) : [];
   return { reserve, preferred: width, minimum: Math.min(width, minimum), maximum: Math.max(width, maximum),
     growthWeight: weights.every(weight => weight !== undefined) ? Math.max(0, ...weights) : undefined };
 }
@@ -100,8 +100,9 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
     if (os !== 'linux') return;
     const inputs = children.map(laneInputs);
     if (inputs.some(row => !row?.length)) return;
+    const grows = children.map(node => stretches(node, 'x', collapsed));
     const fields = inputs.map((row, index) => {
-      const flexible = stretches(children[index], 'x', collapsed);
+      const flexible = grows[index] || groupCanShrink(children[index], os);
       return row.map(node => inputField(node, elements.get(node.key), flexible, os, collapsed));
     });
     const stretch = fields.flat().filter(field => field.stretch);
@@ -111,7 +112,7 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
       mark(field.element, 'data-lane-input-maximum');
       style(field.element, '--taxi-lane-input-max-width', `${field.bounds.maximum}px`);
     }
-    const tracks = fields.map((row, index) => preferredTrack(borderBoxSize(elements.get(children[index].key), scale).width, row));
+    const tracks = fields.map((row, index) => preferredTrack(borderBoxSize(elements.get(children[index].key), scale).width, row, grows[index]));
     const candidates = allowWrap && stretch.length ? tracks.map((track, index) => narrowTrack(track, fields[index], scale, os)) : [];
     const narrow = candidates.every(Boolean) && candidates.some(track => track.caption.minimum < track.caption.preferred) ? candidates : undefined;
     for (const field of stretch) {

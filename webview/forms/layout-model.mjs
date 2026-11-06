@@ -20,6 +20,11 @@ export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }
 
+/** An automatic group width can contract even if the group receives no extra space. */
+export function groupCanShrink(node, os) {
+  return os === 'linux' && ordinaryGroup(node) && number(node, 'Width') <= 0;
+}
+
 export function automaticHorizontalSpacing(node) {
   return scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto';
 }

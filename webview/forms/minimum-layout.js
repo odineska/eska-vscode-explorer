@@ -84,7 +84,9 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions, commandWidth
       || element.style.getPropertyValue('--taxi-united-cell-width'));
     value.width = Math.max(value.width, columnWidth);
     if (element.dataset.layoutContainer === 'true') {
-      if (element.dataset.stretchX === 'false') value.width = Math.max(value.width, pixels(element.style.getPropertyValue('--taxi-preferred-width')));
+      if (element.dataset.stretchX === 'false' && !element.hasAttribute('data-group-shrink-x')) {
+        value.width = Math.max(value.width, pixels(element.style.getPropertyValue('--taxi-preferred-width')));
+      }
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
     }
     minima.set(element.dataset.element, value);
