@@ -196,6 +196,26 @@ test('automatic metadata commands preserve localized overrides and validate opti
 });
 
 
+test('automatic common commands sort by the displayed caption within each bar and menu', () => {
+  const snapshot = fixture(), root = snapshot.model.root;
+  const command = (key, ru, en) => ({ key, primary: false, origin: root.origin, orderByCaption: true,
+    caption: { kind: 'literal', items: [{ language: 'ru', content: ru }, { language: 'en', content: en }] } });
+  const first = command('common-command:One', 'Абзац', 'Zulu');
+  const second = command('common-command:Two', 'Буква', 'Alpha');
+  const fixed = { ...first, key: 'fixed', orderByCaption: undefined };
+  const group = { ...fixed, key: 'menu', items: [first, second] };
+  root.presentation.autoCommandItems = [first, fixed, second, group];
+  const keys = (items) => items.map(item => item.key);
+  const ru = automaticCommands(parseFormSnapshot(snapshot).model.root, { locale: 'ru-RU' });
+  const en = automaticCommands(parseFormSnapshot(snapshot).model.root, { locale: 'en-US' });
+  assert.deepEqual(keys(ru), [first.key, fixed.key, second.key, group.key]);
+  assert.deepEqual(keys(en), [second.key, fixed.key, first.key, group.key]);
+  assert.deepEqual(keys(en.at(-1).items), [second.key, first.key]);
+  assert.deepEqual(keys(group.items), [first.key, second.key]);
+  first.orderByCaption = 'true';
+  assert.throws(() => parseFormSnapshot(snapshot));
+});
+
 test('Linux profile ships exact unmodified reference fonts and their license offline', async () => {
   const root = new URL('../resources/forms/fonts/', import.meta.url), manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
   assert.equal(manifest.unmodified, true); assert.equal(manifest.files.length, 12);

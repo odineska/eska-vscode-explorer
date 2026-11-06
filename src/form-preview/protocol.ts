@@ -25,7 +25,7 @@ export type FormPicture = { kind: "standard"; name: string } | { kind: "common";
 export type ButtonRepresentation = "Text" | "Picture" | "PictureAndText";
 interface AutoCommandItem {
   key: string; caption: FormText; primary: boolean; origin: Origin | null;
-  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; items?: AutoCommandItem[];
+  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; orderByCaption?: boolean; items?: AutoCommandItem[];
 }
 export interface Presentation {
   united?: boolean | null;
@@ -115,7 +115,7 @@ function buttonRepresentation(value: unknown): boolean {
 }
 function autoCommandItem(item: unknown, assets: ReadonlySet<string>, nested = false): boolean {
   return isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean"
-    && (item.origin === null || origin(item.origin))
+    && (item.origin === null || origin(item.origin)) && (item.orderByCaption === undefined || typeof item.orderByCaption === "boolean")
     && (item.picture === undefined || formPicture(item.picture, assets)) && buttonRepresentation(item.buttonRepresentation)
     && (item.items === undefined || !nested && Array.isArray(item.items) && item.items.length > 0
       && item.items.length <= 16_384 && item.items.every(child => autoCommandItem(child, assets, true)));

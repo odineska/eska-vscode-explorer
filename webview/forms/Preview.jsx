@@ -159,7 +159,7 @@ function hasRootCommands(node) {
 function RootCommands(props) {
   const state = props.controller.state, node = () => props.node;
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
-  const commands = () => automaticCommands(node());
+  const commands = createMemo(() => automaticCommands(node(), state));
   return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
     <div class="taxi-root-commands"><For each={commands()}>{item => {
       const label = () => text(item.caption, state.locale, state.strings);
@@ -168,7 +168,7 @@ function RootCommands(props) {
       </Show>;
     }}</For>
       <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
-      <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/>
+      <Show when={flag(bar(), 'Autofill')}><div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/></Show>
     </div>
   </Show>;
 }

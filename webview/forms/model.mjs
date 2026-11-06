@@ -60,8 +60,22 @@ export function caption(node, state) {
     ? (state.strings?.['attribute.TabularTotal'] ?? '{caption}').replace('{caption}', () => value)
     : value;
 }
-export function automaticCommands(node) {
-  return node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
+export function automaticCommands(node, state) {
+  const items = node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
+  if (!state) return items;
+  const { locale, strings } = state;
+  const collator = new Intl.Collator(locale);
+  const ordered = group => {
+    const generated = group.filter(item => item.orderByCaption);
+    if (generated.length < 2) return group;
+    generated.sort((left, right) => collator.compare(text(left.caption, locale, strings), text(right.caption, locale, strings)));
+    let index = 0;
+    return group.map(item => item.orderByCaption ? generated[index++] : item);
+  };
+  return ordered(items).map(item => {
+    const children = item.items && ordered(item.items);
+    return children === item.items ? item : { ...item, items: children };
+  });
 }
 export function font(value, os) {
   const aliases = { Arial: 'ESKA Taxi Sans', 'Liberation Sans': 'ESKA Taxi Sans', 'Times New Roman': 'ESKA Taxi Serif', 'Liberation Serif': 'ESKA Taxi Serif', 'Courier New': 'ESKA Taxi Mono', 'Liberation Mono': 'ESKA Taxi Mono' };
