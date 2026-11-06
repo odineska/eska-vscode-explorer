@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fieldValue, fieldWidth, inputHeight } from '../webview/forms/model.mjs';
+import { FORM_NS, fieldValue, fieldWidth, inputChoiceButton, inputHeight } from '../webview/forms/model.mjs';
 
 const field = (kind, extra = {}) => ({kind:'InputField',properties:[],presentation:{valueType:{kind,...extra}}});
 
@@ -17,6 +17,21 @@ test('native numeric and date widths include their automatic choice button', () 
   assert.equal(fieldWidth(field('date',{dateParts:'Date'})),121);
   assert.equal(fieldWidth(field('date',{dateParts:'DateTime'})),181);
   assert.equal(fieldWidth(field('date',{dateParts:'Time'})),91);
+});
+
+test('Linux read-only fields omit the automatic picker and its date width', () => {
+  const readOnly = {key:{namespace:FORM_NS,name:'ReadOnly'},value:{kind:'text',text:'true'}};
+  const date = field('date', {dateParts:'Date'});
+  const reference = field('reference');
+  date.properties.push(readOnly);
+  reference.properties.push(readOnly);
+  assert.equal(fieldWidth(date, 'linux'), 101);
+  assert.equal(inputChoiceButton(reference, 'linux'), false);
+  assert.equal(inputChoiceButton(reference, 'win32'), true);
+  reference.properties.push({key:{namespace:FORM_NS,name:'Width'},value:{kind:'text',text:'8'}});
+  assert.equal(fieldWidth(reference, 'linux'), 113);
+  date.properties.push({key:{namespace:FORM_NS,name:'ChoiceButton'},value:{kind:'text',text:'true'}});
+  assert.equal(fieldWidth(date, 'linux'), 121);
 });
 
 test('native input metrics follow the effective font height while bold keeps the same allocation', () => {

@@ -124,6 +124,9 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
+const inputChoiceWidth = 20;
+const referenceOpenWidth = 22;
+export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
 
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
@@ -179,7 +182,8 @@ export function inputTextBaseline(height, value) {
 export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
-  return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && ['number','date'].includes(type.kind) && flag(node, 'ReadOnly', false)));
+  const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
+  return flag(node, 'ChoiceButton', automatic && !readOnly);
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
@@ -191,29 +195,36 @@ export function linuxFixedInputWidth(node, os) {
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
 }
-export function nativeReferenceInput(node, os) {
+function linuxReferenceWithOpenButton(node, os) {
   return os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'reference'
-    && !flag(node, 'MultiLine', false) && inputChoiceButton(node, os) && flag(node, 'OpenButton')
+    && !flag(node, 'MultiLine', false) && flag(node, 'OpenButton')
     && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+}
+export function nativeReferenceInput(node, os) {
+  return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
   const unit = inputUnit(node);
-  const reference = nativeReferenceInput(node, os);
+  const reference = linuxReferenceWithOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
     if (!native) return Math.max(20, width * unit + 4);
-    const buttons = reference ? 42 : inputChoiceButton(node, os) ? 20 : 0;
+    const buttons = (reference ? referenceOpenWidth : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth : 0);
     return width * 10 + 11 + buttons;
   }
-  if (reference) return Math.round(20 * unit + 1) + 42;
+  if (reference && inputChoiceButton(node, os)) return Math.round(20 * unit + 1) + referenceButtonWidth;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
   if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
-  if (type.kind === 'date') return Math.round(type.dateParts === 'Time' ? 11 * unit + 3 : type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21);
+  if (type.kind === 'date') {
+    if (type.dateParts === 'Time') return Math.round(11 * unit + 3);
+    const width = type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21;
+    return Math.round(width) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
+  }
   if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
   return Math.round(20 * unit + 1);
 }
@@ -232,7 +243,8 @@ export function fieldValue(node, culture) {
 export function fieldStyle(node, os) {
   const native = linuxSimpleInput(node, os);
   // Native bounds do not change preferred dimensions in the Configurator preview.
-  const maxWidth = native ? 0 : number(node, 'MaxWidth'), minWidth = native ? 0 : number(node, 'MinWidth');
+  const usesLayoutBounds = native || linuxReferenceWithOpenButton(node, os);
+  const maxWidth = usesLayoutBounds ? 0 : number(node, 'MaxWidth'), minWidth = usesLayoutBounds ? 0 : number(node, 'MinWidth');
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
     && !property(node, 'HorizontalStretch') && (native || number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0);
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
