@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
 
@@ -13,6 +14,7 @@ const geometry = `(() => {
   const viewport=document.querySelector('.preview-scroll'),root=document.querySelector('.taxi-form-frame');
   return {viewport:{width:viewport.clientWidth,height:viewport.clientHeight},frame:rect(root),fixedGroup:rect(fixedGroup),code:rect(input('Code')),amount:rect(input('Amount')),name:rect(input('Name')),limited:rect(input('Limited')),memo:rect(document.querySelector('textarea[aria-label=Memo]')?.closest('.taxi-input')),
     table:rect(document.querySelector('.taxi-table-field')),grid:rect(document.querySelector('.taxi-table-scroll')),columns:{width:document.querySelector('.taxi-table-content').clientWidth,scrollWidth:document.querySelector('.taxi-table-content').scrollWidth},fixedTable:rect(document.querySelector('.taxi-element[data-kind=Table][data-stretch-x=false] > .taxi-table-field')),chart:rect(surface),
+    chartVisible:!!surface&&getComputedStyle(surface).visibility==='visible',
     chartDrawing:svg?{width:svg.viewBox.baseVal.width,height:svg.viewBox.baseVal.height}:canvas&&getComputedStyle(canvas).display!=='none'?{width:canvas.width,height:canvas.height}:null,
     headerDirection:getComputedStyle(document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]')).display,
     selected:document.querySelector('.taxi-element.taxi-selected')?.dataset.element,
@@ -25,13 +27,20 @@ async function observeResize(ui) {
   await ui.evaluate(`globalThis.__resizeLive=new Set();const OriginalResizeObserver=window.ResizeObserver;window.ResizeObserver=class extends OriginalResizeObserver{constructor(callback){super(callback);__resizeLive.add(this)}disconnect(){__resizeLive.delete(this);super.disconnect()}};
     globalThis.__resizeErrors=[];window.addEventListener('error',event=>__resizeErrors.push(event.message));window.addEventListener('unhandledrejection',event=>__resizeErrors.push(String(event.reason)));true`);
 }
+const chartFits = ({chart, chartDrawing}) => chart && chartDrawing
+  && Math.abs(chartDrawing.width - (chart.width - 2)) < .1
+  && Math.abs(chartDrawing.height - (chart.height - 2)) < .1;
+
 async function settled(ui) {
-  await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
-  const first = await ui.evaluate(geometry);
-  await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
-  const second = await ui.evaluate(geometry);
-  assert.deepEqual(second, first, 'resize reaches a stable geometry');
-  return second;
+  let previous;
+  await until(async () => {
+    await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const current = await ui.evaluate(geometry);
+    const stable = (!current.chartVisible || chartFits(current)) && isDeepStrictEqual(current, previous);
+    previous = current;
+    return stable;
+  }, 'resize reaches a stable geometry with the current chart drawing');
+  return previous;
 }
 function check(sample, baseline, label) {
   assert.equal(sample.sameNodes, true, label+' keeps element owners');
@@ -49,9 +58,7 @@ function check(sample, baseline, label) {
 
   assert.ok(sample.table.right <= sample.chart.x + .5, label+' keeps table and chart separate');
   assert.ok(sample.close.bottom <= sample.frame.bottom + .5, label+' keeps the last button inside the form');
-  assert.ok(sample.chartDrawing, label+' has an actual chart drawing');
-  assert.ok(Math.abs(sample.chartDrawing.width-(sample.chart.width-2))<.1, label+' redraws chart width');
-  assert.ok(Math.abs(sample.chartDrawing.height-(sample.chart.height-2))<.1, label+' redraws chart height');
+  assert.ok(chartFits(sample), label+' redraws the chart at its allocated size');
 }
 async function cssCycle(ui, service, view, label) {
   const snapshot=view.snapshot, session=view.client.current.formSessionId;
