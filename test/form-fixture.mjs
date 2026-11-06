@@ -290,8 +290,15 @@ export function createUnitedGallery(fixture) {
   return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
 }
 
-export function createThroughAlignGallery(fixture) {
-  return createGallery(fixture, ['Labels']);
+export async function createThroughAlignGallery(fixture) {
+  const forms = await createGallery(fixture, ['Labels']);
+  const rows = process.env.ESKA_FORM_THROUGH_ROWS;
+  if (!rows) return forms;
+  if (!isAbsolute(rows)) throw new Error('ESKA_FORM_THROUGH_ROWS must be absolute.');
+  const { cases } = JSON.parse(await readFile(join(rows, 'metrics.json'), 'utf8'));
+  const inputs = [...new Set(cases.flatMap(sample => sample.fixture ? [sample.fixture] : []))];
+  const wrapped = await createGallery(fixture, inputs, rows);
+  return forms.concat(wrapped.map(form => ({...form, cases:cases.filter(sample => sample.fixture === form.kind)})));
 }
 
 async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTURES) {

@@ -578,10 +578,12 @@ button { cursor: default; }
 .taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom],[data-title-location=None]) { grid-template-columns: minmax(0, 1fr); }
 /* Intrinsic minima must include fixed controls, even inside a zero-sized grid track. */
 .taxi-preview[data-form-layout=minimum] .taxi-items--vertical { grid-template-columns: max-content max-content; }
-.taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+:is(.taxi-items[data-through-labels=all] > .taxi-element--field,
+  .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) minmax(0, 1fr);
 }
-.taxi-preview[data-form-layout=minimum] .taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+.taxi-preview[data-form-layout=minimum] :is(.taxi-items[data-through-labels=all] > .taxi-element--field,
+  .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) max-content;
 }
 .taxi-preview[data-form-layout=minimum] .taxi-field-control,
@@ -608,7 +610,10 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack { width: var(--taxi-surface-min-width, 150px) !important; }
 
 /* Ordinary vertical groups in one horizontal layout use the same row tracks. */
-.taxi-preview[data-os=linux] .taxi-items[data-united-auto-spacing] { --taxi-horizontal-gap: 10px; }
+.taxi-preview[data-os=linux] .taxi-items:is([data-united-auto-spacing], [data-through-labels=leading][data-auto-spacing]) { --taxi-horizontal-gap: 10px; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading] > .taxi-element[data-stretch-x=true] {
+  flex-basis: var(--taxi-preferred-width) !important;
+}
 .taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
   display: grid;
   grid-template-columns: repeat(var(--taxi-united-column-count), max-content);

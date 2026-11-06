@@ -1237,7 +1237,8 @@
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-through-align"
+        "ESKA_FORM_FIXTURES": "native-through-align",
+        "ESKA_FORM_THROUGH_ROWS": "native-through-align-rows"
       },
       "environment": {},
       "dependencies": [
