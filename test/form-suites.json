@@ -1249,6 +1249,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "numeric-labels",
+      "driver": "test/form-numeric-labels-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-numeric-labels"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "through-align",
       "driver": "test/form-through-align-host.cjs",
       "mode": "installed",

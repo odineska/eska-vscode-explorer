@@ -1,7 +1,7 @@
 export const rgb = value => /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value)?.slice(1).map(Number);
 
-export function solidBackdrop(surface) {
-  for (let parent = surface.parentElement; parent; parent = parent.parentElement) {
+export function solidBackdrop(element) {
+  for (let parent = element; parent; parent = parent.parentElement) {
     const css = getComputedStyle(parent);
     if (css.backgroundImage !== 'none') return;
     if (css.backgroundColor !== 'rgba(0, 0, 0, 0)') {

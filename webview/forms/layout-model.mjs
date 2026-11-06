@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth } from './model.mjs';
+import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -65,20 +65,24 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   if (explicit > 0 && !stretch) return {};
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
-  const minimum = node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
-    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0;
+  const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
+  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
+    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0);
   let maximum;
-  if (explicit <= 0) {
+  if (explicit <= 0 || numericLabel) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
       // Manual bounds apply after leaving the initial Designer size.
-      if (!atPreferred) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
+      const limit = positive(number(node, `Max${dimension}`));
+      if (!atPreferred && limit) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
+    } else if (numericLabel) {
+      maximum = numericLabel.maximum;
     } else if (axis === 'x' && node.kind === 'InputField') {
       const automatic = automaticInputMaximum(node, os);
       if (automatic !== undefined) maximum = Math.max(preferred || 0, automatic);
     }
   }
-  return { minimum: minimum || undefined, maximum: maximum ? Math.max(minimum, maximum) : undefined };
+  return { minimum: minimum || undefined, maximum: maximum ? Math.max(numericLabel?.preferred ?? minimum, maximum) : undefined };
 }
 
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */
@@ -87,10 +91,67 @@ export function laneInputBounds(node, os) {
   const reference = nativeReferenceInput(node, os);
   const plain = type.kind === 'string' && !type.length && linuxFixedInputWidth(node, os);
   if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
-  const preferred = fieldWidth(node, os);
-  const bounds = controlBounds(node, 'x', preferred, os);
-  const maximum = automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
-  return { preferred, minimum: Math.min(reference ? bounds.minimum ?? preferred : 71, preferred), maximum: Math.max(preferred, maximum) };
+  const intrinsic = fieldWidth(node, os);
+  const bounds = controlBounds(node, 'x', intrinsic, os);
+  const limit = number(node, 'Width') <= 0 && explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))
+    ? positive(number(node, 'MaxWidth')) : 0;
+  const maximum = limit ? limit * 10 + 10 : automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
+  // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
+  const preferred = Math.min(intrinsic, maximum + 1);
+  const narrowMinimum = Math.min(reference ? 113 : 71, preferred);
+  const minimum = reference && node.presentation.titleLocation !== 'None'
+    ? Math.min(bounds.minimum ?? intrinsic, preferred) : narrowMinimum;
+  return { preferred, minimum, narrowMinimum, maximum: Math.max(preferred, maximum), valueWeight: reference ? 98 : 78 };
+}
+
+/** Share free space proportionally, redistributing a track’s excess after its cap. */
+export function cappedTrackGrowth(space, limits) {
+  const active = limits.map(({weight, limit}, index) => ({weight, limit, index}))
+    .filter(({weight, limit}) => weight > 0 && limit > 0)
+    .sort((left, right) => left.limit / left.weight - right.limit / right.weight);
+  const widths = limits.map(() => 0);
+  let weight = active.reduce((sum, track) => sum + track.weight, 0), first = 0;
+  for (; first < active.length; first++) {
+    const track = active[first];
+    if (space * track.weight / weight <= track.limit) break;
+    widths[track.index] = track.limit;
+    space -= track.limit;
+    weight -= track.weight;
+  }
+  for (const track of active.slice(first)) widths[track.index] = space * track.weight / weight;
+  return widths;
+}
+
+/** Choose the caption widths that fit beside the preferred value boxes. */
+export function fitCaptionWidths(available, tracks, trailingOnly = false) {
+  const sum = values => values.reduce((total, value) => total + value, 0);
+  const insets = sum(tracks.map(track => track.reserve));
+  const preferredValues = sum(tracks.map(track => track.value.preferred));
+  const minimumValues = sum(tracks.map(track => track.value.minimum));
+  const preferred = insets + preferredValues + sum(tracks.map(track => track.caption.preferred));
+  if (available >= preferred) return;
+
+  const captions = tracks.map(track => track.caption.minimum);
+  let captionTotal = sum(captions);
+  const width = Math.max(available - insets, captionTotal + minimumValues);
+  // A third line can be removed once the minimum captions and preferred values fit.
+  for (let index = tracks.length - 1; index >= 0; index--) {
+    const delta = tracks[index].caption.compact - captions[index];
+    if (width >= captionTotal + preferredValues && width >= captionTotal + delta + minimumValues) {
+      captions[index] += delta;
+      captionTotal += delta;
+    }
+  }
+  // Retain full captions from the trailing side while their preferred values fit.
+  for (let index = tracks.length - 1; index >= 0; index--) {
+    const delta = tracks[index].caption.preferred - captions[index];
+    if (width >= captionTotal + delta + preferredValues) {
+      captions[index] += delta;
+      captionTotal += delta;
+    } else if (delta > 0 && trailingOnly) break;
+  }
+
+  return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };
 }
 
 /** Allocate column widths in native pixels, including the fixed space reserved for titles. */
@@ -103,6 +164,11 @@ export function horizontalLaneWidths(available, lanes) {
     const fraction = Math.max(0, (available - minimum) / (preferred - minimum || 1));
     widths = lanes.map(lane => lane.minimum + (lane.preferred - lane.minimum) * fraction);
     round = Math.floor;
+  } else if (lanes.every(lane => lane.growthWeight !== undefined)) {
+    const growth = cappedTrackGrowth(available - preferred, lanes.map(lane => ({
+      weight: lane.growthWeight, limit: lane.maximum - lane.preferred,
+    })));
+    widths = lanes.map((lane, index) => lane.preferred + growth[index]);
   } else {
     // Grow proportional control tracks and freeze each one as it reaches its maximum.
     const events = lanes.flatMap(lane => {
@@ -128,6 +194,10 @@ export function horizontalLaneWidths(available, lanes) {
     widths = lanes.map(lane => Math.max(lane.preferred,
       Math.min(lane.maximum, lane.reserve + Math.max(0, lane.preferred - lane.reserve - 1) * factor)));
   }
+  return roundTrackWidths(widths, round);
+}
+
+export function roundTrackWidths(widths, round = Math.round) {
   let edge = 0, previous = 0;
   return widths.map(width => {
     edge += width;

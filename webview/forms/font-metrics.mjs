@@ -1,6 +1,14 @@
 import metrics from '../../resources/forms/fonts/advances.json' with { type: 'json' };
 import { font, fontLineMetrics } from './model.mjs';
 
+export function firstFontFamily(families) {
+  return families.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+}
+
+export function supportsNativeSans(family, font) {
+  return family === 'ESKA Taxi Sans' && !font?.italic && !font?.underline && !font?.strikeout;
+}
+
 export function linuxControlFont(value) {
   return { ...font(value, 'linux'), 'font-size': `${fontLineMetrics(value).pixels}px` };
 }
@@ -60,6 +68,60 @@ export function designTextAdvances(text, options) {
     output.push(Math.round((units + adjustment) * pixels / face.units));
   }
   return output;
+}
+
+export function designCaptionWidth(text, font) {
+  return designTextAdvances(text, controlCaptionOptions(font))?.reduce((sum, width) => sum + width, 0);
+}
+
+function captionParagraph(text, options) {
+  const characters = [...text];
+  const advances = designTextAdvances(text, options);
+  if (!advances) return;
+  const edges = [0];
+  for (const advance of advances) edges.push(edges.at(-1) + advance);
+  const preferred = edges.at(-1);
+  let minimum = 0, compact = preferred, word = 0;
+  for (let index = 0; index < characters.length; index++) {
+    if (characters[index] !== ' ') continue;
+    minimum = Math.max(minimum, edges[index] - edges[word]);
+    compact = Math.min(compact, Math.max(edges[index], preferred - edges[index + 1]));
+    word = index + 1;
+  }
+  minimum = Math.max(minimum, preferred - edges[word]);
+  return { characters, edges, minimum, compact, preferred };
+}
+
+/** The minimum keeps each word intact. The compact width fits a paragraph on two lines. */
+export function fieldCaptionProfile(text, font) {
+  const options = controlCaptionOptions(font);
+  const paragraphs = text.split(/\r\n?|\n/u).map(line => captionParagraph(line, options));
+  if (paragraphs.some(paragraph => !paragraph)) return;
+  const width = kind => paragraphs.reduce((size, paragraph) => Math.max(size, paragraph[kind]), 0);
+  return { paragraphs, minimum: width('minimum'), compact: width('compact'), preferred: width('preferred') };
+}
+
+/** A parenthesized suffix keeps the break space in its width but starts at the left edge. */
+export function fieldCaptionLines(profile, width) {
+  return profile.paragraphs.flatMap(({characters, edges}) => {
+    if (!characters.length) return [''];
+    const lines = [];
+    let start = 0;
+    while (start < characters.length) {
+      while (characters[start] === ' ' && characters[start + 1] !== '(') start++;
+      if (start >= characters.length) break;
+      let end = start, boundary = start;
+      while (end < characters.length && (end === start || edges[end + 1] - edges[start] <= width)) {
+        if (characters[end] === ' ' && end > start + Number(characters[start] === ' ')) boundary = end;
+        end++;
+      }
+      if (end < characters.length && characters[end] !== ' ' && boundary > start) end = boundary;
+      const line = characters.slice(start, end).join('').trim();
+      if (line) lines.push(line);
+      start = end;
+    }
+    return lines.length ? lines : [''];
+  });
 }
 
 /** Keep kerning inside each native caption fragment, never across fragment boundaries. */

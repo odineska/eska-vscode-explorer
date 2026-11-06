@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
-import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
+import { controlCaptionWidth, linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
 import { radioGlyph } from './choice-glyph.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
@@ -47,7 +47,7 @@ export function RadioChoices(props) {
     setInactiveColor(undefined);
     if (!linux || segments() || !inactive()) return;
     const frame = requestAnimationFrame(() => {
-      const foreground = rgb(getComputedStyle(surface).color), backdrop = solidBackdrop(surface);
+      const foreground = rgb(getComputedStyle(surface).color), backdrop = solidBackdrop(surface.parentElement);
       if (foreground && backdrop) setInactiveColor(`rgb(${inactiveRadioTextColor(foreground, backdrop).join(', ')})`);
     });
     onCleanup(() => cancelAnimationFrame(frame));
@@ -63,11 +63,10 @@ export function RadioChoices(props) {
     const fail = () => { if (current) runtime.issue(owner, true); };
     const frame = requestAnimationFrame(() => {
       const css = getComputedStyle(surface), style = getComputedStyle(surface.firstElementChild);
-      const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
-      const fill = rgb(style.backgroundColor), stroke = rgb(style.borderTopColor), backdrop = solidBackdrop(surface);
+      const family = firstFontFamily(css.fontFamily);
+      const fill = rgb(style.backgroundColor), stroke = rgb(style.borderTopColor), backdrop = solidBackdrop(surface.parentElement);
       const foreground = rgb(css.color);
-      if (!fill || !stroke || !backdrop || !foreground || family !== 'ESKA Taxi Sans'
-          || font?.italic || font?.underline || font?.strikeout) {
+      if (!fill || !stroke || !backdrop || !foreground || !supportsNativeSans(family, font)) {
         fail();
         return;
       }
@@ -121,7 +120,7 @@ function RadioMark(props) {
   createEffect(on(() => [props.state.os, props.state.sequence, props.selected, props.inactive], () => {
     if (props.state.os !== 'linux') { setPainted(false); return; }
     const frame = requestAnimationFrame(() => {
-      const backdrop = solidBackdrop(mark);
+      const backdrop = solidBackdrop(mark.parentElement);
       const image = backdrop ? radioGlyph(props.selected, props.inactive, backdrop) : undefined;
       setPainted(paintCanvas(canvas, image));
     });

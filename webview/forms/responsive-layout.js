@@ -5,6 +5,7 @@ import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels } from './through-align.js';
+import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 
 export const FormLayoutContext = createContext();
@@ -26,8 +27,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
+  const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows;
+  let unitedRows, numericRows, minimumCaptions;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -52,7 +54,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
     const scroll = [surface.scrollLeft, surface.scrollTop];
-    if (needsPreferred) {
+    const refresh = needsPreferred;
+    if (refresh) {
       needsPreferred = false;
 
       const elements = [...root.querySelectorAll('.taxi-element')];
@@ -62,11 +65,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const targets = { elements: elementByKey, containers, children: node => node.children.filter(child => elementByKey.has(child.key)) };
       content.dataset.formLayout = 'preferred';
       clearAlignment();
+      if (fieldCaptions().size) setFieldCaptions(new Map());
       const scale = boundingScale(root);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       alignUnitedColumns(state.model.root, context);
+      numericRows = alignNumericLabelRows(state.model.root, context);
+      minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -79,7 +85,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root));
+      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions);
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -90,12 +96,19 @@ export function createFormLayout(controller, viewport, preview, frame) {
       outerWidth: surface.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
       outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
     const previous = size();
-    // Compare the outer box so an internal scrollbar does not count as a viewport resize.
-    if (previous.outerWidth !== undefined && (previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight)) {
-      setViewportResized(true);
-    }
+    const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
+    // A scrollbar from the previous wrapped height must not prevent the title from unwrapping.
+    if ((refresh || resized) && minimumCaptions.size) next.width = next.outerWidth;
+    if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
-    unitedRows?.allocateWidths();
+    const captions = new Map(), previousCaptions = fieldCaptions();
+    unitedRows.allocateWidths(captions);
+    numericRows?.allocateWidths(captions);
+    if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
+      setFieldCaptions(captions);
+      needsMinimum = true;
+      schedule();
+    }
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
       const children = [...items.children];
@@ -146,6 +159,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     preferred, minimumFor: node => minima().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
     wrapped: node => wrapped().has(node.key),
+    captionFor: node => fieldCaptions().get(node.key),
     initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
   };
 }

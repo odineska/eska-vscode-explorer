@@ -1,7 +1,8 @@
 import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
+import { throughCaptionWidth } from './field-caption-layout.js';
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale = 1) {
+export function minimumFormLayout(root, scale = 1, minimumCaptions) {
   const minima = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -24,6 +25,9 @@ export function minimumFormLayout(root, scale = 1) {
       : { width: Math.max(0, ...children.map(value => value.width)), height: children.reduce((sum, value) => sum + value.height, gap) };
     const padding = insets(element);
     if (element.hasAttribute('data-united-columns')) {
+      // Use the allocator's lower bound for this row, including independent captions.
+      const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
+      if (laneMinimum) value.width = laneMinimum + gap;
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     return add(value, padding);
@@ -37,8 +41,7 @@ export function minimumFormLayout(root, scale = 1) {
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') {
-        const sharedWidth = pixels(element.parentElement.style.getPropertyValue('--taxi-through-label-width'));
-        title.width = Math.max(title.width, sharedWidth);
+        title.width = minimumCaptions.get(element.dataset.element) ?? Math.max(title.width, throughCaptionWidth(element));
       }
       const vertical = ['Top', 'Bottom'].includes(location), gap = label ? pixels(getComputedStyle(field)[vertical ? 'rowGap' : 'columnGap']) : 0;
       value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }

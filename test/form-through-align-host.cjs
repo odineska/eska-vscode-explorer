@@ -161,11 +161,11 @@ exports.run = async () => {
     return Math.abs(bounds.width - width) <= .5 && Math.abs(bounds.height - height) <= .5;
   })()`), 'preferred form size settled');
   const results = [];
-  async function verify(layout, aligned, label) {
+  async function verify(layout, aligned, label, matches) {
     let boxes;
     await until(async () => {
       boxes = await rectangles(layout, keys);
-      if (!boxes.every(Boolean)) return false;
+      if (!boxes.every(Boolean) || (matches && !matches(boxes))) return false;
       return aligned ? boxes.every(box => box.x === boxes[0].x) : boxes[0].x < boxes[2].x && boxes[0].x === boxes[1].x;
     }, label);
     results.push({ label, boxes });
@@ -230,8 +230,8 @@ exports.run = async () => {
   const left = /<UsualGroup name="Left"[^>]*>.*?(?=<ChildItems>)/s.exec(source);
   assert.ok(left);
   await replaceSource(source.replace(left[0], `${left[0]}<BackColor>#F0F6FC</BackColor>`));
-  const painted = await verify(ui, true, 'painted group accounts for its left inset');
-  if (process.platform === 'linux') assert.equal(painted[2].width - painted[0].width, 5);
+  await verify(ui, true, 'painted group accounts for its left inset',
+    boxes => process.platform !== 'linux' || boxes[2].width - boxes[0].width === 5);
   const framed = left[0].replace('<Representation>None</Representation>',
     '<Representation>StrongSeparation</Representation><ThroughAlign>Use</ThroughAlign>');
   assert.notEqual(framed, left[0]);

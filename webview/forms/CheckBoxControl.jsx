@@ -1,7 +1,7 @@
 import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { checkboxGlyph } from './choice-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
-import { linuxControlFont } from './font-metrics.mjs';
+import { linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
 import { caption, color, flag, font } from './model.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
 import { inactiveTumblerTextColor } from './choice-colors.mjs';
@@ -39,7 +39,7 @@ function Tumbler(props) {
     let current = true;
     const fail = () => { if (current) runtime?.issue(owner, true); };
     const frame = requestAnimationFrame(() => {
-      const css = getComputedStyle(surface), backdrop = solidBackdrop(surface);
+      const css = getComputedStyle(surface), backdrop = solidBackdrop(surface.parentElement);
       const fill = rgb(css.backgroundColor), stroke = rgb(css.borderTopColor);
       const { segments, ...size } = layout();
       const image = fill && stroke && backdrop ? tumblerPaint({ ...size, fill, stroke, backdrop }) : undefined;
@@ -47,8 +47,8 @@ function Tumbler(props) {
       setPainted(visible);
       if (!visible || !labels().some(Boolean)) return;
       const font = node().presentation.font, foreground = rgb(css.color), weight = css.fontWeight;
-      const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
-      if (!runtime || !segments || !foreground || family !== 'ESKA Taxi Sans' || font?.italic || font?.underline || font?.strikeout) {
+      const family = firstFontFamily(css.fontFamily);
+      if (!runtime || !segments || !foreground || !supportsNativeSans(family, font)) {
         fail();
         return;
       }
@@ -81,7 +81,7 @@ function Mark(props) {
   createEffect(on(() => [state.os, state.sequence, props.mode, props.inactive], () => {
     if (state.os !== 'linux') { setPainted(false); return; }
     const draw = requestAnimationFrame(() => {
-      const backdrop = solidBackdrop(surface);
+      const backdrop = solidBackdrop(surface.parentElement);
       const image = backdrop ? checkboxGlyph(props.mode, props.inactive, backdrop) : undefined;
       setPainted(paintCanvas(canvas, image));
     });

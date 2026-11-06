@@ -276,5 +276,31 @@ async function frame(tab) {
   };
 }
 
+/** Give a preview the same available area as a measured form frame. */
+async function allocateFormViewport(ui, [width, height]) {
+  await ui.evaluate(`(() => {
+    const viewport=document.querySelector('.preview-scroll'), css=getComputedStyle(viewport);
+    Object.assign(viewport.style, {
+      width:(${width}+8+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight))+'px',
+      height:(${height}+8+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom))+'px',
+      minHeight:'0',flex:'0 0 auto'
+    });
+  })()`);
+}
+
+/** Wait for the read-only preview to acknowledge an unsaved XML edit. */
+async function editFormSource(document, view, xml) {
+  const current = document.getText();
+  if (current === xml) return;
+  const vscode = require('vscode');
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(current.length)), xml);
+  if (!await vscode.workspace.applyEdit(edit)) throw new Error('Form XML edit was rejected');
+  await until(() => view.phase === 'ready' && !view.running && !view.timer
+    && view.snapshot.dependencies.some(dep => dep.role === 'form' && dep.version === String(document.version)), 'dirty form XML updated');
+}
+
 exports.frame = frame;
 exports.until = until;
+exports.allocateFormViewport = allocateFormViewport;
+exports.editFormSource = editFormSource;
