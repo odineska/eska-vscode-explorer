@@ -69,6 +69,17 @@ test('form snapshots require the resolved ImportantColor supplied by API 1.40', 
   }
 });
 
+test('form snapshots accept the optional native script variant independently from the shell locale', () => {
+  const snapshot = fixture();
+  assert.equal(parseFormSnapshot(snapshot).model.scriptVariant, undefined);
+  for (const scriptVariant of ['russian', 'english']) {
+    snapshot.model.scriptVariant = scriptVariant;
+    assert.equal(parseFormSnapshot(snapshot).model.scriptVariant, scriptVariant);
+  }
+  snapshot.model.scriptVariant = 'ru-RU';
+  assert.throws(() => parseFormSnapshot(snapshot));
+});
+
 test('a form snapshot rejects duplicate identities and missing input ownership', () => {
   const snapshot = fixture();
   assert.equal(parseFormSnapshot(snapshot).formSessionId, 'f1');

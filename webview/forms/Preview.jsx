@@ -7,7 +7,9 @@ import { primaryForeground } from './primary-foreground.mjs';
 import { NativeCaption } from './NativeCaption.jsx';
 import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
-import { RadioChoices, radioCaptionWidth } from './RadioChoices.jsx';
+import { RadioChoices } from './RadioChoices.jsx';
+import { CheckBoxControl } from './CheckBoxControl.jsx';
+import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
@@ -363,19 +365,22 @@ function Input(props) {
 }
 function Field(props) {
   const node = () => props.node, state = props.controller.state;
-  const titleLocation = () => node().presentation.titleLocation;
   const title = () => caption(node(), state);
-  const label = () => title() + (title() && !(node().kind === 'CheckBoxField' && titleLocation() === 'Right') ? ':' : '');
+  const checkbox = () => node().kind === 'CheckBoxField';
+  const titleLocation = () => checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
   const labelStyle = () => {
-    const width = radio() && ['Left', 'Right'].includes(titleLocation()) ? radioCaptionWidth(label(), labelFont()) : undefined;
-    return { ...font(labelFont(), state.os), color: color(node().presentation.titleColor),
-      '--taxi-radio-title-width': width === undefined ? undefined : `${width + 1}px` };
+    const nativeCheck = state.os === 'linux' && checkbox();
+    const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
+    return { ...(nativeCheck ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
+      color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
+      '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
     <Match when={node().kind === 'InputField'}><Input {...props}/></Match>
-    <Match when={node().kind === 'CheckBoxField'}><span role="checkbox" aria-checked="false" class="taxi-checkbox"/></Match>
+    <Match when={checkbox()}><CheckBoxControl {...props}/></Match>
     <Match when={node().kind === 'RadioButtonField'}><RadioChoices {...props}/></Match>
     <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" style={fieldStyle(node())}>{fieldValue(node(), state.culture)}</span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
@@ -384,7 +389,7 @@ function Field(props) {
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()}
     data-multiline={state.os === 'linux' && node().kind === 'InputField' && flag(node(), 'MultiLine', false) ? '' : undefined} style={{ 'min-height': node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
-    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={labelStyle()}><NativeLabel placement="fieldTitle" text={label()} font={labelFont()} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && (radio() || node().kind === 'InputField' && ['Left','Right'].includes(titleLocation())) && flag(node(), 'Enabled')}/></label></Show>
+    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={labelStyle()}><NativeLabel placement="fieldTitle" text={label()} font={labelFont()} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField' && ['Left','Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/></label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }

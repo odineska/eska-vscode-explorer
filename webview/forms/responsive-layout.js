@@ -94,7 +94,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
       JSON.stringify([node.key, node.kind, node.presentation, node.properties]);
       for (const child of [...node.children, ...node.auxiliary]) visit(child);
     };
-    visit(state.model.root); JSON.stringify(state.ui.collapsed); state.locale; state.os;
+    visit(state.model.root); JSON.stringify(state.ui.collapsed);
+    state.model.scriptVariant; state.locale; state.culture; state.os;
     needsPreferred = true; schedule();
   });
   createEffect(() => { state.ui.zoom; needsMinimum = true; schedule(); });

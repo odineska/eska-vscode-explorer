@@ -1,23 +1,7 @@
 import { For, Show, createMemo } from 'solid-js';
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
-import { hintedTextWidth } from './font-metrics.mjs';
+import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
-
-function linuxFont(value) {
-  const css = font(value, 'linux');
-  const { pixels } = fontLineMetrics(value);
-  return { ...css, 'font-size': `${pixels}px` };
-}
-
-export function radioCaptionWidth(text, value) {
-  const style = linuxFont(value);
-  return hintedTextWidth(text, {
-    family: /^"([^"]+)",/.exec(style['font-family'])?.[1],
-    pixels: parseFloat(style['font-size']),
-    weight: style['font-weight'],
-    italic: style['font-style'] === 'italic',
-  });
-}
 
 export function RadioChoices(props) {
   const node = () => props.node, state = props.controller.state;
@@ -41,7 +25,7 @@ export function RadioChoices(props) {
   const rows = () => Math.ceil(choices().length / columns());
   const style = () => {
     const metrics = buttonMetrics(valueFont());
-    return { ...(linux ? linuxFont(valueFont()) : font(valueFont(), state.os)),
+    return { ...(linux ? linuxControlFont(valueFont()) : font(valueFont(), state.os)),
       color: color(foreground()),
       '--taxi-radio-height': `${Math.max(19, metrics.lineHeight + 2)}px`,
       '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
@@ -51,7 +35,7 @@ export function RadioChoices(props) {
     role="radiogroup" aria-label={caption(node(), state)} aria-disabled={!enabled()} style={style()}>
     <For each={choices()}>{(choice, index) => {
       const label = () => text(choice, state.locale, state.strings).trimEnd();
-      const width = createMemo(() => linux ? radioCaptionWidth(label(), valueFont()) : undefined);
+      const width = createMemo(() => linux ? controlCaptionWidth(label(), valueFont()) : undefined);
       const checked = () => !segments() && index() === 0;
       const position = () => positions()[index()];
       const edge = (match) => segments() && match ? '' : undefined;

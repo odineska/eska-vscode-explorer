@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
@@ -29,6 +30,7 @@ exports.run = async function () {
       TextDocumentField:314, PDFDocumentField:344, DendrogramField:314, GanttChartField:314, GeographicalSchemaField:314, GraphicalSchemaField:314, PeriodField:280 };
     if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
     if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
+    const checkboxModes = form.kind === 'CheckBoxField' ? await checkCheckboxModes(ui, service, view, document, fixture.source) : undefined;
     if (form.kind === 'RadioButtonField') await checkRadioChoices(ui, service, view, document);
     if (form.kind === 'SpreadSheetDocumentField') {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet th').length"), 0);
@@ -94,12 +96,148 @@ exports.run = async function () {
     }
     await ui.screenshot(`renderer-${form.kind}-${vscode.env.language}.png`);
     assert.deepEqual(await fs.readFile(form.path),before);
-    results.push({kind:form.kind,...geometry}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(checkboxModes && {checkboxModes})}); panel.panel.dispose();
     await until(()=>service.views.size===0,'release gallery form');await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formRenderer:true,locale:vscode.env.language,results}));
 };
+
+async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
+  const original = document.getText();
+  const field = original.match(/<CheckBoxField name="Control"[^>]*>[\s\S]*?<\/CheckBoxField>/)[0];
+  const source = field.replace(/<Title>[\s\S]*?<\/Title>/,'');
+  const labels = ['Истина','Ложь'];
+  const format = value => '<EditFormat><v8:item><v8:lang>ru</v8:lang><v8:content>'+value+'</v8:content></v8:item></EditFormat>';
+  const russian = format('БИ=Истина; БЛ=Ложь');
+  const paint = '<BackColor>web:LightGreen</BackColor><BorderColor>web:Blue</BorderColor><TextColor>web:Red</TextColor>';
+  const box = {name:'auto',mode:'CheckBox',xml:'',frame:[92,69],glyph:[55,40,15,15],
+    markSha256:'9b9c8570a995e299cfc3729a3cfc7640c72753bd3e5f9a35b4d7e8729d1c54bb'};
+  const switcher = {name:'switch',mode:'Switcher',xml:paint,frame:[112,73],glyph:[55,40,34,20],
+    markSha256:'96d763ca4b5e42d4b8b8e2a680a548fb4304159eedec2262edb206635d477653'};
+  const variants = [
+    box,
+    {...box,name:'right',xml:'<TitleLocation>Right</TitleLocation>',frame:[88,69],glyph:[14,40,15,15]},
+    {...box,name:'box-read-only',inactive:true,xml:'<ReadOnly>true</ReadOnly>',
+      markSha256:'1b66a0f5b52fc8382694de9ea37e19bbfcf606d08133a10f2ac981306a8c1a4e'},
+    {name:'tumbler',mode:'Tumbler',xml:russian,frame:[200,76],glyph:[54,39,125,24],labels},
+    {name:'tumbler-right',mode:'Tumbler',xml:russian+'<TitleLocation>Right</TitleLocation>',frame:[196,76],glyph:[13,39,125,24],labels},
+    {name:'unequal',mode:'Tumbler',xml:format('БИ=Вкл; БЛ=Выключено')+'<EqualItemsWidth>false</EqualItemsWidth><ItemWidth>12</ItemWidth>',
+      frame:[206,76],glyph:[54,39,131,24],labels:['Вкл','Выключено']},
+    {name:'manual',mode:'Tumbler',xml:format('BT=On; BF=Off')+'<ItemWidth>12</ItemWidth><ItemHeight>2</ItemHeight><ItemTitleHeight>2</ItemTitleHeight>',
+      frame:[318,98],glyph:[54,39,243,46],labels:['On','Off']},
+    {name:'paint',mode:'Tumbler',xml:russian+paint+'<Font ref="sys:DefaultGUIFont" height="16" bold="true" kind="WindowsFont"/>',
+      frame:[288,90],glyph:[54,39,213,38],labels},
+    switcher,
+    {...switcher,name:'switch-top',xml:'<TitleLocation>Top</TitleLocation>',frame:[71,92],glyph:[14,59,34,20]},
+    {name:'box-black',mode:'CheckBox',background:true,xml:'',dimensions:[15,15],
+      markSha256:'62b439d05b9c6a0540e74c586965c9071485f460a4b87f454ca49c70ad927774'},
+    {name:'box-black-disabled',mode:'CheckBox',background:true,xml:'<Enabled>false</Enabled>',inactive:true,dimensions:[15,15],
+      markSha256:'2370f0b69ba9b59e37112b37bd60bc206993a6cbe1aeb989c0a9736bcac69ab7'},
+    {name:'switch-black',mode:'Switcher',background:true,xml:'',dimensions:[34,20],
+      markSha256:'e4022d513f5a1e503ab6b4d7b062fccb2d1b5d9cffaac60e90497d5b0a975e96'},
+    {name:'switch-black-disabled',mode:'Switcher',background:true,xml:'<Enabled>false</Enabled>',inactive:true,dimensions:[34,20],
+      markSha256:'488a708d0681636abca8901377af360136b95600cef2a850c0203f0012dd0f9f'},
+  ];
+  const change = async (xml, target = document) => {
+    const revision = view.snapshot.revision;
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(target.uri,new vscode.Range(target.positionAt(0),target.positionAt(target.getText().length)),xml);
+    assert.equal(await vscode.workspace.applyEdit(edit),true);
+    await until(() => view.phase==='ready' && view.snapshot.revision!==revision,'dirty checkbox properties applied');
+  };
+  const apply = variant => {
+    const token = variant.name==='auto' ? 'Auto' : variant.mode;
+    const settings = '<CheckBoxType>'+token+'</CheckBoxType>'+variant.xml;
+    const content = source.replace('<CheckBoxType>Auto</CheckBoxType>', settings+(variant.background?'<TitleLocation>None</TitleLocation>':''));
+    const canvas = '<UsualGroup name="Canvas" id="44"><Group>Vertical</Group><Representation>None</Representation>'
+      +'<ShowTitle>false</ShowTitle><BackColor>web:Black</BackColor><ChildItems>'+content+'</ChildItems></UsualGroup>';
+    return change(original.replace(field,variant.background?canvas:content));
+  };
+  const measure = `(() => {
+    const frame = document.querySelector('.taxi-form-frame');
+    const mark = frame?.querySelector('.taxi-checkbox,.taxi-checkbox-switch,.taxi-checkbox-tumbler');
+    if (!mark) return null;
+    const form = frame.getBoundingClientRect(), glyph = mark.getBoundingClientRect();
+    const dimensions = getComputedStyle(frame), css = getComputedStyle(mark);
+    const settled = Math.abs(form.width - parseFloat(dimensions.getPropertyValue('--taxi-form-preferred-width'))) <= .5
+      && Math.abs(form.height - parseFloat(dimensions.getPropertyValue('--taxi-form-preferred-height'))) <= .5;
+    const canvas = mark.querySelector('canvas:not([hidden])'), raster = canvas?.getContext('2d');
+    const pixels = raster ? btoa(String.fromCharCode(...raster.getImageData(0,0,canvas.width,canvas.height).data)) : null;
+    const track = mark.querySelector('.taxi-checkbox-switch-track');
+    const sample = raster && mark.classList.contains('taxi-checkbox-switch') ? [...raster.getImageData(25,9,1,1).data].slice(0,3).join(', ') : null;
+    const clipped = [...mark.querySelectorAll('.taxi-checkbox-choice > span')].some(label => label.scrollWidth>label.clientWidth);
+    return {settled,frame:[form.width,form.height],glyph:[glyph.x-form.x,glyph.y-form.y,glyph.width,glyph.height],clipped,
+      role:mark.getAttribute('role'),disabled:mark.getAttribute('aria-disabled'),
+      labels:[...mark.querySelectorAll('[role=radio]')].map(node=>node.getAttribute('aria-label')),
+      checked:mark.querySelectorAll('[aria-checked=true]').length,color:css.color,border:css.borderTopColor,
+      track:sample ? 'rgb('+sample+')' : track ? getComputedStyle(track).fill : null,pixels};
+  })()`;
+  const observe = async (target, variant) => {
+    const role = {CheckBox:'checkbox',Tumbler:'radiogroup',Switcher:'switch'}[variant.mode];
+    await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
+    await until(async () => {
+      const result = await target.evaluate(measure);
+      return result?.settled && result.role===role && (process.platform!=='linux' || !variant.markSha256 || result.pixels);
+    },'checkbox layout for '+variant.name);
+    const {pixels,...result} = await target.evaluate(measure);
+    assert.deepEqual(result.labels,variant.labels ?? [],variant.name);
+    if (process.platform==='linux') assert.equal(result.clipped,false,variant.name+' captions fit');
+    assert.equal(result.checked,0,variant.name);
+    assert.equal(result.disabled,variant.inactive?'true':'false',variant.name);
+    if (process.platform==='linux') {
+      if (variant.frame) assert.deepEqual(result.frame,variant.frame,variant.name+' frame');
+      if (variant.glyph) assert.deepEqual(result.glyph,variant.glyph,variant.name+' glyph');
+      if (variant.dimensions) assert.deepEqual(result.glyph.slice(2),variant.dimensions,variant.name+' glyph dimensions');
+    }
+    if (variant.name==='paint') {
+      assert.equal(result.color,'rgb(255, 0, 0)');
+      assert.equal(result.border,'rgb(0, 0, 255)');
+    }
+    if (variant.mode==='Switcher') assert.equal(result.track,variant.inactive?'rgb(216, 216, 216)':'rgb(177, 177, 177)');
+    const markSha256 = pixels ? createHash('sha256').update(Buffer.from(pixels,'base64')).digest('hex') : null;
+    if (process.platform==='linux' && variant.markSha256) assert.equal(markSha256,variant.markSha256,variant.name+' native glyph');
+    await target.screenshot(`renderer-checkbox-${variant.name}-${vscode.env.language}.png`);
+    return {name:variant.name,...result,markSha256};
+  };
+  const results = [];
+  for (const variant of variants) {
+    await apply(variant);
+    results.push(await observe(ui,variant));
+  }
+  const configuration = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(sourceRoot,'Configuration.xml')));
+  const configurationXml = configuration.getText();
+  const configurationDisk = await fs.readFile(configuration.uri.fsPath);
+  const scripts = [
+    ['Russian',{name:'script-russian',mode:'Tumbler',xml:'',frame:[200,76],glyph:[54,39,125,24],labels}],
+    ['English',{name:'script-english',mode:'Tumbler',xml:'',frame:[178,76],glyph:[54,39,103,24],labels:['True','False']}],
+  ];
+  for (const [script,variant] of scripts) {
+    const xml = configurationXml.replace(/<ScriptVariant>[^<]*<\/ScriptVariant>/,'')
+      .replace('<Properties>','<Properties><ScriptVariant>'+script+'</ScriptVariant>');
+    await change(xml,configuration);
+    assert.equal(view.snapshot.model.scriptVariant,script.toLowerCase());
+    await apply(variant);
+    results.push(await observe(ui,variant));
+  }
+  await change(configurationXml,configuration);
+  assert.deepEqual(await fs.readFile(configuration.uri.fsPath),configurationDisk);
+  const mainWindow = await ui.nativeWindow();
+  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await until(() => view.frames.get('preview')?.ready,'detached checkbox preview ready');
+  const preview = view.frames.get('preview');
+  const floating = await frame({detached:true,fixedFormArea:true,state:{title:preview.panel.title}});
+  assert.notEqual((await floating.nativeWindow({detached:true})).targetId,mainWindow.targetId);
+  const inactive = {...switcher,name:'switch-detached-read-only',inactive:true,xml:'<ReadOnly>true</ReadOnly>',
+    markSha256:'b50db8a4d3329ceacc6f86d1e147cf382ec9b69beeb58b0779ed7515a9a5272e'};
+  await apply(inactive);
+  results.push(await observe(floating,inactive));
+  await service.receive(view,preview,{type:'dock'});
+  await until(() => !view.frames.has('preview'),'checkbox preview docked');
+  await change(original);
+  await until(() => ui.evaluate("!!document.querySelector('.taxi-checkbox')"),'original checkbox restored');
+  return results;
+}
 
 async function checkRadioChoices(ui, service, view, document) {
   assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-radio').length"), 3);

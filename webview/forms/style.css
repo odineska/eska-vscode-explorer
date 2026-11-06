@@ -128,6 +128,9 @@ button { cursor: default; }
 .taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
 .taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
 .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 5px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=CheckBoxField] > .taxi-field-row:is([data-title-location=Top], [data-title-location=Bottom]) { row-gap: 3px; }
+.taxi-preview[data-os=linux] .taxi-field-row--check { grid-template-columns: max-content minmax(0, 1fr); }
 .taxi-items--horizontal > .taxi-element--field > .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-label { position: relative; }
@@ -228,6 +231,27 @@ button { cursor: default; }
 .taxi-pages[data-representation=TabsOnRightHorizontal] > .taxi-page-stack { margin-right: -1px; }
 .taxi-pages[data-representation=TabsOnLeftHorizontal] > .taxi-page-stack > .taxi-page, .taxi-pages[data-representation=TabsOnRightHorizontal] > .taxi-page-stack > .taxi-page { margin-top: 0; padding-top: 8px; }
 .taxi-checkbox { display: inline-block; width: 15px; height: 15px; border: 1px solid #a0a0a0; border-radius: 2px; background: linear-gradient(#fff, #fafafa); vertical-align: middle; }
+.taxi-preview[data-os=linux] .taxi-checkbox { margin: 2px 1px; background: #fff; vertical-align: top; }
+.taxi-checkbox[data-inactive=true] { opacity: .5; }
+.taxi-checkbox-switch { display: inline-block; width: 34px; height: 20px; margin: 2px 2px 1px 1px; vertical-align: top; }
+.taxi-checkbox[data-native-mark=ready] { border: 0; background: transparent; opacity: 1; }
+.taxi-checkbox canvas, .taxi-checkbox-switch canvas { display: block; }
+.taxi-checkbox canvas[hidden], .taxi-checkbox-switch canvas[hidden] { display: none; }
+.taxi-checkbox-switch-track { fill: #b1b1b1; }
+.taxi-checkbox-switch-shadow { fill: #000; opacity: .2; }
+.taxi-checkbox-switch-knob { fill: #fff; stroke: #a4a7a8; }
+.taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-track { fill: #d8d8d8; }
+.taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-shadow { display: none; }
+.taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-knob { fill: #ececec; stroke: #cccecf; }
+.taxi-checkbox-tumbler { display: inline-grid; grid-template-columns: max-content max-content; margin-block: 1px;
+  vertical-align: top; border: 1px solid var(--taxi-BorderColor); border-radius: 3px;
+  background: linear-gradient(var(--taxi-tumbler-fill), color-mix(in srgb, var(--taxi-tumbler-fill), #000 10%)); }
+.taxi-checkbox-tumbler[data-equal-width=true] { grid-template-columns: 1fr 1fr; }
+.taxi-checkbox-tumbler[aria-disabled=true] { color: #808080 !important; }
+.taxi-checkbox-choice { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; }
+.taxi-checkbox-choice:first-child { border-right: 1px solid; border-right-color: inherit; }
+.taxi-checkbox-choice > span { padding-inline: var(--taxi-tumbler-padding); max-width: 100%; overflow: hidden; white-space: pre; text-overflow: ellipsis; }
+.taxi-checkbox-tumbler[data-sized] .taxi-checkbox-choice > span { padding-inline: 0; max-width: calc(100% - 2px); }
 .taxi-radios { display: inline-grid; vertical-align: top; grid-auto-columns: max-content; grid-auto-rows: max-content; gap: 7px 10px; }
 .taxi-radio-option { display: flex; align-items: center; gap: 6px; min-height: var(--taxi-radio-height); white-space: pre; }
 .taxi-preview[data-os=linux] .taxi-radios[data-representation=buttons] > .taxi-radio-option { padding-inline-start: 1px; }
@@ -248,8 +272,8 @@ button { cursor: default; }
 .taxi-radios[aria-disabled=true][data-representation=segments] { color: #808080 !important; }
 .taxi-radios[aria-disabled=true] .taxi-radio { border-color: #d7d7d7; }
 .taxi-radios[aria-disabled=true] .taxi-radio.checked::after { background: #d1d1d1; }
-.taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] .taxi-field-label {
-  width: var(--taxi-radio-title-width, auto);
+.taxi-preview[data-os=linux] .taxi-element:is([data-kind=RadioButtonField], [data-kind=CheckBoxField]) .taxi-field-label {
+  width: var(--taxi-choice-title-width, auto);
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] > .taxi-field-row[data-title-location=Top] { row-gap: 3px; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left],[data-title-location=Right]):has(> .taxi-field-control > .taxi-radios:not([data-rows="1"]))
