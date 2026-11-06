@@ -1,6 +1,6 @@
 import { fieldWidth, number } from './model.mjs';
 import { horizontalLaneWidths, laneInputBounds, stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
-import { borderBoxSize, boxInsets } from './layout-box.mjs';
+import { availableTrackWidth, borderBoxSize, updateStyle } from './layout-box.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 
 function ordinaryVerticalGroup(node) {
@@ -148,15 +148,11 @@ export function alignUnitedRows(model, { targets, alignment, collapsed, os, scal
     owners,
     allocateWidths() {
       const widths = allocations.map(({items, tracks}) => {
-        const css = getComputedStyle(items);
-        const available = Math.round(borderBoxSize(items, scale).width - boxInsets(css).width
-          - parseFloat(css.columnGap) * (tracks.length - 1));
+        const available = availableTrackWidth(items, tracks.length, scale);
         return horizontalLaneWidths(available, tracks).map(value => `${value}px`).join(' ');
       });
       for (const [index, {items}] of allocations.entries()) {
-        if (items.style.getPropertyValue('--taxi-united-allocated-columns') !== widths[index]) {
-          items.style.setProperty('--taxi-united-allocated-columns', widths[index]);
-        }
+        updateStyle(items, '--taxi-united-allocated-columns', widths[index]);
       }
     },
   };

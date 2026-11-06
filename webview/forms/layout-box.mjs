@@ -28,3 +28,13 @@ export function boundingScale(element) {
   const width = borderBoxSize(element).width;
   return width > 0 ? element.getBoundingClientRect().width / width : 1;
 }
+
+export function availableTrackWidth(element, trackCount, scale) {
+  const css = getComputedStyle(element);
+  const gaps = Math.max(0, trackCount - 1) * pixels(css.columnGap);
+  return Math.round(borderBoxSize(element, scale).width - boxInsets(css).width - gaps);
+}
+
+export function updateStyle(element, name, value) {
+  if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
+}

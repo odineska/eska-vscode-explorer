@@ -9,8 +9,7 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionWidth, designCaptionWidth, linuxControlFont } from './font-metrics.mjs';
-import { numericCaptionProfile } from './numeric-label-model.mjs';
+import { controlCaptionWidth, designCaptionWidth, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
@@ -376,7 +375,7 @@ function Field(props) {
   const labelFont = () => node().presentation.titleFont;
   const layout = useFormLayout();
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
-  const numericWidth = createMemo(() => numericLabel() ? numericCaptionProfile(label(), labelFont())?.preferred : undefined);
+  const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const referenceTitleWidth = createMemo(() => titleLocation() === 'Left' && nativeReferenceInput(node(), state.os)
     ? designCaptionWidth(label(), labelFont()) : undefined);
   const labelValueStyle = () => {

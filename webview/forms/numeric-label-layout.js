@@ -1,16 +1,8 @@
 import { number, numericLabelMetrics } from './model.mjs';
 import { ordinaryGroup, automaticHorizontalSpacing, controlBounds, stretches } from './layout-model.mjs';
-import { borderBoxSize, boxInsets, pixels } from './layout-box.mjs';
-import { narrowNumericTracks, numericCaptionLines, numericCaptionProfile } from './numeric-label-model.mjs';
-
-function updateStyle(element, name, value) {
-  if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
-}
-
-function availableWidth(items, tracks, scale) {
-  const css = getComputedStyle(items);
-  return Math.round(borderBoxSize(items, scale).width - boxInsets(css).width - pixels(css.columnGap) * (tracks.length - 1));
-}
+import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
+import { narrowNumericTracks } from './numeric-label-model.mjs';
+import { fieldCaptionLines, fieldCaptionProfile } from './font-metrics.mjs';
 
 /** Numeric labels grow to their value limits and wrap their titles within the available row. */
 export function alignNumericLabelRows(model, { targets, alignment, os, collapsed, scale }) {
@@ -30,7 +22,7 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
       const stretch = stretches(child, 'x', collapsed);
       const bounds = stretch ? controlBounds(child, 'x', undefined, os) : {};
       const title = element.querySelector('.taxi-field-label')?.getAttribute('aria-label') ?? '';
-      const caption = numericCaptionProfile(title, child.presentation.titleFont);
+      const caption = fieldCaptionProfile(title, child.presentation.titleFont);
       const value = { preferred:valueWidth, minimum:bounds.minimum ?? valueWidth, maximum:stretch ? bounds.maximum ?? Infinity : valueWidth };
       return { key:child.key, element, preferred, caption, value, stretch,
         reserve:preferred - valueWidth - (caption?.preferred ?? 0), maximum:preferred - valueWidth + value.maximum };
@@ -75,7 +67,7 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
     minimumCaptions,
     allocateWidths() {
       const captions = new Map();
-      const widths = allocations.map(({items, tracks}) => narrowNumericTracks(availableWidth(items, tracks, scale), tracks));
+      const widths = allocations.map(({items, tracks}) => narrowNumericTracks(availableTrackWidth(items, tracks.length, scale), tracks));
       for (const [index, {items, tracks}] of allocations.entries()) {
         let wrapped = false;
         for (const [column, track] of tracks.entries()) {
@@ -83,7 +75,7 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
           updateStyle(track.element, '--taxi-numeric-label-allocation', size ? `0 0 ${size.width}px` : '');
           updateStyle(track.element, '--taxi-numeric-label-caption-width', size ? `${size.caption}px` : '');
           if (!size || size.caption >= track.caption.preferred) continue;
-          const lines = numericCaptionLines(track.caption, size.caption);
+          const lines = fieldCaptionLines(track.caption, size.caption);
           if (lines.length > 1) {
             captions.set(track.key, lines.join('\n'));
             wrapped = true;

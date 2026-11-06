@@ -120,6 +120,38 @@ export function cappedTrackGrowth(space, limits) {
   return widths;
 }
 
+/** Choose the caption widths that fit beside the preferred value boxes. */
+export function fitCaptionWidths(available, tracks) {
+  const sum = values => values.reduce((total, value) => total + value, 0);
+  const insets = sum(tracks.map(track => track.reserve));
+  const preferredValues = sum(tracks.map(track => track.value.preferred));
+  const minimumValues = sum(tracks.map(track => track.value.minimum));
+  const preferred = insets + preferredValues + sum(tracks.map(track => track.caption.preferred));
+  if (available >= preferred) return;
+
+  const captions = tracks.map(track => track.caption.minimum);
+  let captionTotal = sum(captions);
+  const width = Math.max(available - insets, captionTotal + minimumValues);
+  // A third line can be removed once the minimum captions and preferred values fit.
+  for (let index = tracks.length - 1; index >= 0; index--) {
+    const delta = tracks[index].caption.compact - captions[index];
+    if (width >= captionTotal + preferredValues && width >= captionTotal + delta + minimumValues) {
+      captions[index] += delta;
+      captionTotal += delta;
+    }
+  }
+  // Retain full captions from the trailing side while their preferred values fit.
+  for (let index = tracks.length - 1; index >= 0; index--) {
+    const delta = tracks[index].caption.preferred - captions[index];
+    if (width >= captionTotal + delta + preferredValues) {
+      captions[index] += delta;
+      captionTotal += delta;
+    }
+  }
+
+  return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };
+}
+
 /** Allocate column widths in native pixels, including the fixed space reserved for titles. */
 export function horizontalLaneWidths(available, lanes) {
   const preferred = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
@@ -160,6 +192,10 @@ export function horizontalLaneWidths(available, lanes) {
     widths = lanes.map(lane => Math.max(lane.preferred,
       Math.min(lane.maximum, lane.reserve + Math.max(0, lane.preferred - lane.reserve - 1) * factor)));
   }
+  return roundTrackWidths(widths, round);
+}
+
+export function roundTrackWidths(widths, round = Math.round) {
   let edge = 0, previous = 0;
   return widths.map(width => {
     edge += width;
