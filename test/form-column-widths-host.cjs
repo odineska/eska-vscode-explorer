@@ -12,22 +12,28 @@ async function pose(ui, keys, expected) {
       actual = await ui.evaluate(`(() => {
         const root=document.querySelector('.taxi-form-frame'), origin=root.getBoundingClientRect();
         const fields=new Map([...root.querySelectorAll('[data-kind=InputField]')].map(field=>[field.dataset.element,field]));
-        const controls={}, captions={};
+        const controls={}, captions={}, locations={};
         for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
           const field=fields.get(key), input=field?.querySelector('.taxi-input');
           if (!input) continue;
           const r=input.getBoundingClientRect();
           controls[name]=[r.x-origin.x,r.y-origin.y,r.width,r.height];
+          locations[name]=field.querySelector('.taxi-field-row').dataset.titleLocation;
           const label=field.querySelector('.taxi-field-label');
           if (!label) continue;
           const wrapped=[...label.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : [label.textContent]};
         }
-        return {frame:[origin.width,origin.height],controls,captions};
+        return {frame:[origin.width,origin.height],controls,captions,locations};
       })()`);
       const tolerance = expected.tolerancePx ?? 0;
-      return actual.frame.every((v,i) => v === expected.frame[i])
-        && Object.entries(expected.controls).every(([name, rect]) =>
+      const aligned = expected.alignedY?.map(name => actual.controls[name]?.[1]);
+      return actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
+        && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
+        && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
+          actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
+        && (!aligned || Math.max(...aligned) - Math.min(...aligned) <= tolerance)
+        && Object.entries(expected.controls ?? {}).every(([name, rect]) =>
           actual.controls[name]?.every((value,i) => Math.abs(value-rect[i]) <= tolerance))
         && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
           const caption = actual.captions[name];
@@ -68,6 +74,10 @@ function sourceVariant(xml, edit) {
   }
   for (const [name, width] of Object.entries(edit.widths ?? {})) {
     changed = editField(changed, name, properties => `<Width>${width}</Width>` + properties.replace(/<Width>.*?<\/Width>/u, ''));
+  }
+  for (const [name, location] of Object.entries(edit.titleLocations ?? {})) {
+    changed = editField(changed, name, properties =>
+      '<TitleLocation>' + location + '</TitleLocation>' + properties.replace(/<TitleLocation>[^<]+<\/TitleLocation>/u, ''));
   }
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
@@ -116,7 +126,24 @@ exports.run = async () => {
     const nodes = [...view.nodes.values()].filter(node => node.kind === 'InputField');
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);
-    if (process.platform === 'linux') {
+    if (process.platform === 'linux' && form.cases[0]?.locations) {
+      const identity = nodes.find(node => node.name === 'Currency').identity;
+      const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+        const wide = {name:'wide captions',frame:[1180,250],
+          locations:Object.fromEntries(Object.keys(form.cases[0].locations).map(name => [name, 'Left']))};
+        const initial = await pose(floating, keys, wide);
+        for (const expected of form.cases) {
+          await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
+          const revision = view.snapshot.revision;
+          results.push(await pose(floating, keys, expected));
+          assert.equal(view.snapshot.revision, revision);
+        }
+        await replace(original);
+        const restored = await pose(floating, keys, wide);
+        assert.deepEqual(restored.controls, initial.controls);
+      });
+      results.push({label:'detached-caption-placement-'+form.kind, ...observation});
+    } else if (process.platform === 'linux') {
       const revision = view.snapshot.revision;
       for (const expected of form.cases.filter(sample => !sample.edit)) {
         results.push(await pose(ui,keys,expected));

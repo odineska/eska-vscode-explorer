@@ -252,7 +252,11 @@ export function Items(props) {
     return children().map(node => {
       const minimum = layout?.minimumFor(node)?.[dimension] ?? 0;
       if (layout?.stretch(node, axis)) return `minmax(${minimum}px, ${stretchWeight(node, axis)}fr)`;
-      if (axis === 'x' && groupCanShrink(node, props.controller.state.os)) return `minmax(${minimum}px, max-content)`;
+      if (axis === 'x' && groupCanShrink(node, props.controller.state.os)) {
+        const preferred = layout?.preferredWidthFor(node);
+        const limit = preferred === undefined ? 'max-content' : `${Math.max(minimum, preferred)}px`;
+        return `minmax(${minimum}px, ${limit})`;
+      }
       return 'max-content';
     }).join(' ');
   };
@@ -529,11 +533,11 @@ function Field(props) {
   const node = () => props.node, state = props.controller.state;
   const title = () => caption(node(), state);
   const checkbox = () => node().kind === 'CheckBoxField';
-  const titleLocation = () => checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const layout = useFormLayout();
+  const titleLocation = () => layout?.titleAbove(node()) ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
-  const layout = useFormLayout();
   const allocatedCaption = () => layout?.captionFor(node());
   const inputCaption = () => node().kind === 'InputField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}

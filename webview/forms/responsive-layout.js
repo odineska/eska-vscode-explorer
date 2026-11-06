@@ -2,6 +2,7 @@ import { createContext, useContext, createSignal, createMemo, createEffect, onMo
 import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
+import { inputTitleLayout } from './input-title-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
@@ -26,10 +27,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
   const [minima, setMinima] = createSignal(new Map());
+  const [preferredWidths, setPreferredWidths] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
+  const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, minimumCaptions, allocateThroughCaptions, rootCommands;
+  let unitedRows, numericRows, adaptiveTitles, minimumCaptions, allocateThroughCaptions, rootCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -66,6 +69,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'preferred';
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
+      if (aboveTitles().size) setAboveTitles(new Set());
       const scale = boundingScale(root);
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
@@ -75,19 +79,23 @@ export function createFormLayout(controller, viewport, preview, frame) {
       numericRows = alignNumericLabelRows(state.model.root, context);
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
       allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
+      adaptiveTitles = inputTitleLayout(state.model.root, context, minimumCaptions);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
+      const widths = new Map();
       for (const element of elements) {
         const value = rect(element);
+        widths.set(element.dataset.element, value.width);
         element.style.setProperty('--taxi-preferred-width', `${value.width}px`);
         element.style.setProperty('--taxi-preferred-height', `${value.height}px`);
       }
+      setPreferredWidths(widths);
     }
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth);
+      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth, adaptiveTitles.minimumRows);
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -102,7 +110,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
     // Recheck fit against the resized area before scrollbars from the old arrangement settle.
     const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && minimumCaptions.size > 0;
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || adaptiveTitles.minimumRows.size > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
@@ -111,6 +119,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateThroughCaptions(captions, minima());
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    const previousAbove = aboveTitles();
+    const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
+    if (moved) setAboveTitles(above);
+    if (moved || heightChanged) { needsMinimum = true; schedule(); }
     if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
       setFieldCaptions(captions);
       needsMinimum = true;
@@ -164,9 +177,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     viewportResized,
     invalidate: () => { needsPreferred = true; schedule(); },
     preferred, minimumFor: node => minima().get(node.key),
+    preferredWidthFor: node => preferredWidths().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
     wrapped: node => wrapped().has(node.key),
     captionFor: node => fieldCaptions().get(node.key),
+    titleAbove: node => aboveTitles().has(node.key),
     initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
   };
 }

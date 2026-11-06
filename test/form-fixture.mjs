@@ -311,7 +311,7 @@ export async function createColumnWidthGallery(fixture, locale) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
   await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
-  const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json']
+  const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json', 'title-location-metrics.json']
     .map(async file => JSON.parse(await readFile(join(input, file), 'utf8'))));
   const cases = new Map();
   for (const { fixtures } of measurements) {

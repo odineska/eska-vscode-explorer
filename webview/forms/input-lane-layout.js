@@ -79,26 +79,26 @@ function captionWidth(track, field, size, atMinimum) {
   return Math.min(field.caption.preferred, field.caption.minimum + Math.round(growth * share));
 }
 
+export function inputLaneFields(node, targets) {
+  if (node.kind === 'InputField') return [node];
+  const items = targets.containers.get(node.key);
+  const children = targets.children(node);
+  if (node.kind !== 'UsualGroup' || !items || number(node, 'Width') > 0
+      || items.parentElement.querySelector(':scope > .taxi-group-title')
+      || node.presentation.grouping !== 'Vertical' && children.length !== 1) return;
+  const inputs = children.map(child => inputLaneFields(child, targets));
+  if (inputs.every(Boolean)) return inputs.flat();
+}
+
 /** Column allocation is independent of which descendant rows share a vertical track. */
 export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
-  const { elements, containers, children: mountedChildren } = targets;
+  const { elements } = targets;
   const { mark, style } = alignment;
   const allocations = [], minimumCaptions = new Map();
 
-  function laneInputs(node) {
-    if (node.kind === 'InputField') return [node];
-    const items = containers.get(node.key);
-    const children = mountedChildren(node);
-    if (node.kind !== 'UsualGroup' || !items || number(node, 'Width') > 0
-        || items.parentElement.querySelector(':scope > .taxi-group-title')
-        || node.presentation.grouping !== 'Vertical' && children.length !== 1) return;
-    const inputs = children.map(laneInputs);
-    if (inputs.every(Boolean)) return inputs.flat();
-  }
-
   function register(items, children, allowWrap) {
     if (os !== 'linux') return;
-    const inputs = children.map(laneInputs);
+    const inputs = children.map(child => inputLaneFields(child, targets));
     if (inputs.some(row => !row?.length)) return;
     const grows = children.map(node => stretches(node, 'x', collapsed));
     const fields = inputs.map((row, index) => {

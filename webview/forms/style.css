@@ -615,7 +615,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { flex: 1; }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 0px)) !important; max-width: var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%)); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 0px))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Bottom] { grid-template-rows: minmax(0, 1fr) max-content; }
@@ -663,7 +663,7 @@ button { cursor: default; }
 .taxi-preview:is([data-form-layout=minimum][data-os=linux],[data-form-layout=allocated]) .taxi-element[data-kind=Table][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-button { width: 100% !important; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-button { height: 100%; }
-.taxi-preview[data-form-layout=allocated] .taxi-field-control > .taxi-input { max-width: var(--taxi-control-max-width, 100%); }
+.taxi-preview[data-form-layout=allocated] .taxi-field-control > .taxi-input { max-width: var(--taxi-input-title-value-max, var(--taxi-control-max-width, 100%)); }
 /* An intrinsic track cannot resolve a percentage maximum against its own width. */
 .taxi-preview[data-form-layout=preferred] :is(.taxi-items--horizontal, .taxi-items[data-grouping=HorizontalIfPossible]):not([data-united-columns]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: var(--taxi-horizontal-input-maximum);
@@ -672,7 +672,7 @@ button { cursor: default; }
   max-width: min(100%, var(--taxi-horizontal-input-maximum));
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns], [data-united-horizontal-lane], [data-numeric-label-row]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) {
-  max-width: calc(var(--taxi-horizontal-input-maximum) + var(--taxi-horizontal-input-reserve) + var(--taxi-through-caption-reserve, 0px));
+  max-width: var(--taxi-input-title-track, calc(var(--taxi-horizontal-input-maximum) + var(--taxi-horizontal-input-reserve) + var(--taxi-through-caption-reserve, 0px)));
 }
 .taxi-preview[data-form-layout] .taxi-element[data-lane-input-maximum] > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: var(--taxi-lane-input-max-width) !important;
@@ -699,7 +699,7 @@ button { cursor: default; }
 /* Ordinary vertical groups in one horizontal layout use the same row tracks. */
 .taxi-preview[data-os=linux] .taxi-items:is([data-united-auto-spacing], [data-through-labels=leading][data-auto-spacing], [data-through-separated-row][data-auto-spacing]) { --taxi-horizontal-gap: 10px; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading] > .taxi-element[data-stretch-x=true] {
-  flex-basis: var(--taxi-preferred-width) !important;
+  flex-basis: var(--taxi-input-title-track, var(--taxi-preferred-width)) !important;
 }
 .taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
   display: grid;
@@ -709,7 +709,7 @@ button { cursor: default; }
   row-gap: 7px;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] {
-  grid-template-columns: var(--taxi-united-allocated-columns, var(--taxi-layout-columns));
+  grid-template-columns: var(--taxi-input-title-columns, var(--taxi-united-allocated-columns, var(--taxi-layout-columns)));
   grid-template-rows: var(--taxi-united-tracks);
 }
 .taxi-preview[data-form-layout] .taxi-element[data-united-cell] {
@@ -731,7 +731,25 @@ button { cursor: default; }
   grid-row: var(--taxi-united-start) / -1; grid-template-rows: subgrid; row-gap: normal;
 }
 .taxi-preview[data-form-layout=allocated][data-preferred-x] .taxi-items[data-united-columns] {
-  grid-template-columns: var(--taxi-united-allocated-columns, var(--taxi-united-preferred-columns));
+  grid-template-columns: var(--taxi-input-title-columns, var(--taxi-united-allocated-columns, var(--taxi-united-preferred-columns)));
+}
+
+/* Fixed inputs retain their value width when a side caption moves above them. */
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-control {
+  padding-top: var(--taxi-input-title-offset, 0px);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] {
+  align-items: start;
+  column-gap: var(--taxi-input-title-gap);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-row[data-title-location=Left] {
+  grid-template-columns: var(--taxi-field-columns);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] > .taxi-element {
+  flex: 0 0 var(--taxi-input-title-track) !important;
+  width: var(--taxi-input-title-track);
+  min-width: var(--taxi-input-title-track);
+  max-width: var(--taxi-input-title-track);
 }
 
 /* Horizontal groups in a vertical stack share their logical column widths. */
