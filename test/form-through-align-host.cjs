@@ -92,7 +92,8 @@ async function verifyWrappedRows(form, service, results) {
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'row group opened');
   const view = [...service.views.values()].find(view => view.path === form.path), main = view.frames.get('main');
-  const tab = {fixedFormArea: form.kind !== 'Payment', state: {title:main.panel.title}};
+  const adaptive = form.cases.some(sample => sample.viewport);
+  const tab = {fixedFormArea: !adaptive, state: {title:main.panel.title}};
   const ui = await frame(tab);
   const names = Object.keys(form.cases[0].controls);
   const identities = names.map(name => {
@@ -106,10 +107,10 @@ async function verifyWrappedRows(form, service, results) {
 
   const source = original.toString('utf8');
   const replace = xml => editFormSource(document, view, xml);
-  if (form.kind === 'Payment' && process.platform === 'linux') {
+  if (adaptive && process.platform === 'linux') {
     await inDetachedRow(service, view, main, ui, identities[names.indexOf('Bank')], async floating => {
       for (const sample of [...form.cases, form.cases[0]]) {
-        const resized = source.replace('<Width>46</Width>', `<Width>${sample.leftWidth}</Width>`);
+        const resized = source.replace(/<Width>\d+<\/Width>/u, `<Width>${sample.leftWidth}</Width>`);
         await replace(withGroupProperty(resized, 'DetailRow', 'ThroughAlign', sample.throughAlign));
         const revision = view.snapshot.revision;
         await verifyPaymentLayout(floating, names, keys, sample, results);

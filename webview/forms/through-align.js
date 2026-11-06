@@ -73,7 +73,7 @@ function separatedRow(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Horizontal' && scalar(node, 'ThroughAlign') === 'DontUse';
 }
 
-function captionTrack(track, { targets, os }, minimumCaptions) {
+function captionTrack(track, { targets, os, scale }, minimumCaptions) {
   const { node, container, horizontal } = track;
   if (container.hasAttribute('data-united-columns') || container.hasAttribute('data-united-horizontal-lane')) return;
   const children = targets.children(node);
@@ -83,7 +83,10 @@ function captionTrack(track, { targets, os }, minimumCaptions) {
     || !caption || minimumCaptions.has(key) || element.style.getPropertyValue('--taxi-lane-input-min-width'))) return;
   if (horizontal && (children.length < 2 || node.presentation.grouping !== 'Horizontal' || number(node, 'Width') > 0
     || fields[0].element.dataset.stretchX !== 'true' || container.parentElement.querySelector(':scope > .taxi-group-title'))) return;
-  return { ...track, fields };
+  const gap = pixels(getComputedStyle(container).columnGap);
+  const preferredRow = horizontal ? children.reduce((width, child) =>
+    width + borderBoxSize(targets.elements.get(child.key), scale).width, gap * (children.length - 1)) : 0;
+  return { ...track, fields, preferredRow };
 }
 
 /** Reflow ordinary caption scopes with a horizontal row without replacing their fields. */
@@ -109,8 +112,8 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions) {
     for (const items of separated) alignment.mark(items, 'data-through-separated-row');
     for (const track of tracks) {
       track.fullWidth = end - track.left;
-      // The widest title wraps once its own preferred value box no longer fits beside it.
-      track.preferredValue = Math.max(0, ...track.fields
+      // Keep preferred controls in the horizontal row while testing the full caption.
+      track.preferredValue = Math.max(0, track.preferredRow - track.fullWidth, ...track.fields
         .filter(field => field.caption.preferred + inputCaptionInset === preferred).map(field => field.preferredValue));
       if (tracks.length === 1) {
         alignment.mark(track.container, 'data-through-labels', 'all');
