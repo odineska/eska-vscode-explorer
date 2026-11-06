@@ -19,7 +19,7 @@ exports.run = async function() {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
   const original = await fs.readFile(form.one, 'utf8');
-  const sources = [form.path, form.pictureXml, form.owner, form.generatedPictureXml];
+  const sources = [form.path, form.pictureXml, form.owner, form.generatedPictureXml, form.group];
   const before = await Promise.all(sources.map(file => fs.readFile(file)));
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service = explorer.formPreview;
@@ -51,13 +51,25 @@ exports.run = async function() {
   };
   await until(image, 'common picture loaded as inert img');
   const first = await image(), generated = await dataUrl(form.generated);
-  assert.equal(view.snapshot.model.assets.length, 2);
+  assert.equal(view.snapshot.model.assets.length, 3);
   assert.ok(view.snapshot.dependencies.some(input => input.role === 'picture'));
   await until(async () => await matches('Local icon', '', first)
     && await matches('Text command', 'Text command', null)
     && await matches('Mixed command', 'Mixed command', first)
     && await matches('No icon', 'No icon', null)
     && await matches('GeneratedIcon', '', generated), 'authored and generated command pictures use their effective representation');
+
+  const groupTrigger = '.taxi-root-commands [data-command-group] > button';
+  const groupItems = () => ui.evaluate(`(() => [...document.querySelectorAll('.taxi-root-commands [role=menuitem]')]
+    .map(item => ({ label: item.textContent, picture: !!item.querySelector('img') })))()`);
+  await until(() => ui.evaluate(`document.querySelector(${JSON.stringify(groupTrigger)})?.getAttribute('aria-label') === 'PrintProbe'`), 'metadata command group rendered');
+  await ui.evaluate(`document.querySelector(${JSON.stringify(groupTrigger)}).click()`);
+  await until(async () => (await groupItems()).length === 2, 'automatic and added menu items are shown');
+  assert.deepEqual(await groupItems(), [{ label: 'Invoice', picture: true }, { label: 'Local receipt', picture: false }]);
+  const selection = view.selected;
+  await ui.evaluate("document.querySelector('.taxi-root-commands [role=menuitem]').click()");
+  await until(async () => (await groupItems()).length === 0, 'selecting an automatic menu item closes the menu');
+  assert.deepEqual(view.selected, selection, 'preview menu does not execute a command');
 
   await fs.writeFile(form.one, original.replace('red', 'green'));
   const saved = await dataUrl(form.one);
@@ -88,6 +100,11 @@ exports.run = async function() {
     return template?.fileName === 'l.png' && rendered?.tinted
       && rendered.image === `data:${template.mimeType};base64,${template.data}`;
   }, 'dirty ZIP reference renders the low density template with the effective command color');
+  await ui.evaluate(`document.querySelector(${JSON.stringify(groupTrigger)}).click()`);
+  await until(async () => (await groupItems()).length === 2, 'group opens in the detached preview');
+  const group = await vscode.workspace.openTextDocument(vscode.Uri.file(form.group));
+  await editText(group, 'FormCommandBar', 'FormNavigationPanel');
+  await until(() => ui.evaluate(`!document.querySelector(${JSON.stringify(groupTrigger)})`), 'dirty group category removes the menu from the detached preview');
   assert.deepEqual(await Promise.all(sources.map(file => fs.readFile(file))), before, 'viewing does not save XML');
 
   ui.close();
@@ -99,6 +116,6 @@ exports.run = async function() {
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, formPictures: true, locale: vscode.env.language, externalPayload: true,
     dirtyPictureDescriptor: true, commandPictures: true, generatedPictureAsset: true,
-    detachedRepresentationUpdates: true, templatePictureTint: true, sourceWritesDuringViewing: false,
+    detachedRepresentationUpdates: true, templatePictureTint: true, rootCommandMenu: true, sourceWritesDuringViewing: false,
   }));
 };

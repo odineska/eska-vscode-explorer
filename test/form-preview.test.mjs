@@ -185,6 +185,12 @@ test('automatic metadata commands preserve localized overrides and validate opti
   assert.equal(text(automaticCommands(parseFormSnapshot(snapshot).model.root)[0].caption, 'ru-RU', formStrings('ru-RU')), 'Переопределено');
   const bad = structuredClone(snapshot); bad.model.root.presentation.autoCommandItems[0].origin.range.start = -1;
   assert.throws(() => parseFormSnapshot(bad));
+  const command = root.presentation.autoCommandItems[0];
+  const group = { ...command, key: 'command-group', items: [command] };
+  root.presentation.autoCommandItems = [group];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.autoCommandItems[0].items, [command]);
+  group.items = [{ ...command, items: [command] }];
+  assert.throws(() => parseFormSnapshot(snapshot), 'the projected group contains only leaf commands');
   root.presentation.autoCommandItems = [];
   assert.deepEqual(automaticCommands(root), [], 'an explicit empty bar does not restore legacy commands');
 });

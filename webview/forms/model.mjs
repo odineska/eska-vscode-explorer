@@ -10,8 +10,16 @@ function prepareFields(fields) {
     return { ...field, reconcileKey: `${name}:${index}`, value: field.value.kind === 'record' ? { ...field.value, fields: prepareFields(field.value.fields) } : field.value };
   });
 }
+function prepareCommand(command) {
+  return { ...command, reconcileKey: command.key, ...(command.items ? { items: command.items.map(prepareCommand) } : {}) };
+}
 export function prepare(model) {
-  const visit = node => ({ ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) });
+  const visit = node => {
+    const commands = node.presentation?.autoCommandItems;
+    return { ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties),
+      ...(commands ? { presentation: { ...node.presentation, autoCommandItems: commands.map(prepareCommand) } } : {}),
+      children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) };
+  };
   const result = { ...model, root: visit(model.root) };
   for (const section of ['attributes', 'commands', 'parameters']) if (model[section]) result[section] = model[section].map(definition => ({ ...definition,
     reconcileKey: JSON.stringify([definition.xmlName, definition.name]), properties: prepareFields(definition.properties) }));

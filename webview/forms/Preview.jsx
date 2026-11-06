@@ -161,7 +161,12 @@ function RootCommands(props) {
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
   const commands = () => automaticCommands(node());
   return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
-    <div class="taxi-root-commands"><For each={commands()}>{item => <CommandButton controller={props.controller} command={item} label={text(item.caption,state.locale,state.strings)} primary={item.primary}/>}</For>
+    <div class="taxi-root-commands"><For each={commands()}>{item => {
+      const label = () => text(item.caption, state.locale, state.strings);
+      return <Show when={item.items?.length} fallback={<CommandButton controller={props.controller} command={item} label={label()} primary={item.primary}/>}>
+        <PopupMenu command={item} label={label()} controller={props.controller} nativeDropdown/>
+      </Show>;
+    }}</For>
       <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
       <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/>
     </div>
@@ -340,7 +345,8 @@ function CommandBar(props) {
 function PopupMenu(props) {
   const [open, setOpen] = createSignal(false), [active, setActive] = createSignal(0);
   let container;
-  const children = () => props.items ?? props.node.children.filter(node => node.presentation.displayed);
+  const state = props.controller.state;
+  const children = () => props.command?.items ?? props.items ?? props.node.children.filter(node => node.presentation.displayed);
   createEffect(() => {
     if (!open()) return;
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
@@ -348,16 +354,25 @@ function PopupMenu(props) {
     onCleanup(() => document.removeEventListener('pointerdown', outside));
   });
   const focus = index => { const items = container.querySelectorAll(':scope > [role=menu] > [role=menuitem]'); if (!items.length) return; const next = (index + items.length) % items.length; setActive(next); items[next]?.focus(); };
-  return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined} ref={container} onKeyDown={event => {
+  return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined} data-command-group={props.command?.key} ref={container} onKeyDown={event => {
     if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); container.querySelector(':scope > button')?.focus(); }
     else if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const wasOpen = open(); setOpen(true); focus(wasOpen ? active() + (event.key === 'ArrowDown' ? 1 : -1) : 0); }
   }}>
-    <CommandButton node={props.node} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
+    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
       onClick={() => { setOpen(!open()); if (open()) focus(0); }}/>
-    <Show when={open()}><div role="menu" class="taxi-menu"><For each={children()}>{(child, index) => <button type="button" role="menuitem" classList={{ active: active() === index() }}
-      aria-disabled={!flag(child, 'Enabled')} onMouseEnter={() => setActive(index())} onClick={event => { event.stopPropagation(); props.controller.select(child); setOpen(false); }}>
-      <Show when={child.presentation.picture}><Picture node={child} controller={props.controller}/></Show>{caption(child, props.controller.state)}
-    </button>}</For></div></Show>
+    <Show when={open()}><div role="menu" class="taxi-menu"><For each={children()}>{(child, index) => {
+      const node = () => props.command ? undefined : child;
+      const picture = () => props.command ? child.picture : child.presentation.picture;
+      const label = () => props.command ? text(child.caption, state.locale, state.strings) : caption(child, state);
+      return <button type="button" role="menuitem" classList={{ active: active() === index() }}
+        aria-disabled={!flag(node(), 'Enabled')} onMouseEnter={() => setActive(index())} onClick={event => {
+          event.stopPropagation();
+          if (node()) props.controller.select(node());
+          setOpen(false);
+        }}>
+        <Show when={picture()}><Picture node={node()} picture={picture()} controller={props.controller}/></Show>{label()}
+      </button>;
+    }}</For></div></Show>
   </div>;
 }
 function Input(props) {

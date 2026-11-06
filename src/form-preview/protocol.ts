@@ -25,7 +25,7 @@ export type FormPicture = { kind: "standard"; name: string } | { kind: "common";
 export type ButtonRepresentation = "Text" | "Picture" | "PictureAndText";
 interface AutoCommandItem {
   key: string; caption: FormText; primary: boolean; origin: Origin | null;
-  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation;
+  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; items?: AutoCommandItem[];
 }
 export interface Presentation {
   united?: boolean | null;
@@ -113,10 +113,12 @@ function formPicture(value: unknown, assets: ReadonlySet<string>): boolean {
 function buttonRepresentation(value: unknown): boolean {
   return value === undefined || value === "Text" || value === "Picture" || value === "PictureAndText";
 }
-function autoCommandItem(item: unknown, assets: ReadonlySet<string>): boolean {
+function autoCommandItem(item: unknown, assets: ReadonlySet<string>, nested = false): boolean {
   return isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean"
     && (item.origin === null || origin(item.origin))
-    && (item.picture === undefined || formPicture(item.picture, assets)) && buttonRepresentation(item.buttonRepresentation);
+    && (item.picture === undefined || formPicture(item.picture, assets)) && buttonRepresentation(item.buttonRepresentation)
+    && (item.items === undefined || !nested && Array.isArray(item.items) && item.items.length > 0
+      && item.items.length <= 16_384 && item.items.every(child => autoCommandItem(child, assets, true)));
 }
 function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
   return isRecord(value) && (value.picture === null || formPicture(value.picture, assets))
