@@ -80,7 +80,8 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions) {
       const child = element.firstElementChild;
       value = child ? marginBox(child) : { width: 0, height: 0 };
     }
-    const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-width'));
+    const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-min-width')
+      || element.style.getPropertyValue('--taxi-united-cell-width'));
     value.width = Math.max(value.width, columnWidth);
     if (element.dataset.layoutContainer === 'true') {
       if (element.dataset.stretchX === 'false') value.width = Math.max(value.width, pixels(element.style.getPropertyValue('--taxi-preferred-width')));

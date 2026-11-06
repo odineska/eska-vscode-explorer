@@ -19,7 +19,8 @@ export function alignThroughLabels(model, { targets: { containers }, alignment, 
   function visit(node, parentScope) {
     const items = containers.get(node.key);
     const horizontal = ordinaryGroup(node) && horizontalGrouping(node);
-    const scope = items && (horizontal ? parentScope : labelScope(node) ? parentScope ?? [] : undefined);
+    const scope = items && !items.hasAttribute('data-united-flex-lane')
+      && (horizontal ? parentScope : labelScope(node) ? parentScope ?? [] : undefined);
     const leading = horizontal ? items?.firstElementChild : undefined;
     if (scope) {
       const row = horizontal ? leading?.querySelector(`:scope > ${leftLabelRow}`)

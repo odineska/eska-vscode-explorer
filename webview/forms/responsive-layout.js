@@ -67,9 +67,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
       if (fieldCaptions().size) setFieldCaptions(new Map());
       const scale = boundingScale(root);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      alignUnitedColumns(state.model.root, context);
       alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
-      alignUnitedColumns(state.model.root, context);
       numericRows = alignNumericLabelRows(state.model.root, context);
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
       const nextPreferred = rect(root);

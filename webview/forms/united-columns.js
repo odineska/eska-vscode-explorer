@@ -1,6 +1,6 @@
 import { fieldWidth, number, property, scalar } from './model.mjs';
-import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing } from './layout-model.mjs';
-import { pixels, textWidth } from './layout-box.mjs';
+import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, controlBounds, horizontalInputMaximum, laneInputBounds } from './layout-model.mjs';
+import { borderBoxSize, pixels, textWidth } from './layout-box.mjs';
 
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
@@ -19,13 +19,13 @@ function leadingField(entry) {
 }
 
 function cells(entry) {
-  if (entry.kind === 'field' || entry.node.presentation.united) return [entry];
+  if (entry.kind !== 'group' || entry.node.presentation.united) return [entry];
   return [...(entry.title ? [entry.title] : []), ...entry.children.flatMap(cells)];
 }
 
 function intrinsic(entry, gap, labelWidth) {
-  if (entry.kind === 'title') return entry.width;
   if (entry.kind === 'field') return (labelWidth ?? entry.labelWidth) + entry.labelGap + entry.controlWidth;
+  if (entry.kind !== 'group') return entry.width;
   const firstLabel = leadingField(entry) ? labelWidth : undefined;
   const children = entry.children.map((child, index) => intrinsic(child, gap, index === 0 ? firstLabel : undefined));
   return total(children) + gap * (children.length - 1);
@@ -44,6 +44,10 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
       if (!label) return;
       return { kind: 'field', node, element, labelWidth: pixels(getComputedStyle(label).width),
         labelGap: pixels(getComputedStyle(row).columnGap), controlWidth: fieldWidth(node, os) };
+    }
+    if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
+      const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
+      if (control) return { kind: 'control', node, element, width: borderBoxSize(control, scale).width };
     }
     if (!ordinaryRow(node)) return;
     const items = containers.get(node.key), group = items?.parentElement;
@@ -80,12 +84,60 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     mark(entry.items, 'data-united-horizontal-lane');
     style(entry.items, '--taxi-united-cell-gap', `${gap}px`);
   }
+  function mixedCell(entry, labelWidth) {
+    const value = entry.kind === 'field' ? entry.controlWidth : entry.width;
+    const reserve = intrinsic(entry, 0, labelWidth) - value;
+    if (!stretches(entry.node, 'x', collapsed)) {
+      const width = reserve + value;
+      return { width, minimum: width, maximum: width, growth: 0 };
+    }
+    const bounds = controlBounds(entry.node, 'x', value, os);
+    const maximum = horizontalInputMaximum(entry.node, os) ?? bounds.maximum ?? Infinity;
+    const preferred = Math.min(value, maximum);
+    const minimum = laneInputBounds(entry.node, os)?.narrowMinimum
+      ?? bounds.minimum ?? (entry.node.kind === 'LabelField' ? 60 : 80);
+    return { width: reserve + preferred, minimum: reserve + Math.min(preferred, minimum),
+      maximum: reserve + maximum, growth: preferred };
+  }
+
+  function mixedTracks(lanes) {
+    const count = Math.max(0, ...lanes.map(lane => lane.children.length));
+    return Array.from({length: count}, (_, index) => {
+      const entries = lanes.flatMap(lane => lane.children[index] ?? []);
+      const labelWidth = Math.max(...entries.map(entry => entry.labelWidth ?? 0));
+      const sizes = entries.map(entry => mixedCell(entry, labelWidth));
+      const widest = name => Math.max(...sizes.map(size => size[name]));
+      return { labelWidth, width: widest('width'), minimum: widest('minimum'),
+        maximum: widest('maximum'), growth: widest('growth') };
+    });
+  }
+
+  function placeMixedRows(lanes) {
+    const shared = mixedTracks(lanes.filter(lane => !lane.node.presentation.united));
+    for (const lane of lanes) {
+      const tracks = lane.node.presentation.united ? mixedTracks([lane]) : shared;
+      mark(lane.items, 'data-united-flex-lane');
+      setLane(lane, 10);
+      for (const [index, entry] of lane.children.entries()) {
+        const {width, minimum, maximum, growth, labelWidth} = tracks[index];
+        setCell(entry, width);
+        if (entry.kind === 'field') style(entry.element, '--taxi-united-cell-label-width', labelWidth + 'px');
+        style(entry.element, '--taxi-united-cell-min-width', minimum + 'px');
+        style(entry.element, '--taxi-united-cell-max-width', Number.isFinite(maximum) ? maximum + 'px' : 'none');
+        // Flexbox distributes each deficit by shrink factor times basis.
+        const shrink = width > 0 ? (width - minimum) / width : 0;
+        style(entry.element, '--taxi-united-cell-flex', [growth, shrink, width + 'px'].join(' '));
+      }
+    }
+  }
+
   function placeCell(entry, width, labelWidth, gap) {
     setCell(entry, width);
     if (entry.kind === 'field') {
       style(entry.element, '--taxi-united-cell-label-width', `${labelWidth ?? entry.labelWidth}px`);
       return;
     }
+    if (entry.kind !== 'group') return;
     setLane(entry, gap);
     const firstLabel = leadingField(entry) ? labelWidth : undefined;
     const widths = entry.children.map((child, index) => intrinsic(child, gap, index === 0 ? firstLabel : undefined));
@@ -101,7 +153,7 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     }
   }
   function placeLane(entry, first, tracks, gap) {
-    if (entry.kind === 'field' || entry.node.presentation.united) {
+    if (entry.kind !== 'group' || entry.node.presentation.united) {
       const track = tracks[first];
       placeCell(entry, track.width, track.labelWidth, gap);
       return first + 1;
@@ -119,6 +171,11 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
   }
 
   for (const {lanes, gap} of scopes) {
+    if (lanes.every(lane => !lane.title && lane.children.every(entry => entry.kind !== 'group'))
+      && lanes.some(lane => lane.children.some(entry => entry.kind === 'control'))) {
+      placeMixedRows(lanes);
+      continue;
+    }
     const rows = lanes.map(cells), count = Math.max(...rows.map(row => row.length));
     const tracks = Array.from({length: count}, (_, index) => {
       const items = rows.map(row => row[index]).filter(Boolean);
