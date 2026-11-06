@@ -66,6 +66,12 @@ exports.run = async function() {
   await ui.evaluate(`document.querySelector(${JSON.stringify(groupTrigger)}).click()`);
   await until(async () => (await groupItems()).length === 2, 'automatic and added menu items are shown');
   assert.deepEqual(await groupItems(), [{ label: 'Invoice', picture: true }, { label: 'Local receipt', picture: false }]);
+  await until(() => ui.evaluate(`(() => {
+    const template = document.querySelector('.taxi-root-commands [role=menuitem] .taxi-picture-template');
+    const image = template?.querySelector('img'), rect = template?.getBoundingClientRect();
+    return image?.complete && image.naturalWidth === 16 && rect.width === 16 && rect.height === 16
+      && getComputedStyle(template, '::after').maskImage.includes(image.src);
+  })()`), 'a menu template retains its masked 16-pixel extent');
   const selection = view.selected;
   await ui.evaluate("document.querySelector('.taxi-root-commands [role=menuitem]').click()");
   await until(async () => (await groupItems()).length === 0, 'selecting an automatic menu item closes the menu');
@@ -95,9 +101,11 @@ exports.run = async function() {
   const generatedDescriptor = await vscode.workspace.openTextDocument(vscode.Uri.file(form.generatedPictureXml));
   await editText(generatedDescriptor, 'Generated.svg', 'Template.zip');
   await until(async () => {
-    const template = view.snapshot.model.assets.find(asset => asset.picture.isTemplate)?.picture;
+    const model = view.snapshot.model;
+    const generatedCommand = model.root.presentation.autoCommandItems.find(item => item.key.endsWith('/command:GeneratedIcon'));
+    const template = model.assets.find(asset => asset.id === generatedCommand?.picture?.source)?.picture;
     const rendered = await command('GeneratedIcon');
-    return template?.fileName === 'l.png' && rendered?.tinted
+    return template?.isTemplate && template.fileName === 'l.png' && rendered?.tinted
       && rendered.image === `data:${template.mimeType};base64,${template.data}`;
   }, 'dirty ZIP reference renders the low density template with the effective command color');
   await ui.evaluate(`document.querySelector(${JSON.stringify(groupTrigger)}).click()`);

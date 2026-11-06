@@ -361,23 +361,24 @@ export async function createPictureFormSource(fixture) {
 
   const readable = 'http://v8.1c.ru/8.3/xcf/readable';
   const reference = name => `<Picture xmlns:xr="${readable}"><xr:Ref>CommonPicture.${name}</xr:Ref></Picture>`;
-  async function icon(name, file, color) {
+  async function icon(name, file, data) {
     const folder = join(fixture.source, 'CommonPictures', name, 'Ext');
     const pictureXml = join(folder, 'Picture.xml');
     const payload = join(folder, 'Picture', file);
     await mkdir(join(folder, 'Picture'), { recursive: true });
     await writeFile(join(fixture.source, 'CommonPictures', `${name}.xml`), descriptor('CommonPicture', name));
     await writeFile(pictureXml, `<ExtPicture xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xr="${readable}"><Picture><xr:Abs>${file}</xr:Abs></Picture></ExtPicture>`);
-    await writeFile(payload, svg(color));
+    await writeFile(payload, data);
     return { pictureXml, payload };
   }
   const svg = color => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="${color}"/></svg>`;
-  const { pictureXml, payload: one } = await icon('Icon', 'One.svg', 'red');
-  const { pictureXml: generatedPictureXml, payload: generated } = await icon('GeneratedIcon', 'Generated.svg', 'yellow');
-  await cp(new URL('./fixtures/form-template-picture.zip', import.meta.url), join(dirname(generated), 'Template.zip'));
+  const { pictureXml, payload: one } = await icon('Icon', 'One.svg', svg('red'));
+  const { pictureXml: generatedPictureXml, payload: generated } = await icon('GeneratedIcon', 'Generated.svg', svg('yellow'));
+  const template = await readFile(new URL('./fixtures/form-template-picture.zip', import.meta.url));
+  await writeFile(join(dirname(generated), 'Template.zip'), template);
   const two = join(dirname(one), 'Two.svg');
   await writeFile(two, svg('blue'));
-  await icon('MenuIcon', 'Menu.svg', 'purple');
+  await icon('MenuIcon', 'Menu.zip', template);
   const group = join(fixture.source, 'CommandGroups', 'PrintProbe.xml');
   await mkdir(dirname(group), { recursive: true });
   await writeFile(group, descriptor('CommandGroup', 'PrintProbe', '', '<Category>FormCommandBar</Category>'));
