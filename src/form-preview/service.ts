@@ -1,15 +1,15 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, relative, sep, extname, basename } from "node:path";
+import { isAbsolute, extname, basename } from "node:path";
 import { ExplorerError, isRecord, projectEnabled, type WirePath } from "../protocol.js";
 import { existingSource, nativePath, resolveSource, isForm } from "../source.js";
-import { revealFile } from "../reveal.js";
+import { relativeFile, revealFile } from "../reveal.js";
 import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { FormSession } from "./client.js";
-import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget } from "./protocol.js";
+import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
 import { parsePreviewNavigation, type PreviewNavigation } from "./navigation.js";
 import { formEditorRange } from "./source.js";
@@ -30,9 +30,11 @@ interface View {
   palette: FormPalette | undefined;
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
-function inside(root: string, file: string): string | undefined {
-  const path = relative(root, file);
-  return path && !isAbsolute(path) && !path.split(sep).includes("..") ? path : undefined;
+async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
+  const found = await revealFile(tree, path);
+  const entry = found && "owner" in found ? found.owner : found;
+  if (!entry || !isForm(entry) || !projectEnabled(entry.project.info)) throw new ExplorerError("sourceMissing");
+  return entry;
 }
 function inputKey(input: Pick<FormInput, "root" | "path">): string { return JSON.stringify([input.root, input.path]); }
 
@@ -115,7 +117,7 @@ export class FormPreviewService implements vscode.Disposable {
     if (value.type === "detach") { await this.detach(view); return; }
     if (value.type === "revealPreview") { view.frames.get("preview")?.panel.reveal(); return; }
     if (value.type === "dock") { const main = view.frames.get("main") ?? this.frame(view, "main"); view.frames.get("preview")?.panel.dispose(); main.panel.reveal(); this.publish(view); return; }
-    if (value.type === "source") { view.navigation++; await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(await this.sourceUri(view.path)), { preview: false }); return; }
+    if (value.type === "source") { view.navigation++; await vscode.window.showTextDocument(await this.openSource(view.path), { preview: false }); return; }
     if (value.type === "handler" && Number.isSafeInteger(value.index) && (value.index as number) >= 0) {
       const navigation = ++view.navigation;
       try { await this.handler(view, value.index as number, navigation); }
@@ -140,7 +142,7 @@ export class FormPreviewService implements vscode.Disposable {
     if (this.disposed || document.uri.scheme !== "file") return;
     const path = normalized(await realpath(document.uri.fsPath).catch(() => document.uri.fsPath));
     for (const view of this.views.values()) if (view.inputs.has(path) || normalized(view.path) === path
-      || document.isDirty && extname(path).toLowerCase() === ".xml" && view.inputRoots.some(root => inside(root.path, path) !== undefined)) this.schedule(view);
+      || document.isDirty && extname(path).toLowerCase() === ".xml" && view.inputRoots.some(root => relativeFile(root.path, path) !== undefined)) this.schedule(view);
   }
   private schedule(view: View, delay = 120): void {
     if (view.closed || view.suspended || this.disposed) return;
@@ -156,8 +158,7 @@ export class FormPreviewService implements vscode.Disposable {
         if (!tree || state.kind !== "ready" || !state.formPreview) throw new ExplorerError("incompatible");
         const activityKey = JSON.stringify(tree.projects.map(project => [project.key, projectEnabled(project.info)]));
         if (tree !== view.tree || !view.client || view.generation !== view.entry.project.info.generation) {
-          const found = await revealFile(tree, view.path), entry = found && "owner" in found ? found.owner : found;
-          if (!entry || !isForm(entry) || !projectEnabled(entry.project.info)) throw new ExplorerError("sourceMissing");
+          const entry = await formEntry(tree, view.path);
           if (view.client && (tree !== view.tree || nodeKey(entry.node.id) !== nodeKey(view.entry.node.id))) { await view.client.close().catch(() => {}); view.client = undefined; }
           view.tree = tree; view.entry = entry;
         }
@@ -230,8 +231,8 @@ export class FormPreviewService implements vscode.Disposable {
       if (basename(file).toLowerCase() === "form.xml" && !form) continue;
       const known = dependencies.find(input => input.role !== "picture" && input.id === view.inputs.get(path)
         && view.inputRoots.some(root => JSON.stringify(root.wire) === JSON.stringify(input.root)));
-      const base = view.inputRoots.find(root => inside(root.path, file) !== undefined);
-      const location = form ?? known ?? (base ? { root: base.wire, path: { value: inside(base.path, file)!, encoding: "utf-8" as const } } : undefined);
+      const base = view.inputRoots.find(root => relativeFile(root.path, file) !== undefined);
+      const location = form ?? known ?? (base ? { root: base.wire, path: { value: relativeFile(base.path, file)!, encoding: "utf-8" as const } } : undefined);
       if (!location) continue;
       const key = inputKey(location), text = document.getText(), previous = result.get(key);
       if (previous && previous.text !== text) throw new ExplorerError("sourceChanged");
@@ -324,42 +325,58 @@ export class FormPreviewService implements vscode.Disposable {
       : view.snapshot ? this.strings().stale! : reason === "not_managed_form" ? this.strings().notManaged! : this.strings().unavailable!;
     this.log(JSON.stringify({ event: "form_preview_failed", code: error instanceof ExplorerError ? error.code : "requestFailed", reason })); this.publish(view, false);
   }
+  private async openSource(path: string): Promise<vscode.TextDocument> {
+    return vscode.workspace.openTextDocument(await this.sourceUri(path));
+  }
+  private navigationGuard(view: View, client: FormSession, snapshot: FormSnapshot, navigation: number): () => boolean {
+    return () => !this.disposed && !view.closed && view.phase === "ready" && view.navigation === navigation
+      && view.client === client && view.snapshot === snapshot && client.current === snapshot;
+  }
+  private async revealLocation(document: vscode.TextDocument, text: string, bytes: Buffer, location: Location,
+    current: () => boolean): Promise<boolean> {
+    if (!current()) return false;
+    if (document.getText() !== text || querySnapshot(bytes.toString("utf8")) !== location.snapshot) throw new ExplorerError("sourceChanged");
+    const position = formEditorRange(bytes, location.range.start, location.range.end, text,
+      document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
+    const editor = await vscode.window.showTextDocument(document, { preview: false });
+    if (!current() || document.getText() !== text) return false;
+    editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end));
+    editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    return true;
+  }
   private async locate(view: View, target: FormTarget): Promise<void> {
     const navigation = ++view.navigation, { client, snapshot } = view;
     if (!client || !snapshot || view.phase !== "ready") return;
     if (target.kind !== "definition" && (!isIdentity(target.identity) || !view.nodes.has(identityKey(target.identity)))) return;
-    const current = () => !view.closed && view.phase === "ready" && view.navigation === navigation
-      && view.client === client && view.snapshot === snapshot && client.current === snapshot;
+    const current = this.navigationGuard(view, client, snapshot, navigation);
     try {
       const location = await client.locate(snapshot, target);
       if (!current()) return;
       const path = await existingSource(location.root, location.path);
       const dependency = snapshot.dependencies.find(dependency => dependency.id === location.source);
       if (!dependency) throw new ExplorerError("sourceChanged");
-      const document = await vscode.workspace.openTextDocument(await this.sourceUri(path));
-      const bytes = dependency.version !== null ? Buffer.from(document.getText(), "utf8") : await readFile(path);
-      if (!current()) return;
-      if (querySnapshot(bytes.toString("utf8")) !== location.snapshot) throw new ExplorerError("sourceChanged");
+      const document = await this.openSource(path);
+      const saved = dependency.version === null ? await readFile(path) : undefined;
       const text = document.getText();
-      const position = formEditorRange(bytes, location.range.start, location.range.end, text, document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
-      const editor = await vscode.window.showTextDocument(document, { preview: false });
-      if (!current() || document.getText() !== text) return;
-      editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end)); editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+      await this.revealLocation(document, text, saved ?? Buffer.from(text, "utf8"), location, current);
     } catch (error) { if (current()) throw error; }
   }
   private async handler(view: View, index: number, navigation: number): Promise<void> {
-    const client = view.client;
-    if (!client || view.phase !== "ready" || !view.snapshot?.model.handlers?.[index]) throw new ExplorerError("sourceChanged");
-    const source = await client.handlerSource(index, view.snapshot.revision), path = await existingSource(source.root, source.path);
-    const document = await vscode.workspace.openTextDocument(await this.sourceUri(path));
+    const { client, snapshot } = view;
+    if (!client || !snapshot?.model.handlers?.[index] || view.phase !== "ready") throw new ExplorerError("sourceChanged");
+    const current = this.navigationGuard(view, client, snapshot, navigation);
+    const source = await client.handlerSource(index, snapshot.revision);
+    if (!current()) return;
+    const path = await existingSource(source.root, source.path);
+    const document = await this.openSource(path);
+    if (!current()) return;
     const text = document.getText(), location = await client.locateHandler(index, source, text, String(document.version));
-    if (view.closed || view.client !== client || view.phase !== "ready" || view.navigation !== navigation || client.current.revision !== source.revision
-      || document.getText() !== text || querySnapshot(text) !== location.snapshot) throw new ExplorerError("sourceChanged");
-    const position = formEditorRange(Buffer.from(text, "utf8"), location.range.start, location.range.end, text, document.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n");
-    view.notice = view.snapshot?.modelComplete ? "" : this.strings().incomplete!; this.publish(view, false);
-    const editor = await vscode.window.showTextDocument(document, { preview: false });
-    editor.selection = new vscode.Selection(document.positionAt(position.start), document.positionAt(position.end)); editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    if (await this.revealLocation(document, text, Buffer.from(text, "utf8"), location, current)) {
+      view.notice = snapshot.modelComplete ? "" : this.strings().incomplete!;
+      this.publish(view, false);
+    }
   }
+
   /** Reconnect only to the replacement tree supplied by the owning Explorer, preserving the visible last model. */
   changed(tree: MetadataTree | undefined): void {
     for (const view of this.views.values()) {
@@ -371,8 +388,7 @@ export class FormPreviewService implements vscode.Disposable {
     try {
       if (!isRecord(state) || state.schemaVersion !== 1 || typeof state.path !== "string" || !isAbsolute(state.path) || !["main", "preview"].includes(String(state.role))) throw new ExplorerError("sourceMissing");
       const tree = await this.ensureTree(); if (!tree) throw new ExplorerError("obsolete");
-      const found = await revealFile(tree, state.path), entry = found && "owner" in found ? found.owner : found;
-      if (!entry || !isForm(entry)) throw new ExplorerError("sourceMissing");
+      const entry = await formEntry(tree, state.path);
       const view = await this.view(tree, entry, state.path, typeof state.application === "string" ? state.application : undefined);
       if (!view.selected && isIdentity(state.selection)) view.selected = state.selection;
       const role = state.role as Role; if (view.frames.has(role)) { panel.dispose(); view.frames.get(role)?.panel.reveal(); return; }
