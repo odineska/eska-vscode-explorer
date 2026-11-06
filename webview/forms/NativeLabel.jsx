@@ -1,109 +1,108 @@
-import { createEffect, createSignal, on, onCleanup } from 'solid-js';
-import { fontLineMetrics, inputTextBaseline } from './model.mjs';
+import { inputTextBaseline } from './model.mjs';
 import { hintedTextWidth, designTextAdvances, segmentedTextAdvances } from './font-metrics.mjs';
 import { lcdCaptionPixels } from './lcd-caption.mjs';
+import { createCaptionRaster } from './caption-raster.js';
+import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
 
-function rgb(value) {
-  const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value);
-  if (!match) throw new Error('font-raster-color');
-  return match.slice(1).map(Number);
-}
-function backdrop(element) {
-  for (let node = element; node; node = node.parentElement) {
-    const style = getComputedStyle(node);
-    if (style.backgroundImage !== 'none') throw new Error('font-raster-background');
-    if (style.backgroundColor !== 'rgba(0, 0, 0, 0)') return rgb(style.backgroundColor);
+const calibratedPlacements = ['tab', 'buttonLink', 'tableHeader', 'tableFooter', 'tableSearch'];
+
+function labelAdvances(props, text, options) {
+  if (props.segments) {
+    const advances = segmentedTextAdvances(props.segments, options);
+    if (props.segments.join('') !== text || !advances) throw new Error('font-raster-segments');
+    return advances;
   }
-  throw new Error('font-raster-background');
+  // Date masks allocate character positions without pair kerning.
+  if (props.mask) return [...text].map(char => hintedTextWidth(char, options));
+  if (props.placement === 'formTitle') {
+    const advances = designTextAdvances(text, options);
+    if (!advances) throw new Error('font-raster-advances');
+    return advances;
+  }
+}
+
+function paintLabel(canvas, props, { element: label, style, metrics, raster, companion: fieldFrame }) {
+  const placement = props.placement;
+  const tab = placement === 'tab', link = placement === 'buttonLink', title = placement === 'formTitle', input = placement === 'input';
+  const search = placement === 'tableSearch', tableHeader = placement === 'tableHeader', table = tableHeader || placement === 'tableFooter';
+  const alignedLeft = ['left', 'start'].includes(style.textAlign);
+  const alignedRight = ['right', 'end'].includes(style.textAlign);
+  if (!tab && !link && !alignedLeft && !((input || table) && alignedRight) && !(table && style.textAlign === 'center')) {
+    throw new Error('font-raster-alignment');
+  }
+  const height = parseFloat(style.height);
+  if (!Number.isFinite(height)) throw new Error('font-raster-layout');
+  let baseline = (height + metrics.ascent - metrics.descent) / 2;
+  if (tab || title || link) baseline = Math.round(baseline) - Number(tab);
+  if (input) baseline = inputTextBaseline(height, props.font);
+  // Adjacent captions keep their own baseline when another column enlarges the band.
+  if (table) baseline = metrics.ascent + (tableHeader ? 6 : 7);
+  if (search || placement === 'radioChoice') baseline = Math.floor(baseline);
+  if (fieldFrame) {
+    const scale = parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom) || 1;
+    const top = (label.getBoundingClientRect().top - fieldFrame.getBoundingClientRect().top) / scale;
+    // The row may allocate half a CSS pixel; snap the baseline in form coordinates.
+    baseline = Math.floor(top + baseline + 1e-6) - top;
+  }
+  const width = parseFloat(style.width), borderLeft = parseFloat(style.borderLeftWidth);
+  let left = 0;
+  if (tab || link) left = Math.round((width - raster.advance) / 2) - borderLeft;
+  else if (search) left = 2;
+  else if (title || table) left = parseFloat(style.paddingLeft);
+  else if (input) left = label.offsetLeft + (alignedLeft ? 3 : width - 3 - raster.advance);
+  if (table && !alignedLeft) {
+    left = (alignedRight ? width - raster.advance - (tableHeader ? 9 : 8)
+      : Math.round((width - raster.advance) / 2)) - borderLeft;
+  }
+  const canvasLeft = left + raster.originX;
+  const canvasTop = baseline - metrics.ascent + raster.originY + (input ? label.offsetTop : 0)
+    - (tab || link || table || search ? parseFloat(style.borderTopWidth) : 0);
+  canvas.style.left = canvasLeft + 'px';
+  canvas.style.top = canvasTop + 'px';
+
+  let clipping = '';
+  if (input) {
+    const overflowsHeight = metrics.pixels > height - 6, overflowsWidth = raster.advance > width - 6;
+    // Overflow uses the native text viewport instead of the LCD bitmap's overhang.
+    const clipLeft = Math.max(label.offsetLeft + 3, overflowsHeight ? left : -Infinity);
+    const clipRight = Math.min(label.offsetLeft + width, overflowsHeight ? left + raster.advance : Infinity,
+      overflowsWidth ? label.offsetLeft + width - (props.mask ? 3 : 4) : Infinity);
+    const edges = [
+      Math.max(0, label.offsetTop + 3 - canvasTop),
+      Math.max(0, canvasLeft + raster.width - clipRight),
+      Math.max(0, canvasTop + raster.height - label.offsetTop - height + 3),
+      Math.max(0, clipLeft - canvasLeft),
+    ];
+    clipping = 'inset(' + edges.map(edge => edge + 'px').join(' ') + ')';
+  }
+  if (search) clipping = 'inset(0 ' + Math.max(0, canvasLeft + raster.width - width + 22) + 'px 0 0)';
+  canvas.style.clipPath = clipping;
+  const foreground = rgb(style.color), background = solidBackdrop(label);
+  if (!foreground || !background) throw new Error('font-raster-color');
+  const rgba = lcdCaptionPixels(raster, foreground, background, link);
+  if (!paintCanvas(canvas, { width: raster.width, height: raster.height, rgba })) throw new Error('font-raster-canvas');
 }
 
 export function NativeLabel(props) {
   let canvas, placeholder;
-  const [status, setStatus] = createSignal('browser'), owner = {};
-  createEffect(on(() => [props.enabled, props.text, props.placement, props.calibrated, props.mask, JSON.stringify(props.segments), JSON.stringify(props.font), JSON.stringify(props.foreground)], () => {
-    const runtime = props.runtime, text = props.text, value = props.font;
-    runtime?.issue(owner, false); setStatus('browser');
-    if (!props.enabled || !text || !runtime) return;
-    const label = props.target?.() ?? placeholder.parentElement, metrics = fontLineMetrics(value), css = getComputedStyle(label);
-    const fieldFrame=props.placement==='fieldTitle'?label.closest('.taxi-form-frame'):undefined;
-    const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
-    if (family !== 'ESKA Taxi Sans' || value?.italic || value?.underline || value?.strikeout
-        || ['tab','buttonLink','tableHeader','tableFooter','tableSearch'].includes(props.placement) && !props.calibrated
-        || hintedTextWidth(text, { family, pixels: metrics.pixels, weight: css.fontWeight }) === undefined) {
-      runtime.issue(owner, true); return;
-    }
-    let current = true, raster;
-    const fail = () => { if (current) { setStatus('browser'); runtime.issue(owner, true); } };
-    const draw = () => {
-      if (!current || !raster) return;
-      try {
-        const style = getComputedStyle(label);
-        const tab = props.placement === 'tab', link = props.placement === 'buttonLink', title = props.placement === 'formTitle', input = props.placement === 'input';
-        const search=props.placement==='tableSearch',tableHeader = props.placement === 'tableHeader', tableFooter = props.placement === 'tableFooter', table = tableHeader || tableFooter;
-        const alignment = style.textAlign;
-        const alignedLeft = ['left', 'start'].includes(alignment);
-        const alignedRight = ['right', 'end'].includes(alignment);
-        if (!tab && !link && !alignedLeft && !((input || table) && alignedRight) && !(table && alignment === 'center')) throw new Error('font-raster-alignment');
-        const height = parseFloat(style.height), context = canvas.getContext('2d');
-        if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
-        canvas.width = raster.width; canvas.height = raster.height;
-        let baseline = tab || title || input || link ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
-          : (height + metrics.ascent - metrics.descent) / 2;
-        if(input)baseline=inputTextBaseline(height,value);
-        // Adjacent captions keep their own baseline when another column enlarges the band.
-        if(table)baseline=metrics.ascent+(tableHeader?6:7);
-        if(search||props.placement==='radioChoice')baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
-        if(fieldFrame){
-          const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
-          const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
-          // The row may allocate half a CSS pixel; snap the baseline in form coordinates.
-          baseline=Math.floor(top+baseline+1e-6)-top;
-        }
-        const width = parseFloat(style.width), borderLeft = parseFloat(style.borderLeftWidth);
-        let left = tab || link ? Math.round((width - raster.advance) / 2) - borderLeft
-          : search ? 2 : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (alignedLeft ? 3 : width - 3 - raster.advance) : 0;
-        if(table && !alignedLeft){
-          left = (alignedRight ? width - raster.advance - (tableHeader ? 9 : 8)
-            : Math.round((width - raster.advance) / 2)) - borderLeft;
-        }
-        const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link||table||search?parseFloat(style.borderTopWidth):0);
-        canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
-        let clipping='';
-        if(input){
-          const overflowsHeight=metrics.pixels>height-6,overflowsWidth=raster.advance>width-6;
-          // Overflow uses the native text viewport instead of the LCD bitmap's overhang.
-          const clipLeft=Math.max(label.offsetLeft+3,overflowsHeight?left:-Infinity);
-          const clipRight=Math.min(label.offsetLeft+width,overflowsHeight?left+raster.advance:Infinity,overflowsWidth?label.offsetLeft+width-(props.mask?3:4):Infinity);
-          const edges=[Math.max(0,label.offsetTop+3-canvasTop),Math.max(0,canvasLeft+raster.width-clipRight),Math.max(0,canvasTop+raster.height-label.offsetTop-height+3),Math.max(0,clipLeft-canvasLeft)];
-          clipping=`inset(${edges.map(edge=>`${edge}px`).join(' ')})`;
-        }
-        if(search)clipping=`inset(0 ${Math.max(0,canvasLeft+raster.width-parseFloat(style.width)+22)}px 0 0)`;
-        canvas.style.clipPath=clipping;
-        context.putImageData(new ImageData(lcdCaptionPixels(raster, rgb(style.color), backdrop(label), link), raster.width, raster.height), 0, 0);
-        runtime.issue(owner, false); setStatus('ready');
-      } catch { fail(); }
-    };
-    setStatus('pending');
-    const resize = new ResizeObserver(draw); resize.observe(label);
-    if(fieldFrame)resize.observe(fieldFrame);
-    const appearance = new MutationObserver(draw);
-    for (let node = label; node && !node.classList.contains('taxi-preview'); node = node.parentElement) {
-      appearance.observe(node, { attributes: true, attributeFilter: ['style', 'class'] });
-    }
-    runtime.face(css.fontWeight).then(face => {
-      if (!current) return;
-      const options = { family, pixels: metrics.pixels, weight: css.fontWeight };
-      // Date masks allocate character positions without pair kerning.
-      const advances = props.segments ? segmentedTextAdvances(props.segments,options) : props.mask ? [...text].map(char=>hintedTextWidth(char,options)) : props.placement === 'formTitle' ? designTextAdvances(text,options) : undefined;
-      if(props.segments && (props.segments.join('') !== text || !advances)) throw new Error('font-raster-segments');
-      if (props.placement === 'formTitle' && !advances) throw new Error('font-raster-advances');
-      raster = face.raster(text, metrics.pixels, metrics.ascent, metrics.descent, 'lcd', advances);
-      if (raster.advance !== (advances?.reduce((sum, value) => sum + value, 0) ?? hintedTextWidth(text, options))) throw new Error('font-raster-advance');
-      draw();
-    }).catch(fail);
-    onCleanup(() => { current = false; resize.disconnect(); appearance.disconnect(); runtime.issue(owner, false); });
-  }));
-  onCleanup(() => props.runtime?.issue(owner, false));
-  return <><span ref={placeholder} data-native-label={status()} data-native-link={props.placement === 'buttonLink' ? status() : undefined} data-native-value={props.placement === 'input' ? status() : undefined} style={{ display: ['input','tableSearch'].includes(props.placement) ? 'none' : undefined, visibility: status() === 'ready' && !props.interactive ? 'hidden' : undefined, color: status() === 'ready' && props.interactive ? 'transparent' : undefined }}>{props.children ?? props.text}</span>
-    <canvas ref={canvas} class="taxi-native-label" aria-hidden="true" style={{ display: status() === 'ready' ? undefined : 'none' }}/></>;
+  const status = createCaptionRaster(props, {
+    target: () => props.target?.() ?? placeholder.parentElement,
+    mode: 'lcd',
+    dependencies: () => [props.placement, props.calibrated, props.mask, JSON.stringify(props.segments)],
+    calibrated: () => !calibratedPlacements.includes(props.placement) || !!props.calibrated,
+    resizeWith: label => props.placement === 'fieldTitle' ? label.closest('.taxi-form-frame') : undefined,
+    advances: (text, options) => labelAdvances(props, text, options),
+    paint: layout => paintLabel(canvas, props, layout),
+  });
+  return <>
+    <span ref={placeholder} data-native-label={status()}
+      data-native-link={props.placement === 'buttonLink' ? status() : undefined}
+      data-native-value={props.placement === 'input' ? status() : undefined}
+      style={{
+        display: ['input', 'tableSearch'].includes(props.placement) ? 'none' : undefined,
+        visibility: status() === 'ready' && !props.interactive ? 'hidden' : undefined,
+        color: status() === 'ready' && props.interactive ? 'transparent' : undefined,
+      }}>{props.children ?? props.text}</span>
+    <canvas ref={canvas} class="taxi-native-label" aria-hidden="true" style={{ display: status() === 'ready' ? undefined : 'none' }}/>
+  </>;
 }

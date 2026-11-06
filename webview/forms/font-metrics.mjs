@@ -1,6 +1,14 @@
 import metrics from '../../resources/forms/fonts/advances.json' with { type: 'json' };
 import { font, fontLineMetrics } from './model.mjs';
 
+export function firstFontFamily(families) {
+  return families.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+}
+
+export function supportsNativeSans(family, font) {
+  return family === 'ESKA Taxi Sans' && !font?.italic && !font?.underline && !font?.strikeout;
+}
+
 export function linuxControlFont(value) {
   return { ...font(value, 'linux'), 'font-size': `${fontLineMetrics(value).pixels}px` };
 }
