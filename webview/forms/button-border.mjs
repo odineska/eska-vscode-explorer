@@ -86,5 +86,5 @@ export function buttonBorderPaint({height,background,outside,primary,position}) 
     });
   };
   const region = (right,bottom) => Array.from({length:bottom ? 12 : 9},(_,i) => pixel((right ? width - 3 : 0) + i % 3,(bottom ? height - 3 : 0) + Math.floor(i / 3)));
-  return {top,bottom:tail[2],shadow:outside.map(c => Math.round(c * 210 / 255)),corners:{topLeft:region(false,false),topRight:region(true,false),bottomLeft:region(false,true),bottomRight:region(true,true)}};
+  return {top,tail,bottom:tail[2],shadow:outside.map(c => Math.round(c * 210 / 255)),corners:{topLeft:region(false,false),topRight:region(true,false),bottomLeft:region(false,true),bottomRight:region(true,true)}};
 }

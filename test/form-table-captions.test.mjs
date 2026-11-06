@@ -81,3 +81,16 @@ test('native automatic movement preserves all 25920 group pixels in sixteen nati
  }
  assert.equal(compared,25920);assert.equal(matrix.pixelTolerance,0);assert.deepEqual(matrix.comparisonMasks,[]);
 });
+
+test('table movement uses the same border sampler at both native poses', () => {
+ const poses = [
+  {position:{x:349,y:268,width:60},sha256:'262596e50156d05e5bd41d59d269e2c15d0dd061bb4115555b86e8c93490a4d3'},
+  {position:{x:383,y:268,width:60},sha256:'262596e50156d05e5bd41d59d269e2c15d0dd061bb4115555b86e8c93490a4d3'},
+  {position:{x:349,y:546,width:60},sha256:'3f0df263dd722b7fd45383166532394cf48c2725c499042a891943c220b02643'},
+  {position:{x:383,y:546,width:60},sha256:'3f0df263dd722b7fd45383166532394cf48c2725c499042a891943c220b02643'},
+ ];
+ for (const {position,sha256} of poses) {
+  const rgb=tableMovementRgba(position).filter((_,index)=>index%4!==3);
+  assert.equal(createHash('sha256').update(rgb).digest('hex'),sha256,`${position.x},${position.y}`);
+ }
+});

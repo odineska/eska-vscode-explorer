@@ -373,10 +373,16 @@ export async function createTablePixelsGallery(fixture) {
   const bars=process.env.ESKA_FORM_TABLE_BARS;
   if(bars){
     if(!isAbsolute(bars))throw new Error('ESKA_FORM_TABLE_BARS must be absolute.');
-    for(const toolbar of JSON.parse(await readFile(join(bars,'metrics.json'),'utf8')).rows){
+    const {rows,movedTable}=JSON.parse(await readFile(join(bars,'metrics.json'),'utf8'));
+    for(const toolbar of rows){
       const row=reference.rows.find(row=>row.name===toolbar.name);
       if(!row)throw new Error(`Missing table for native toolbar ${toolbar.name}.`);
       for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].wholeToolbar=region;
+    }
+    if(movedTable){
+      const row=reference.rows.find(row=>row.name===movedTable.name);
+      if(!row)throw new Error(`Missing table for moved native toolbar ${movedTable.name}.`);
+      for(const [locale,region]of Object.entries(movedTable.locales))row.locales[locale].movedToolbar=region;
     }
   }
   const menus=process.env.ESKA_FORM_TABLE_MENU_PIXELS;
@@ -428,11 +434,15 @@ export async function createTablePixelsGallery(fixture) {
   const movement=process.env.ESKA_FORM_TABLE_MOVEMENT_PIXELS;
   if(movement){
     if(!isAbsolute(movement))throw new Error('ESKA_FORM_TABLE_MOVEMENT_PIXELS must be absolute.');
+    const defaultTable=reference.rows.find(row=>row.name==='Default');
     for(const table of JSON.parse(await readFile(join(movement,'metrics.json'),'utf8')).rows){
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native movement ${table.name}.`);
       for(const [locale,region]of Object.entries(table.locales)){
-        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(region);
+        const expected=row.locales[locale];expected.additionalRegions??=[];
+        // These default and detached poses use the moved group measurements.
+        const moved=defaultTable?.locales[locale]?.movedToolbar;
+        expected.additionalRegions.push(moved?{...region,rgbSha256:moved.movementRgbSha256}:region);
       }
     }
   }

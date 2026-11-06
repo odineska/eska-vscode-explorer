@@ -26,8 +26,14 @@ exports.run=async()=>{
    if(restore){await ui.evaluate("document.querySelector('.taxi-table-empty').click()");await until(()=>view.selected?.key.value==='1','table identity restored after capture');}return passed;
   }
   const passed=await sample(reference(form),form.kind);
-  const toolbar=reference(form).wholeToolbar;
-  if(passed&&toolbar){
+  const baseline=reference(form),movedToolbar=baseline.movedToolbar;
+  const completeToolbar = toolbar => ({...baseline,additionalRegions:[...baseline.additionalRegions,toolbar]});
+  const toolbarPoses = [
+   ['native-toolbar-pose',baseline.wholeToolbar],
+   ['moved-toolbar-pose',movedToolbar],
+  ];
+  for(const [label,toolbar] of toolbarPoses){
+   if(!passed||!toolbar)continue;
    if(form.kind==='DynamicList'){
     const captured=results.at(-1).additionalRegions.find(region=>region.name==='toolbar');
     assert.equal(captured.rgbSha256,toolbar.rgbSha256,'complete DynamicList toolbar remains exact');
@@ -43,16 +49,17 @@ exports.run=async()=>{
      return {position:[rect.x,rect.y],bottom:getComputedStyle(button).borderBottomColor};
     })()`);
     try{
-     const [x,y]=toolbar.nativeRegion;
+     const [x,y]=toolbar.nativeRegion,expectedBorder=`rgb(${(toolbar.lowerEdgeRgb??[156,156,156]).join(', ')})`;
      await until(()=>ui.evaluate(`(()=>{
       const {bar,button}=globalThis.__tableToolbarPose,r=bar.getBoundingClientRect();
       return bar===document.querySelector('.taxi-table-command-bar')&&r.x===${x}&&r.y===${y}
-       &&getComputedStyle(button).borderBottomColor==='rgb(156, 156, 156)';
+       &&getComputedStyle(button).borderBottomColor===${JSON.stringify(expectedBorder)};
      })()`),'whole toolbar uses the measured raster pose');
-     await sample({...reference(form),additionalRegions:[toolbar]},form.kind+'-native-toolbar-pose');
+     await sample({...reference(form),additionalRegions:[toolbar]},form.kind+'-'+label);
      const result=results.at(-1);
      result.nativeToolbarPose=[x,y];
      result.wholeToolbarPixelParity=result.additionalRegions[0].passed;
+     result.lowerEdgeRgb=toolbar.lowerEdgeRgb??[156,156,156];
      result.beforeToolbarPose=beforePose;
     }finally{
      await ui.evaluate(`(()=>{
@@ -77,7 +84,34 @@ exports.run=async()=>{
   if(passed&&['Default','DynamicList'].includes(form.kind)){
    const dynamic=form.kind==='DynamicList',label=value=>dynamic?'dynamic-'+value:value,other=forms.find(f=>f.kind===(dynamic?'MetadataTable':'GridFooter')),grid=await fs.readFile(other.path,'utf8');await ui.evaluate("document.querySelector('.taxi-table-empty').click();globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await until(()=>view.selected?.key.value==='1','table selected before dirty XML');const identity=view.selected;
    const change=async text=>{await replace(document,text);await until(()=>view.phase==='ready'&&!view.running&&!view.timer&&view.snapshot.dependencies.some(d=>d.role==='form'&&d.version===String(document.version)),'dirty table revision');assert.deepEqual(view.selected,identity);assert.equal(await ui.evaluate("globalThis.__tableGrid===document.querySelector('.taxi-table-scroll')"),true);};
-   await change(grid);await sample(reference(other),label('dirty-footer'));await change(original);await sample(reference(form),label('restored-default'));await ui.focusWorkbench();ui.close();await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'table pixel view detached');const floating=view.frames.get('preview');ui=await frame({detached:true,fixedFormArea:true,state:{title:floating.panel.title}});await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')"),'floating table DOM');await ui.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await sample(reference(form),label('floating-default'),true);await change(grid);await sample(reference(other),label('floating-dirty-footer'),true);await change(original);await sample(reference(form),label('floating-restored'),true);ui.close();floating.panel.dispose();await until(()=>!view.frames.has('preview'),'table pixel view reattached');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});await sample(reference(form),label('reattached-default'));assert.equal(document.isDirty,true);
+   await change(grid);
+   await sample(reference(other),label('dirty-footer'));
+   await change(original);
+   await sample(reference(form),label('restored-default'));
+   await ui.focusWorkbench();
+   ui.close();
+   await service.receive(view,main,{type:'detach'});
+   await until(()=>view.frames.get('preview')?.ready,'table pixel view detached');
+   const floating=view.frames.get('preview');
+   ui=await frame({detached:true,fixedFormArea:true,state:{title:floating.panel.title}});
+   await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')"),'floating table DOM');
+   await ui.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");
+   await sample(movedToolbar?completeToolbar(movedToolbar):reference(form),label('floating-default'),true);
+   if(movedToolbar){
+    const result=results.at(-1);
+    result.wholeToolbarPixelParity=result.additionalRegions.find(region=>region.name==='toolbar').passed;
+    result.detachedToolbar=true;
+   }
+   await change(grid);
+   await sample(reference(other),label('floating-dirty-footer'),true);
+   await change(original);
+   await sample(reference(form),label('floating-restored'),true);
+   ui.close();
+   floating.panel.dispose();
+   await until(()=>!view.frames.has('preview'),'table pixel view reattached');
+   ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
+   await sample(reference(form),label('reattached-default'));
+   assert.equal(document.isDirty,true);
   }
   if(passed&&form.kind==='InCell'){
    assert.equal(await ui.evaluate("[...document.querySelectorAll('.taxi-table-header-cell span[data-column]')].length"),2);for(const [index,id]of [[0,'3'],[1,'4']]){const hit=await ui.evaluate(`(()=>{const n=document.querySelectorAll('.taxi-table-header-cell span[data-column]')[${index}],r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return n===hit||n.contains(hit)})()`);assert.equal(hit,true,'native caption leaves each logical column hit-testable');await ui.evaluate(`document.querySelectorAll('.taxi-table-header-cell span[data-column]')[${index}].click()`);await until(()=>view.selected?.key.value===id,'composite header selects its logical column');}results.at(-1).logicalColumnsSelectable=true;
