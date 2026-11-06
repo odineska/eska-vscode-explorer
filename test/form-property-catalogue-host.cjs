@@ -348,7 +348,105 @@ exports.run = async () => {
         "!!document.querySelector('.form-properties [data-property-name=Title]') && !document.querySelector('[data-palette-id]')"), 'unbound button source restored');
       cases.push('button-palette-command-bar-and-absent-type');
     }
+    if ([undefined, 'button-only'].includes(process.env.ESKA_HOST_PROPERTY_CATALOGUE)) {
+      await checkCheckboxPalette({view, main, ui, document, select, edit, original, ru, cases});
+    }
   }
   assert.deepEqual(await fs.readFile(file),before);
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,locale:vscode.env.language,cases,diskUnchanged:true}));
 };
+
+async function checkCheckboxPalette({view, main, ui, document, select, edit, original, ru, cases}) {
+  const binding = '<DataPath>Flag</DataPath>';
+  const element = '<CheckBoxField name="ProbeCheck" id="56">'+binding+'</CheckBoxField>';
+  const attribute = '<Attribute name="Flag" id="2"><Type>'
+    +'<v8:Type xmlns:xs="http://www.w3.org/2001/XMLSchema">xs:boolean</v8:Type></Type></Attribute>';
+  const baseline = original.replace('<ChildItems>','<ChildItems>'+element)
+    .replace('</Attributes>',attribute+'</Attributes>');
+  assert.ok(baseline.includes(element) && baseline.includes(attribute));
+  await edit(baseline);
+  const checkboxNode = () => view.snapshot.model.root.children.find(node => node.name==='ProbeCheck');
+  await until(() => view.phase==='ready' && checkboxNode(), 'checkbox overlay loaded');
+  const checkbox = checkboxNode();
+  await select(checkbox);
+  if (process.env.ESKA_HOST_PROPERTY_CATALOGUE === 'button-only') {
+    await until(() => view.palette?.identity.key.value===checkbox.identity.key.value
+      && view.palette.revision===view.snapshot.revision && view.palette.rows===null,
+    'earlier 1.41 checkbox catalogue unavailable');
+    await until(() => ui.evaluate("!!document.querySelector('.form-properties [data-property-name=DataPath]') && !document.querySelector('[data-palette-id]')"), 'earlier 1.41 checkbox XML fallback');
+    cases.push('earlier-1.41-checkbox-xml-fallback');
+  } else {
+    const rows = () => ui.evaluate(`(() => {
+      const row = id => document.querySelector('[data-palette-id="platform:'+id+'"]');
+      const value = id => row(id)?.querySelector('td').textContent;
+      return {
+        count:document.querySelectorAll('.form-properties [data-palette-id^="platform:"]').length,
+        type:value('Type'),mode:value('CheckBoxType'),modeSource:row('CheckBoxType')?.dataset.paletteSource,
+        editFormat:value('EditFormat'),back:value('BackColor'),width:value('ItemWidth'),
+        equalWidth:value('EqualItemsWidth'),change:value('OnChange'),
+        visible:row('Visible')?.querySelector('input')?.checked,
+        rawWidth:!!document.querySelector('[data-property-name=ItemWidth][data-palette-id^="xml:"]'),
+        rawThreeState:!!document.querySelector('[data-property-name=ThreeState][data-palette-id^="xml:"]'),
+      };
+    })()`);
+    await until(async () => (await rows()).count===28, 'native checkbox palette');
+    const defaults = await rows();
+    assert.equal(defaults.type,ru?'Поле флажка':'Checkbox');
+    assert.equal(defaults.mode,ru?'Авто':'Auto');
+    assert.equal(defaults.modeSource,'absent');
+    assert.equal(defaults.visible,true);
+    cases.push('checkbox-palette-bound-auto-defaults');
+
+    const mode = '<CheckBoxType>Tumbler</CheckBoxType>';
+    const event = '<Events><Event name="OnChange">InspectFlag</Event></Events>';
+    const explicit = baseline.replace(binding,binding+mode+'<ItemWidth>12</ItemWidth><ThreeState>true</ThreeState>'+event);
+    await edit(explicit);
+    await until(async () => view.phase==='ready' && (await rows()).count===36, 'dirty tumbler adds appearance and layout rows');
+    const tumbler = await rows();
+    assert.equal(tumbler.mode,ru?'Тумблер':'Tumblers');
+    assert.equal(tumbler.modeSource,'form');
+    assert.equal(tumbler.editFormat,'');
+    assert.equal(tumbler.back,ru?'Авто':'Auto');
+    assert.equal(tumbler.width,'12');
+    assert.equal(tumbler.change,'InspectFlag');
+    assert.equal(tumbler.rawThreeState,true);
+    cases.push('checkbox-palette-dirty-tumbler-and-raw-three-state');
+    for (const [id,xml] of [['CheckBoxType',mode],['OnChange',event]]) {
+      await ui.evaluate(`document.querySelector('[data-palette-id="platform:${id}"]').dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true}))`);
+      await until(() => vscode.window.activeTextEditor?.document.uri.fsPath===document.uri.fsPath
+        && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===xml,
+      'exact checkbox source for '+id);
+      main.panel.reveal();
+    }
+    cases.push('checkbox-palette-mode-and-event-keep-xml-source');
+
+    const unequal = explicit.replace(mode,mode+'<EqualItemsWidth>false</EqualItemsWidth>');
+    await edit(unequal);
+    await until(async () => view.phase==='ready' && (await rows()).count===35, 'dirty tumbler hides the unused width row');
+    const resized = await rows();
+    assert.equal(resized.equalWidth,ru?'Нет':'No');
+    assert.equal(resized.width,undefined);
+    assert.equal(resized.rawWidth,true);
+    cases.push('checkbox-palette-unequal-width-keeps-unused-xml');
+
+    await edit(unequal.replace(mode,'<CheckBoxType>Switcher</CheckBoxType>'));
+    await until(async () => view.phase==='ready' && (await rows()).count===31, 'dirty switcher hides tumbler layout rows');
+    const switcher = await rows();
+    assert.equal(switcher.mode,ru?'Выключатель':'Switch');
+    assert.equal(switcher.editFormat,undefined);
+    assert.equal(switcher.back,ru?'Авто':'Auto');
+    assert.equal(switcher.rawWidth,true);
+    assert.equal(view.selected.key.value,checkbox.identity.key.value);
+    cases.push('checkbox-palette-switcher-keeps-inapplicable-xml');
+
+    await edit(baseline.replace(binding,''));
+    await until(async () => view.phase==='ready' && (await rows()).count===27, 'unbound checkbox palette');
+    const unbound = await rows();
+    assert.equal(unbound.type,'');
+    assert.equal(unbound.mode,undefined);
+    cases.push('checkbox-palette-unbound-context');
+  }
+  await edit(original);
+  await until(() => view.phase==='ready'
+    && !view.snapshot.model.root.children.some(node => node.name==='ProbeCheck'), 'checkbox overlay removed');
+}
