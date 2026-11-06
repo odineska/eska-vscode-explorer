@@ -14,6 +14,10 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(input,'x'),true);assert.equal(stretches(input,'y'),false);
   input.presentation.valueType.kind='number';assert.equal(stretches(input,'x'),false);
   assert.equal(stretches(node('InputField',{Height:3}),'y'),true);
+  assert.equal(stretches(node('InputField',{MultiLine:true}),'y'),true);
+  assert.equal(stretches(node('InputField',{MultiLine:true,Height:1}),'y'),false);
+  assert.equal(stretches(node('InputField',{MultiLine:true,VerticalStretch:false}),'y'),false);
+  assert.equal(stretches(node('InputField',{MultiLine:true,HorizontalStretch:false}),'y'),false);
   assert.equal(stretches(node('Pages',{},[node('Page',{},[table])]),'y'),true);
   assert.equal(stretches(fixed,'x'),false);assert.equal(stretches(fixed,'y'),false);
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
@@ -164,6 +168,14 @@ test('manual limits on measured automatic lanes keep their preferred trailing bo
   const raised = node('InputField', {AutoMaxWidth:false, MaxWidth:30});
   raised.presentation = field.presentation;
   assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, narrowMinimum:113, maximum:310, valueWeight:98});
+});
+
+test('an automatic multiline maximum preserves the preferred width of a wide field', () => {
+  for (const [width, maximum] of [[25, 410], [50, 511]]) {
+    const memo = node('InputField', {MultiLine:true, Width:width, HorizontalStretch:true});
+    assert.equal(controlBounds(memo, 'x', undefined, 'linux').maximum, maximum);
+    assert.equal(horizontalInputMaximum(memo, 'linux'), maximum);
+  }
 });
 
 test('a manual maximum on a horizontal text field includes the native control inset', () => {

@@ -1,4 +1,4 @@
-import { color, property, number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -42,6 +42,8 @@ export function stretches(node, axis, collapsed = {}) {
     || node.children.some(child => !!tableSearchReference(scalar(child, 'CommandName')));
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
+  if (node.kind === 'InputField' && inputRows(node) > 1
+    && !explicitNo(scalar(node, 'HorizontalStretch'))) return true;
   return ['InputField', 'LabelField'].includes(node.kind) && number(node, 'Height') > 1;
 }
 
@@ -60,6 +62,13 @@ function automaticInputMaximum(node, os, referenceLane = false) {
   }
 }
 
+function automaticMultilineMaximum(node, os) {
+  const { kind, length } = node.presentation.valueType;
+  if (kind !== 'string' || length || !linuxFixedInputWidth(node, os) || inputRows(node) <= 1
+    || explicitNo(scalar(node, 'AutoMaxWidth'))) return;
+  return Math.max(fieldWidth(node, os), automaticTextWidth(node));
+}
+
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
 export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
@@ -71,8 +80,8 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
   const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
     : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0);
-  let maximum;
-  if (explicit <= 0 || numericLabel) {
+  let maximum = axis === 'x' ? automaticMultilineMaximum(node, os) : undefined;
+  if (maximum === undefined && (explicit <= 0 || numericLabel)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
       // Manual bounds apply after leaving the initial Designer size.
@@ -94,11 +103,11 @@ function manualLaneMaximum(node) {
   if (limit) return limit * 10 + 10;
 }
 
-/** A manually bounded input in a Linux horizontal row reserves only its usable width. */
+/** A bounded input in a Linux horizontal row reserves only its usable width. */
 export function horizontalInputMaximum(node, os) {
   if (os !== 'linux' || node.kind !== 'InputField' || !stretches(node, 'x')) return;
   const maximum = manualLaneMaximum(node);
-  if (maximum === undefined) return;
+  if (maximum === undefined) return automaticMultilineMaximum(node, os);
   const intrinsic = fieldWidth(node, os);
   const minimum = controlBounds(node, 'x', intrinsic, os).minimum;
   if (nativeReferenceInput(node, os)) {

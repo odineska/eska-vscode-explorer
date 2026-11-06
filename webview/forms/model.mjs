@@ -190,15 +190,17 @@ export function inputHeight(node, os) {
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
   return os === 'linux' ? Math.round(line * 20 / 13) : Math.ceil(line * 1.5);
 }
+export function inputRows(node) {
+  if (!flag(node, 'MultiLine', false)) return 1;
+  const explicit = number(node, 'Height');
+  return explicit > 0 ? Math.max(1, explicit) : 2;
+}
 export function inputControlHeight(node, os) {
   const single = inputHeight(node, os);
-  if (!flag(node, 'MultiLine', false)) return single;
-  if (os !== 'linux') return Math.max(2, number(node, 'Height', 3)) * 20;
-  const explicit = number(node, 'Height');
-  const rows = explicit > 0 ? Math.max(1, explicit) : 2;
+  if (os !== 'linux') return flag(node, 'MultiLine', false) ? Math.max(2, number(node, 'Height', 3)) * 20 : single;
   // Linux Designer height units use the control height plus a gap measured at 8–20pt.
   const step = single + (single < 29 ? 5 : 6);
-  return single + (rows - 1) * step;
+  return single + (inputRows(node) - 1) * step;
 }
 export function inputRowHeight(node, os, captioned = true) {
   const height=inputHeight(node,os)+2;

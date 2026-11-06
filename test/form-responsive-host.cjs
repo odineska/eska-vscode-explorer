@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource } = require('./webview-host.cjs');
 
 const geometry = `(() => {
   const frame=document.querySelector('.taxi-form-frame'),css=getComputedStyle(frame),frameWidth=parseFloat(css.width)+(css.boxSizing==='content-box'?parseFloat(css.borderLeftWidth)+parseFloat(css.borderRightWidth):0),scale=frame.getBoundingClientRect().width/frameWidth;
@@ -150,6 +150,33 @@ async function checkCappedHeader(ui, document) {
   await replace(document, capped, fixed, 1);
 }
 
+async function checkTallHeader(ui, document, view) {
+  const source = document.getText();
+  const group = '<Group>HorizontalIfPossible</Group>';
+  const field = '<InputField name="Name" id="2">';
+  const tall = source.replace(group, group + '<Height>6</Height><VerticalStretch>false</VerticalStretch>')
+    .replace(field, field + '<MultiLine>true</MultiLine>');
+  assert.ok(source.includes(group) && source.includes(field));
+  try {
+    await editFormSource(document, view, tall);
+    await ui.rendered();
+    await ui.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    const result = await ui.evaluate(`(() => {
+      const control = document.querySelector('textarea[aria-label=Name]').closest('.taxi-input');
+      const row = control.closest('.taxi-field-row');
+      const parent = row.closest('.taxi-element').parentElement;
+      return { title: row.dataset.titleLocation, direction: getComputedStyle(parent).display,
+        input: control.getBoundingClientRect().height, height: parent.getBoundingClientRect().height };
+    })()`);
+    assert.equal(result.title, 'Top');
+    assert.equal(result.direction, 'flex');
+    assert.ok(result.height >= 96);
+    assert.equal(result.input, result.height - 21, 'automatic multiline input fills the height left by its caption');
+  } finally {
+    await editFormSource(document, view, source);
+  }
+}
+
 exports.run=async function(){
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), form=fixture.formGallery[0], original=await fs.readFile(form.path);
   const explorer=await vscode.extensions.all.find(extension=>extension.packageJSON.name==='eska-explorer').activate();
@@ -279,6 +306,7 @@ exports.run=async function(){
     await replace(document, declaration, rootWidth + '\n  <Height>0</Height>', 1);
     await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').hasAttribute('data-authored-height')"), 'automatic form height restored');
     await checkCappedHeader(ui, document);
+    await checkTallHeader(ui, document, view);
   }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
   assert.equal(service.views.size,1);main.panel.dispose();await until(()=>service.views.size===0,'responsive session released');await Promise.all([...service.closing]);await explorer.shutdown();
