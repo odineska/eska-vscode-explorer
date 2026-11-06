@@ -173,7 +173,7 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
       checked:mark.querySelectorAll('[aria-checked=true]').length,color:css.color,border:css.borderTopColor,
       track:sample ? 'rgb('+sample+')' : track ? getComputedStyle(track).fill : null,pixels};
   })()`;
-  const observe = async (target, variant) => {
+  const observe = async (target, variant, nativeTarget) => {
     const role = {CheckBox:'checkbox',Tumbler:'radiogroup',Switcher:'switch'}[variant.mode];
     await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
     await until(async () => {
@@ -197,7 +197,9 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     if (variant.mode==='Switcher') assert.equal(result.track,variant.inactive?'rgb(216, 216, 216)':'rgb(177, 177, 177)');
     const markSha256 = pixels ? createHash('sha256').update(Buffer.from(pixels,'base64')).digest('hex') : null;
     if (process.platform==='linux' && variant.markSha256) assert.equal(markSha256,variant.markSha256,variant.name+' native glyph');
-    await target.screenshot(`renderer-checkbox-${variant.name}-${vscode.env.language}.png`);
+    const screenshot = `renderer-checkbox-${variant.name}-${vscode.env.language}.png`;
+    if (nativeTarget) await target.captureTarget(nativeTarget, screenshot);
+    else await target.screenshot(screenshot);
     return {name:variant.name,...result,markSha256};
   };
   const results = [];
@@ -227,11 +229,12 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   await until(() => view.frames.get('preview')?.ready,'detached checkbox preview ready');
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true,fixedFormArea:true,state:{title:preview.panel.title}});
-  assert.notEqual((await floating.nativeWindow({detached:true})).targetId,mainWindow.targetId);
+  const detachedWindow = await floating.nativeWindow({detached:true});
+  assert.notEqual(detachedWindow.targetId,mainWindow.targetId);
   const inactive = {...switcher,name:'switch-detached-read-only',inactive:true,xml:'<ReadOnly>true</ReadOnly>',
     markSha256:'b50db8a4d3329ceacc6f86d1e147cf382ec9b69beeb58b0779ed7515a9a5272e'};
   await apply(inactive);
-  results.push(await observe(floating,inactive));
+  results.push(await observe(floating,inactive,detachedWindow.targetId));
   await service.receive(view,preview,{type:'dock'});
   await until(() => !view.frames.has('preview'),'checkbox preview docked');
   await change(original);
