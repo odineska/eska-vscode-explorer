@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -272,6 +273,7 @@ class VsixPayloadTests(unittest.TestCase):
         manifest = {'name': 'eska-explorer', 'publisher': '1c-tooling', 'version': '0.0.1', 'main': './out/extension.js'}
         self.files = {'package.json': json.dumps(manifest), 'package.nls.json': '{}', 'package.nls.ru.json': '{}',
                       'README.md': 'Tagged README', 'CHANGELOG.md': 'Tagged changes', 'LICENSE': 'License',
+                      'docs/setup.md': 'Connection instructions', 'docs/setup.ru.md': 'Подключение',
                       'resources/icons/support/LICENSE': 'Icon license', 'resources/icons/support/NOTICE.md': 'Icon notices',
                       'out/extension.js': 'exports.activate = () => {};',
                       'out/query-designer.js': 'document.body.replaceChildren();',
@@ -282,10 +284,10 @@ class VsixPayloadTests(unittest.TestCase):
             path.write_text(content, encoding='utf-8')
         self.archive = self.root / 'release.vsix'
 
-    def package(self, removed=None, changed=None, extra=None):
+    def package(self, removed=None, changed=None, extra=None, compression=zipfile.ZIP_STORED):
         """Create valid ZIP bytes with a deliberate omission, modification or accidental source leak."""
         files = {**self.files, **(changed or {}), **(extra or {})}
-        with zipfile.ZipFile(self.archive, 'w') as archive:
+        with zipfile.ZipFile(self.archive, 'w', compression=compression) as archive:
             archive.writestr('[Content_Types].xml', '<Types/>')
             archive.writestr('extension.vsixmanifest', '<PackageManifest><Metadata><Identity Publisher="1c-tooling" Id="eska-explorer" Version="0.0.1"/></Metadata></PackageManifest>')
             for name, content in files.items():
@@ -314,6 +316,45 @@ class VsixPayloadTests(unittest.TestCase):
                 self.package(extra={name: 'source must not ship'})
                 with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*' + name):
                     self.module.check(self.archive, self.source)
+
+    def test_reports_docs_and_duplicate_modules_stay_out_of_runtime(self):
+        """A generated file existing in the checkout does not make it a runtime dependency."""
+        extras = {'docs/measurements/form-colors.json': '{"samples":[]}',
+                  'docs/development.md': 'Developer instructions',
+                  'out/messages.js': 'Already bundled into extension.js'}
+        for name, content in extras.items():
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+            with self.subTest(name=name):
+                self.package(extra={name: content})
+                with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*' + re.escape(name)):
+                    self.module.check(self.archive, self.source)
+        self.package()
+        self.module.check(self.archive, self.source)
+
+    def test_setup_instructions_are_required_in_both_locales(self):
+        """Connection errors open these local documents in the installed extension."""
+        for name in ('docs/setup.md', 'docs/setup.ru.md'):
+            with self.subTest(name=name):
+                self.package(removed=name)
+                with self.assertRaisesRegex(AssertionError, 'missing archive files:.*' + re.escape(name)):
+                    self.module.check(self.archive, self.source)
+
+    def test_compressed_payload_cannot_hide_installed_or_javascript_growth(self):
+        """Each budget rejects a real archive independently of its compression ratio."""
+        name = 'out/extension.js'
+        content = 'const value = "' + 'abcdef' * 4096 + '";'
+        (self.source / name).write_text(content)
+        self.package(changed={name: content}, compression=zipfile.ZIP_DEFLATED)
+        self.assertLess(self.archive.stat().st_size, 4096)
+        for metric in ('archive', 'installed', 'javascript'):
+            limits = {'archive': 4096, 'installed': 32768, 'javascript': 32768}
+            limits[metric] = 1024 if metric == 'archive' else 4096
+            with self.subTest(metric=metric), patch.object(self.module, 'SIZE_LIMITS', limits):
+                with self.assertRaisesRegex(AssertionError, f'VSIX {metric} size .* exceeds budget'):
+                    self.module.check(self.archive, self.source)
+        self.module.check(self.archive, self.source)
 
 
 if __name__ == "__main__":

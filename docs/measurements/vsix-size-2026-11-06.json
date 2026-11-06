@@ -1,0 +1,163 @@
+{
+  "source_commit": "dfeac6c778001ba97f76b0178b0637f96660d368",
+  "releases": [
+    {
+      "version": "0.1.8",
+      "archive_bytes": 2234044,
+      "installed_bytes": 5368718,
+      "sha256": "42220fcc7cc04906de0898dc177df06a308ccb9b6d78edd210777a1a41ca9dcf",
+      "groups": {
+        "root": {
+          "files": 6,
+          "expanded": 67141,
+          "compressed": 18188
+        },
+        "resources": {
+          "files": 1244,
+          "expanded": 1970435,
+          "compressed": 997376
+        },
+        "docs": {
+          "files": 22,
+          "expanded": 624970,
+          "compressed": 353101
+        },
+        "out": {
+          "files": 44,
+          "expanded": 2521515,
+          "compressed": 505748
+        },
+        "docs/measurements": {
+          "files": 15,
+          "expanded": 184657,
+          "compressed": 52649
+        }
+      },
+      "release_url": "https://github.com/odineska/eska-vscode-explorer/releases/tag/v0.1.8"
+    },
+    {
+      "version": "0.1.9",
+      "archive_bytes": 5521691,
+      "installed_bytes": 15513503,
+      "sha256": "6aa7a847516663a1a0ee94488a444957343e6e487e74702e1d2eff95632c2105",
+      "groups": {
+        "root": {
+          "files": 6,
+          "expanded": 77103,
+          "compressed": 20505
+        },
+        "resources": {
+          "files": 1244,
+          "expanded": 1970435,
+          "compressed": 997376
+        },
+        "docs": {
+          "files": 24,
+          "expanded": 723986,
+          "compressed": 380460
+        },
+        "out": {
+          "files": 46,
+          "expanded": 3661146,
+          "compressed": 760814
+        },
+        "docs/measurements": {
+          "files": 64,
+          "expanded": 4451067,
+          "compressed": 503018
+        },
+        "out/form-fonts": {
+          "files": 13,
+          "expanded": 4629766,
+          "compressed": 2538560
+        }
+      },
+      "release_url": "https://github.com/odineska/eska-vscode-explorer/releases/tag/v0.1.9"
+    },
+    {
+      "version": "0.1.10",
+      "archive_bytes": 5579425,
+      "installed_bytes": 15858439,
+      "sha256": "b98d071b0eec5b199c945e35729923b162acdabd8288d66d71310450fb99ccc5",
+      "groups": {
+        "root": {
+          "files": 6,
+          "expanded": 80382,
+          "compressed": 21117
+        },
+        "resources": {
+          "files": 1244,
+          "expanded": 1970435,
+          "compressed": 997376
+        },
+        "docs": {
+          "files": 24,
+          "expanded": 728753,
+          "compressed": 381582
+        },
+        "out": {
+          "files": 46,
+          "expanded": 3835971,
+          "compressed": 796318
+        },
+        "docs/measurements": {
+          "files": 69,
+          "expanded": 4613132,
+          "compressed": 522446
+        },
+        "out/form-fonts": {
+          "files": 13,
+          "expanded": 4629766,
+          "compressed": 2538560
+        }
+      },
+      "release_url": "https://github.com/odineska/eska-vscode-explorer/releases/tag/v0.1.10"
+    }
+  ],
+  "before": {
+    "archive_bytes": 5545834,
+    "installed_bytes": 15870292,
+    "javascript_bytes": 3711423,
+    "files": 1404,
+    "sha256": "ad9a546c064a72ccd6ab035e1988ac83abf31923db27c3815dd989ed92db40f2"
+  },
+  "after": {
+    "archive_bytes": 4500598,
+    "installed_bytes": 10098787,
+    "javascript_bytes": 3266954,
+    "files": 1272,
+    "sha256": "6bd0a638d9d3525f6506f2eb5ef59e8344976ccb39786c207f6c3d6b1b70f546"
+  },
+  "removed_files": 132,
+  "removed_docs_bytes": 5328945,
+  "removed_duplicate_javascript_bytes": 444469,
+  "changed_files": [
+    "extension/docs/setup.md",
+    "extension/docs/setup.ru.md",
+    "extension/readme.md"
+  ],
+  "runtime_files_unchanged": 1262,
+  "date": "2026-11-06",
+  "units": "bytes; 1 MiB = 1048576 bytes",
+  "limits_bytes": {
+    "archive": 5242880,
+    "installed": 10485760,
+    "javascript": 3670016
+  },
+  "validation": {
+    "compile": "passed",
+    "packager": "@vscode/vsce 4.0.0 via Node",
+    "payload_check": "passed; CRC, manifest, exact files, byte identity, size limits",
+    "release_tests": {
+      "passed": 14,
+      "skipped": 2,
+      "skip_reason": "KNOPE_TEST_BINARY not set; no release automation changes"
+    },
+    "form_packaging_tests": {
+      "passed": 7
+    },
+    "runtime_changes": false,
+    "published": false
+  },
+  "packaged_relative_links_checked": 2
+}

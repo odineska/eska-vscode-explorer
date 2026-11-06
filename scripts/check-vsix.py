@@ -8,6 +8,24 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
+MIB = 1024 * 1024
+SIZE_LIMITS = {'archive': 5 * MIB, 'installed': 10 * MIB, 'javascript': 7 * MIB // 2}
+
+
+def check_sizes(archive, entries):
+    """Budget the download, installed files and executable JS independently."""
+    installed = [entry for entry in entries if entry.filename.startswith('extension/') and not entry.is_dir()]
+    sizes = {
+        'archive': archive.stat().st_size,
+        'installed': sum(entry.file_size for entry in installed),
+        'javascript': sum(entry.file_size for entry in installed
+                          if entry.filename.startswith('extension/out/') and entry.filename.endswith('.js')),
+    }
+    for name, size in sizes.items():
+        assert size <= SIZE_LIMITS[name], f'VSIX {name} size {size} bytes exceeds budget {SIZE_LIMITS[name]} bytes'
+    return sizes
+
+
 def form_runtime_assets(root, manifest):
     """Require every emitted form asset without accepting stale or unreferenced font files."""
     commands = manifest.get('contributes', {}).get('commands', [])
@@ -23,7 +41,7 @@ def form_runtime_assets(root, manifest):
     assert any(name.endswith('.wasm') for name in fonts), 'Missing form rasterizer output'
     for name in outputs:
         assert (root / name).is_file(), f'Missing bundled browser asset: {name}'
-    return sorted(outputs - entrypoints)
+    return sorted(outputs - {'out/query-designer.js'})
 
 
 def check(archive, source=None):
@@ -41,10 +59,10 @@ def check(archive, source=None):
         assert identity.attrib['Version'] == manifest['version']
         shipped = json.loads(package.read('extension/package.json'))
         assert all(shipped.get(key) == value for key, value in manifest.items()), 'Packaged manifest differs'
-        required = ['package.json', 'package.nls.json', 'package.nls.ru.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'resources/icons/support/LICENSE', 'resources/icons/support/NOTICE.md']
+        required = ['package.json', 'package.nls.json', 'package.nls.ru.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'resources/icons/support/LICENSE', 'resources/icons/support/NOTICE.md', 'out/extension.js', 'out/query-designer.js', 'docs/setup.md', 'docs/setup.ru.md']
         if manifest.get('icon'):
             required.append(manifest['icon'])
-        required += [path.relative_to(root).as_posix() for pattern in ['out/*.js', 'out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/shared/*.css', 'resources/query/*.css', 'docs/*.md', 'docs/images/*.png', 'docs/measurements/*.json'] for path in root.glob(pattern)]
+        required += [path.relative_to(root).as_posix() for pattern in ['out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/shared/*.css', 'resources/query/*.css'] for path in root.glob(pattern)]
         required += form_runtime_assets(root, manifest)
         # vsce publishes a LICENSE without an extension as LICENSE.txt.
         packaged = {name: 'extension/' + ('LICENSE.txt' if name == 'LICENSE' else name) for name in required}
@@ -59,7 +77,9 @@ def check(archive, source=None):
             if name != 'package.json':
                 assert package.read(normalized[packaged[name].lower()]) == (root / name).read_bytes(), name
         assert package.read('extension/' + manifest['main'].removeprefix('./'))
-    print(f'VSIX verified: {manifest["publisher"]}.{manifest["name"]}@{manifest["version"]}; {len(names)} files')
+        sizes = check_sizes(archive, package.infolist())
+    summary = '; '.join(f'{name} {size / MIB:.2f} MiB' for name, size in sizes.items())
+    print(f'VSIX verified: {manifest["publisher"]}.{manifest["name"]}@{manifest["version"]}; {len(names)} files; {summary}')
 
 
 if __name__ == '__main__':

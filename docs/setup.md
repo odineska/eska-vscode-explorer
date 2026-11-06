@@ -5,14 +5,14 @@
 Install the VSIX through **Extensions → Install from VSIX…**. Its extension ID is
 `1c-tooling.eska-explorer`; the minimum VS Code API version is **1.109.0**.
 The project repositories and downloads belong to **odineska**.
-[Packaging](packaging.md) · [ESKA installation](https://odineska.github.io/eska/).
+[Packaging](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [ESKA installation](https://odineska.github.io/eska/).
 
 The default backend is `eska-project serve --stdio`. The tree needs only Explorer
 and `eska-project`. Git, the full facade, the 1C platform and Analyzer are optional.
 Install a compatible `bsl-analyzer-app` for language services and `eska-fmt` for
 formatting. Use **Prepare project, formatter and language components** to check
 and prepare these tools. Available assets depend on the selected release and
-host architecture. [Component setup](component-setup.md).
+host architecture. [Component setup](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md).
 
 For a local ESKA checkout, build `cargo build -p eska-project` and select the
 resulting executable. The three paths are independent:
@@ -55,7 +55,7 @@ the backend executable. Manifest changes are watched automatically.
 BSL/SDBL syntax highlighting works without Analyzer. Opening BSL starts Explorer's
 language client. Set `eska.explorer.languageFeatures = false` to disable that client
 while keeping the tree. Resolve conflicts with other BSL extensions explicitly.
-[Language service, config and leases](language-service.md).
+[Language service, config and leases](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md).
 
 Use Format Document / Format Selection and ESKA as the formatter. Configure style
 in `[format]` in `eska.toml`; editor indentation does not override it.
@@ -66,7 +66,7 @@ API 1.34 aligns multiline string argument continuations using the editor font
 for related parameter labels and transparent offsets. Independent single-line
 hints keep their usual appearance. Alignment requires `editor.inlayHints.enabled = "on"`.
 Conditional modes, explicit accessibility support and actionable hints use native
-rendering. [Alignment details](language-service.md#многострочные-аргументы-и-подсказки-параметров).
+rendering. [Alignment details](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md#многострочные-аргументы-и-подсказки-параметров).
 
 ## Capabilities and workspace activity
 
@@ -74,14 +74,14 @@ The current Metadata API is **1.35**, while the minimum tree contract is **1.12*
 Query sessions, BSL literals, advanced constructor operations, formatting,
 alignment and project activity require their respective negotiated capabilities.
 An older tree connection does not provide every current feature.
-[Capability matrix](cli-management.md#версии-пользовательских-возможностей).
+[Capability matrix](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md#версии-пользовательских-возможностей).
 
 Disable unused workspace projects to release their indexes and watchers.
 A disabled dependency stays in the semantic context while an active consumer
 needs its sources. The single
 selected language context stays alive while it has an active consumer; the
 show/hide inactive filter affects presentation independently.
-[Activity](usage.md#активность-подпроектов).
+[Activity](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#активность-подпроектов).
 
 ## Offline use and troubleshooting
 
@@ -91,4 +91,4 @@ Clicking the ESKA status item updates all managed components; use **Manage Compo
 for individual actions. Connection errors appear in the connection log, language
 errors in Output. Legacy `eska ide` must be selected explicitly using
 `backend = "legacy"` and an `eska` executable.
-[Updates and recovery](component-setup.md) · [Backend selection](cli-management.md).
+[Updates and recovery](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Backend selection](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md).
