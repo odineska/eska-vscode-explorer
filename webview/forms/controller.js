@@ -1,18 +1,11 @@
 import { createStore, reconcile, unwrap } from 'solid-js/store';
 import { batch, createSignal } from 'solid-js';
 import { prepare, key, pageSelections } from './model.mjs';
-
-function previewNavigation(value) {
-  if (!value || typeof value !== 'object' || !value.pages || typeof value.pages !== 'object' || Array.isArray(value.pages)
-    || !value.collapsed || typeof value.collapsed !== 'object' || Array.isArray(value.collapsed)
-    || !Object.entries(value.pages).every(([owner,page])=>owner.includes(':')&&typeof page==='string'&&page.includes(':'))
-    || !Object.entries(value.collapsed).every(([owner,collapsed])=>owner.includes(':')&&typeof collapsed==='boolean')) return;
-  return {pages:{...value.pages},collapsed:{...value.collapsed}};
-}
+import { parsePreviewNavigation } from '../../src/form-preview/navigation.js';
 
 /** Only UI state is persisted. Models and backend session handles are refreshed after reload. */
 export function controller(api) {
-  const saved = api.getState(), navigation = previewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
+  const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
   const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false,
     notice: '', restore: null, selected: '', ui: { upper: 230, left: 40, right: 65, tab: 'attributes', treeTab: 'elements', folded: {}, pages: {}, collapsed: {}, zoom: 100, ...saved?.ui, ...navigation } });
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
@@ -21,8 +14,10 @@ export function controller(api) {
   const navigationState = () => ({pages:unwrap(state.ui.pages),collapsed:unwrap(state.ui.collapsed)});
   const shareNavigation = () => post({type:'previewNavigation',previewNavigation:navigationState()});
   function applyNavigation(value) {
-    const navigation=previewNavigation(value);if(!navigation)return;
-    set('ui','pages',reconcile(navigation.pages));set('ui','collapsed',reconcile(navigation.collapsed));
+    const navigation = parsePreviewNavigation(value);
+    if (!navigation) return;
+    set('ui', 'pages', reconcile(navigation.pages));
+    set('ui', 'collapsed', reconcile(navigation.collapsed));
   }
   function selectIdentity(identity) {
     const selected = key({ identity }); set('selected', selected); setSelection(identity);
