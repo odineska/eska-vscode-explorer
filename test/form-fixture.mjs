@@ -373,7 +373,8 @@ export async function createPictureFormSource(fixture) {
   }
   const svg = color => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="${color}"/></svg>`;
   const { pictureXml, payload: one } = await icon('Icon', 'One.svg', 'red');
-  const { payload: generated } = await icon('GeneratedIcon', 'Generated.svg', 'yellow');
+  const { pictureXml: generatedPictureXml, payload: generated } = await icon('GeneratedIcon', 'Generated.svg', 'yellow');
+  await cp(new URL('./fixtures/form-template-picture.zip', import.meta.url), join(dirname(generated), 'Template.zip'));
   const two = join(dirname(one), 'Two.svg');
   await writeFile(two, svg('blue'));
 
@@ -400,7 +401,7 @@ export async function createPictureFormSource(fixture) {
     .replace('<ChildItems><UsualGroup', `<ChildItems><PictureDecoration name="Logo" id="99">${reference('Icon')}</PictureDecoration><UsualGroup`)
     .replace('</Attributes>', '<Attribute name="Object" id="10"><Type><v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:CatalogObject.Товары</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute></Attributes>')
     .replace('</Form>', `${localCommands}</Form>`));
-  return { ...form, pictureXml, one, two, owner, generated };
+  return { ...form, pictureXml, one, two, owner, generated, generatedPictureXml };
 }
 
 export async function createDependencyFormSource(fixture) {

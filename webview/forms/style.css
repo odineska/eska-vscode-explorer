@@ -326,7 +326,11 @@ button { cursor: default; }
 .taxi-picture-resource { display: inline-block; max-width: 100%; vertical-align: middle; }
 .taxi-button .taxi-picture-resource { width: 16px; height: 16px; object-fit: contain; }
 .taxi-picture-field .taxi-picture-resource { width: 100%; height: 100%; object-fit: contain; }
-.taxi-disabled .taxi-picture-resource { filter: grayscale(1); opacity: .5; }
+.taxi-picture-template { display: inline-block; position: relative; max-width: 100%; vertical-align: middle; line-height: 0; }
+.taxi-picture-template::after { content: ''; position: absolute; inset: 0; background: currentColor; mask: var(--taxi-picture-mask) center / contain no-repeat; mask-mode: alpha; }
+.taxi-picture-field .taxi-picture-template { width: 100%; height: 100%; }
+.taxi-disabled :is(.taxi-picture-resource, .taxi-picture-template) { filter: grayscale(1); opacity: .5; }
+.taxi-picture-template > .taxi-picture-resource { opacity: 0; }
 .taxi-hyperlink { text-decoration: underline; color: #0066a3 !important; }
 .taxi-table-field { max-width: 100%; }
 /* The table model supplies the minimum width; the search field shrinks within it. */

@@ -49,11 +49,18 @@ function BrowserIcon(props) {
     <Match when={/Help/.test(props.name)}><text x="8" y="13" text-anchor="middle" font-size="15" fill="#424242">?</text></Match>
   </Switch></svg>;
 }
+function CommonPicture(props) {
+  const source = () => `data:${props.image.mimeType};base64,${props.image.data}`;
+  const image = () => <img class="taxi-picture-resource" src={source()} alt="" draggable="false"/>;
+  return <Show when={props.image.isTemplate} fallback={image()}>
+    <span class="taxi-picture-template" style={{ '--taxi-picture-mask': `url("${source()}")` }}>{image()}</span>
+  </Show>;
+}
 function Picture(props) {
   const picture = () => props.picture ?? props.node?.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
   return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
-    <Match when={picture()?.kind === 'common' && image()}><img class="taxi-picture-resource" src={`data:${image().mimeType};base64,${image().data}`} alt="" draggable="false"/></Match>
+    <Match when={picture()?.kind === 'common' && image()}>{asset => <CommonPicture image={asset()}/>}</Match>
   </Switch>;
 }
 export function CommandButton(props) {

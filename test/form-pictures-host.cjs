@@ -19,7 +19,7 @@ exports.run = async function() {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
   const original = await fs.readFile(form.one, 'utf8');
-  const sources = [form.path, form.pictureXml, form.owner];
+  const sources = [form.path, form.pictureXml, form.owner, form.generatedPictureXml];
   const before = await Promise.all(sources.map(file => fs.readFile(file)));
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service = explorer.formPreview;
@@ -35,7 +35,14 @@ exports.run = async function() {
       .find(node => node.getAttribute('aria-label') === ${JSON.stringify(label)});
     if (!button) return null;
     const image = button.querySelector('img');
-    return { text: button.textContent, image: image?.complete && image.naturalWidth === 16 ? image.src : null };
+    const mask = button.querySelector('.taxi-picture-template');
+    const paint = mask && getComputedStyle(mask, '::after');
+    return {
+      text: button.textContent,
+      image: image?.complete && image.naturalWidth === 16 ? image.src : null,
+      tinted: !!paint && paint.maskImage.includes(image.src) && paint.maskMode === 'alpha'
+        && paint.backgroundColor === getComputedStyle(button).color && getComputedStyle(image).opacity === '0',
+    };
   })()`);
   const dataUrl = async file => 'data:image/svg+xml;base64,' + (await fs.readFile(file)).toString('base64');
   const matches = async (label, text, image) => {
@@ -73,6 +80,14 @@ exports.run = async function() {
   await until(() => matches('GeneratedIcon', 'GeneratedIcon', generated), 'dirty metadata changes generated representation in the separate window');
   await editText(document, '<Representation>Auto</Representation>', '<Representation>Text</Representation>');
   await until(() => matches('Local icon', 'Local icon', null), 'dirty form changes authored representation in the separate window');
+  const generatedDescriptor = await vscode.workspace.openTextDocument(vscode.Uri.file(form.generatedPictureXml));
+  await editText(generatedDescriptor, 'Generated.svg', 'Template.zip');
+  await until(async () => {
+    const template = view.snapshot.model.assets.find(asset => asset.picture.isTemplate)?.picture;
+    const rendered = await command('GeneratedIcon');
+    return template?.fileName === 'l.png' && rendered?.tinted
+      && rendered.image === `data:${template.mimeType};base64,${template.data}`;
+  }, 'dirty ZIP reference renders the low density template with the effective command color');
   assert.deepEqual(await Promise.all(sources.map(file => fs.readFile(file))), before, 'viewing does not save XML');
 
   ui.close();
@@ -84,6 +99,6 @@ exports.run = async function() {
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, formPictures: true, locale: vscode.env.language, externalPayload: true,
     dirtyPictureDescriptor: true, commandPictures: true, generatedPictureAsset: true,
-    detachedRepresentationUpdates: true, sourceWritesDuringViewing: false,
+    detachedRepresentationUpdates: true, templatePictureTint: true, sourceWritesDuringViewing: false,
   }));
 };
