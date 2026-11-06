@@ -140,7 +140,10 @@ async function frame(tab) {
     };
   }
   await send('Runtime.evaluate', {contextId:context.id,expression:`if(!globalThis.__eskaNativeObserver){globalThis.__eskaNativeObserver=true;
-    window.addEventListener('message',event=>{if(event.data?.type==='state')globalThis.__eskaNativeState=event.data;
+    window.addEventListener('message',event=>{if(event.data?.type==='state'){
+      globalThis.__eskaNativeState=event.data;
+      if(event.data.model)globalThis.__eskaNativeFormRevision=event.data.revision;
+    }
       if(event.data?.type==='eska-native-publication')globalThis.__eskaNativeSequence=event.data.sequence;});}`,returnByValue:true},context.sessionId);
   // Repeat the normal initial ready handshake only; subsequent waits observe production publications.
   if (propertyTab) await tab.receive({type:'ready'});

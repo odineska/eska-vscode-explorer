@@ -177,7 +177,11 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     const edit = new vscode.WorkspaceEdit();
     edit.replace(target.uri,new vscode.Range(target.positionAt(0),target.positionAt(target.getText().length)),xml);
     assert.equal(await vscode.workspace.applyEdit(edit),true);
-    await until(() => view.phase==='ready' && view.snapshot.revision!==revision,'dirty checkbox properties applied');
+    const role = target === document ? 'form' : 'metadata';
+    const file = path.basename(target.uri.fsPath), version = target.isDirty ? String(target.version) : null;
+    await until(() => view.phase === 'ready' && !view.running && !view.timer && view.snapshot.revision !== revision
+      && view.snapshot.dependencies.some(input => input.role === role && path.basename(input.path.value) === file && input.version === version),
+      'dirty checkbox properties applied for the edited XML version');
   };
   const apply = variant => {
     const token = variant.name==='auto' ? 'Auto' : variant.mode;
@@ -217,6 +221,8 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   const observe = async (target, variant, nativeTarget) => {
     const role = {CheckBox:'checkbox',Tumbler:'radiogroup',Switcher:'switch'}[variant.mode];
     const caption = variant.mode === 'Tumbler' && variant.labels?.some(Boolean);
+    await until(() => target.evaluate(`globalThis.__eskaNativeFormRevision === ${JSON.stringify(view.snapshot.revision)}`),
+      'checkbox model revision reached the preview');
     await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
     await until(async () => {
       const result = await target.evaluate(measure);
