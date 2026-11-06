@@ -19,7 +19,7 @@ exports.run = async function() {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
   const original = await fs.readFile(form.one, 'utf8');
-  const sources = [form.path, form.pictureXml, form.owner, form.generatedPictureXml, form.group];
+  const sources = [form.path, form.pictureXml, form.owner, form.generatedPictureXml, form.group, form.target];
   const before = await Promise.all(sources.map(file => fs.readFile(file)));
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   const service = explorer.formPreview;
@@ -113,6 +113,16 @@ exports.run = async function() {
   const group = await vscode.workspace.openTextDocument(vscode.Uri.file(form.group));
   await editText(group, 'FormCommandBar', 'FormNavigationPanel');
   await until(() => ui.evaluate(`!document.querySelector(${JSON.stringify(groupTrigger)})`), 'dirty group category removes the menu from the detached preview');
+  assert.ok(!view.snapshot.dependencies.some(input => input.path.value.endsWith('GenerateTarget.xml')));
+  const target = await vscode.workspace.openTextDocument(vscode.Uri.file(form.target));
+  await editText(target, 'Catalog.Покупатели', 'Catalog.Товары');
+  const generateTrigger = '[data-command-group="Form.StandardCommand.CreateBasedOn"] > button';
+  const generateLabel = vscode.env.language.startsWith('ru') ? 'Создать на основании' : 'Generate';
+  await until(() => ui.evaluate(`document.querySelector(${JSON.stringify(generateTrigger)})?.getAttribute('aria-label') === ${JSON.stringify(generateLabel)}`),
+    'dirty reverse BasedOn adds Generate in the detached preview');
+  await ui.evaluate(`document.querySelector(${JSON.stringify(generateTrigger)}).click()`);
+  await until(async () => (await groupItems()).length === 1, 'Generate opens its declared target');
+  assert.deepEqual(await groupItems(), [{ label: 'GenerateTarget', picture: false }]);
   assert.deepEqual(await Promise.all(sources.map(file => fs.readFile(file))), before, 'viewing does not save XML');
 
   ui.close();
@@ -124,6 +134,6 @@ exports.run = async function() {
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, formPictures: true, locale: vscode.env.language, externalPayload: true,
     dirtyPictureDescriptor: true, commandPictures: true, generatedPictureAsset: true,
-    detachedRepresentationUpdates: true, templatePictureTint: true, rootCommandMenu: true, sourceWritesDuringViewing: false,
+    detachedRepresentationUpdates: true, templatePictureTint: true, rootCommandMenu: true, dirtyBasedOnTarget: true, sourceWritesDuringViewing: false,
   }));
 };

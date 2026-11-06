@@ -357,7 +357,7 @@ export async function createPictureFormSource(fixture) {
   const form = await createFormSource(fixture);
   const root = join(fixture.source, 'Configuration.xml');
   await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>',
-    '<ChildObjects><CommonPicture>Icon</CommonPicture><CommonPicture>GeneratedIcon</CommonPicture><CommonPicture>MenuIcon</CommonPicture><CommandGroup>PrintProbe</CommandGroup>'));
+    '<ChildObjects><CommonPicture>Icon</CommonPicture><CommonPicture>GeneratedIcon</CommonPicture><CommonPicture>MenuIcon</CommonPicture><CommandGroup>PrintProbe</CommandGroup><Document>GenerateTarget</Document>'));
 
   const readable = 'http://v8.1c.ru/8.3/xcf/readable';
   const reference = name => `<Picture xmlns:xr="${readable}"><xr:Ref>CommonPicture.${name}</xr:Ref></Picture>`;
@@ -382,6 +382,10 @@ export async function createPictureFormSource(fixture) {
   const group = join(fixture.source, 'CommandGroups', 'PrintProbe.xml');
   await mkdir(dirname(group), { recursive: true });
   await writeFile(group, descriptor('CommandGroup', 'PrintProbe', '', '<Category>FormCommandBar</Category>'));
+  const target = join(fixture.source, 'Documents', 'GenerateTarget.xml');
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, descriptor('Document', 'GenerateTarget', '',
+    `<BasedOn xmlns:xr="${readable}"><xr:Item>Catalog.Покупатели</xr:Item></BasedOn>`));
 
   const owner = join(fixture.source, 'Catalogs', 'Товары.xml');
   const generatedCommand = `<Command uuid="657d01bd-aad7-4076-9864-ce2aa659793b"><Properties><Name>GeneratedIcon</Name>
@@ -412,7 +416,7 @@ export async function createPictureFormSource(fixture) {
     .replace('<ChildItems><UsualGroup', `<ChildItems><PictureDecoration name="Logo" id="99">${reference('Icon')}</PictureDecoration><UsualGroup`)
     .replace('</Attributes>', '<Attribute name="Object" id="10"><Type><v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:CatalogObject.Товары</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute></Attributes>')
     .replace('</Form>', `${localCommands}${commandInterface}</Form>`));
-  return { ...form, pictureXml, one, two, owner, generated, generatedPictureXml, group };
+  return { ...form, pictureXml, one, two, owner, generated, generatedPictureXml, group, target };
 }
 
 export async function createDependencyFormSource(fixture) {
