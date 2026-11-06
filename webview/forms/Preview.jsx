@@ -50,7 +50,7 @@ function BrowserIcon(props) {
   </Switch></svg>;
 }
 function Picture(props) {
-  const picture = () => props.node.presentation.picture;
+  const picture = () => props.picture ?? props.node?.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
   return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
     <Match when={picture()?.kind === 'common' && image()}><img class="taxi-picture-resource" src={`data:${image().mimeType};base64,${image().data}`} alt="" draggable="false"/></Match>
@@ -64,18 +64,29 @@ export function CommandButton(props) {
   const [borderPaint, setBorderPaint] = createSignal();
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node?.kind === 'Button' && ['Hyperlink', 'CommandBarHyperlink'].includes(scalar(props.node, 'Type'));
-  const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
-  const cancelSearchPicture = () => representation() === 'Picture' && !props.node?.presentation.picture
+  const sourcePicture = () => props.node?.presentation.picture ?? props.command?.picture;
+  const declaredMode = () => scalar(props.node, 'Representation', 'Auto');
+  const cancelSearchPicture = () => declaredMode() === 'Picture' && !sourcePicture()
     && tableSearchReference(scalar(props.node, 'CommandName'))?.action === 'CancelSearch';
   const pictureName = () => props.picture ?? (cancelSearchPicture() ? 'StdPicture.CancelSearch' : undefined);
-  const picture = () => pictureName() ?? props.node?.presentation.picture;
+  const representation = () => {
+    if (props.iconOnly || cancelSearchPicture()) return 'Picture';
+    return props.node?.presentation.buttonRepresentation ?? props.command?.buttonRepresentation ?? declaredMode();
+  };
+  const iconOnly = () => representation() === 'Picture';
+  const picture = () => representation() === 'Text' ? undefined : pictureName() ?? sourcePicture();
   const linkCalibrated = () => props.node.presentation.font.points === 10 && props.node.presentation.font.weight === 400
     && !picture() && !props.dropdown && !props.menu && flag(props.node, 'Enabled');
   const primary = () => (props.primary || flag(props.node, 'DefaultButton', false))
     && !(props.controller.state.os === 'linux' && property(props.node, 'BackColor'));
-  const nativeIcon = createMemo(() => props.iconOnly && !!standardPicture(props.picture, props.pictureVariant));
-  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!props.iconOnly || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
-    && !link() && (representation() !== 'Picture' || nativeIcon()) && (!picture() || nativeIcon())
+  const nativeIcon = createMemo(() => {
+    if (!iconOnly()) return false;
+    const value = picture();
+    if (typeof value === 'string') return !!standardPicture(value, props.pictureVariant);
+    return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
+  });
+  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
+    && !link() && (!picture() || nativeIcon())
     && (primary() || flag(props.node, 'Enabled'));
   const background = () => props.controller.state.os === 'linux' && primary()
     ? props.controller.state.model.importantColor : props.node?.presentation.background;
@@ -106,14 +117,14 @@ export function CommandButton(props) {
       return { padding: '0 1px' };
     }
     if (props.controller.state.os === 'linux' && nativeIcon()) return { 'background-image': backgroundImage() };
-    if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || link() || representation() === 'Picture') return {};
+    if (props.controller.state.os !== 'linux' || props.bar || props.help || iconOnly() || link()) return {};
     if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
-    automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
+    automatic:!props.help && !iconOnly() && number(props.node,'Width') <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   createEffect(() => { measuredWidth(); formLayout?.invalidate(); });
@@ -125,11 +136,11 @@ export function CommandButton(props) {
   });
   return <button ref={button} type="button" data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
-    'taxi-button--icon-only': props.iconOnly || cancelSearchPicture(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
+    'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={!props.node || flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show><Show when={!iconOnly()}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
     <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
@@ -143,7 +154,7 @@ function RootCommands(props) {
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
   const commands = () => automaticCommands(node());
   return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
-    <div class="taxi-root-commands"><For each={commands()}>{item => <CommandButton controller={props.controller} label={text(item.caption,state.locale,state.strings)} primary={item.primary}/>}</For>
+    <div class="taxi-root-commands"><For each={commands()}>{item => <CommandButton controller={props.controller} command={item} label={text(item.caption,state.locale,state.strings)} primary={item.primary}/>}</For>
       <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
       <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/>
     </div>

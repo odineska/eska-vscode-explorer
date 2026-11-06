@@ -354,18 +354,53 @@ async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTU
 }
 
 export async function createPictureFormSource(fixture) {
-  const form = await createFormSource(fixture), root = join(fixture.source,'Configuration.xml');
-  await writeFile(root,(await readFile(root,'utf8')).replace('<ChildObjects>','<ChildObjects><CommonPicture>Icon</CommonPicture>'));
-  const folder=join(fixture.source,'CommonPictures','Icon','Ext'), imageFolder=join(folder,'Picture');
-  await mkdir(imageFolder,{recursive:true});
-  await writeFile(join(fixture.source,'CommonPictures','Icon.xml'),descriptor('CommonPicture','Icon'));
-  const pictureXml=join(folder,'Picture.xml');
-  await writeFile(pictureXml,'<ExtPicture xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"><Picture><xr:Abs>One.svg</xr:Abs></Picture></ExtPicture>');
-  const svg=color=>`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="${color}"/></svg>`;
-  const one=join(imageFolder,'One.svg'),two=join(imageFolder,'Two.svg');
-  await writeFile(one,svg('red'));await writeFile(two,svg('blue'));
-  await writeFile(form.path,form.text.replace('<ChildItems>','<ChildItems><PictureDecoration name="Logo" id="99"><Picture xmlns:xr="http://v8.1c.ru/8.3/xcf/readable"><xr:Ref>CommonPicture.Icon</xr:Ref><xr:LoadTransparent>false</xr:LoadTransparent></Picture></PictureDecoration>'));
-  return {...form,pictureXml,one,two};
+  const form = await createFormSource(fixture);
+  const root = join(fixture.source, 'Configuration.xml');
+  await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>',
+    '<ChildObjects><CommonPicture>Icon</CommonPicture><CommonPicture>GeneratedIcon</CommonPicture>'));
+
+  const readable = 'http://v8.1c.ru/8.3/xcf/readable';
+  const reference = name => `<Picture xmlns:xr="${readable}"><xr:Ref>CommonPicture.${name}</xr:Ref></Picture>`;
+  async function icon(name, file, color) {
+    const folder = join(fixture.source, 'CommonPictures', name, 'Ext');
+    const pictureXml = join(folder, 'Picture.xml');
+    const payload = join(folder, 'Picture', file);
+    await mkdir(join(folder, 'Picture'), { recursive: true });
+    await writeFile(join(fixture.source, 'CommonPictures', `${name}.xml`), descriptor('CommonPicture', name));
+    await writeFile(pictureXml, `<ExtPicture xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xr="${readable}"><Picture><xr:Abs>${file}</xr:Abs></Picture></ExtPicture>`);
+    await writeFile(payload, svg(color));
+    return { pictureXml, payload };
+  }
+  const svg = color => `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="${color}"/></svg>`;
+  const { pictureXml, payload: one } = await icon('Icon', 'One.svg', 'red');
+  const { payload: generated } = await icon('GeneratedIcon', 'Generated.svg', 'yellow');
+  const two = join(dirname(one), 'Two.svg');
+  await writeFile(two, svg('blue'));
+
+  const owner = join(fixture.source, 'Catalogs', 'Товары.xml');
+  const generatedCommand = `<Command uuid="657d01bd-aad7-4076-9864-ce2aa659793b"><Properties><Name>GeneratedIcon</Name>
+    <Group>FormCommandBarImportant</Group><CommandParameterType><v8:Type>cfg:CatalogRef.Товары</v8:Type></CommandParameterType>
+    <Representation>Picture</Representation>${reference('GeneratedIcon')}</Properties></Command>`;
+  await writeFile(owner, (await readFile(owner, 'utf8'))
+    .replace('<MetaDataObject ', '<MetaDataObject xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" ')
+    .replace('<ChildObjects>', `<ChildObjects>${generatedCommand}`));
+
+  const button = (name, id, mode, title = '', command = 'LocalIcon') => `<Button name="${name}" id="${id}"><Type>CommandBarButton</Type>
+    <CommandName>Form.Command.${command}</CommandName><Representation>${mode}</Representation>${title ? `<Title>${title}</Title>` : ''}</Button>`;
+  const bar = `<AutoCommandBar name="FormCommandBar" id="-1"><ChildItems>
+    ${button('AutoIcon', 91, 'Auto')}
+    ${button('TextIcon', 92, 'Text', 'Text command')}
+    ${button('MixedIcon', 93, 'PictureAndText', 'Mixed command')}
+    ${button('NoIcon', 94, 'Picture', '', 'NoIcon')}
+    </ChildItems></AutoCommandBar>`;
+  const localCommands = `<Commands><Command name="LocalIcon" id="101"><Title>Local icon</Title>${reference('Icon')}</Command>
+    <Command name="NoIcon" id="102"><Title>No icon</Title></Command></Commands>`;
+  await writeFile(form.path, form.text
+    .replace('<CommandBarLocation>None</CommandBarLocation><AutoCommandBar name="FormCommandBar" id="-1"/>', bar)
+    .replace('<ChildItems><UsualGroup', `<ChildItems><PictureDecoration name="Logo" id="99">${reference('Icon')}</PictureDecoration><UsualGroup`)
+    .replace('</Attributes>', '<Attribute name="Object" id="10"><Type><v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:CatalogObject.Товары</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute></Attributes>')
+    .replace('</Form>', `${localCommands}</Form>`));
+  return { ...form, pictureXml, one, two, owner, generated };
 }
 
 export async function createDependencyFormSource(fixture) {

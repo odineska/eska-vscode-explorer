@@ -180,6 +180,7 @@ button { cursor: default; }
 .taxi-button--icon-only.taxi-button--dropdown { width: 42px; }
 .taxi-button--icon-only.taxi-button--dropdown .taxi-down { margin-left: 0; }
 .taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; text-decoration: underline; }
+.taxi-button--link.taxi-button--icon-only { width: max-content; min-width: 0; }
 .taxi-button:active { background-color: #efefef; }
 .taxi-down { display: inline-block; flex: 0 0 5px; width: 5px; margin-left: 5px; font-size: 10px; }
 .taxi-icon { display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; vertical-align: middle; }
