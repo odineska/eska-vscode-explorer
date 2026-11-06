@@ -59,6 +59,24 @@ exports.run = async function() {
     && await matches('No icon', 'No icon', null)
     && await matches('GeneratedIcon', '', generated), 'authored and generated command pictures use their effective representation');
 
+  if (process.platform === 'linux') {
+    const geometry = await ui.evaluate(`(() => {
+      const form = document.querySelector('.taxi-form-frame'), bar = form.querySelector('.taxi-root-commands');
+      const boxes = [...bar.querySelectorAll('button')];
+      const box = (key) => bar.querySelector('[data-command-key="' + key + '"]').getBoundingClientRect();
+      const primary = box('Form.StandardCommand.WriteAndClose'), save = box('Form.StandardCommand.Write');
+      const generated = boxes.find(button => button.getAttribute('aria-label') === 'GeneratedIcon').getBoundingClientRect();
+      const mixed = boxes.find(button => button.getAttribute('aria-label') === 'Mixed command');
+      const mixedBox = mixed.getBoundingClientRect(), icon = mixed.querySelector('img').getBoundingClientRect();
+      return {
+        top: primary.top - form.getBoundingClientRect().top,
+        writeGap: save.left - primary.right, generatedGap: generated.left - save.right,
+        pictureInset: icon.left - mixedBox.left, pictureWidth: icon.width,
+      };
+    })()`);
+    assert.deepEqual(geometry, { top: 29, writeGap: 9, generatedGap: 20, pictureInset: 6, pictureWidth: 16 });
+  }
+
   const groupTrigger = '.taxi-root-commands [data-command-group] > button';
   const groupItems = () => ui.evaluate(`(() => [...document.querySelectorAll('.taxi-root-commands [role=menuitem]')]
     .map(item => ({ label: item.textContent, picture: !!item.querySelector('img') })))()`);

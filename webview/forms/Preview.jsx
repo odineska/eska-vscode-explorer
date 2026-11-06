@@ -127,7 +127,11 @@ export function CommandButton(props) {
     if (props.controller.state.os !== 'linux' || props.bar || props.help || iconOnly() || link()) return {};
     if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
+    const pictureWithText = props.rootBar && !!picture() && !!label();
+    const leftPadding = pictureWithText ? 5 : value.horizontalPadding;
+    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px ${value.verticalPadding}px ${leftPadding}px`,
+      'line-height': `${value.lineHeight}px`,
+      'column-gap': pictureWithText ? '8px' : undefined, 'justify-content': pictureWithText ? 'flex-start' : undefined,
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
@@ -141,7 +145,7 @@ export function CommandButton(props) {
     report(value ? parseFloat(value) : undefined);
     onCleanup(() => report(undefined));
   });
-  return <button ref={button} type="button" data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
+  return <button ref={button} type="button" data-command-key={props.command?.key} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
@@ -161,14 +165,23 @@ function RootCommands(props) {
   const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
   const commands = createMemo(() => automaticCommands(node(), state));
   return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
-    <div class="taxi-root-commands"><For each={commands()}>{item => {
-      const label = () => text(item.caption, state.locale, state.strings);
-      return <Show when={item.items?.length} fallback={<CommandButton controller={props.controller} command={item} label={label()} primary={item.primary}/>}>
-        <PopupMenu command={item} label={label()} controller={props.controller} nativeDropdown/>
-      </Show>;
-    }}</For>
-      <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
-      <Show when={flag(bar(), 'Autofill')}><div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/></Show>
+    <div class="taxi-root-commands">
+      <For each={commands()}>{item => {
+        const label = () => text(item.caption, state.locale, state.strings);
+        return <Show when={item.items?.length} fallback={
+          <CommandButton controller={props.controller} command={item} label={label()} primary={item.primary} rootBar/>
+        }>
+          <PopupMenu command={item} label={label()} controller={props.controller} nativeDropdown/>
+        </Show>;
+      }}</For>
+      <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node =>
+        <Element node={node} controller={props.controller} rootBar/>
+      }</For>
+      <Show when={flag(bar(), 'Autofill')}>
+        <div class="taxi-command-spacer"/>
+        <CommandButton controller={props.controller} label={state.strings.more} dropdown/>
+        <CommandButton controller={props.controller} label="?" help/>
+      </Show>
     </div>
   </Show>;
 }
