@@ -36,7 +36,7 @@ exports.run = async () => {
       await until(async () => await main.evaluate("document.querySelector('.form-inspectors').style.height==='240px'&&document.querySelector('.form-zoom select').value==='125'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label').textContent==='Unsaved restored page'"), 'main UI configured');
       await main.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
       stage = 'initial-preview';
-      const preview = await frame({state:{title:previewTitle}});
+      const preview = await frame({detached:true,state:{title:previewTitle}});
       await until(async () => await preview.evaluate("!!document.querySelector('.taxi-input')"), 'detached form DOM');
       await preview.evaluate(`const zoom=document.querySelector('.form-zoom select');zoom.value='150';zoom.dispatchEvent(new Event('change',{bubbles:true}));
         document.querySelectorAll('.taxi-tabs button')[1].click();document.querySelector('.taxi-input').click();`);
@@ -59,10 +59,10 @@ exports.run = async () => {
       await until(() => document.isDirty && document.getText() === checkpoint.text, 'native hot exit restores dirty XML');
       stage = 'restored-tabs';
       await until(() => vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith('eska.formViewer')).length === 2, 'both serialized form panels restored');
-      const main = await frame({state:{title}}), preview = await frame({state:{title:previewTitle}});
+      const main = await frame({state:{title}}), preview = await frame({detached:true,state:{title:previewTitle}});
       stage = 'restored-model';
       await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.textContent===${JSON.stringify(checkpoint.caption)}`), 'restored form uses unsaved XML');
-      assert.equal(await main.evaluate("document.querySelector('.form-inspectors').style.height"), '240px');
+      await until(async () => await main.evaluate(`(() => {const shell=document.querySelector('.form-shell'),inspectors=document.querySelector('.form-inspectors');return !document.querySelector('.preview-scroll,.form-detached-placeholder,.form-shell > .form-splitter')&&Math.abs(inspectors.getBoundingClientRect().height-Math.max(84,shell.clientHeight-document.querySelector('.form-toolbar').getBoundingClientRect().height-document.querySelector('.form-status').getBoundingClientRect().height))<1})()`),'restored detached inspectors fill the main window');
       assert.equal(await main.evaluate("document.querySelector('.form-zoom select').value"), '125');
       assert.equal(await preview.evaluate("document.querySelector('.form-zoom select').value"), '150');
       assert.equal(await main.evaluate("document.querySelector('.form-tree-row.selected').id"), checkpoint.selection, 'shared selection survives serialization');
@@ -77,6 +77,11 @@ exports.run = async () => {
       assert.equal((await fs.readFile(file)).toString('hex'), checkpoint.disk);
       await fs.writeFile(marker, JSON.stringify({...checkpoint,pid:process.pid,text:document.getText(),caption}));
       await main.screenshot(`form-restored-${vscode.env.language}.png`);
+      if (process.env.ESKA_HOST_RUN === '1') {
+        await preview.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+        await until(async () => await main.evaluate("!!document.querySelector('.preview-scroll')&&document.querySelector('.form-inspectors').style.height==='240px'"),'saved split restored after reload and restart');
+        assert.equal(await main.evaluate("document.querySelector('.form-zoom select').value"),'125');
+      }
       preview.close(); main.close();
     }
     await fs.writeFile(resultFile, JSON.stringify({passed:true,formRestore:true,run:process.env.ESKA_HOST_RUN,locale:vscode.env.language,

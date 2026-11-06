@@ -213,14 +213,27 @@ export async function createTabBordersGallery(fixture) {
   return {forms};
 }
 
+async function readButtonPaintOrigins() {
+  const input=process.env.ESKA_FORM_BUTTON_PAINT_ORIGINS;
+  if(!input)return;
+  if(!isAbsolute(input))throw new Error('ESKA_FORM_BUTTON_PAINT_ORIGINS must be absolute.');
+  return JSON.parse(await readFile(join(input,'positioned.json'),'utf8'));
+}
+
 export async function createPrimaryButtonGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const style = await createStyleFormSource(fixture, join(input, '..', 'native-style-values'));
   const metrics = JSON.parse(await readFile(join(input,'metrics.json'),'utf8')), forms = [];
+  const origins=await readButtonPaintOrigins();
   for (const row of metrics.rows) {
     const source = join(input,row.file), [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
-    forms.push({...form,kind:row.name,expected:row,...(row.styleFile?{styleText:await readFile(join(input,row.styleFile),'utf8')}:{})});
+    const poses=row.name===origins?.primaryButtonForm ? origins.buttonPoses.map(pose=>({
+      ...row,paintOrigin:pose.paintFrameOrigin,pose:pose.pose,
+      buttons:row.buttons.map((button,index)=>({...button,wholeRgbSha256:pose.buttons[index].wholeRgbSha256,
+        bottomBorder:pose.buttons[index].bottom})),
+    })) : undefined;
+    forms.push({...form,kind:row.name,expected:row,poses,...(row.styleFile?{styleText:await readFile(join(input,row.styleFile),'utf8')}:{})});
   }
   return {forms,style:style.style,configuration:join(fixture.source,'Configuration.xml')};
 }
@@ -238,6 +251,8 @@ export async function createMeasuredFormGallery(fixture, input = process.env.ESK
   const metrics = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
   return (await createGallery(fixture, metrics.rows.map(row => row.name), input)).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
 }
+
+export async function createResponsiveFormGallery(fixture) { return createGallery(fixture, ['Main']); }
 
 export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
@@ -263,8 +278,16 @@ export async function createTableGallery(fixture) {
   }
   if (process.env.ESKA_FORM_ADDITION_FIXTURES) result.push(...await createGallery(fixture, ['NoViewStatus', 'NoSearchControl'], process.env.ESKA_FORM_ADDITION_FIXTURES));
   if (process.env.ESKA_FORM_STATE_FIXTURES) result.push(...await createGallery(fixture, ['ColumnHidden'], process.env.ESKA_FORM_STATE_FIXTURES));
-  if (process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES) result.push(...await createGallery(fixture, ['TablePopup', 'TableButtonGroup'], process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES));
+  if (process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES) result.push(...await createGallery(fixture, ['TablePopup', 'TableButtonGroup', 'SourceBarEmpty'], process.env.ESKA_FORM_TABLE_COMMAND_FIXTURES));
   return result;
+}
+
+export function createUnitedGallery(fixture) {
+  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
+}
+
+export function createThroughAlignGallery(fixture) {
+  return createGallery(fixture, ['Labels']);
 }
 
 async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTURES) {
@@ -348,7 +371,10 @@ export async function createButtonRowsSource(fixture, input = process.env.ESKA_F
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   await rm(fixture.source,{recursive:true});await cp(join(input,'source'),fixture.source,{recursive:true});
   const matrix=JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
-  return {cases:matrix.cases.map(row=>({...row,path:join(fixture.source,row.path)})),sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
+  const origins=await readButtonPaintOrigins();
+  const cases=matrix.cases.map(row=>({...row,path:join(fixture.source,row.path),
+    frameRaster:origins?.formFrames.find(frame=>frame.form===row.name)}));
+  return {cases,sources:matrix.files.map(row=>join(fixture.source,row.path.slice('source/'.length)))};
 }
 
 export async function createTablePixelsGallery(fixture) {
@@ -363,10 +389,16 @@ export async function createTablePixelsGallery(fixture) {
   const bars=process.env.ESKA_FORM_TABLE_BARS;
   if(bars){
     if(!isAbsolute(bars))throw new Error('ESKA_FORM_TABLE_BARS must be absolute.');
-    for(const toolbar of JSON.parse(await readFile(join(bars,'metrics.json'),'utf8')).rows){
+    const {rows,movedTable}=JSON.parse(await readFile(join(bars,'metrics.json'),'utf8'));
+    for(const toolbar of rows){
       const row=reference.rows.find(row=>row.name===toolbar.name);
       if(!row)throw new Error(`Missing table for native toolbar ${toolbar.name}.`);
-      for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].additionalRegions=[region];
+      for(const [locale,region]of Object.entries(toolbar.locales))row.locales[locale].wholeToolbar=region;
+    }
+    if(movedTable){
+      const row=reference.rows.find(row=>row.name===movedTable.name);
+      if(!row)throw new Error(`Missing table for moved native toolbar ${movedTable.name}.`);
+      for(const [locale,region]of Object.entries(movedTable.locales))row.locales[locale].movedToolbar=region;
     }
   }
   const menus=process.env.ESKA_FORM_TABLE_MENU_PIXELS;
@@ -404,6 +436,15 @@ export async function createTablePixelsGallery(fixture) {
       }
     }
   }
+  const reflow=process.env.ESKA_FORM_TABLE_SEARCH_REFLOW;
+  if(reflow){
+    if(!isAbsolute(reflow))throw new Error('ESKA_FORM_TABLE_SEARCH_REFLOW must be absolute.');
+    for(const field of JSON.parse(await readFile(join(reflow,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===field.name);
+      if(!row||row.sourceSha256!==field.sourceSha256)throw new Error(`Missing matching table for native search reflow ${field.name}.`);
+      for(const [locale,regions]of Object.entries(field.locales))row.locales[locale].searchReflow=regions;
+    }
+  }
   const pictures=process.env.ESKA_FORM_TABLE_PICTURE_PIXELS;
   if(pictures){
     if(!isAbsolute(pictures))throw new Error('ESKA_FORM_TABLE_PICTURE_PIXELS must be absolute.');
@@ -418,11 +459,15 @@ export async function createTablePixelsGallery(fixture) {
   const movement=process.env.ESKA_FORM_TABLE_MOVEMENT_PIXELS;
   if(movement){
     if(!isAbsolute(movement))throw new Error('ESKA_FORM_TABLE_MOVEMENT_PIXELS must be absolute.');
+    const defaultTable=reference.rows.find(row=>row.name==='Default');
     for(const table of JSON.parse(await readFile(join(movement,'metrics.json'),'utf8')).rows){
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native movement ${table.name}.`);
       for(const [locale,region]of Object.entries(table.locales)){
-        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(region);
+        const expected=row.locales[locale];expected.additionalRegions??=[];
+        // These default and detached poses use the moved group measurements.
+        const moved=defaultTable?.locales[locale]?.movedToolbar;
+        expected.additionalRegions.push(moved?{...region,rgbSha256:moved.movementRgbSha256}:region);
       }
     }
   }

@@ -43,7 +43,7 @@ exports.run = async () => {
     await until(()=>vscode.window.activeTextEditor?.document===document,'usual button XML active');
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'usual button form ready');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({state:{title:panel.panel.title}});
+    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
     if(form.kind==='WidthShort') {
       const original=document.getText(),others=fixture.formGallery.filter(item=>['WidthLong','WidthMixed'].includes(item.kind));
@@ -51,12 +51,12 @@ exports.run = async () => {
       await ui.evaluate("globalThis.__usualButton=document.querySelector('[data-kind=Button]>.taxi-button');globalThis.__usualRow=document.querySelector('.taxi-items--usual-buttons')");
       for(const other of others){await change(await fs.readFile(other.path,'utf8'),ui,other.expected);results.push(await sample(ui,other.expected,'dirty-'+other.kind));}await change(original,ui,form.expected);await sample(ui,form.expected,'restored-'+form.kind);
       assert.equal(await ui.evaluate("globalThis.__usualButton===document.querySelector('[data-kind=Button]>.taxi-button')&&globalThis.__usualRow===document.querySelector('.taxi-items--usual-buttons')"),true);
-      await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'usual button floating view');const detached=view.frames.get('preview'),floating=await frame({state:{title:detached.panel.title}}),owner=await floating.nativeWindow({detached:true});
+      await explorer.formPreview.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'usual button floating view');const detached=view.frames.get('preview'),floating=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}}),owner=await floating.nativeWindow({detached:true});
       results.push(await sample(floating,form.expected,'floating-'+form.kind,owner.targetId));
       await floating.evaluate("globalThis.__usualButton=document.querySelector('[data-kind=Button]>.taxi-button')");
       for(const other of others){await change(await fs.readFile(other.path,'utf8'),floating,other.expected);results.push(await sample(floating,other.expected,'floating-dirty-'+other.kind,owner.targetId));}await change(original,floating,form.expected);await sample(floating,form.expected,'floating-restored-'+form.kind,owner.targetId);
       assert.equal(await floating.evaluate("globalThis.__usualButton===document.querySelector('[data-kind=Button]>.taxi-button')"),true);
-      floating.close();detached.panel.dispose();await until(async()=>!(await ui.targets()).some(item=>item.targetId===owner.targetId),'usual floating native window closed');ui.close();ui=await frame({state:{title:panel.panel.title}});results.push(await sample(ui,form.expected,'reattached-'+form.kind));
+      floating.close();detached.panel.dispose();await until(async()=>!(await ui.targets()).some(item=>item.targetId===owner.targetId),'usual floating native window closed');ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});results.push(await sample(ui,form.expected,'reattached-'+form.kind));
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'usual button session released');await Promise.all([...explorer.formPreview.closing]);
   }

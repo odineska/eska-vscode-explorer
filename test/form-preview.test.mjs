@@ -2,7 +2,7 @@ import test from 'node:test';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource } from '../out/form-preview/protocol.js';
+import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 
@@ -67,6 +67,17 @@ test('form snapshots require the resolved ImportantColor supplied by API 1.40', 
     const invalid = structuredClone(snapshot); invalid.model.importantColor = value;
     assert.throws(() => parseFormSnapshot(invalid));
   }
+});
+
+test('form snapshots accept the optional native script variant independently from the shell locale', () => {
+  const snapshot = fixture();
+  assert.equal(parseFormSnapshot(snapshot).model.scriptVariant, undefined);
+  for (const scriptVariant of ['russian', 'english']) {
+    snapshot.model.scriptVariant = scriptVariant;
+    assert.equal(parseFormSnapshot(snapshot).model.scriptVariant, scriptVariant);
+  }
+  snapshot.model.scriptVariant = 'ru-RU';
+  assert.throws(() => parseFormSnapshot(snapshot));
 });
 
 test('a form snapshot rejects duplicate identities and missing input ownership', () => {
@@ -179,4 +190,59 @@ test('form image assets require checked source ownership, bounded image MIME and
   const absent=structuredClone(model);absent.model.assets=[];assert.throws(()=>parseFormSnapshot(absent));
   const html=structuredClone(model);html.model.assets[0].picture.mimeType='text/html';assert.throws(()=>parseFormSnapshot(html));
   const foreign=structuredClone(model);foreign.model.assets[0].id='c'.repeat(64);assert.throws(()=>parseFormSnapshot(foreign));
+});
+
+
+test('a selected property palette requires an exact revision and real XML indices', () => {
+  const snapshot = fixture(), node = snapshot.model.root;
+  const field = {key:{namespace:'urn:test',name:'Width'}};
+  node.properties = [field, field];
+  const label = {'ru-RU':'Основные','en-US':'General'};
+  const declared = (index, occurrence) => ({id:'xml:'+index,category:null,editor:null,caption:null,
+    value:{kind:'declared',propertyIndex:index,occurrence,sourceKind:'form'}});
+  const absent = {id:'platform:United',category:'main',editor:'boolean',caption:label,
+    value:{kind:'absent',default:{kind:'boolean',value:true},caption:null}};
+  const data = {formSessionId:snapshot.formSessionId,revision:snapshot.revision,identity:node.identity,
+    categories:[{id:'main',caption:label}],rows:[absent,declared(0,0),declared(1,1)]};
+  assert.deepEqual(parsePropertyPalette(data,snapshot,node),data);
+  assert.equal(parsePropertyPalette({...data,rows:null,categories:null},snapshot,node).rows,null);
+  const unavailable = {...data,rows:[{...absent,available:false},...data.rows.slice(1)]};
+  assert.deepEqual(parsePropertyPalette(unavailable,snapshot,node),unavailable);
+  const qualifier = {id:'platform:DisplayImportance',category:'main',editor:'enum',caption:label,
+    value:{kind:'qualifier',key:{namespace:null,name:'DisplayImportance'},text:'High',
+      sourceKind:'form',origin:node.origin,caption:{'ru-RU':'Высокая','en-US':'High'}}};
+  const captioned = {...data,rows:[...data.rows,qualifier]};
+  assert.deepEqual(parsePropertyPalette(captioned,snapshot,node),captioned);
+  for (const patch of [
+    {formSessionId:'other'}, {revision:'8'}, {identity:{...data.identity,source:'b'.repeat(64)}},
+    {rows:[absent,declared(1,0)]}, {rows:[absent,declared(1,1),declared(2,0)]},
+    {rows:[absent,declared(0,0),declared(0,0)]}, {categories:[]},
+    {rows:[{...absent,value:{...absent.value,default:{kind:'boolean',value:'true'}}},...data.rows.slice(1)]},
+    {rows:[{...absent,available:'false'},...data.rows.slice(1)]},
+    {rows:[...data.rows,{...qualifier,value:{...qualifier.value,caption:{'en-US':'High'}}}]},
+  ]) assert.throws(() => parsePropertyPalette({...data,...patch},snapshot,node));
+});
+
+test('a projected event must reference a matching field in its real XML wrapper', () => {
+  const snapshot = fixture(), node = snapshot.model.root;
+  const namespace = 'http://v8.1c.ru/8.3/xcf/logform';
+  const event = { key:{namespace,name:'Event'}, qualifiers:[{key:{namespace:null,name:'name'},value:'OnChange'}],
+    value:{kind:'text',text:'HandleChange'} };
+  node.properties = [{ key:{namespace,name:'Events'}, value:{kind:'record',fields:[event]} }];
+  const caption = {'ru-RU':'События','en-US':'Events'};
+  const projected = {id:'platform:OnChange',category:'events',editor:'event',caption,
+    value:{kind:'declaredEvent',propertyIndex:0,entryIndex:0,occurrence:0,sourceKind:'form'}};
+  const declared = {id:'xml:events',category:null,editor:null,caption:null,
+    value:{kind:'declared',propertyIndex:0,occurrence:0,sourceKind:'form'}};
+  const data = {formSessionId:snapshot.formSessionId,revision:snapshot.revision,identity:node.identity,
+    categories:[{id:'events',caption}],rows:[projected,declared]};
+  assert.deepEqual(parsePropertyPalette(data,snapshot,node),data);
+  for (const value of [
+    {...projected.value,entryIndex:1},
+    {...projected.value,propertyIndex:1},
+    {...projected.value,occurrence:1},
+    {...projected.value,sourceKind:'metadata'},
+  ]) assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,value},declared]},snapshot,node));
+  assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,id:'platform:StartChoice'},declared]},snapshot,node));
+  assert.throws(() => parsePropertyPalette({...data,rows:[projected]},snapshot,node));
 });

@@ -13,7 +13,7 @@ function previewNavigation(value) {
 /** Only UI state is persisted. Models and backend session handles are refreshed after reload. */
 export function controller(api) {
   const saved = api.getState(), navigation = previewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
-  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, detached: false, handlerNavigation: false,
+  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false,
     notice: '', restore: null, selected: '', ui: { upper: 230, left: 40, right: 65, tab: 'attributes', treeTab: 'elements', folded: {}, pages: {}, collapsed: {}, zoom: 100, ...saved?.ui, ...navigation } });
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
   // Store proxies cannot cross VS Code's structured-clone message boundary.
@@ -56,7 +56,10 @@ export function controller(api) {
       for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
+      if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));
       if (value.model) {
+        set('revision', value.revision ?? null);
+        set('formSessionId', value.formSessionId ?? null);
         set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true }));
         if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root));
       }

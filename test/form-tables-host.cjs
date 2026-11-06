@@ -4,6 +4,111 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { until, frame } = require('./webview-host.cjs');
 
+async function checkSourceBar(ui, view, document, english) {
+  const bar = "document.querySelector('.taxi-command-bar')";
+  const popup = `${bar}?.querySelector('.taxi-popup > button')`;
+  const buttons = `[...${bar}.querySelectorAll('.taxi-button')].map(button => button.getAttribute('aria-label'))`;
+  const customize = english ? 'Customize form...' : 'Изменить форму...';
+  await until(() => ui.evaluate(`!!${popup} && ${buttons}.length === 1 && !document.querySelector('[data-kind=Table]')`), 'empty table leaves only its additional commands');
+  assert.ok([...view.nodes.values()].some(node => node.kind === 'Table' && node.name === 'Rows'));
+  await ui.evaluate(`${popup}.click()`);
+  const menu = await ui.evaluate("[...document.querySelectorAll('.taxi-menu [role=menuitem]')].map(item => item.textContent)");
+  assert.deepEqual(menu, [customize, 'Second command']);
+  await ui.evaluate(`${popup}.click()`);
+  const source = document.getText();
+  async function change(xml) {
+    const edit = new vscode.WorkspaceEdit();
+    const revision = view.snapshot.revision;
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'updated table command source');
+  }
+  const find = '<CommandName>Form.Item.Rows.StandardCommand.Find</CommandName>';
+  const forced = '<LocationInCommandBar>InCommandBar</LocationInCommandBar>';
+  const customizeCommand = '<CommandName>Form.StandardCommand.CustomizeForm</CommandName>';
+  assert.ok(source.includes(find) && source.includes(customizeCommand));
+  await change(source.replace(find, find + forced).replace(customizeCommand, customizeCommand + forced));
+  await until(() => ui.evaluate(`${buttons}.length === 2 && ${buttons}[1] === ${JSON.stringify(customize)} && !document.querySelector('[data-kind=Table]')`),
+    'forced Customize follows More and Find remains hidden');
+  const visibleAfterEdit = await ui.evaluate(buttons);
+  await ui.screenshot('table-empty-source-bar-' + vscode.env.language + '.png');
+
+  const add = english ? 'Add' : 'Добавить';
+  const up = english ? 'Move up' : 'Переместить вверх';
+  const down = english ? 'Move down' : 'Переместить вниз';
+  const findCaption = english ? 'Find...' : 'Найти...';
+  const cancel = english ? 'Cancel search' : 'Отменить поиск';
+  const more = english ? 'More actions' : 'Еще';
+  const advanced = english ? 'Advanced search' : 'Расширенный поиск';
+  const input = '<InputField name="Text" id="3"><DataPath>Rows.Text</DataPath></InputField>';
+  const withColumn = source.replace('</Table>', '<ChildItems>' + input + '</ChildItems></Table>');
+  const grid = "!!document.querySelector('.taxi-table-scroll')";
+  const externalSearch = "document.querySelector('.taxi-command-bar > .taxi-table-search')";
+  await change(withColumn);
+  await until(() => ui.evaluate(`${grid} && ${buttons}.length === 6`), 'table source adds automatic and explicit actions');
+  const projectedButtons = await ui.evaluate(buttons);
+  assert.deepEqual(projectedButtons, [add, up, down, findCaption, cancel, more]);
+  if (process.platform === 'linux') {
+    const tableOffset = "document.querySelector('.taxi-table-scroll').getBoundingClientRect().y - document.querySelector('.taxi-form-frame').getBoundingClientRect().y";
+    await until(() => ui.evaluate(tableOffset + ' === 75'), 'table starts at the native offset below its separate command bar');
+  }
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] svg')"), true);
+  await ui.evaluate("globalThis.__tableSourceBar = document.querySelector('.taxi-command-bar'); true");
+
+  await change(withColumn.replace(input, input.replace('</InputField>', '<Visible>false</Visible></InputField>')));
+  await until(() => ui.evaluate(`!${grid} && ${buttons}.length === 6`), 'declared but hidden columns keep source commands');
+  assert.deepEqual(await ui.evaluate(buttons), projectedButtons);
+  assert.equal(await ui.evaluate("document.querySelector('.taxi-command-bar') === __tableSourceBar"), true);
+
+  const exclusions = '<CommandSet><ExcludedCommand>Add</ExcludedCommand><ExcludedCommand>MoveDown</ExcludedCommand><ExcludedCommand>Find</ExcludedCommand></CommandSet>';
+  await change(withColumn.replace('<RowFilter', exclusions + '<RowFilter'));
+  await until(() => ui.evaluate(`${grid} && ${buttons}.length === 3`), 'source actions use the table command exclusions');
+  assert.deepEqual(await ui.evaluate(buttons), [up, cancel, more]);
+
+  const withSearch = withColumn.replace('<SearchStringLocation>None</SearchStringLocation>', '')
+    .replace('<Autofill>false</Autofill>', '');
+  assert.notEqual(withSearch, withColumn);
+  await change(withSearch);
+  await until(() => ui.evaluate(`!!${externalSearch} && !!document.querySelector('.taxi-table-command-bar')`), 'search is projected with both command bars visible');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, more]);
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-command-bar .taxi-table-search')"), false);
+  await ui.evaluate(`${externalSearch}.click()`);
+  await until(() => view.selected?.key?.value === '8', 'projected search selects its table source element');
+  await ui.screenshot('table-source-search-' + vscode.env.language + '.png');
+
+  await change(withSearch.replace(find, find + forced));
+  await until(() => ui.evaluate(`!!${externalSearch} && ${buttons}.includes(${JSON.stringify(advanced)})`), 'forced Find keeps the advanced search action');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, advanced, more]);
+  if (process.platform === 'linux') {
+    const searchBox = `${externalSearch}.getBoundingClientRect()`;
+    const advancedButton = `${bar}.querySelector('[aria-label="${advanced}"]').getBoundingClientRect()`;
+    await until(() => ui.evaluate(`${searchBox}.width === 161 && ${searchBox}.left >= ${advancedButton}.right + 9`),
+      'the advanced search action and field keep their native widths without overlap');
+  }
+  await ui.evaluate("globalThis.__sourceGrid = document.querySelector('.taxi-table-scroll'); true");
+  const top = withColumn.replace('<SearchStringLocation>None</SearchStringLocation>', '<SearchStringLocation>Top</SearchStringLocation>');
+  await change(top);
+  const above = "document.querySelector('.taxi-table-field > .taxi-table-search--top')";
+  await until(() => ui.evaluate(`!!${above} && !${externalSearch}`), 'Top search appears above the grid');
+  assert.deepEqual(await ui.evaluate(buttons), [add, up, down, more]);
+  const topSearch = await ui.evaluate(`(() => {
+    const form = document.querySelector('.taxi-form-frame').getBoundingClientRect();
+    const field = ${above}.getBoundingClientRect();
+    const grid = __sourceGrid.getBoundingClientRect();
+    return { width: field.width, gridWidth: grid.width, offset: field.y - form.y,
+      gap: grid.y - field.bottom, sameGrid: __sourceGrid === document.querySelector('.taxi-table-scroll') };
+  })()`);
+  assert.equal(topSearch.width, topSearch.gridWidth);
+  assert.equal(topSearch.sameGrid, true);
+  if (process.platform === 'linux') assert.deepEqual([topSearch.offset, topSearch.gap], [75, 8]);
+  await ui.evaluate("__sourceGrid.click()");
+  await until(() => view.selected?.key?.value === '1', 'the grid selects the table');
+  await ui.evaluate(`${above}.click()`);
+  await until(() => view.selected?.key?.value === '8', 'Top search selects the same source element');
+  await ui.screenshot('table-top-search-' + vscode.env.language + '.png');
+  return { menu, visibleAfterEdit, projectedButtons, searchProjected: true, topSearch };
+}
+
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const extension = vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer');
@@ -20,7 +125,15 @@ exports.run = async function () {
     const service = explorer.formPreview;
     await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    const ui = await frame({ state: { title: panel.panel.title } });
+    const ui = await frame({fixedFormArea:true, state: { title: panel.panel.title } });
+    if (form.kind === 'SourceBarEmpty') {
+      results.push({ kind: form.kind, ...await checkSourceBar(ui, view, document, english) });
+      assert.deepEqual(await fs.readFile(form.path), before);
+      panel.panel.dispose();
+      await until(() => service.views.size === 0, form.kind + ' released');
+      await Promise.all([...service.closing]);
+      continue;
+    }
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-scroll')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-table-command-bar .taxi-button')].every(button=>button.style.width||button.classList.contains('taxi-button--picture'))"),'native table captions allocated');
@@ -56,14 +169,27 @@ exports.run = async function () {
     }
     if (form.kind === 'Default') {
       const searchWidth = "document.querySelector('.taxi-table-search').getBoundingClientRect().width";
+      const initialSearchWidth = await ui.evaluate(searchWidth);
       if(process.platform==='linux') {
         assert.equal(geometry.buttons[0].width,english?51:85);
         assert.equal(geometry.buttons.at(-1).width,english?108:60);
-        assert.equal(Math.round(await ui.evaluate(searchWidth)),172);
+        assert.equal(Math.round(initialSearchWidth),172);
       }
-      await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='1000px'");
-      assert.equal(await ui.evaluate(searchWidth), 260, 'search stays bounded in a wide table');
-      await ui.evaluate("document.querySelector('.taxi-form-frame').style.width='max-content'");
+      const wide = await ui.evaluate(`(async () => {
+        const viewport = document.querySelector('.preview-scroll'), width = viewport.style.width;
+        try {
+          viewport.style.width = '1000px';
+          for (let tick = 0; tick < 30 && ${searchWidth} !== 260; tick++) {
+            await new Promise(requestAnimationFrame);
+          }
+          return {search: ${searchWidth}, viewport: viewport.clientWidth,
+            frame: document.querySelector('.taxi-form-frame').getBoundingClientRect().width};
+        } finally {
+          viewport.style.width = width;
+        }
+      })()`);
+      assert.equal(wide.search, 260, 'search stays bounded in a wide table '+JSON.stringify(wide));
+      await until(async () => await ui.evaluate(searchWidth)===initialSearchWidth, 'restored table search width');
     }
     await ui.screenshot(`table-${form.kind}-${vscode.env.language}.png`);
     if (form.kind === 'TableButtonGroup') {
@@ -95,10 +221,103 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("!!document.querySelector('.taxi-menu')"), false);
       assert.equal(document.isDirty, true);
     }
+    let identity;
+    if (['Default', 'GridFooter', 'HorizontalTitled', 'Vertical', 'InCell'].includes(form.kind)) {
+      identity = await verifyGeometryIdentity(document, view, ui, form.kind);
+    }
+    const dynamicSearch = form.kind === 'DynamicList' ? await verifyDynamicSearch(document, view, ui, english) : undefined;
     assert.deepEqual(await fs.readFile(form.path), before);
-    results.push({kind:form.kind,...geometry}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(identity ? {identity} : {}), ...(dynamicSearch ? {dynamicSearch} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({passed:true,formTables:true,locale:vscode.env.language,results}));
 };
+
+/** A width edit must retain the actual header/footer DOM, including the changed column. */
+async function verifyGeometryIdentity(document, view, ui, kind) {
+  async function replace(text) {
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), text);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+  }
+  const original = document.getText();
+  const footer = original.includes('<Footer>true</Footer>') ? original
+    : original.replace('<Table name="Rows" id="1">', '<Table name="Rows" id="1"><Footer>true</Footer>');
+  assert.ok(footer.includes('<Footer>true</Footer>'));
+  if (footer !== original) await replace(footer);
+  await until(async () => await ui.evaluate("!!document.querySelector('.taxi-table-footer')"), 'identity footer ready');
+  const captured = await ui.evaluate(`(() => {
+    globalThis.__tableIdentity = {
+      headers: [...document.querySelectorAll('.taxi-table-head [data-column]')],
+      footer: [...document.querySelectorAll('.taxi-table-footer [role=cell]')],
+      tracks: document.querySelector('.taxi-table-head').style.gridTemplateColumns
+    };
+    return {headers: __tableIdentity.headers.length, footer: __tableIdentity.footer.length};
+  })()`);
+  assert.ok(captured.headers >= 3 && captured.footer >= 2);
+  const changed = footer.replace(/<InputField\b[^>]*\bname="Text"[^>]*>/,
+    opening => opening + '<Width>32</Width>');
+  assert.notEqual(changed, footer, 'controlled Text column fixture exists');
+  await replace(changed);
+  await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns !== __tableIdentity.tracks"), 'dirty column width rendered');
+  const retained = await ui.evaluate(`({
+    headers: __tableIdentity.headers.filter(node => node.isConnected).length,
+    footer: __tableIdentity.footer.filter(node => node.isConnected).length
+  })`);
+  await ui.screenshot(`table-identity-${kind}-${vscode.env.language}.png`);
+  assert.equal(retained.headers, captured.headers, `${kind}: Width retains all header DOM nodes`);
+  assert.equal(retained.footer, captured.footer, `${kind}: Width retains all footer DOM nodes`);
+  await ui.evaluate("document.querySelector('.taxi-table-head [data-column$=\":4\"]').click()");
+  await until(() => view.selected?.key?.value === '4', 'retained header selects its original source column');
+  await replace(original);
+  await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns === __tableIdentity.tracks"), 'width restored');
+  assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
+  assert.equal(document.getText(), original);
+  return {headers: retained.headers, footerCells: retained.footer, widthEdit: 32, selection: '4', restored: true};
+}
+
+
+async function verifyDynamicSearch(document, view, ui, english) {
+  const original = document.getText();
+  const source = '<CommandBar name="Separate" id="910"><CommandSource>Item.Rows</CommandSource></CommandBar>';
+  const withoutString = original.replace('<ChildItems>', '<ChildItems>' + source)
+    .replace('<DataPath>Rows</DataPath>', '<DataPath>Rows</DataPath><SearchStringLocation>None</SearchStringLocation><SearchControlLocation>CommandBar</SearchControlLocation>');
+  const create = english ? 'Create' : 'Создать';
+  const copy = english ? 'Copy' : 'Скопировать';
+  const find = english ? 'Find...' : 'Найти...';
+  const cancel = english ? 'Cancel search' : 'Отменить поиск';
+  const search = english ? 'Search' : 'Поиск';
+  const more = english ? 'More actions' : 'Еще';
+  async function change(xml) {
+    const edit = new vscode.WorkspaceEdit();
+    const revision = view.snapshot.revision;
+    edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.snapshot.revision !== revision, 'dynamic list command layout recomposed');
+  }
+  const outer = "document.querySelector('.taxi-command-bar[data-table-commands]')";
+  const inner = "document.querySelector('.taxi-table-command-bar')";
+  const actions = bar => `[...(${bar}?.querySelectorAll('.taxi-button') ?? [])].map(button => button.getAttribute('aria-label'))`;
+  await change(withoutString);
+  await until(() => ui.evaluate(`!!${outer} && ${actions(outer)}.includes(${JSON.stringify(search)})`), 'search control moved to the linked bar');
+  const projected = await ui.evaluate(actions(outer));
+  assert.deepEqual(projected, [create, copy, find, cancel, search, more]);
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, find, cancel, more]);
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-search')"), false);
+  await ui.evaluate(`${outer}.querySelector('[aria-label="${search}"]').click()`);
+  await until(() => view.selected?.key?.value === '13', 'projected dropdown selects the actual SearchControlAddition');
+  await ui.screenshot('table-dynamic-search-source-' + vscode.env.language + '.png');
+
+  await change(withoutString.replace('<SearchStringLocation>None</SearchStringLocation>', '<SearchStringLocation>Top</SearchStringLocation>'));
+  await until(() => ui.evaluate("!!document.querySelector('.taxi-table-search--top')"), 'dynamic list shows Top search');
+  assert.deepEqual(await ui.evaluate(actions(outer)), [create, copy, search, more]);
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, more]);
+  assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-table-search').length"), 1);
+
+  await change(original);
+  await until(() => ui.evaluate(`!${outer} && ${actions(inner)}.includes(${JSON.stringify(search)})`), 'removing the source bar restores the local search control');
+  assert.deepEqual(await ui.evaluate(actions(inner)), [create, copy, search, more]);
+  assert.equal(document.getText(), original);
+  return { projected, sourceIdentity: '13', restored: true };
+}

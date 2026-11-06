@@ -33,7 +33,7 @@ exports.run = async function () {
     const service = explorer.formPreview;
     await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
     const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    let ui = await frame({state:{title:panel.panel.title}});
+    let ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-form-frame')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-form-content .taxi-button,.taxi-tabs > button')].every(button=>button.style.width||button.classList.contains('taxi-button--help')||button.classList.contains('taxi-button--picture'))"),'native captions allocated');
@@ -50,6 +50,10 @@ exports.run = async function () {
         tabs:document.querySelectorAll('.taxi-tabs [role=tab]').length,
         tabButtons:[...document.querySelectorAll('.taxi-tabs [role=tab]')].map(node=>({label:node.textContent,overflow:(node.querySelector('[data-native-label]')?.getClientRects().length??1)>1,...rect(node)})),menu:!!document.querySelector('.taxi-menu')};
     })()`);
+    if (['GroupDefault','GroupHidden'].includes(form.kind) && process.env.ESKA_SCREENSHOT_DIR) {
+      const chrome=await ui.evaluate(`(() => {const v=document.querySelector('.preview-scroll'),r=document.querySelector('.taxi-form-frame');return {viewport:{width:v.clientWidth,height:v.clientHeight,scrollWidth:v.scrollWidth,scrollHeight:v.scrollHeight,style:v.style.cssText},elements:[...r.querySelectorAll('.taxi-element')].map(e=>({kind:e.dataset.kind,style:e.style.cssText,box:e.getBoundingClientRect().toJSON()})),root:r.style.cssText,mode:r.closest('.taxi-preview').dataset.formLayout,content:document.querySelector('.taxi-form-content').getBoundingClientRect().toJSON()}})()`);
+      await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`group-allocation-${form.kind}.json`),JSON.stringify({geometry,chrome}));
+    }
     if (process.platform === 'linux') {
       const expected = nativeFrames[form.kind];
       // Text advances can land between CSS pixels; retain the exact measured result.
@@ -75,12 +79,12 @@ exports.run = async function () {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input').length"),0);
       await until(()=>Object.values(view.previewNavigation?.collapsed??{}).includes(true),'collapsed navigation acknowledged');
       await service.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'collapsed group detached');
-      const floating=await frame({state:{title:view.frames.get('preview').panel.title}});
+      const floating=await frame({detached:true,fixedFormArea:true,state:{title:view.frames.get('preview').panel.title}});
       await until(()=>floating.evaluate("document.querySelectorAll('.taxi-input').length===0&&document.querySelector('.taxi-group-title button')?.getAttribute('aria-expanded')==='false'"),'new floating window retains collapsed state');
       await ui.evaluate("globalThis.__sharedGroupNavigation=undefined;window.addEventListener('message',event=>{if(event.data.type==='previewNavigation')globalThis.__sharedGroupNavigation=event.data.previewNavigation})");
       await floating.evaluate("document.querySelector('.taxi-group-title button').click()");
       await until(()=>ui.evaluate("Object.values(globalThis.__sharedGroupNavigation?.collapsed??{}).includes(false)"),'floating expansion reaches the owner');
-      floating.close();await service.receive(view,view.frames.get('preview'),{type:'dock'});ui.close();ui=await frame({state:{title:panel.panel.title}});
+      floating.close();await service.receive(view,view.frames.get('preview'),{type:'dock'});ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===2"),'docked group stays expanded');
     }
     if(form.kind==='PagesAuto') {
@@ -109,7 +113,7 @@ exports.run = async function () {
       await service.receive(view,{...panel},{type:'previewNavigation',previewNavigation:{pages:{},collapsed:{}}});assert.equal(JSON.stringify(view.previewNavigation),navigation,'disposed/replaced frame navigation rejected');
       await service.receive(view,panel,{type:'detach'});
       await until(()=>view.frames.get('preview')?.ready,'separate page preview ready');
-      const detachedUi=await frame({state:{title:view.frames.get('preview').panel.title}});
+      const detachedUi=await frame({detached:true,fixedFormArea:true,state:{title:view.frames.get('preview').panel.title}});
       await until(()=>detachedUi.evaluate("document.querySelector('.taxi-tabs>[aria-selected=true]')?.textContent==='Second page'"),'new floating window keeps page while root selected');
       const second=[...view.nodes.values()].find(node=>node.identity.key.value==='30');assert.ok(second);
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+second.identity.source+':current:30')}).click()`);
@@ -180,6 +184,48 @@ exports.run = async function () {
       await replaceText(document,'First command','Second command');
       await until(async()=>await ui.evaluate("document.querySelector('.taxi-command-bar .taxi-button')?.textContent==='Second command'"),'dirty command caption');
       if(process.platform==='linux')await until(async()=>await ui.evaluate("document.querySelector('.taxi-command-bar .taxi-button')?.getBoundingClientRect().width===133"),'dirty native caption width');
+
+      const bar = "document.querySelector('.taxi-command-bar')";
+      const inlineIds = `[...${bar}.querySelectorAll(':scope > [data-element]')].map(element => element.dataset.element.split(':').at(-1))`;
+      const popup = `${bar}.querySelector(':scope > .taxi-popup')`;
+      const first = '<CommandName>Form.Command.First</CommandName>';
+      const second = '<CommandName>Form.Command.Second</CommandName>';
+      const dual = '<LocationInCommandBar>InCommandBarAndInAdditionalSubmenu</LocationInCommandBar>';
+      const overflow = '<LocationInCommandBar>InAdditionalSubmenu</LocationInCommandBar>';
+      const inline = '<LocationInCommandBar>InCommandBar</LocationInCommandBar>';
+      await replaceText(document, first, first + dual);
+      await replaceText(document, second, second + overflow);
+      await until(() => ui.evaluate(`JSON.stringify(${inlineIds})==='["10"]' && !!${popup}`), 'only the visible command stays on the bar');
+      await ui.evaluate(`${popup}.querySelector('button').click()`);
+      assert.equal(await ui.evaluate(`${popup}.querySelectorAll('[role=menuitem]').length`), 2);
+      await ui.evaluate(`${popup}.querySelectorAll('[role=menuitem]')[1].click()`);
+      await until(() => view.selected?.key?.value === '20', 'overflow item keeps its source identity');
+      await replaceText(document, first + dual, first + overflow);
+      await until(() => ui.evaluate(`${inlineIds}.length===0 && !!${popup}`), 'bar only shows More when both commands move');
+      await replaceText(document, first + overflow, first + inline);
+      await replaceText(document, second + overflow, second + dual);
+      await until(() => ui.evaluate(`JSON.stringify(${inlineIds})==='["10","20"]' && !${popup}`), 'dual location alone keeps both commands on the bar');
+    }
+    if (form.kind === 'Decorations' && process.platform === 'linux') {
+      const text = document.getText();
+      const originalLabel = /(<LabelDecoration name="Label" id="1">)\s*<Title[^>]*>.*?<\/Title>/s.exec(text);
+      assert.ok(originalLabel);
+      await replaceText(document, originalLabel[0], originalLabel[1] + '<Width>2</Width>');
+      const bar = '<AutoCommandBar name="FormCommandBar" id="-1"/>';
+      await replaceText(document, bar, '<Group>AlwaysHorizontal</Group>' + bar);
+      const measureSpacer = `(() => {
+        const label = document.querySelector('.taxi-label'), bounds = label.getBoundingClientRect();
+        const items = label.closest('.taxi-items');
+        return { text: label.textContent, width: bounds.width, height: bounds.height,
+          gap: getComputedStyle(items).columnGap, horizontal: items.classList.contains('taxi-items--horizontal') };
+      })()`;
+      const verifySpacer = width => until(async () => {
+        const spacer = await ui.evaluate(measureSpacer);
+        return spacer.text === '' && spacer.horizontal && spacer.width === width && spacer.height === 17 && spacer.gap === '10px';
+      }, 'empty decoration keeps native dimensions');
+      await verifySpacer(20);
+      await replaceText(document, originalLabel[1] + '<Width>2</Width>', originalLabel[1] + '<Width>7</Width>');
+      await verifySpacer(70);
     }
     if(form.kind==='BarWithPopup') {
       await replaceText(document,'Actions','Actions updated');

@@ -37,11 +37,13 @@ try {
     const fields = Array.from({ length: 48 }, (_, index) => `${index} AS КолонкаРезультата${index}WithLongEnglishName`).join(',\r\n|');
     await writeFile(fixture.module, `\ufeffПроцедура Test()\r\nQ = "SELECT ${fields}\r\n|FROM (SELECT 1 AS NestedValue) AS Child";\r\nКонецПроцедуры\r\n`);
   }
-  if (["form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
+  if (["form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs", "form-detached-space-host.cjs", "form-property-catalogue-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
   if (basename(suite) === "form-inspectors-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormInspectorSource(fixture);
   if (basename(suite) === "form-handlers-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormHandlerSource(fixture);
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
   if (basename(suite) === "form-states-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createStateGallery(fixture);
+  if (basename(suite) === "form-united-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createUnitedGallery(fixture);
+  if (basename(suite) === "form-through-align-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createThroughAlignGallery(fixture);
   if (basename(suite) === "form-palette-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPaletteGallery(fixture);
   if (basename(suite) === "form-style-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createStyleFormSource(fixture);
   if (basename(suite) === "form-style-palette-host.cjs") fixture.formPalette = await (await import("./form-fixture.mjs")).createStylePaletteGallery(fixture);
@@ -57,6 +59,7 @@ try {
   if (["form-primary-buttons-host.cjs", "form-button-borders-host.cjs"].includes(basename(suite))) fixture.primaryButtons = await (await import("./form-fixture.mjs")).createPrimaryButtonGallery(fixture);
   if (basename(suite) === "form-primary-appearance-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPrimaryAppearanceGallery(fixture);
   if (["form-usual-buttons-host.cjs", "form-button-metrics-host.cjs", "form-button-captions-host.cjs", "form-button-colors-host.cjs", "form-tab-titles-host.cjs", "form-window-titles-host.cjs", "form-standard-pictures-host.cjs", "form-text-document-host.cjs", "form-geographical-host.cjs", "form-graphical-host.cjs", "form-formatted-host.cjs", "form-html-host.cjs", "form-pdf-host.cjs", "form-spreadsheet-host.cjs", "form-calendar-host.cjs", "form-period-host.cjs", "form-planner-host.cjs", "form-dendrogram-host.cjs", "form-gantt-host.cjs", "form-chart-host.cjs"].includes(basename(suite))) fixture.formGallery = await (await import("./form-fixture.mjs")).createMeasuredFormGallery(fixture);
+  if (basename(suite) === "form-responsive-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createResponsiveFormGallery(fixture);
   if (basename(suite) === "form-groups-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createGroupGallery(fixture);
   if (basename(suite) === "form-button-rows-host.cjs") fixture.buttonRows = await (await import("./form-fixture.mjs")).createButtonRowsSource(fixture);
   if (basename(suite) === "form-button-links-host.cjs") fixture.buttonTypes = await (await import("./form-fixture.mjs")).createButtonLinksSource(fixture);

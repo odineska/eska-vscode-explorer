@@ -1,6 +1,8 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
+import { inspectorLayout } from './inspector-layout.mjs';
 import { PropertyValue } from './PropertyValue.jsx';
+import { PropertyPalette } from './PropertyPalette.jsx';
 import { flatten, treeChildren, find, property, automaticCommands, text, key } from './model.mjs';
 
 function handlerLinks(model, matches) {
@@ -63,16 +65,45 @@ function Properties(props) {
   const c = props.controller, state = c.state;
   const node = createMemo(() => find(state.model.root, state.selected) ?? state.model.root);
   const handlers = createMemo(() => state.handlerNavigation ? handlerLinks(state.model,handler=>handler.owner.kind==='element'&&key({identity:handler.owner.identity})===node().key) : []);
-  const locate = field => c.post({ type: 'locate', target: { kind: 'property', identity: node().identity, property: field.key } });
+  const palette = createMemo(() => state.palette?.revision === state.revision && state.palette?.formSessionId === state.formSessionId
+    && key({identity: state.palette.identity}) === node().key ? state.palette : null);
+  const locate = target => c.post({ type: 'locate', revision: state.revision, formSessionId: state.formSessionId,
+    target: { ...target, identity: node().identity } });
+  const paletteHandlers = createMemo(() => {
+    const links = new Map();
+    for (const row of palette()?.rows ?? []) {
+      const value = row.value;
+      if (value.kind !== 'declaredEvent') continue;
+      const property = node().properties[value.propertyIndex];
+      const name = property?.value.fields?.[value.entryIndex]?.value.text.trim();
+      if (name === undefined) continue;
+      const origin = property.origin;
+      const link = handlers().find(({ handler }) => row.id === `platform:${handler.event}`
+        && handler.name === name && handler.origin.source === origin.source
+        && handler.origin.range.start === origin.range.start && handler.origin.range.end === origin.range.end);
+      if (link) links.set(row.id, link);
+    }
+    return links;
+  });
+  const extraHandlers = createMemo(() => {
+    const linked = new Set([...paletteHandlers().values()].map(entry => entry.index));
+    return handlers().filter(entry => !linked.has(entry.index));
+  });
+  const openHandler = index => c.post({ type: 'handler', index });
+  const locateProperty = field => locate({ kind: 'property', property: field.key });
   return <><div class="form-pane-title">{state.strings.properties}<span>{node().name || state.strings.form}</span></div><div class="form-table-scroll"><table class="form-properties"><tbody>
+    <Show when={palette()?.rows} fallback={<>
     <tr><th>{state.strings.name}</th><td>{node().name ?? state.strings.form}</td></tr><tr><th>{state.strings.kind}</th><td>{node().kind}</td></tr>
     <For each={node().properties}>{field => <tr tabindex="0" data-property-name={field.key.name} data-property-namespace={field.key.namespace ?? ''} title={`{${field.key.namespace ?? ''}}${field.key.name} — ${state.strings.source}`}
-      onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(field); }}
-      onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(field); } }}>
+      onDblClick={event => { if (!event.target.closest('summary,button,input')) locateProperty(field); }}
+      onKeyDown={event => { if (event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locateProperty(field); } }}>
       <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th><td><PropertyValue field={field} state={state}/></td>
-    </tr>}</For>
-    <Show when={handlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
-    <For each={handlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={()=>c.post({type:'handler',index:entry.index})}>{entry.handler.name}</button></td></tr>}</For>
+    </tr>}</For></>}>
+      <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}
+        handlers={paletteHandlers()} openHandler={openHandler}/>
+    </Show>
+    <Show when={extraHandlers().length}><tr><th colspan="2">{state.strings.events}</th></tr></Show>
+    <For each={extraHandlers()}>{entry=><tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler} onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>}</For>
   </tbody></table></div><div class="form-property-actions"><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'element', identity: node().identity } })}>{state.strings.source}</button>
     <Show when={node().presentation.binding}><button type="button" onClick={() => c.post({ type: 'locate', target: { kind: 'binding', identity: node().identity } })}>{state.strings.binding}</button></Show></div></>;
 }
@@ -85,26 +116,44 @@ function CommandInterface(props) {
 }
 export function App(props) {
   const c = props.controller, state = c.state;
-  let shell;
+  let shell, toolbar, status;
+  const [size, setSize] = createSignal({ width: 0, height: 0, toolbar: 34, status: 23 });
+  const inspectors = createMemo(() => inspectorLayout(size(), state.ui, state.role === 'main' && state.detached));
+  onMount(() => {
+    let scheduled, active = true;
+    const measure = () => {
+      scheduled = undefined;
+      if (!active) return;
+      const next = { width: shell.clientWidth, height: shell.clientHeight,
+        toolbar: toolbar.getBoundingClientRect().height, status: status.getBoundingClientRect().height };
+      setSize(previous => Object.keys(next).every(key => previous[key] === next[key]) ? previous : next);
+    };
+    const observer = new ResizeObserver(() => {
+      if (active && scheduled === undefined) scheduled = requestAnimationFrame(measure);
+    });
+    for (const element of [shell, toolbar, status]) observer.observe(element);
+    measure();
+    onCleanup(() => { active = false; observer.disconnect(); cancelAnimationFrame(scheduled); });
+  });
   return <main class="form-shell" ref={shell} data-view-role={state.role}>
-    <div class="form-toolbar"><span id="title">{state.title ?? state.strings.title}</span><span class="form-toolbar-spacer"/>
+    <div class="form-toolbar" ref={toolbar}><span id="title" title={state.title ?? state.strings.title}>{state.title ?? state.strings.title}</span><span class="form-toolbar-spacer"/>
       <button type="button" onClick={() => c.post({ type: 'source' })}>{state.strings.xml}</button><button type="button" onClick={() => c.post({ type: 'refresh' })}>{state.strings.refresh}</button>
       <Show when={state.role === 'main'} fallback={<button type="button" onClick={() => c.post({ type: 'dock' })}>{state.strings.dock}</button>}>
         <button type="button" onClick={() => c.post({ type: state.detached ? 'revealPreview' : 'detach' })}>{state.detached ? state.strings.revealPreview : state.strings.detach}</button>
       </Show><label class="form-zoom">{state.strings.zoom}<select value={state.ui.zoom} onChange={event => c.ui('zoom', Number(event.currentTarget.value))}><For each={[50, 75, 100, 125, 150, 200]}>{value => <option value={value}>{value}%</option>}</For></select></label>
     </div>
     <Show when={state.model} fallback={<div class="form-empty" role="status">{state.notice || state.strings.loading}</div>}>
-      <Show when={state.role === 'main'}><div class="form-inspectors" style={{ height: `${state.ui.upper}px`, 'grid-template-columns': `calc(${state.ui.left}% - 4px) 4px calc(${state.ui.right - state.ui.left}% - 4px) 4px minmax(180px, 1fr)` }}>
+      <Show when={state.role === 'main'}><div class="form-inspectors" style={{ height: `${inspectors().height}px`, 'grid-template-columns': inspectors().tracks }}>
         <section class="form-pane"><div class="form-pane-title">{state.strings.elements}</div><Show when={state.ui.treeTab === 'elements'} fallback={<CommandInterface controller={c}/>}><ElementTree controller={c}/></Show>
           <div class="form-tabs" role="tablist"><For each={['elements', 'commandInterface']}>{name => <button role="tab" aria-selected={state.ui.treeTab === name} classList={{ active: state.ui.treeTab === name }} onClick={() => c.ui('treeTab', name)}>{state.strings[name]}</button>}</For></div>
         </section>
-        <Splitter vertical value={() => state.ui.left} factor={() => 100 / shell.clientWidth} change={value => c.ui('left', Math.max(15, Math.min(state.ui.right - 15, value)))}/>
+        <Splitter vertical value={() => inspectors().left} factor={() => 100 / inspectors().width} change={value => c.ui('left', Math.max(inspectors().leftMinimum, Math.min(inspectors().leftMaximum, value)))}/>
         <section class="form-pane"><Definitions controller={c}/></section>
-        <Splitter vertical value={() => state.ui.right} factor={() => 100 / shell.clientWidth} change={value => c.ui('right', Math.max(state.ui.left + 15, Math.min(82, value)))}/>
+        <Splitter vertical value={() => inspectors().right} factor={() => 100 / inspectors().width} change={value => c.ui('right', Math.max(inspectors().rightMinimum, Math.min(inspectors().rightMaximum, value)))}/>
         <section class="form-pane"><Properties controller={c}/></section>
-      </div><Splitter value={() => state.ui.upper} change={value => c.ui('upper', Math.max(100, Math.min(shell.clientHeight - 150, value)))}/></Show>
-      <Show when={state.role === 'preview' || !state.detached} fallback={<div class="form-detached-placeholder"><button type="button" onClick={() => c.post({ type: 'revealPreview' })}>{state.strings.revealPreview}</button></div>}><Preview controller={c}/></Show>
+      </div><Show when={!state.detached}><Splitter value={() => inspectors().height} change={value => c.ui('upper', Math.max(inspectors().minimumHeight, Math.min(inspectors().maximumHeight, value)))}/></Show></Show>
+      <Show when={state.role === 'preview' || !state.detached}><Preview controller={c}/></Show>
     </Show>
-    <footer classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
+    <footer ref={status} classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
   </main>;
 }

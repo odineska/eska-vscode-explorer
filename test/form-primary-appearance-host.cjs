@@ -22,7 +22,7 @@ exports.run = async () => {
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'),'default-marked button form');
     const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-    const ui = await frame({state:{title:panel.panel.title}});
+    const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     for (const index of form.expected.targetButtons) await until(async () => await bitmap(ui,index) === form.expected.buttons[index].glyphRgbSha256, 'explicit color wins over default marking');
     const actual = await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       return {frame:rect(document.querySelector('.taxi-form-frame')),buttons:[...document.querySelectorAll('.taxi-command-bar .taxi-button')].map(node=>({...rect(node),color:getComputedStyle(node).color,background:getComputedStyle(node).backgroundColor}))};})()`);
@@ -48,7 +48,7 @@ exports.run = async () => {
       assert.equal(await ui.evaluate("globalThis.__explicitButton===document.querySelectorAll('.taxi-command-bar .taxi-button')[1]"),true);
       await explorer.formPreview.receive(view,panel,{type:'detach'});
       await until(() => view.frames.get('preview')?.ready,'explicit default button detached');
-      const detached = view.frames.get('preview'), floating = await frame({state:{title:detached.panel.title}});
+      const detached = view.frames.get('preview'), floating = await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
       await until(async () => await bitmap(floating,1) === form.expected.buttons[1].glyphRgbSha256,'explicit default button in detached window');
       await change(altered,floating);await change(original,floating);
       floating.close();detached.panel.dispose();

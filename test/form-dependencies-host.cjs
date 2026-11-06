@@ -26,7 +26,7 @@ exports.run = async () => {
   const view = [...service.views.values()][0], main = view.frames.get('main');
   await service.receive(view, main, { type: 'detach' });
   await until(() => view.frames.get('preview')?.ready, 'detached dependency preview');
-  const ui = await frame({ state: { title: view.frames.get('preview').panel.title } });
+  const ui = await frame({detached:true,fixedFormArea:true, state:{title: view.frames.get('preview').panel.title }});
   await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input')"), 'input visible');
   await ui.evaluate("globalThis.__dependencyInput=document.querySelector('.taxi-input');globalThis.__dependencyModels=[];window.addEventListener('message',event=>{if(event.data.type==='state'){globalThis.__dependencySequence=event.data.sequence;if(event.data.model)globalThis.__dependencyModels.push(event.data.model.root.children[0].children[0].presentation.font.points)}})");
   const points = () => view.snapshot.model.root.children[0].children[0].presentation.font.points;

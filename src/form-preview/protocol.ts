@@ -3,8 +3,9 @@ import type { PropertyField, PropertyKey } from "../properties.js";
 import { picturePreview, type PicturePreview } from "../picture.js";
 
 export const MAX_FORM_DEPENDENCIES = 1024;
+const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean }
+export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
 export interface FormPreparation { contextFingerprint: string; application: string | null; limitedContext: boolean; roots: WirePath[]; forms: FormInputSource[] }
@@ -15,6 +16,7 @@ export type FormText = { kind: "literal"; items: { language: string; content: st
 export interface Font { face: string | null; points: number; weight: number; italic: boolean; underline: boolean; strikeout: boolean }
 export interface Color { kind: "rgb" | "role" | "web" | "system"; value: string }
 export interface Presentation {
+  united?: boolean | null;
   markIncomplete?: boolean;
   footerText?: FormText | null;
   picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
@@ -24,17 +26,31 @@ export interface Presentation {
   autoCommandItems?: { key: string; caption: FormText; primary: boolean; origin: Origin | null }[];
 }
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
+type PaletteCaption = { "ru-RU": string; "en-US": string };
+type PaletteDefault = { kind: "boolean"; value: boolean } | { kind: "number"; value: number } | { kind: "choice"; value: string }
+  | { kind: "auto" | "autoStretch" | "empty" | "dialog" | "unknown" };
+type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: number; sourceKind: "form" | "extension"; caption?: PaletteCaption }
+  | { kind: "declaredEvent"; propertyIndex: number; occurrence: number; entryIndex: number; sourceKind: "form" | "extension" }
+  | { kind: "absent"; default: PaletteDefault; caption: PaletteCaption | null }
+  | { kind: "name"; value: string | null } | { kind: "elementKind"; value: string; caption: PaletteCaption }
+  | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin; caption?: PaletteCaption };
+export interface PaletteRow { id: string; category: string | null; editor: string | null; caption: PaletteCaption | null; available?: boolean; value: PaletteValue }
+export interface FormPalette {
+  formSessionId: string; revision: string; identity: ElementIdentity;
+  categories: { id: string; caption: PaletteCaption }[] | null; rows: PaletteRow[] | null;
+}
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[] }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { importantColor: Color; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
 }
 export interface Location { source: string; snapshot: string; root: WirePath; path: WirePath; range: { start: number; end: number } }
-export type FormTarget = { kind: "element" | "binding"; identity: ElementIdentity } | { kind: "property"; identity: ElementIdentity; property: PropertyKey }
+export type FormTarget = { kind: "element" | "binding"; identity: ElementIdentity } | { kind: "property"; identity: ElementIdentity; property: PropertyKey; occurrence?: number }
+  | { kind: "attribute"; identity: ElementIdentity; attribute: PropertyKey }
   | { kind: "definition"; section: "attributes" | "commands" | "parameters"; name: string };
 
 function invalid(): never { throw new ExplorerError("protocolInvalid"); }
@@ -73,6 +89,7 @@ function presentation(value: unknown): boolean {
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
     && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
+    && (value.united === undefined || value.united === null || typeof value.united === "boolean")
     && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string")
     && (value.autoCommandItems === undefined || Array.isArray(value.autoCommandItems) && value.autoCommandItems.length <= 16_384 && value.autoCommandItems.every(item => isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean" && (item.origin === null || origin(item.origin))));
 }
@@ -84,7 +101,8 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
     || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.inputPreparation !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
-    ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}) };
+    ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}),
+    ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}) };
 }
 export function parseFormPreparation(value: unknown): FormPreparation {
   if (!isRecord(value) || !hash(value.contextFingerprint) || !(value.application === null || typeof value.application === "string") || typeof value.limitedContext !== "boolean"
@@ -123,6 +141,8 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
     if (isRecord(value.presentation) && isRecord(value.presentation.picture) && value.presentation.picture.kind === "common" && !assets.has(String(value.presentation.picture.source))) invalid();
   }
   if (!color(value.model.importantColor)) invalid();
+  const scriptVariant = value.model.scriptVariant;
+  if (scriptVariant !== undefined && scriptVariant !== "russian" && scriptVariant !== "english") invalid();
   node(value.model.root, 0);
   if (value.model.handlers !== undefined && (!Array.isArray(value.model.handlers) || value.model.handlers.length > 16_384 || !value.model.handlers.every(handler =>
     isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
@@ -140,6 +160,73 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
   if (!isRecord(value.model.diagnostics) || !Array.isArray(value.model.diagnostics.composition) || !Array.isArray(value.model.diagnostics.appearance)) invalid();
   return value as unknown as FormSnapshot;
 }
+export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, node: FormNode): FormPalette {
+  if (!isRecord(value) || value.formSessionId !== snapshot.formSessionId || value.revision !== snapshot.revision
+    || !isIdentity(value.identity) || identityKey(value.identity) !== identityKey(node.identity)) invalid();
+  if (value.rows === null && value.categories === null) return value as unknown as FormPalette;
+  if (!Array.isArray(value.rows) || !Array.isArray(value.categories)) invalid();
+
+  const categories = new Set<string>(), rowIds = new Set<string>(), indices = new Set<number>();
+  for (const category of value.categories) {
+    if (!isRecord(category) || typeof category.id !== "string" || categories.has(category.id)
+      || category.caption === undefined || !caption(category.caption)) invalid();
+    categories.add(category.id);
+  }
+  const counts = new Map<string, number>();
+  const occurrences = node.properties.map(({ key }) => {
+    const id = JSON.stringify([key.namespace, key.name]), occurrence = counts.get(id) ?? 0;
+    counts.set(id, occurrence + 1); return occurrence;
+  });
+  for (const row of value.rows) {
+    if (!isRecord(row) || typeof row.id !== "string" || rowIds.has(row.id)
+      || (row.available !== undefined && typeof row.available !== "boolean")
+      || !(row.category === null ? row.editor === null && row.caption === null
+        : typeof row.category === "string" && categories.has(row.category) && typeof row.editor === "string"
+          && row.caption !== undefined && caption(row.caption)) || !isRecord(row.value)) invalid();
+    rowIds.add(row.id);
+    const data = row.value;
+    switch (data.kind) {
+      case "declared": {
+        const index = data.propertyIndex;
+        if (typeof index !== "number" || !Number.isSafeInteger(index) || !node.properties[index] || indices.has(index)
+          || data.occurrence !== occurrences[index] || !["form", "extension"].includes(String(data.sourceKind))
+          || !caption(data.caption)) invalid();
+        indices.add(index); break;
+      }
+      case "declaredEvent": {
+        const index = data.propertyIndex, entryIndex = data.entryIndex;
+        if (typeof index !== "number" || !Number.isSafeInteger(index) || data.occurrence !== occurrences[index]
+          || typeof entryIndex !== "number" || !Number.isSafeInteger(entryIndex) || row.category !== "events"
+          || data.sourceKind !== "form" && data.sourceKind !== "extension") invalid();
+        const property = node.properties[index];
+        if (property?.key.namespace !== FORM_NAMESPACE || property.key.name !== "Events" || property.value.kind !== "record") invalid();
+        const entry = property.value.fields[entryIndex];
+        if (entry?.key.namespace !== FORM_NAMESPACE || entry.key.name !== "Event" || entry.value.kind !== "text"
+          || !entry.qualifiers.some(({ key, value }) => key.namespace === null && key.name === "name" && row.id === `platform:${value}`)) invalid();
+        break;
+      }
+      case "absent": {
+        if (!(data.caption === null || data.caption !== undefined && caption(data.caption)) || !isRecord(data.default)) invalid();
+        const setting = data.default;
+        if (!(setting.kind === "boolean" ? typeof setting.value === "boolean"
+          : setting.kind === "number" ? Number.isSafeInteger(setting.value)
+          : setting.kind === "choice" ? typeof setting.value === "string"
+          : ["auto", "autoStretch", "empty", "dialog", "unknown"].includes(String(setting.kind)))) invalid();
+        break;
+      }
+      case "name": if (data.value !== null && typeof data.value !== "string") invalid(); break;
+      case "elementKind": if (data.value !== node.kind || data.caption === undefined || !caption(data.caption)) invalid(); break;
+      case "qualifier":
+        if (!key(data.key) || typeof data.text !== "string" || !(data.sourceKind === "form" || data.sourceKind === "extension")
+          || !origin(data.origin) || !caption(data.caption)) invalid();
+        break;
+      default: invalid();
+    }
+  }
+  if (indices.size !== node.properties.length) invalid();
+  return value as unknown as FormPalette;
+}
+
 export function parseLocation(value: unknown): Location {
   if (!isRecord(value) || !hash(value.source) || !hash(value.snapshot) || !isWirePath(value.root) || !isWirePath(value.path) || !range(value.range)) invalid();
   return value as unknown as Location;

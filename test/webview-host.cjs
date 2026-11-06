@@ -14,11 +14,18 @@ async function frame(tab) {
   const workbenchTarget=targets.find(item=>item.type==='page'&&item.url.startsWith('vscode-file:'));
   const socket = new WebSocket(workbenchTarget.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
+  const nativeWindowIds = new Map();
   let serial = 0;
-  const pending = new Map(), contexts = [];
+  const pending = new Map(), contexts = [], attached = new Map();
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
     if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId, frameId:message.params.context.auxData?.frameId });
+    if (message.method === 'Runtime.executionContextDestroyed' || message.method === 'Runtime.executionContextsCleared' || message.method === 'Target.detachedFromTarget') {
+      const lost=message.method==='Target.detachedFromTarget'?message.params.sessionId:message.sessionId;
+      if(message.method==='Target.detachedFromTarget')for(const [target,session] of attached)if(session===lost)attached.delete(target);
+      for(let index=contexts.length-1;index>=0;index--)if(contexts[index].sessionId===lost
+        && (message.method!=='Runtime.executionContextDestroyed'||contexts[index].id===message.params.executionContextId))contexts.splice(index,1);
+    }
     const promise = pending.get(message.id);
     if (promise) {
       pending.delete(message.id); clearTimeout(promise.timer);
@@ -33,23 +40,50 @@ async function frame(tab) {
     pending.clear();
   });
   /** Match command replies independently of context notifications. */
-  function send(method, params = {}, sessionId) {
+  function send(method, params = {}, sessionId, timeout = 5000) {
     return new Promise((resolve, reject) => {
       const id = ++serial;
       // Hidden Windows webviews can suspend evaluation; they must not block discovery of the active frame.
-      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`native debug timeout: ${method}`),{code:'native_debug_timeout',method,sessionId})); }, 5000);
+      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`native debug timeout: ${method}`),{code:'native_debug_timeout',method,sessionId})); }, timeout);
       pending.set(id, { resolve, reject, timer, method, error: new Error(`native debug failure: ${method}`) }); socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
+  const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
+  /** Join OOPIF subtrees to their native pages before accepting a moved preview. */
+  async function windowTree() {
+    const parents=new Map(),windows=new Map(),all=(await send('Target.getTargets')).targetInfos;
+    const record=(node,parent)=>{
+      if(node.frame.parentId||parent)parents.set(node.frame.id,node.frame.parentId??parent);
+      for(const child of node.childFrames??[])record(child,node.frame.id);
+    };
+    // OOPIF subtrees are reported by their own targets; parentId joins them to the native page.
+    for(const target of all.filter(target=>['page','iframe'].includes(target.type))){
+      let sessionId;
+      try {
+        if(target.targetId!==workbenchTarget.id)({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true}));
+        const result=await send('Page.getFrameTree',{},sessionId);
+        record(result.frameTree);
+        if(target.type==='page')windows.set(result.frameTree.frame.id,target);
+      } catch(error){if(!gone(error))throw error;}
+      finally {if(sessionId)try{await send('Target.detachFromTarget',{sessionId});}catch(error){if(!gone(error))throw error;}}
+    }
+    return {parents,windows,all};
+  }
+  function ownerInTree(frameId, {parents,windows}) {
+    const seen=new Set();let id=frameId;
+    while(id&&!seen.has(id)) {
+      if(windows.has(id))return windows.get(id);
+      seen.add(id);id=parents.get(id);
+    }
+  }
   await send('Runtime.enable');
-  const attached = new Set();
-  let context;
-  await until(async () => {
+  let context, discovery;
+  try { await until(async () => {
     const all = await send('Target.getTargets');
-    for (const target of all.targetInfos.filter(item => item.type === 'iframe' && !attached.has(item.targetId))) {
+    for (const target of all.targetInfos.filter(item => (item.type === 'iframe' || tab.detached && item.type === 'page' && item.targetId !== workbenchTarget.id) && !attached.has(item.targetId))) {
       try {
         const { sessionId } = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
-        attached.add(target.targetId);
+        attached.set(target.targetId,sessionId);
         await send('Runtime.enable', {}, sessionId);
       } catch (error) {
         // A newly shown webview can replace its iframe between enumeration and attachment.
@@ -60,14 +94,33 @@ async function frame(tab) {
         if (!([-32602, -32000, -32001].includes(error?.code) && /(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message))) throw error;
       }
     }
+    const tree=tab.detached?await windowTree():undefined;
+    discovery={detached:!!tab.detached,contexts:contexts.slice(-24).map(item=>({id:item.id,frameId:item.frameId,owner:tree?ownerInTree(item.frameId,tree)?.targetId:undefined})),targets:all.targetInfos.slice(0,32).map(({targetId,type})=>({targetId,type}))};
     for (const candidate of contexts) {
+      if(tree) {
+        const owner=ownerInTree(candidate.frameId,tree);
+        // Code can leave an old iframe with the same title in the main window while cloning the preview.
+        if(!owner||owner.targetId===workbenchTarget.id)continue;
+      }
       try {
         const result = await send('Runtime.evaluate', { contextId: candidate.id, expression: `document.getElementById('title')?.textContent === ${JSON.stringify(tab.state.title)}`, returnByValue: true }, candidate.sessionId);
         if (result.result?.value) { context = candidate; return true; }
       } catch {}
     }
     return false;
-  }, 'property frame');
+  }, 'property frame'); } catch(error) {
+    if(error.message==='property frame') {
+      const roles=[];
+      for(const candidate of contexts.slice(-12)) {
+        try {
+          const result=await send('Runtime.evaluate',{contextId:candidate.id,expression:`({role:document.querySelector('.form-shell')?.dataset.viewRole,titleMatches:document.getElementById('title')?.textContent===${JSON.stringify(tab.state.title)},visible:document.visibilityState})`,returnByValue:true},candidate.sessionId,500);
+          roles.push({id:candidate.id,frameId:candidate.frameId,value:result.result?.value});
+        } catch {}
+      }
+      discovery={...discovery,workbenchTarget:workbenchTarget.id,roles};
+    }
+    error.message+=' '+JSON.stringify(discovery);throw error;
+  }
   /** Observe only real state messages, after the packaged renderer has handled them. */
   function projectState(value) {
     return {revision:value.revision,status:value.status,editing:{busy:value.editing?.busy,unlocked:value.editing?.unlocked,
@@ -100,6 +153,26 @@ async function frame(tab) {
     },'current property state rendered');
   }
   await currentState(true);
+  /** Native pixel fixtures keep their original preferred-size viewport explicitly. */
+  async function fixedFormArea() {
+    if (!tab.fixedFormArea) return;
+    const result = await send('Runtime.evaluate', {contextId:context.id,returnByValue:true,awaitPromise:true,
+      expression:`(async()=>{
+        const root=document.querySelector('.taxi-form-frame'),surface=document.querySelector('.preview-scroll');if(!root||!surface)return;
+        for(let i=0;i<10&&root.closest('.taxi-preview').dataset.formLayout!=='allocated';i++)await new Promise(requestAnimationFrame);
+        const css=getComputedStyle(root),zoom=Number(document.querySelector('.form-zoom select').value)/100;
+        const width=parseFloat(css.getPropertyValue('--taxi-form-preferred-width')),height=parseFloat(css.getPropertyValue('--taxi-form-preferred-height'));
+        if(!(width>0&&height>0))return;
+        const box=getComputedStyle(surface),w=(width+8)*zoom+parseFloat(box.paddingLeft)+parseFloat(box.paddingRight),h=(height+8)*zoom+parseFloat(box.paddingTop)+parseFloat(box.paddingBottom);
+        if(surface.style.width===w+'px'&&surface.style.height===h+'px')return;
+        Object.assign(surface.style,{width:w+'px',height:h+'px',minHeight:'0',flex:'0 0 auto'});
+        for(let i=0;i<10;i++) {
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          const css=getComputedStyle(root),extra=css.boxSizing==='content-box'?4:0;if(Math.abs(parseFloat(css.width)+extra-width)<1&&Math.abs(parseFloat(css.height)+extra-height)<1)break;
+        }
+      })()`},context.sessionId);
+    if(result.exceptionDetails)throw new Error(JSON.stringify(result.exceptionDetails));
+  }
   return {
     /** A file acknowledgement alone does not mean that the next control has been rendered. */
     async rendered() {
@@ -108,6 +181,7 @@ async function frame(tab) {
     /** Evaluate test code solely in this task's isolated property webview. */
     async evaluate(expression) {
       await currentState(false);
+      await fixedFormArea();
       const result = await send('Runtime.evaluate', { contextId: context.id, expression, returnByValue: true, awaitPromise: true }, context.sessionId);
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result?.value;
@@ -143,39 +217,30 @@ async function frame(tab) {
     /** Resolve the native window containing this exact webview frame, even with several previews. */
     async nativeWindow({ detached = false } = {}) {
       if(!context.frameId)throw new Error('native webview frame identity missing');
-      const gone=error=>[-32602,-32000,-32001].includes(error?.code)&&/(?:Session with given id not found|No target with given id found|No session with given id)/i.test(error.message);
       let owner,observation;
       try{await until(async()=>{
-        const parents=new Map(),windows=new Map(),all=(await send('Target.getTargets')).targetInfos;
-        const record=(node,parent)=>{
-          if(node.frame.parentId||parent)parents.set(node.frame.id,node.frame.parentId??parent);
-          for(const child of node.childFrames??[])record(child,node.frame.id);
-        };
-        // OOPIF subtrees are reported by their own targets; parentId joins them to the native page.
-        for(const target of all.filter(target=>['page','iframe'].includes(target.type))){
-          let sessionId;
-          try {
-            if(target.targetId!==workbenchTarget.id)({sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true}));
-            const result=await send('Page.getFrameTree',{},sessionId);
-            record(result.frameTree);
-            if(target.type==='page')windows.set(result.frameTree.frame.id,target);
-          } catch(error){if(!gone(error))throw error;}
-          finally {if(sessionId)try{await send('Target.detachFromTarget',{sessionId});}catch(error){if(!gone(error))throw error;}}
-        }
+        const {parents,windows,all}=await windowTree();
         observation={frameId:context.frameId,parents:[...parents].slice(0,64),pageFrames:[...windows].slice(0,32).map(([id,target])=>[id,target.targetId]),targets:all.slice(0,64).map(({targetId,type})=>({targetId,type})),counts:{parents:parents.size,pageFrames:windows.size,targets:all.length}};
-        const seen=new Set();let id=context.frameId;owner=undefined;
-        while(id&&!seen.has(id)){
-          if(windows.has(id)){
-            owner=windows.get(id);
-            // The native move command can finish before the webview is reparented.
-            return !detached||owner.targetId!==workbenchTarget.id;
-          }
-          seen.add(id);id=parents.get(id);
-        }
-        return false;
+        owner=ownerInTree(context.frameId,{parents,windows});
+        // The native move command can finish before the webview is reparented.
+        return !!owner&&(!detached||owner.targetId!==workbenchTarget.id);
       },'native window containing the webview frame');}
       catch(error){error.message+=' '+JSON.stringify(observation);throw error;}
       return owner;
+    },
+    /** Resize only a window identified through this isolated host's debugging endpoint. */
+    async windowBounds(targetId) {
+      let session;
+      try {
+        if(targetId!==workbenchTarget.id)session=await send('Target.attachToTarget',{targetId,flatten:true});
+        const result=await send('Runtime.evaluate',{expression:'({width:window.outerWidth,height:window.outerHeight,left:window.screenX,top:window.screenY,title:document.title})',returnByValue:true},session?.sessionId);
+        return {windowId:targetId,bounds:result.result.value};
+      } finally {if(session)await send('Target.detachFromTarget',{sessionId:session.sessionId});}
+    },
+    async resizeWindow(windowId, bounds) {
+      const current=await this.windowBounds(windowId);
+      const output=require('node:child_process').execFileSync('python3',[path.join(__dirname,'resize-native-workbench.py'),process.env.VSCODE_PID,JSON.stringify({...current.bounds,xid:nativeWindowIds.get(windowId)}),JSON.stringify(bounds)],{encoding:'utf8'});
+      nativeWindowIds.set(windowId,JSON.parse(output).window);
     },
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
     async targets() { return (await send('Target.getTargets')).targetInfos; },

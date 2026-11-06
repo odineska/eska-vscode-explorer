@@ -13,18 +13,42 @@ export function buttonBorderShade(top) {
   return top.map(c => Math.floor(c * 217 / 255));
 }
 
-/** Three lower scanlines of the Linux border at an intrinsic raster origin. */
-export function buttonBorderTail(height, top) {
-  if (!Number.isInteger(height) || height < 7 || height > 4096) throw new Error('button-border-height');
-  const lower = buttonBorderShade(top), step = Math.round(UNIT / height), center = height / 2;
-  // Keep the finite-precision centre correction: collapsing it to a real-number
-  // identity changes half-way samples. Workbench position is not an input.
+// Keep the transformed gradient origin and integer raster offset within the
+// same fixed-point range. Which translation rounds best depends on both axes.
+function positionedPhase(height, step, {x,y,width}) {
+  const scaleX = 1 / width, scaleY = 1 / height;
+  const tx = -x * scaleX, ty = -y * scaleY;
+  let offsetY = ty, extent = Math.max(Math.abs(tx),Math.abs(ty));
+  for (const sideX of [-1,1]) for (const sideY of [-1,1]) {
+    const dx = -tx / (scaleX + sideX), dy = -ty / (scaleY + sideY);
+    const next = Math.max(Math.abs(dx),Math.abs(dy));
+    if (next < extent) {
+      offsetY = dy;
+      extent = next;
+    }
+  }
+  // The fixed-point centre correction runs before applying the integer offset
+  // in the pixel sampler. At a half unit the sampler rounds towards +infinity.
+  const center = height / 2 + Math.floor(offsetY);
+  return even(center * UNIT * scaleY) - Math.round(step * center);
+}
+
+function intrinsicPhase(height, step) {
+  const center = height / 2;
   let phase = 0;
   for (let i = 0; i < 5; i++) {
     const point = even(step * center + phase), delta = Math.round((point / UNIT * height - center) / height * UNIT);
     phase -= delta;
     if (delta === 0) break;
   }
+  return phase;
+}
+
+/** Three lower scanlines of the Linux border in raster coordinates. */
+export function buttonBorderTail(height, top, position) {
+  if (!Number.isInteger(height) || height < 7 || height > 4096) throw new Error('button-border-height');
+  const lower = buttonBorderShade(top), step = Math.round(UNIT / height);
+  const phase = position ? positionedPhase(height,step,position) : intrinsicPhase(height,step);
   const left = Math.round(F((height - 3) / height) * UNIT), lx = F(left / UNIT), width = F(1 / F(1 - lx));
   const base = (a,b) => F(F(F(a - F(b * lx)) * width) * INV255);
   const alpha = F(255 * base(255,255));
@@ -47,10 +71,10 @@ function coverage(x,y,width,height,mask) {
 }
 
 /** Raised text-button border, rounded corners and the one-pixel native shadow. */
-export function buttonBorderPaint({height,background,outside,primary}) {
+export function buttonBorderPaint({height,background,outside,primary,position}) {
   if (!rgb(background) || !rgb(outside)) throw new Error('button-border-color');
   const top = primary ? background.map(c => Math.floor(c * 170 / 255)) : [178,178,178];
-  const tail = buttonBorderTail(height,top), width = 7;
+  const tail = buttonBorderTail(height,top,position), width = 7;
   const pixel = (x,y) => {
     const shadow = coverage(x,y - 1,width,height,OUTER), border = coverage(x,y,width,height,OUTER), fill = coverage(x,y,width,height,INNER);
     const edge = y < height - 3 ? top : tail[Math.min(2,y - height + 3)];
@@ -62,5 +86,5 @@ export function buttonBorderPaint({height,background,outside,primary}) {
     });
   };
   const region = (right,bottom) => Array.from({length:bottom ? 12 : 9},(_,i) => pixel((right ? width - 3 : 0) + i % 3,(bottom ? height - 3 : 0) + Math.floor(i / 3)));
-  return {top,bottom:tail[2],shadow:outside.map(c => Math.round(c * 210 / 255)),corners:{topLeft:region(false,false),topRight:region(true,false),bottomLeft:region(false,true),bottomRight:region(true,true)}};
+  return {top,tail,bottom:tail[2],shadow:outside.map(c => Math.round(c * 210 / 255)),corners:{topLeft:region(false,false),topRight:region(true,false),bottomLeft:region(false,true),bottomRight:region(true,true)}};
 }

@@ -14,7 +14,7 @@ exports.run = async () => {
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'),'native alias form');
   const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-  const ui = await frame({state:{title:panel.panel.title}});
+  const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
   const rendered = (color,target = ui) => target.evaluate(`(() => {const button=document.querySelector('.taxi-command-bar .taxi-button');return !!button&&getComputedStyle(button).color===${JSON.stringify(color)};})()`);
   await until(() => rendered('rgb(18, 52, 86)'),'TextColor resolved as named StyleItem');
   assert.ok(view.snapshot.dependencies.some(value => JSON.stringify(value.path).includes('StyleItems/TextColor.xml')));
@@ -41,7 +41,7 @@ exports.run = async () => {
   assert.equal(await ui.evaluate("globalThis.__aliasButton===document.querySelector('.taxi-command-bar .taxi-button')"),true);
   await explorer.formPreview.receive(view,panel,{type:'detach'});
   await until(() => view.frames.get('preview')?.ready,'alias preview detached');
-  const detached = view.frames.get('preview'), floating = await frame({state:{title:detached.panel.title}});
+  const detached = view.frames.get('preview'), floating = await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
   await until(() => rendered('rgb(18, 52, 86)',floating),'alias in detached window');
   await floating.evaluate("globalThis.__aliasButton=document.querySelector('.taxi-command-bar .taxi-button')");
   await change(style,originalStyle.replace('#123456','#654321'),'rgb(101, 67, 33)',floating);

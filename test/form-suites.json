@@ -52,7 +52,8 @@
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-button-borders"
+        "ESKA_FORM_FIXTURES": "native-button-borders",
+        "ESKA_FORM_BUTTON_PAINT_ORIGINS": "native-button-poses"
       },
       "environment": {},
       "dependencies": [
@@ -152,7 +153,8 @@
         "ru"
       ],
       "fixtureEnv": {
-        "ESKA_FORM_FIXTURES": "native-button-rows"
+        "ESKA_FORM_FIXTURES": "native-button-rows",
+        "ESKA_FORM_BUTTON_PAINT_ORIGINS": "native-button-poses"
       },
       "environment": {},
       "dependencies": [
@@ -593,6 +595,24 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "property-catalogue",
+      "driver": "test/form-property-catalogue-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "reconnect",
       "driver": "test/form-reconnect-host.cjs",
       "mode": "installed",
@@ -804,8 +824,10 @@
         "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
         "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels",
         "ESKA_FORM_TABLE_MENU_PIXELS": "native-table-bars",
+        "ESKA_FORM_TABLE_BARS": "native-table-initial-bars",
         "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search",
         "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields",
+        "ESKA_FORM_TABLE_SEARCH_REFLOW": "native-table-search-reflow",
         "ESKA_FORM_TABLE_PICTURE_PIXELS": "native-standard-pictures",
         "ESKA_FORM_TABLE_MOVEMENT_PIXELS": "native-table-movement"
       },
@@ -1161,6 +1183,90 @@
         "native-display"
       ],
       "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "responsive",
+      "driver": "test/form-responsive-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "responsive-layout"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "explorerPathEnv": {
+        "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
+      }
+    },
+    {
+      "id": "united",
+      "driver": "test/form-united-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-united-layout"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "through-align",
+      "driver": "test/form-through-align-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-through-align"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "detached-space",
+      "driver": "test/form-detached-space-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "explorerPathEnv": {
+        "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
+      }
     }
   ],
   "presets": {

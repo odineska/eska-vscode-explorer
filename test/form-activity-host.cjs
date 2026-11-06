@@ -15,11 +15,11 @@ exports.run=async()=>{
   const base=await vscode.workspace.openTextDocument(vscode.Uri.file(files.base.path));await vscode.window.showTextDocument(base,{preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
   await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','open application form');
-  const view=[...service.views.values()][0],main=view.frames.get('main'),mainUi=await frame({state:{title:main.panel.title}});
+  const view=[...service.views.values()][0],main=view.frames.get('main'),mainUi=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   await mainUi.evaluate("window.addEventListener('message',event=>{if(event.data.type==='state'&&event.data.model)globalThis.__activityModel=event.data.model})");
   await service.receive(view,main,{type:'detach'});
   await until(()=>view.frames.get('preview')?.ready,'detached activity preview');
-  const detached=view.frames.get('preview'),ui=await frame({state:{title:detached.panel.title}});
+  const detached=view.frames.get('preview'),ui=await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
   const caption=()=>ui.evaluate("document.querySelector('.taxi-label')?.textContent");
   await until(async()=>await caption()==='Extension caption','active extension shown');
   await ui.evaluate("globalThis.__activityRoot=document.querySelector('.taxi-form-frame')");

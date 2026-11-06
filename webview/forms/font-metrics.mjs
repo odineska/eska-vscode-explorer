@@ -1,4 +1,23 @@
 import metrics from '../../resources/forms/fonts/advances.json' with { type: 'json' };
+import { font, fontLineMetrics } from './model.mjs';
+
+export function linuxControlFont(value) {
+  return { ...font(value, 'linux'), 'font-size': `${fontLineMetrics(value).pixels}px` };
+}
+
+export function controlCaptionOptions(value) {
+  const style = linuxControlFont(value);
+  return {
+    family: /^"([^"]+)",/.exec(style['font-family'])?.[1],
+    pixels: parseFloat(style['font-size']),
+    weight: style['font-weight'],
+    italic: style['font-style'] === 'italic',
+  };
+}
+
+export function controlCaptionWidth(text, value) {
+  return hintedTextWidth(text, controlCaptionOptions(value));
+}
 
 function selectFace({ family, pixels, weight, italic }) {
   const name = family === 'ESKA Taxi Sans' ? 'Sans' : family === 'ESKA Taxi Serif' ? 'Serif' : family === 'ESKA Taxi Mono' ? 'Mono' : undefined;

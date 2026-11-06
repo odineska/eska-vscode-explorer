@@ -28,7 +28,7 @@ exports.run = async () => {
       await vscode.commands.executeCommand('eska.explorer.previewForm');
       await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'palette form ready');
       const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
-      const ui = await frame({state:{title:panel.panel.title}});
+      const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       const button = Object.hasOwn(palette.expected.defaultColors, form.kind);
       const selector = button ? '.taxi-command-bar .taxi-button' : form.kind === 'TabAccent' ? '.taxi-tabs [role=tab]' : '.taxi-group-title';
       const expected = css(palette.expected[`${context}Colors`][button ? form.kind : 'AccentColor']);
@@ -54,7 +54,7 @@ exports.run = async () => {
         assert.equal(await ui.evaluate("globalThis.__paletteGroup===document.querySelector('.taxi-group-title')"), true);
         await explorer.formPreview.receive(view, panel, {type:'detach'});
         await until(() => view.frames.get('preview')?.ready, 'palette detached');
-        const detached = view.frames.get('preview'), floating = await frame({state:{title:detached.panel.title}});
+        const detached = view.frames.get('preview'), floating = await frame({detached:true,fixedFormArea:true,state:{title:detached.panel.title}});
         await until(() => rendered('rgb(0, 128, 0)', floating), 'dirty palette in detached window');
         await floating.evaluate("globalThis.__paletteGroup=document.querySelector('.taxi-group-title')");
         await change(configuration, originalConfig.replace(selection, ''), view);

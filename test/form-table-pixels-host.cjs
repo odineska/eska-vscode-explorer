@@ -3,14 +3,96 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
 const {until,frame}=require('./webview-host.cjs');
+// The search rectangle can be visible even when the bottom of the form is clipped.
+// Find its straight edges and internal separator in the native workbench screenshot.
+async function readSearchField(ui, label, detached) {
+  const selector = '.taxi-table-search[data-native-search-field=ready]:has(> [data-native-label=ready])';
+  await until(() => ui.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), 'table search raster ready');
+  await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
+  const geometry = await ui.evaluate(`(()=>{
+    const field=document.querySelector(${JSON.stringify(selector)}), r=field.getBoundingClientRect(), css=getComputedStyle(field);
+    return {width:r.width,height:r.height,border:css.borderTopColor.match(/\\d+/g).map(Number),font:css.fontSize};
+  })()`);
+  const target = detached ? await ui.nativeWindow({detached:true}) : undefined;
+  await ui.parkPointer(target?.targetId);
+  const filename = `table-search-${label}.png`;
+  const png = target ? await ui.captureTarget(target.targetId, filename, true) : await ui.screenshot(filename, true);
+  return ui.evaluate(`(async()=>{
+    if(devicePixelRatio!==1)throw new Error('table-search-reference-dpi');
+    const geometry=${JSON.stringify(geometry)}, {width,height,border}=geometry;
+    if(!Number.isInteger(width)||height!==23)throw new Error('table-search-geometry '+JSON.stringify(geometry));
+    const blob=new Blob([Uint8Array.from(atob(${JSON.stringify(png)}),c=>c.charCodeAt(0))],{type:'image/png'});
+    const image=await createImageBitmap(blob), canvas=new OffscreenCanvas(image.width,image.height);
+    const context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();
+    const data=context.getImageData(0,0,canvas.width,canvas.height).data, regions=[];
+    const stroke=(x,y)=>{
+      const p=(y*canvas.width+x)*4;
+      return data[p]===border[0]&&data[p+1]===border[1]&&data[p+2]===border[2];
+    };
+    for(let y=0;y<=canvas.height-height;y++)for(let x=1;x<=canvas.width-width;x++){
+      if(stroke(x+2,y)||!stroke(x+3,y)||!stroke(x+width-4,y)||stroke(x+width-3,y))continue;
+      let edges=true;
+      for(let i=3;i<width-3;i++)if(!stroke(x+i,y)||!stroke(x+i,y+height-1)){edges=false;break;}
+      if(!edges)continue;
+      for(let i=3;i<height-3;i++)if(!stroke(x,y+i)||!stroke(x+width-1,y+i)||!stroke(x+width-22,y+i)){edges=false;break;}
+      if(edges)regions.push([x,y,width,height]);
+    }
+    if(regions.length!==1)throw new Error('table-search-crop '+JSON.stringify({geometry,regions}));
+    const [x,y]=regions[0], rgb=new Uint8Array(width*height*3);let index=0;
+    for(let i=0;i<height;i++)for(let j=0;j<width;j++){
+      const p=((y+i)*canvas.width+x+j)*4;for(let c=0;c<3;c++)rgb[index++]=data[p+c];
+    }
+    const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',rgb));
+    return {region:regions[0],pixels:width*height,rgbSha256:[...hash].map(v=>v.toString(16).padStart(2,'0')).join(''),...geometry};
+  })()`);
+}
 async function replace(document,text){const edit=new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),text);assert.equal(await vscode.workspace.applyEdit(edit),true);}
 exports.run=async()=>{
  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),forms=fixture.formGallery,before=await Promise.all(forms.map(f=>fs.readFile(f.path))),results=[],failures=[];
  const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();await vscode.commands.executeCommand('workbench.action.toggleFullScreen');await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
  const locale=vscode.env.language.startsWith('ru')?'ru':'en',reference=form=>form.expectedTablePixels[locale];
+ const wideSearchForm=forms.find(form=>form.kind==='MetadataTable');
+ const wideSearch=wideSearchForm&&reference(wideSearchForm).searchReflow;
  for(const form of forms){
   const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});await until(()=>vscode.window.activeTextEditor?.document===document,'table pixel XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
-  await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'table pixel model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');let ui=await frame({state:{title:main.panel.title}});
+  await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'table pixel model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');
+  const mainTab={state:{title:main.panel.title}},hasReflowReference=!!reference(form).searchReflow;
+  // The live workbench opens in its wide allocation. Compare it with the measured 260px widget.
+  const reflow=hasReflowReference?wideSearch:undefined;
+  if(hasReflowReference)assert.equal(reflow?.initial.nativeRegion[2],260);
+  let ui=await frame(mainTab);
+  async function sampleSearch(label, expected, detached=false) {
+    const measured=await readSearchField(ui, label+'-'+locale, detached);
+    const geometryMatches=measured.width===expected.nativeRegion[2]&&measured.height===expected.nativeRegion[3];
+    const passed=geometryMatches&&measured.rgbSha256===expected.rgbSha256;
+    const result={label,passed,geometryMatches,...measured,expectedRgbSha256:expected.rgbSha256,
+      expectedFontPixels:expected.fontPixels,referenceForm:wideSearchForm.kind,searchReflow:true,detached};
+    results.push(result);if(!passed)failures.push(result);
+    return result;
+  }
+  if(reflow){
+    await sampleSearch(form.kind+'-search-first',reflow.initial);
+    if(form.kind==='Default'){
+      const initialHeight=await ui.evaluate(`(()=>{
+        const input=document.querySelector('.taxi-table-search input');globalThis.__searchControl=input.parentElement;input.click();
+        return document.querySelector('.preview-scroll').offsetHeight;
+      })()`);
+      await until(()=>view.selected?.key.value==='8','initial search remains selectable');
+      await sampleSearch('Default-search-selected',reflow.initial);
+      const move=key=>ui.evaluate(`document.querySelector('.form-splitter[aria-orientation=horizontal]').dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},bubbles:true,cancelable:true}))`);
+      const extent=()=>ui.evaluate("document.querySelector('.preview-scroll').offsetHeight");
+      await move('ArrowUp');
+      await until(async()=>await extent()>initialHeight,'preview viewport grew after splitter key');
+      await until(()=>ui.evaluate("!globalThis.__searchControl.classList.contains('taxi-table-search--compact')"),'table search repainted after viewport resize');
+      await sampleSearch('Default-search-resized',reflow.settled);
+      await move('ArrowDown');
+      await until(async()=>await extent()===initialHeight,'initial preview viewport restored');
+      const restored=await sampleSearch('Default-search-restored',reflow.settled);
+      assert.equal(await ui.evaluate("globalThis.__searchControl===document.querySelector('.taxi-table-search')"),true);
+      assert.equal(view.selected?.key.value,'8');restored.sameControl=true;
+    }
+  }
+  mainTab.fixedFormArea=true;
   async function sample(expected,label,detached=false){
    await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')&&!document.querySelector('[data-native-label=pending]')&&!document.querySelector('[data-native-caption=pending]')"),'table pixel rasters');const restore=view.selected?.key.value==='1';await ui.evaluate("document.querySelector('.taxi-form-title').click()");await until(()=>view.selected?.key.kind==='root','table pixel root selected');await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
    const actual=await ui.evaluate("(()=>{const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{frame:rect(document.querySelector('.taxi-form-frame')),control:rect(document.querySelector('.taxi-table-scroll')),headers:[...document.querySelectorAll('.taxi-table-header-cell')].map(n=>({text:n.textContent,height:n.getBoundingClientRect().height,color:getComputedStyle(n).color,font:getComputedStyle(n).fontSize,status:n.querySelector('[data-native-label]')?.dataset.nativeLabel}))}})()");
@@ -26,6 +108,56 @@ exports.run=async()=>{
    if(restore){await ui.evaluate("document.querySelector('.taxi-table-empty').click()");await until(()=>view.selected?.key.value==='1','table identity restored after capture');}return passed;
   }
   const passed=await sample(reference(form),form.kind);
+  const baseline=reference(form),movedToolbar=baseline.movedToolbar;
+  const completeToolbar = toolbar => ({...baseline,additionalRegions:[...baseline.additionalRegions,toolbar]});
+  const toolbarPoses = [
+   ['native-toolbar-pose',baseline.wholeToolbar],
+   ['moved-toolbar-pose',movedToolbar],
+  ];
+  for(const [label,toolbar] of toolbarPoses){
+   if(!passed||!toolbar)continue;
+   if(form.kind==='DynamicList'){
+    const captured=results.at(-1).additionalRegions.find(region=>region.name==='toolbar');
+    assert.equal(captured.rgbSha256,toolbar.rgbSha256,'complete DynamicList toolbar remains exact');
+    results.at(-1).wholeToolbarPixelParity=true;
+   }else{
+    const beforePose=await ui.evaluate(`(()=>{
+     const bar=document.querySelector('.taxi-table-command-bar'),viewport=bar.closest('.preview-scroll');
+     const inspectors=document.querySelector('.form-inspectors'),button=bar.querySelector(':scope > .taxi-button');
+     const rect=bar.getBoundingClientRect(), [targetX,targetY]=${JSON.stringify(toolbar.nativeRegion)};
+     globalThis.__tableToolbarPose={bar,button,inspectors,viewport,height:inspectors.style.height,margin:viewport.style.marginLeft};
+     inspectors.style.height=(inspectors.getBoundingClientRect().height+targetY-rect.y)+'px';
+     viewport.style.marginLeft=(targetX-rect.x)+'px';
+     return {position:[rect.x,rect.y],bottom:getComputedStyle(button).borderBottomColor};
+    })()`);
+    try{
+     const [x,y]=toolbar.nativeRegion,expectedBorder=`rgb(${(toolbar.lowerEdgeRgb??[156,156,156]).join(', ')})`;
+     await until(()=>ui.evaluate(`(()=>{
+      const {bar,button}=globalThis.__tableToolbarPose,r=bar.getBoundingClientRect();
+      return bar===document.querySelector('.taxi-table-command-bar')&&r.x===${x}&&r.y===${y}
+       &&getComputedStyle(button).borderBottomColor===${JSON.stringify(expectedBorder)};
+     })()`),'whole toolbar uses the measured raster pose');
+     await sample({...reference(form),additionalRegions:[toolbar]},form.kind+'-'+label);
+     const result=results.at(-1);
+     result.nativeToolbarPose=[x,y];
+     result.wholeToolbarPixelParity=result.additionalRegions[0].passed;
+     result.lowerEdgeRgb=toolbar.lowerEdgeRgb??[156,156,156];
+     result.beforeToolbarPose=beforePose;
+    }finally{
+     await ui.evaluate(`(()=>{
+      const {inspectors,viewport,height,margin}=globalThis.__tableToolbarPose;
+      inspectors.style.height=height;
+      viewport.style.marginLeft=margin;
+     })()`);
+    }
+    await until(()=>ui.evaluate(`(()=>{
+     const {bar,button}=globalThis.__tableToolbarPose,r=bar.getBoundingClientRect();
+     return button===bar.querySelector(':scope > .taxi-button')&&r.x===${beforePose.position[0]}&&r.y===${beforePose.position[1]}
+      &&getComputedStyle(button).borderBottomColor===${JSON.stringify(beforePose.bottom)};
+    })()`),'toolbar position and border restored on the same node');
+    results.at(-1).toolbarPositionRestored=true;
+   }
+  }
   if(passed&&form.kind==='Default'){
    await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'native movement ready');await ui.evaluate("(()=>{globalThis.__movementCanvas=document.querySelector('[data-native-table-movement]');const select=document.querySelector('.form-zoom select');select.value='200';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='browser'"),'unmeasured movement zoom uses fallback');assert.match(await ui.evaluate("document.querySelector('.form-status').textContent"),locale==='ru'?/Часть элементов формы/:/Some form elements/);await ui.evaluate("(()=>{const select=document.querySelector('.form-zoom select');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'movement profile restored');assert.equal(await ui.evaluate("globalThis.__movementCanvas===document.querySelector('[data-native-table-movement]')"),true);results.at(-1).movementZoomFallbackVerified=true;
    const hit=await ui.evaluate("(()=>{const n=document.querySelector('.taxi-table-search input'),r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+10,r.y+r.height/2);return n===hit})()");assert.equal(hit,true,'LCD placeholder leaves the input hit-testable');
@@ -34,7 +166,37 @@ exports.run=async()=>{
   if(passed&&['Default','DynamicList'].includes(form.kind)){
    const dynamic=form.kind==='DynamicList',label=value=>dynamic?'dynamic-'+value:value,other=forms.find(f=>f.kind===(dynamic?'MetadataTable':'GridFooter')),grid=await fs.readFile(other.path,'utf8');await ui.evaluate("document.querySelector('.taxi-table-empty').click();globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await until(()=>view.selected?.key.value==='1','table selected before dirty XML');const identity=view.selected;
    const change=async text=>{await replace(document,text);await until(()=>view.phase==='ready'&&!view.running&&!view.timer&&view.snapshot.dependencies.some(d=>d.role==='form'&&d.version===String(document.version)),'dirty table revision');assert.deepEqual(view.selected,identity);assert.equal(await ui.evaluate("globalThis.__tableGrid===document.querySelector('.taxi-table-scroll')"),true);};
-   await change(grid);await sample(reference(other),label('dirty-footer'));await change(original);await sample(reference(form),label('restored-default'));await ui.focusWorkbench();ui.close();await service.receive(view,main,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'table pixel view detached');const floating=view.frames.get('preview');ui=await frame({state:{title:floating.panel.title}});await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')"),'floating table DOM');await ui.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await sample(reference(form),label('floating-default'),true);await change(grid);await sample(reference(other),label('floating-dirty-footer'),true);await change(original);await sample(reference(form),label('floating-restored'),true);ui.close();floating.panel.dispose();await until(()=>!view.frames.has('preview'),'table pixel view reattached');ui=await frame({state:{title:main.panel.title}});await sample(reference(form),label('reattached-default'));assert.equal(document.isDirty,true);
+   await change(grid);
+   await sample(reference(other),label('dirty-footer'));
+   await change(original);
+   await sample(reference(form),label('restored-default'));
+   await ui.focusWorkbench();
+   ui.close();
+   await service.receive(view,main,{type:'detach'});
+   await until(()=>view.frames.get('preview')?.ready,'table pixel view detached');
+   const floating=view.frames.get('preview');
+   const floatingTab={detached:true,state:{title:floating.panel.title}};
+   ui=await frame(floatingTab);
+   if(!dynamic&&reflow)await sampleSearch('floating-search-first',reflow.initial,true);
+   floatingTab.fixedFormArea=true;
+   await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')"),'floating table DOM');
+   await ui.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");
+   await sample(movedToolbar?completeToolbar(movedToolbar):reference(form),label('floating-default'),true);
+   if(movedToolbar){
+    const result=results.at(-1);
+    result.wholeToolbarPixelParity=result.additionalRegions.find(region=>region.name==='toolbar').passed;
+    result.detachedToolbar=true;
+   }
+   await change(grid);
+   await sample(reference(other),label('floating-dirty-footer'),true);
+   await change(original);
+   await sample(reference(form),label('floating-restored'),true);
+   ui.close();
+   floating.panel.dispose();
+   await until(()=>!view.frames.has('preview'),'table pixel view reattached');
+   ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
+   await sample(reference(form),label('reattached-default'));
+   assert.equal(document.isDirty,true);
   }
   if(passed&&form.kind==='InCell'){
    assert.equal(await ui.evaluate("[...document.querySelectorAll('.taxi-table-header-cell span[data-column]')].length"),2);for(const [index,id]of [[0,'3'],[1,'4']]){const hit=await ui.evaluate(`(()=>{const n=document.querySelectorAll('.taxi-table-header-cell span[data-column]')[${index}],r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return n===hit||n.contains(hit)})()`);assert.equal(hit,true,'native caption leaves each logical column hit-testable');await ui.evaluate(`document.querySelectorAll('.taxi-table-header-cell span[data-column]')[${index}].click()`);await until(()=>view.selected?.key.value===id,'composite header selects its logical column');}results.at(-1).logicalColumnsSelectable=true;
