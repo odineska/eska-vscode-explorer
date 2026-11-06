@@ -17,7 +17,9 @@ import { movePreviewToNewWindow } from "./window.js";
 
 const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
+type InputPath = Pick<FormInput, "root" | "path">;
 type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
+type InputRoot = { wire: WirePath; path: string };
 interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
@@ -25,7 +27,7 @@ interface View {
   phase: "loading" | "ready" | "stale" | "disconnected"; notice: string; sequence: number; wanted: number; running: Promise<void> | undefined;
   timer: ReturnType<typeof setTimeout> | undefined; suspended: boolean; closed: boolean; watchers: vscode.Disposable[]; watchKey: string;
   inputs: Map<string, string>; generation: string; activityKey: string; navigation: number;
-  inputRoots: { wire: WirePath; path: string }[]; formInputs: Map<string, FormInputSource>;
+  inputRoots: InputRoot[]; formInputs: Map<string, FormInputSource>;
   previewNavigation?: PreviewNavigation;
   palette: FormPalette | undefined;
 }
@@ -36,7 +38,17 @@ async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
   if (!entry || !isForm(entry) || !projectEnabled(entry.project.info)) throw new ExplorerError("sourceMissing");
   return entry;
 }
-function inputKey(input: Pick<FormInput, "root" | "path">): string { return JSON.stringify([input.root, input.path]); }
+function inputKey(input: InputPath): string { return JSON.stringify([input.root, input.path]); }
+function isXml(path: string): boolean { return extname(path).toLowerCase() === ".xml"; }
+async function checkedInputPath(input: InputPath): Promise<string> {
+  return normalized(await realpath(await existingSource(input.root, input.path)));
+}
+function inputInRoots(roots: readonly InputRoot[], file: string): InputPath | undefined {
+  for (const root of roots) {
+    const path = relativeFile(root.path, file);
+    if (path !== undefined) return { root: root.wire, path: { value: path, encoding: "utf-8" } };
+  }
+}
 
 /** Panels are disposable consumers of one backend session. File events never focus or reopen a panel. */
 export class FormPreviewService implements vscode.Disposable {
@@ -142,7 +154,7 @@ export class FormPreviewService implements vscode.Disposable {
     if (this.disposed || document.uri.scheme !== "file") return;
     const path = normalized(await realpath(document.uri.fsPath).catch(() => document.uri.fsPath));
     for (const view of this.views.values()) if (view.inputs.has(path) || normalized(view.path) === path
-      || document.isDirty && extname(path).toLowerCase() === ".xml" && view.inputRoots.some(root => relativeFile(root.path, path) !== undefined)) this.schedule(view);
+      || document.isDirty && isXml(path) && inputInRoots(view.inputRoots, path) !== undefined) this.schedule(view);
   }
   private schedule(view: View, delay = 120): void {
     if (view.closed || view.suspended || this.disposed) return;
@@ -216,23 +228,27 @@ export class FormPreviewService implements vscode.Disposable {
     }
   }
   private async prepareInputs(view: View, prepared: FormPreparation): Promise<void> {
-    view.inputRoots = await Promise.all(prepared.roots.map(async wire => ({ wire, path: await realpath(nativePath(wire)) })));
-    const forms = await Promise.all(prepared.forms.map(async input => [normalized(await realpath(await existingSource(input.root, input.path))), input] as const));
+    const [roots, forms] = await Promise.all([
+      Promise.all(prepared.roots.map(async wire => ({ wire, path: await realpath(nativePath(wire)) }))),
+      Promise.all(prepared.forms.map(async input => [await checkedInputPath(input), input] as const)),
+    ]);
     if (view.closed || view.suspended || this.disposed) return;
+    view.inputRoots = roots;
     view.formInputs = new Map(forms);
     if (!view.client) await this.watch(view, prepared.forms.map(input => ({ ...input, role: "form" as const })));
   }
   private async collectInputs(view: View): Promise<FormInput[]> {
     const result = new Map<string, FormInput>();
     const dependencies = view.client?.current.dependencies ?? view.snapshot?.dependencies ?? [];
-    for (const document of vscode.workspace.textDocuments.filter(document => document.uri.scheme === "file" && document.isDirty && extname(document.uri.fsPath).toLowerCase() === ".xml")) {
+    const allowedRoots = new Set(view.inputRoots.map(root => JSON.stringify(root.wire)));
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.uri.scheme !== "file" || !document.isDirty || !isXml(document.uri.fsPath)) continue;
       const file = await realpath(document.uri.fsPath).catch(() => undefined); if (!file) continue;
       const path = normalized(file), form = view.formInputs.get(path);
       if (basename(file).toLowerCase() === "form.xml" && !form) continue;
       const known = dependencies.find(input => input.role !== "picture" && input.id === view.inputs.get(path)
-        && view.inputRoots.some(root => JSON.stringify(root.wire) === JSON.stringify(input.root)));
-      const base = view.inputRoots.find(root => relativeFile(root.path, file) !== undefined);
-      const location = form ?? known ?? (base ? { root: base.wire, path: { value: relativeFile(base.path, file)!, encoding: "utf-8" as const } } : undefined);
+        && allowedRoots.has(JSON.stringify(input.root)));
+      const location = form ?? known ?? inputInRoots(view.inputRoots, file);
       if (!location) continue;
       const key = inputKey(location), text = document.getText(), previous = result.get(key);
       if (previous && previous.text !== text) throw new ExplorerError("sourceChanged");
@@ -265,10 +281,17 @@ export class FormPreviewService implements vscode.Disposable {
     // A malformed first disk snapshot has no backend dependencies yet. Watch its checked file
     // so correcting the source recovers the panel without closing or manually refreshing it.
     const uri = vscode.Uri.file(view.path), parent = vscode.Uri.joinPath(uri, "..");
-    const source = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(parent, uri.path.split("/").at(-1)!));
-    const changed = () => this.schedule(view);
+    this.watchFiles(view, new vscode.RelativePattern(parent, uri.path.split("/").at(-1)!), () => this.schedule(view));
     view.watchKey = "initial";
-    view.watchers.push(source, source.onDidChange(changed), source.onDidCreate(changed), source.onDidDelete(changed));
+  }
+  private watchFiles(view: View, pattern: vscode.RelativePattern, changed: (uri: vscode.Uri) => void): void {
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    view.watchers.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
+  }
+  private clearWatchers(view: View): void {
+    for (const watcher of view.watchers) watcher.dispose();
+    view.watchers = [];
+    view.watchKey = "";
   }
   private async watch(view: View, dependencies: readonly InputLocation[]): Promise<void> {
     if (view.closed || view.suspended || this.disposed) return;
@@ -276,18 +299,21 @@ export class FormPreviewService implements vscode.Disposable {
     if (view.watchKey === key) return;
     const inputs = new Map<string, string>(), watched = new Set<string>(), roots = new Map<string, vscode.Uri>();
     for (const dependency of dependencies) {
-      const path = normalized(await realpath(await existingSource(dependency.root, dependency.path))); watched.add(path);
+      const path = await checkedInputPath(dependency);
+      watched.add(path);
       if (dependency.role !== "picture") inputs.set(path, dependency.id);
       const root = nativePath(dependency.root); roots.set(normalized(root), vscode.Uri.file(root));
     }
     for (const root of view.inputRoots) roots.set(normalized(root.path), vscode.Uri.file(nativePath(root.wire)));
     if (view.closed || view.suspended || this.disposed) return;
-    view.inputs = inputs; view.watchKey = key;
-    for (const watcher of view.watchers) watcher.dispose(); view.watchers = [];
+    this.clearWatchers(view);
+    view.inputs = inputs;
+    view.watchKey = key;
     for (const root of roots.values()) {
-      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, "**/*"));
-      const changed = (uri: vscode.Uri) => { const path = normalized(uri.fsPath); if (watched.has(path) || extname(path).toLowerCase() === ".xml" || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view); };
-      view.watchers.push(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed), watcher.onDidDelete(changed));
+      this.watchFiles(view, new vscode.RelativePattern(root, "**/*"), uri => {
+        const path = normalized(uri.fsPath);
+        if (watched.has(path) || isXml(path) || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view);
+      });
     }
   }
   private async readPalette(client: FormSession, snapshot: FormSnapshot, node: FormNode): Promise<FormPalette | undefined> {
@@ -380,8 +406,17 @@ export class FormPreviewService implements vscode.Disposable {
   /** Reconnect only to the replacement tree supplied by the owning Explorer, preserving the visible last model. */
   changed(tree: MetadataTree | undefined): void {
     for (const view of this.views.values()) {
-      if (!tree || (view.tree === tree && !projectEnabled(view.entry.project.info))) { for (const watcher of view.watchers) watcher.dispose(); view.watchers = []; view.watchKey = ""; view.activityKey = ""; view.suspended = true; view.phase = "disconnected"; view.notice = this.strings().disconnected!; this.publish(view, false); }
-      else { view.suspended = false; this.schedule(view); }
+      if (!tree || (view.tree === tree && !projectEnabled(view.entry.project.info))) {
+        this.clearWatchers(view);
+        view.activityKey = "";
+        view.suspended = true;
+        view.phase = "disconnected";
+        view.notice = this.strings().disconnected!;
+        this.publish(view, false);
+      } else {
+        view.suspended = false;
+        this.schedule(view);
+      }
     }
   }
   private async restore(panel: vscode.WebviewPanel, state: unknown): Promise<void> {
@@ -397,7 +432,10 @@ export class FormPreviewService implements vscode.Disposable {
   }
   private release(view: View): void {
     if (view.closed) return;
-    view.closed = true; this.views.delete(view.key); if (view.timer) clearTimeout(view.timer); for (const watcher of view.watchers) watcher.dispose();
+    view.closed = true;
+    this.views.delete(view.key);
+    if (view.timer) clearTimeout(view.timer);
+    this.clearWatchers(view);
     const closing = (async () => { await view.running; await view.client?.close(); })().catch(error => this.log(`form_close ${String(error)}`));
     this.closing.add(closing); void closing.finally(() => this.closing.delete(closing));
   }
