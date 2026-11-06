@@ -43,7 +43,7 @@ try {
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
   if (basename(suite) === "form-states-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createStateGallery(fixture);
   if (basename(suite) === "form-united-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createUnitedGallery(fixture);
-  if (basename(suite) === "form-column-widths-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createColumnWidthGallery(fixture);
+  if (basename(suite) === "form-column-widths-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createColumnWidthGallery(fixture, locale ?? "en");
   if (basename(suite) === "form-numeric-labels-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createNumericLabelGallery(fixture, locale ?? "en");
   if (basename(suite) === "form-through-align-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createThroughAlignGallery(fixture);
   if (basename(suite) === "form-palette-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createPaletteGallery(fixture);

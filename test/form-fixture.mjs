@@ -295,13 +295,15 @@ export function createUnitedGallery(fixture) {
   return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
 }
 
-export async function createColumnWidthGallery(fixture) {
+export async function createColumnWidthGallery(fixture, locale) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
   await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
-  const {fixtures} = JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
-  const forms = await createGallery(fixture,Object.keys(fixtures),input);
-  return forms.map(form => ({...form,cases:fixtures[form.kind].cases}));
+  const {fixtures} = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  const {fixtures: automatic} = JSON.parse(await readFile(join(input, 'automatic-metrics.json'), 'utf8'));
+  const kinds = [...Object.keys(fixtures), ...Object.keys(automatic).filter(kind => automatic[kind][locale]?.length)];
+  const forms = await createGallery(fixture, kinds, input);
+  return forms.map(form => ({...form, cases:fixtures[form.kind]?.cases ?? automatic[form.kind][locale]}));
 }
 
 export async function createNumericLabelGallery(fixture, locale) {

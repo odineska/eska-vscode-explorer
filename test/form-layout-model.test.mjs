@@ -130,3 +130,22 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
   assert.deepEqual(narrowNumericTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
   assert.equal(narrowNumericTracks(357, tracks), undefined);
 });
+
+test('automatic lanes grow from their preferred widths and share space after a cap', () => {
+  const left = {reserve:82, preferred:285, minimum:195, maximum:492, growthWeight:98};
+  const right = {reserve:126, preferred:329, minimum:239, maximum:536, growthWeight:156};
+  assert.deepEqual(horizontalLaneWidths(614, [left, right]), [285,329]);
+  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [407,523]);
+  assert.deepEqual(horizontalLaneWidths(980, [left, right]), [444,536]);
+  assert.deepEqual(horizontalLaneWidths(1090, [left, right]), [492,536]);
+});
+
+test('manual limits on measured automatic lanes keep their preferred trailing border', () => {
+  const field = node('InputField', {AutoMaxWidth:false, MaxWidth:14});
+  field.presentation.valueType.kind = 'reference';
+  field.presentation.titleLocation = 'None';
+  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:151, minimum:113, maximum:151});
+  const raised = node('InputField', {AutoMaxWidth:false, MaxWidth:30});
+  raised.presentation = field.presentation;
+  assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, maximum:310});
+});

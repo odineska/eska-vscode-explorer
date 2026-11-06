@@ -62,6 +62,10 @@ export function designTextAdvances(text, options) {
   return output;
 }
 
+export function designCaptionWidth(text, font) {
+  return designTextAdvances(text, controlCaptionOptions(font))?.reduce((sum, width) => sum + width, 0);
+}
+
 /** Keep kerning inside each native caption fragment, never across fragment boundaries. */
 export function segmentedTextAdvances(segments, options) {
   const result=[];

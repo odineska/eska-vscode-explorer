@@ -1,3 +1,4 @@
+import { cappedTrackGrowth } from './layout-model.mjs';
 import { controlCaptionOptions, designTextAdvances } from './font-metrics.mjs';
 
 function captionParagraph(text, options) {
@@ -52,23 +53,6 @@ export function numericCaptionLines(profile, width) {
 
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
-function distribute(space, limits) {
-  const active = limits.map(({weight, limit}, index) => ({weight, limit, index}))
-    .filter(({weight, limit}) => weight > 0 && limit > 0)
-    .sort((left, right) => left.limit / left.weight - right.limit / right.weight);
-  const widths = limits.map(() => 0);
-  let weight = total(active.map(track => track.weight)), first = 0;
-  for (; first < active.length; first++) {
-    const track = active[first];
-    if (space * track.weight / weight <= track.limit) break;
-    widths[track.index] = track.limit;
-    space -= track.limit;
-    weight -= track.weight;
-  }
-  for (const track of active.slice(first)) widths[track.index] = space * track.weight / weight;
-  return widths;
-}
-
 /** Allocate captions and value boxes within horizontal numeric tracks, excluding the group gap. */
 export function narrowNumericTracks(available, tracks) {
   const insets = total(tracks.map(track => track.reserve));
@@ -99,7 +83,7 @@ export function narrowNumericTracks(available, tracks) {
 
   const spare = available - captionTotal - preferredValues;
   if (spare < 0) {
-    const widths = distribute(available - captionTotal - minimumValues, tracks.map(({caption, value}, index) => {
+    const widths = cappedTrackGrowth(available - captionTotal - minimumValues, tracks.map(({caption, value}, index) => {
       const limit = value.preferred - value.minimum;
       return { limit, weight: limit + Math.max(0, caption.compact - captions[index]) };
     }));
@@ -112,7 +96,7 @@ export function narrowNumericTracks(available, tracks) {
     });
   }
 
-  const widths = distribute(spare, tracks.map(({caption, reserve, value}, index) => {
+  const widths = cappedTrackGrowth(spare, tracks.map(({caption, reserve, value}, index) => {
     const captionRoom = caption.preferred - captions[index], valueRoom = value.maximum - value.preferred;
     return { limit: captionRoom + valueRoom, weight: valueRoom > 0 ? captions[index] + reserve + value.preferred : captions[index] };
   }));

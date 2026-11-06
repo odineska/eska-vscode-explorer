@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
@@ -9,7 +9,7 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
+import { controlCaptionWidth, designCaptionWidth, linuxControlFont } from './font-metrics.mjs';
 import { numericCaptionProfile } from './numeric-label-model.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
@@ -377,6 +377,8 @@ function Field(props) {
   const layout = useFormLayout();
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? numericCaptionProfile(label(), labelFont())?.preferred : undefined);
+  const referenceTitleWidth = createMemo(() => titleLocation() === 'Left' && nativeReferenceInput(node(), state.os)
+    ? designCaptionWidth(label(), labelFont()) : undefined);
   const labelValueStyle = () => {
     const size = numericLabel();
     return size ? {
@@ -387,8 +389,12 @@ function Field(props) {
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
     const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
+    const numeric = numericWidth(), reference = referenceTitleWidth();
+    // The reference caption's track includes the pixel between the CSS and Designer gaps.
+    const titleWidth = numeric !== undefined ? `var(--taxi-numeric-label-caption-width, ${numeric}px)`
+      : reference !== undefined ? `${reference + 1}px` : undefined;
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
-      width: numericWidth() === undefined ? undefined : `var(--taxi-numeric-label-caption-width, ${numericWidth()}px)`,
+      width: titleWidth,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
       'line-height': numericLabel() ? `${fontLineHeight(labelFont())}px` : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };

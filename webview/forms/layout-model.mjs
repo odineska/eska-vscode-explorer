@@ -91,10 +91,33 @@ export function laneInputBounds(node, os) {
   const reference = nativeReferenceInput(node, os);
   const plain = type.kind === 'string' && !type.length && linuxFixedInputWidth(node, os);
   if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
-  const preferred = fieldWidth(node, os);
-  const bounds = controlBounds(node, 'x', preferred, os);
-  const maximum = automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
-  return { preferred, minimum: Math.min(reference ? bounds.minimum ?? preferred : 71, preferred), maximum: Math.max(preferred, maximum) };
+  const intrinsic = fieldWidth(node, os);
+  const bounds = controlBounds(node, 'x', intrinsic, os);
+  const limit = number(node, 'Width') <= 0 && explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))
+    ? positive(number(node, 'MaxWidth')) : 0;
+  const maximum = limit ? limit * 10 + 10 : automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
+  // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
+  const preferred = Math.min(intrinsic, maximum + 1);
+  const minimum = reference ? node.presentation.titleLocation === 'None' ? 113 : bounds.minimum ?? intrinsic : 71;
+  return { preferred, minimum: Math.min(minimum, preferred), maximum: Math.max(preferred, maximum) };
+}
+
+/** Share free space proportionally, redistributing a track’s excess after its cap. */
+export function cappedTrackGrowth(space, limits) {
+  const active = limits.map(({weight, limit}, index) => ({weight, limit, index}))
+    .filter(({weight, limit}) => weight > 0 && limit > 0)
+    .sort((left, right) => left.limit / left.weight - right.limit / right.weight);
+  const widths = limits.map(() => 0);
+  let weight = active.reduce((sum, track) => sum + track.weight, 0), first = 0;
+  for (; first < active.length; first++) {
+    const track = active[first];
+    if (space * track.weight / weight <= track.limit) break;
+    widths[track.index] = track.limit;
+    space -= track.limit;
+    weight -= track.weight;
+  }
+  for (const track of active.slice(first)) widths[track.index] = space * track.weight / weight;
+  return widths;
 }
 
 /** Allocate column widths in native pixels, including the fixed space reserved for titles. */
@@ -107,6 +130,11 @@ export function horizontalLaneWidths(available, lanes) {
     const fraction = Math.max(0, (available - minimum) / (preferred - minimum || 1));
     widths = lanes.map(lane => lane.minimum + (lane.preferred - lane.minimum) * fraction);
     round = Math.floor;
+  } else if (lanes.every(lane => lane.growthWeight !== undefined)) {
+    const growth = cappedTrackGrowth(available - preferred, lanes.map(lane => ({
+      weight: lane.growthWeight, limit: lane.maximum - lane.preferred,
+    })));
+    widths = lanes.map((lane, index) => lane.preferred + growth[index]);
   } else {
     // Grow proportional control tracks and freeze each one as it reaches its maximum.
     const events = lanes.flatMap(lane => {

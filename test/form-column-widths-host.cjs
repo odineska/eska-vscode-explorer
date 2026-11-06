@@ -30,12 +30,58 @@ async function pose(ui, keys, expected) {
   return {label:expected.name,...actual};
 }
 
+function editField(xml, name, transform) {
+  const field = new RegExp(`(<InputField name="${name}" id="\\d+">)([\\s\\S]*?)(</InputField>)`);
+  assert.match(xml, field);
+  return xml.replace(field, (_, open, properties, close) => open + transform(properties) + close);
+}
+
+function titleXml(values) {
+  const language = ['ru', 'en'];
+  const items = values.map((text, index) => {
+    const content = text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    return `<v8:item><v8:lang>${language[index]}</v8:lang><v8:content>${content}</v8:content></v8:item>`;
+  });
+  return '<Title>' + items.join('') + '</Title>';
+}
+
 function sourceVariant(xml, edit) {
   if (edit === 'automatic') return xml.replace('<Width>30</Width>', '');
-  const name = edit === 'fixLeft' ? 'A' : 'B';
-  const start = new RegExp(`<InputField name="${name}" id="\\d+">`);
-  assert.match(xml,start);
-  return xml.replace(start, match => match + '<HorizontalStretch>false</HorizontalStretch>');
+  if (typeof edit === 'string') {
+    assert.ok(['fixLeft','fixRight'].includes(edit));
+    return editField(xml, edit === 'fixLeft' ? 'A' : 'B', properties => '<HorizontalStretch>false</HorizontalStretch>' + properties);
+  }
+  let changed = xml;
+  for (const [name, title] of Object.entries(edit.titles ?? {})) {
+    changed = editField(changed, name, properties => properties.replace(/<Title>[\s\S]*?<\/Title>/u, titleXml(title)));
+  }
+  if (edit.hideTitle) {
+    changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
+  }
+  if (edit.maximum) {
+    changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
+  }
+  assert.notEqual(changed, xml);
+  return changed;
+}
+
+async function verifyDetached(service, view, main, ui, identity, run) {
+  await service.receive(view, main, {type:'select', identity});
+  await until(() => view.selected?.key.value === identity.key.value, 'right column field selected');
+  const workbench = await ui.nativeWindow();
+  await service.receive(view, main, {type:'detach'});
+  await until(() => view.frames.get('preview')?.ready, 'column layout detached');
+  const preview = view.frames.get('preview');
+  const floating = await frame({detached:true, state:{title:preview.panel.title}});
+  assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
+  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input')];true");
+  await run(floating);
+  assert.deepEqual(view.selected, identity);
+  assert.equal(await floating.evaluate('__widthInputs.length>0 && __widthInputs.every(input=>input.isConnected)'), true);
+  await service.receive(view, preview, {type:'dock'});
+  await until(() => !view.frames.has('preview'), 'column layout returned');
+  floating.close();
+  return {sameDom:true, sameSelection:true};
 }
 
 exports.run = async () => {
@@ -66,40 +112,47 @@ exports.run = async () => {
         await replace(sourceVariant(original,expected.edit));
         results.push(await pose(ui,keys,expected));
       }
-      if (form.kind === 'Columns') {
+      if (form.kind === 'Columns' || form.kind === 'AutoReference') {
         await replace(original);
         const identity = nodes.find(node => node.name === 'B').identity;
-        await service.receive(view,main,{type:'select',identity});
-        await until(() => view.selected?.key.value === identity.key.value, 'right column field selected');
-        const workbench = await ui.nativeWindow();
-        await service.receive(view,main,{type:'detach'});
-        await until(() => view.frames.get('preview')?.ready, 'column layout detached');
-        const preview = view.frames.get('preview');
-        const floating = await frame({detached:true,state:{title:preview.panel.title}});
-        assert.notEqual((await floating.nativeWindow({detached:true})).targetId,workbench.targetId);
-        await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input')];true");
-        const wide = form.cases.find(sample => sample.name === 'LeftWideLarge');
-        const narrow = form.cases.find(sample => sample.name === 'Shrink20');
-        const changed = original.replace('<Group>Horizontal</Group>',
-          '<Group>Horizontal</Group><ChildItemsWidth>LeftWidest</ChildItemsWidth>');
-        assert.notEqual(changed,original);
-        await replace(changed);
-        for (const expected of [wide,narrow,wide]) await pose(floating,keys,expected);
-        await replace(sourceVariant(changed,'fixRight'));
-        await pose(floating,keys,form.cases.find(sample => sample.edit === 'fixRight'));
-        await replace(original);
-        await pose(floating,keys,wide);
-        assert.deepEqual(view.selected,identity);
-        assert.equal(await floating.evaluate('__widthInputs.every(input=>input.isConnected)'),true);
-        await service.receive(view,preview,{type:'dock'});
-        await until(() => !view.frames.has('preview'), 'column layout returned');
-        results.push({label:'detached-column-resize-dirty',sameDom:true,sameSelection:true});
+        const sample = name => form.cases.find(row => row.name === name);
+        if (form.kind === 'Columns') {
+          const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+            const wide = sample('LeftWideLarge'), narrow = sample('Shrink20');
+            const changed = original.replace('<Group>Horizontal</Group>',
+              '<Group>Horizontal</Group><ChildItemsWidth>LeftWidest</ChildItemsWidth>');
+            assert.notEqual(changed, original);
+            await replace(changed);
+            for (const expected of [wide, narrow, wide]) await pose(floating, keys, expected);
+            await replace(sourceVariant(changed, 'fixRight'));
+            await pose(floating, keys, form.cases.find(row => row.edit === 'fixRight'));
+            await replace(original);
+            await pose(floating, keys, wide);
+          });
+          results.push({label:'detached-column-resize-dirty', ...observation});
+        } else {
+          const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+            await pose(floating, keys, sample('Standard94'));
+            const short = sample('Short74');
+            await replace(sourceVariant(original, short.edit));
+            await pose(floating, keys, short);
+            const limited = sample('RefMax14');
+            if (limited) {
+              await replace(sourceVariant(original, limited.edit));
+              await pose(floating, keys, limited);
+            }
+            await replace(original);
+            await pose(floating, keys, sample('Standard94'));
+          });
+          results.push({label:'detached-auto-reference-resize-dirty', ...observation});
+        }
       }
     }
     assert.equal(await fs.readFile(form.path,'utf8'),original);
     main.panel.dispose();
     await until(() => service.views.size === 0, 'column width form closed');
     await Promise.all([...service.closing]);
+    ui.close();
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({
