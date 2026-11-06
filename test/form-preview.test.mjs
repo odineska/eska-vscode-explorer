@@ -21,6 +21,17 @@ function fixture() {
     model: { importantColor: {kind:"role",value:"ImportantColor"}, root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
 
+test('optional table column appearance validates color and font values', () => {
+  const input = fixture(), presentation = input.model.root.presentation;
+  const color = {kind: 'web', value: 'LightPink'};
+  presentation.tableColumnAppearance = {footerBackground: color, footerFont: {...presentation.font, points: 14}};
+  assert.deepEqual(parseFormSnapshot(input).model.root.presentation.tableColumnAppearance, presentation.tableColumnAppearance);
+  for (const invalid of [{footerForeground: null}, {footerFont: {points: 14}}, null]) {
+    presentation.tableColumnAppearance = invalid;
+    assert.throws(() => parseFormSnapshot(input));
+  }
+});
+
 test('form identities preserve signed XML i64 boundaries without JavaScript rounding', () => {
   for (const value of ['-9223372036854775808', '9223372036854775807', '-1', '0']) {
     const identity = { source, part: 'current', key: { kind: 'xml', value } };

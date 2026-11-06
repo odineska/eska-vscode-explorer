@@ -362,12 +362,11 @@ button { cursor: default; }
 .taxi-table-header-cell.selected { outline: 1px solid #1695f3; outline-offset: -1px; }
 .taxi-table-header-horizontal { display: grid; grid-template-columns: subgrid; min-width: 0; }
 .taxi-table-header-title, .taxi-table-header-children { grid-column: 1 / -1; }
-.taxi-table-header-title { height: 30px; }
 .taxi-table-header-children { display: grid; grid-template-columns: subgrid; }
 .taxi-table-header-vertical { display: flex; flex-direction: column; min-width: 0; }
 .taxi-table-empty { flex: 1; min-height: 0; position: relative; }
 .taxi-table-incomplete { position: absolute; top: 27px; left: 3px; right: 3px; border-bottom: 1px dotted #f00; }
-.taxi-table-footer { height: 30px; background: var(--taxi-TableFooterBackColor); }
+.taxi-table-footer { background: var(--taxi-TableFooterBackColor); }
 .taxi-table-footer > div { border-top-color: #ccc; border-bottom-color: #fff; }
 .taxi-table-scrollbar { display: flex; flex-direction: column; justify-content: space-between; align-items: center; width: 14px; flex: 0 0 14px; background: #fff; padding: 9px 0; }
 .taxi-table-scrollbar > span { width: 6px; height: 4px; background: #c2c2c2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }

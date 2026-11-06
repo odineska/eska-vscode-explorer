@@ -36,6 +36,24 @@ test('native table metrics preserve row units, footer and readonly edit affordan
   assert.equal(tableLayout(root).columns.length, 2);
 });
 
+test('table bands size captions independently of the empty rows', () => {
+  const table = fixture();
+  table.properties.push(prop('HeightInTableRows', 2), prop('Footer', true));
+  const bands = () => {
+    const {header, footer, height} = tableLayout(table);
+    return [header, footer, height];
+  };
+  table.children[0].presentation.titleFont = {points: 14};
+  assert.deepEqual(bands(), [38, 30, 130]);
+  table.children[1].presentation.tableColumnAppearance = {footerFont: {points: 14}};
+  assert.deepEqual(bands(), [38, 38, 143]);
+  for (const child of table.children) {
+    child.presentation.titleFont = {points: 8};
+    child.presentation.tableColumnAppearance = {footerFont: {points: 8}};
+  }
+  assert.deepEqual(bands(), [28, 28, 117]);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

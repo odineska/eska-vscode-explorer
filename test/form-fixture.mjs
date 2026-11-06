@@ -254,13 +254,17 @@ export async function createMeasuredFormGallery(fixture, input = process.env.ESK
 
 export async function createResponsiveFormGallery(fixture) { return createGallery(fixture, ['Main']); }
 
-export async function createGroupGallery(fixture) {
-  const input = process.env.ESKA_FORM_FIXTURES;
-  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
+async function addProbeStyleItems(fixture, input) {
   await mkdir(join(fixture.source, 'StyleItems'), { recursive: true });
   for (const name of ['ProbeColor', 'ProbeFont']) await writeFile(join(fixture.source, 'StyleItems', `${name}.xml`), await readFile(join(input, 'StyleItems', `${name}.xml`)));
   const root = join(fixture.source, 'Configuration.xml');
   await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><StyleItem>ProbeColor</StyleItem><StyleItem>ProbeFont</StyleItem>'));
+}
+
+export async function createGroupGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
+  await addProbeStyleItems(fixture, input);
   return createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible',
     'PagesTop', 'PagesBottom', 'PagesNone', 'PagesAuto', 'PagesLeft', 'PagesRight', 'PagesSwipe', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
 }
@@ -381,6 +385,14 @@ export async function createTablePixelsGallery(fixture) {
   const input=process.env.ESKA_FORM_TABLE_PIXELS;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_TABLE_PIXELS must identify the native pixel fixture directory.');
   const reference=JSON.parse(await readFile(join(input,'metrics.json'),'utf8')),forms=await createTableGallery(fixture);
+  const bands = process.env.ESKA_FORM_TABLE_BAND_FIXTURES;
+  if (bands) {
+    if (!isAbsolute(bands)) throw new Error('ESKA_FORM_TABLE_BAND_FIXTURES must be absolute.');
+    const { rows } = JSON.parse(await readFile(join(bands, 'metrics.json'), 'utf8'));
+    await addProbeStyleItems(fixture, join(bands, '..', 'native-groups'));
+    forms.push(...await createGallery(fixture, rows.map(row => row.name), bands));
+    reference.rows.push(...rows);
+  }
   const context=process.env.ESKA_FORM_CONTEXT_PIXELS;
   if(context){
     if(!isAbsolute(context))throw new Error('ESKA_FORM_CONTEXT_PIXELS must be absolute.');

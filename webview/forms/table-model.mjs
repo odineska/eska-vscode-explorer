@@ -1,4 +1,11 @@
-import { flag, number, scalar, fieldWidth, viewStatusAddition } from './model.mjs';
+import { flag, number, scalar, fieldWidth, fontLineHeight, viewStatusAddition } from './model.mjs';
+
+const defaultBandHeight = 30;
+const bandHeight = value => fontLineHeight(value) + 15;
+
+export function tableFooterFont(table, column) {
+  return column.presentation.tableColumnAppearance?.footerFont ?? table.presentation.font;
+}
 
 function visible(node) { return node.presentation.displayed !== false && flag(node, 'Visible') && (node.kind === 'ColumnGroup' || node.kind?.endsWith('Field')); }
 
@@ -87,12 +94,18 @@ export function tableLayout(table, locale = 'ru', additions) {
   const readOnly = flag(table, 'ReadOnly', false);
   const dynamic = isDynamicList(table);
   function visit(node) {
-    if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1, columns: [column(node, readOnly, dynamic)], children: [] };
+    const titleHeight = bandHeight(node.presentation.titleFont);
+    if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1,
+      height: flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight,
+      columns: [column(node, readOnly, dynamic)], children: [] };
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
-    if (mode === 'Horizontal') return { node, mode: 'horizontal', show, children,
+    const captionHeight = show ? titleHeight : 0;
+    if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children,
+      height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight),
       depth: (show ? 1 : 0) + Math.max(1, ...children.map(child => child.depth)), columns: children.flatMap(child => child.columns) };
     const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(field => column(field, readOnly, dynamic));
-    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, children,
+    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, captionHeight, children,
+      height: captionHeight + (mode === 'InCell' ? titleHeight : children.reduce((sum, child) => sum + child.height, 0)),
       depth: (show ? 1 : 0) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
       columns: [{ node, fields, width: mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width)), flexible: parts.some(part => part.flexible) }] };
   }
@@ -106,9 +119,16 @@ export function tableLayout(table, locale = 'ru', additions) {
   const search = additions?.search || topSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
-  const header = flag(table, 'Header') ? depth * 30 : 0, footer = flag(table, 'Footer', false) ? 30 : 0;
+  const header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
+  const footer = flag(table, 'Footer', false)
+    ? columns.length ? Math.max(...columns.map(item => bandHeight(tableFooterFont(table, item.node)))) : defaultBandHeight : 0;
+  const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
+  // Native row-count sizing retains the default allocation for small captions.
+  // An enlarged band also adds five eighths of its extra height to the body.
+  const extraBands = Math.max(0, header - defaultHeader) + Math.max(0, footer - defaultFooter);
   const rowCount = number(table, 'HeightInTableRows');
-  const height = rowCount > 0 ? header + rowCount * 28 + footer + 1 : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);
+  const height = rowCount > 0 ? defaultHeader + rowCount * 28 + defaultFooter + extraBands + Math.round(extraBands * 5 / 8) + 1
+    : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);

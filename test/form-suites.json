@@ -821,6 +821,7 @@
       "fixtureEnv": {
         "ESKA_FORM_FIXTURES": "native-tables",
         "ESKA_FORM_TABLE_PIXELS": "native-table-pixels",
+        "ESKA_FORM_TABLE_BAND_FIXTURES": "native-table-bands",
         "ESKA_FORM_CONTEXT_FIXTURES": "native-context-tables",
         "ESKA_FORM_CONTEXT_PIXELS": "native-context-pixels",
         "ESKA_FORM_TABLE_MENU_PIXELS": "native-table-bars",
