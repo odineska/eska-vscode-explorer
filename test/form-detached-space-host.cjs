@@ -36,9 +36,11 @@ exports.run=async()=>{
   await ui.evaluate(`document.querySelector('.form-shell > .form-splitter').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
     const zoom=document.querySelector('.form-zoom select');zoom.value='125';zoom.dispatchEvent(new Event('change',{bubbles:true}));
     document.querySelectorAll('.taxi-tabs button')[1].click();document.querySelector('.taxi-group-title button').click();document.querySelector('.taxi-form-frame').click();true`);
-  await until(()=>ui.evaluate("(() => {const details=document.querySelector('.form-properties tr[data-property-name=Title] details');if(globalThis.__detachedSelection?.kind!=='root'||!document.querySelector('.form-tree-row.selected')?.id.endsWith(':root')||!details)return false;details.open=true;return true})()"),'final root selection delivered and property record opened');
-  await until(()=>ui.evaluate("!!document.querySelector('.form-property-record[open] dl')"),'property record expanded');
-  await ui.evaluate(`globalThis.__detachedOwners=[document.querySelector('.form-inspectors'),document.querySelector('.form-tree'),document.querySelector('.form-definitions'),document.querySelector('.form-properties'),document.querySelector('.form-property-record[open]')];
+  // The raw XML row may be visible while inspection of the selected root is in flight.
+  const titleRecord='.form-properties tr[data-property-name=Title]'+(view.client.limits.propertyPalette?'[data-palette-id]':'')+' details';
+  await until(()=>ui.evaluate(`(() => {const details=document.querySelector(${JSON.stringify(titleRecord)});if(globalThis.__detachedSelection?.kind!=='root'||!document.querySelector('.form-tree-row.selected')?.id.endsWith(':root')||!details)return false;details.open=true;return true})()`),'final root selection delivered and property record opened');
+  await until(()=>ui.evaluate(`!!document.querySelector(${JSON.stringify(titleRecord+'[open] dl')})`),'property record expanded');
+  await ui.evaluate(`globalThis.__detachedOwners=[document.querySelector('.form-inspectors'),document.querySelector('.form-tree'),document.querySelector('.form-definitions'),document.querySelector('.form-properties'),document.querySelector(${JSON.stringify(titleRecord)})];
     globalThis.__detachedErrors=[];window.addEventListener('error',event=>__detachedErrors.push(event.message));true`);
   const baseline=await ui.evaluate(measure),nav=await ui.evaluate(navigation),session=view.client.current.formSessionId;
   assert.equal(baseline.height,240);assert.equal(baseline.zoom,'125');assert.equal(nav.page,'Other');assert.equal(nav.collapsed,true);
