@@ -1,10 +1,7 @@
 import { scalar } from './model.mjs';
+import { horizontalGrouping, ordinaryGroup } from './layout-model.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
-
-function ordinaryGroup(node) {
-  return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
-}
 
 function sharesLabels(node) {
   if (!ordinaryGroup(node)) return false;
@@ -17,11 +14,11 @@ function labelScope(node) {
 }
 
 /** Share the leading title track across ordinary vertical groups without changing their owners. */
-export function alignThroughLabels(model, containers, scale) {
+export function alignThroughLabels(model, { targets: { containers }, alignment, scale }) {
   const scopes = [];
   function visit(node, parentScope) {
     const items = containers.get(node.key);
-    const horizontal = ordinaryGroup(node) && ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
+    const horizontal = ordinaryGroup(node) && horizontalGrouping(node);
     const scope = items && (horizontal ? parentScope : labelScope(node) ? parentScope ?? [] : undefined);
     const leading = horizontal ? items?.firstElementChild : undefined;
     if (scope) {
@@ -49,14 +46,8 @@ export function alignThroughLabels(model, containers, scale) {
   for (const scope of tracks) {
     const end = Math.max(...scope.map(track => track.end));
     for (const {container, horizontal, left} of scope) {
-      container.dataset.throughLabels = horizontal ? 'leading' : 'all';
-      container.style.setProperty('--taxi-through-label-width', `${end - left}px`);
+      alignment.mark(container, 'data-through-labels', horizontal ? 'leading' : 'all');
+      alignment.style(container, '--taxi-through-label-width', `${end - left}px`);
     }
   }
-  return () => {
-    for (const {container} of tracks.flat()) {
-      container.removeAttribute('data-through-labels');
-      container.style.removeProperty('--taxi-through-label-width');
-    }
-  };
 }

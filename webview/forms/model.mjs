@@ -68,9 +68,9 @@ export function treeChildren(node) {
   return [...node.auxiliary, ...node.children].filter(child => !['ContextMenu', 'ExtendedTooltip'].includes(child.kind) && (child.kind !== 'AutoCommandBar' || child.children.length || node.kind === 'Table'));
 }
 export function flatten(root, folded = {}) { const rows = []; const visit = (node, depth) => { rows.push({ node, depth }); if (!folded[node.key]) for (const child of treeChildren(node)) visit(child, depth + 1); }; if (root) visit(root, 0); return rows; }
-function fontPixels(node) { return Math.round((node.presentation.font?.points ?? 10) * 4 / 3); }
+export function fontPixels(value) { return Math.round((value?.points ?? 10) * 4 / 3); }
 export function fontLineMetrics(value) {
-  const pixels = Math.round((value?.points ?? 10) * 4 / 3);
+  const pixels = fontPixels(value);
   return { pixels, ascent: Math.ceil(pixels * 1854 / 2048), descent: Math.ceil(pixels * 434 / 2048) };
 }
 export function fontLineHeight(value) {
@@ -79,8 +79,8 @@ export function fontLineHeight(value) {
 }
 /** Native raised-button padding scales from the 13px reference font. */
 export function buttonMetrics(value) {
-  const pixels = Math.round((value?.points ?? 10) * 4 / 3);
-  return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: fontLineHeight(value) };
+  const { pixels, ascent, descent } = fontLineMetrics(value);
+  return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: ascent + descent };
 }
 /** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
 export function buttonBackground(height, background = [255, 255, 255]) {
@@ -109,7 +109,11 @@ export function buttonBackgroundShade(height, y, channel = 255) {
   return Math.round(channel - Math.ceil(channel * 20 / 255) * step / 1023);
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
-function inputUnit(node) { return (fontPixels(node) * 5 - 1) / 8; }
+function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
+
+export function automaticTextWidth(node) {
+  return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
+}
 export function inputHeight(node, os) {
   const line = fontLineHeight(node.presentation.font);
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
@@ -157,14 +161,16 @@ export function nativeReferenceInput(node, os) {
 }
 export function fieldWidth(node, os) {
   const unit = inputUnit(node);
-  if (nativeReferenceInput(node, os)) {
-    const width = Math.trunc(number(node, 'Width'));
-    const text = width > 0 ? width * 10 + 11 : Math.round(20 * unit + 1);
-    return text + 42;
-  }
-  const native = linuxFixedInputWidth(node, os), width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
+  const reference = nativeReferenceInput(node, os);
+  const native = reference || linuxFixedInputWidth(node, os);
+  const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
-  if (width > 0) return native ? width * 10 + 11 + (inputChoiceButton(node, os) ? 20 : 0) : Math.max(20, width * unit + 4);
+  if (width > 0) {
+    if (!native) return Math.max(20, width * unit + 4);
+    const buttons = reference ? 42 : inputChoiceButton(node, os) ? 20 : 0;
+    return width * 10 + 11 + buttons;
+  }
+  if (reference) return Math.round(20 * unit + 1) + 42;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
@@ -193,7 +199,7 @@ export function fieldStyle(node, os) {
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
     && !property(node, 'HorizontalStretch') && (native || number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0);
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
-    ? `min(100%, ${Math.round((fontPixels(node) - 1) * 100 / 3 + 10)}px)` : '100%';
+    ? `min(100%, ${automaticTextWidth(node)}px)` : '100%';
   const stretch = flag(node, 'HorizontalStretch', false);
   // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
   return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),

@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput } from './model.mjs';
+import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -6,6 +6,20 @@ const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartF
   'SpreadSheetDocumentField', 'TextDocumentField', 'FormattedDocumentField', 'HTMLDocumentField',
   'PDFDocumentField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PictureField']);
 const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
+const explicitNo = value => ['false', 'No', '0'].includes(value);
+const explicitYes = value => ['true', 'Yes', '1'].includes(value);
+
+export function horizontalGrouping(node) {
+  return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
+}
+
+export function ordinaryGroup(node) {
+  return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
+}
+
+export function automaticHorizontalSpacing(node) {
+  return scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto';
+}
 
 export function displayedInPreview(node) {
   return node.presentation.displayed && (node.kind !== 'Table' || hasTableSurface(node));
@@ -14,8 +28,8 @@ export function displayedInPreview(node) {
 /** Designer's Auto belongs to the widget/type; group Auto inherits its visible descendants. */
 export function stretches(node, axis, collapsed = {}) {
   const value = scalar(node, axis === 'x' ? 'HorizontalStretch' : 'VerticalStretch', 'Auto');
-  if (['true', 'Yes', '1'].includes(value)) return true;
-  if (['false', 'No', '0'].includes(value)) return false;
+  if (explicitYes(value)) return true;
+  if (explicitNo(value)) return false;
   if (containers.has(node.kind)) {
     if (axis === 'y' && collapsed[node.key]) return false;
     return node.children.some(child => displayedInPreview(child) && stretches(child, axis, collapsed));
@@ -31,16 +45,20 @@ export function stretches(node, axis, collapsed = {}) {
 /** An explicit dimension of a stretchable item is its proportional allocation weight. */
 export function stretchWeight(node, axis) { return positive(number(node, axis === 'x' ? 'Width' : 'Height')) || 1; }
 
-const explicitNo = value => ['false', 'No', '0'].includes(value);
-const explicitYes = value => ['true', 'Yes', '1'].includes(value);
-
-function automaticTextMaximum(node) {
-  const pixels = Math.round((node.presentation.font?.points ?? 10) * 4 / 3);
-  return Math.round((pixels - 1) * 100 / 3 + 10);
+function automaticInputMaximum(node, os, referenceLane = false) {
+  const auto = scalar(node, 'AutoMaxWidth', 'Auto');
+  if (explicitNo(auto)) return;
+  const { kind, length } = node.presentation.valueType;
+  const reference = nativeReferenceInput(node, os);
+  const stretchesByDefault = !explicitYes(scalar(node, 'HorizontalStretch', 'Auto'))
+    && ['string', 'reference'].includes(kind);
+  if (explicitYes(auto) || stretchesByDefault || referenceLane && reference) {
+    return kind === 'string' && !length || reference ? automaticTextWidth(node) : fieldWidth(node, os);
+  }
 }
 
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
-export function controlBounds(node, axis, preferred, os) {
+export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
   const explicit = number(node, dimension), stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
@@ -51,15 +69,13 @@ export function controlBounds(node, axis, preferred, os) {
     : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0;
   let maximum;
   if (explicit <= 0) {
-    const auto = scalar(node, `AutoMax${dimension}`, 'Auto');
-    if (explicitNo(auto)) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
-    else if (axis === 'x' && node.kind === 'InputField' && (explicitYes(auto)
-      || !explicitYes(scalar(node, 'HorizontalStretch', 'Auto'))
-        && ['string', 'reference'].includes(node.presentation.valueType.kind))) {
-      const type = node.presentation.valueType;
-      const automatic = type.kind === 'string' && !type.length || nativeReferenceInput(node, os)
-        ? automaticTextMaximum(node) : fieldWidth(node, os);
-      maximum = Math.max(preferred || 0, automatic);
+    const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
+    if (manual) {
+      // Manual bounds apply after leaving the initial Designer size.
+      if (!atPreferred) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
+    } else if (axis === 'x' && node.kind === 'InputField') {
+      const automatic = automaticInputMaximum(node, os);
+      if (automatic !== undefined) maximum = Math.max(preferred || 0, automatic);
     }
   }
   return { minimum: minimum || undefined, maximum: maximum ? Math.max(minimum, maximum) : undefined };
@@ -73,9 +89,7 @@ export function laneInputBounds(node, os) {
   if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
   const preferred = fieldWidth(node, os);
   const bounds = controlBounds(node, 'x', preferred, os);
-  const auto = scalar(node, 'AutoMaxWidth', 'Auto');
-  const maximum = !explicitNo(auto) && (reference || explicitYes(auto) || !explicitYes(scalar(node, 'HorizontalStretch')))
-    ? automaticTextMaximum(node) : bounds.maximum ?? Infinity;
+  const maximum = automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
   return { preferred, minimum: Math.min(reference ? bounds.minimum ?? preferred : 71, preferred), maximum: Math.max(preferred, maximum) };
 }
 

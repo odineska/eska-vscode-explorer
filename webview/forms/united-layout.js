@@ -1,24 +1,16 @@
-import { fieldWidth, number, scalar } from './model.mjs';
-import { horizontalLaneWidths, laneInputBounds, stretches } from './layout-model.mjs';
-import { borderBoxSize } from './layout-box.mjs';
+import { fieldWidth, number } from './model.mjs';
+import { horizontalLaneWidths, laneInputBounds, stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
+import { borderBoxSize, boxInsets } from './layout-box.mjs';
 
 function ordinaryVerticalGroup(node) {
-  return node.kind === 'UsualGroup' && node.presentation.grouping === 'Vertical'
-    && typeof node.presentation.united === 'boolean'
-    && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
+  return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
-export function alignUnitedRows(model, elements, containers, wrapped, collapsed, os, scale) {
-  const undo = [], owners = new Set(), allocations = [];
-  const mark = (element, attribute) => {
-    element.setAttribute(attribute, '');
-    undo.push(() => element.removeAttribute(attribute));
-  };
-  const style = (element, name, value) => {
-    element.style.setProperty(name, value);
-    undo.push(() => element.style.removeProperty(name));
-  };
+export function alignUnitedRows(model, { targets, alignment, collapsed, os, scale }, wrapped) {
+  const { elements, containers, children: mountedChildren } = targets;
+  const { mark, style } = alignment;
+  const owners = new Set(), allocations = [];
 
   function lane(node) {
     const element = elements.get(node.key);
@@ -26,7 +18,7 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
     const group = items?.parentElement;
     if (!element || !items || !ordinaryVerticalGroup(node) || node.presentation.united) return { node, element, rows: 1 };
     const title = group.querySelector(':scope > .taxi-group-title');
-    const children = node.children.filter(child => elements.has(child.key)).map(lane);
+    const children = mountedChildren(node).map(lane);
     const rows = children.reduce((total, child) => total + child.rows, title ? 1 : 0);
     if (!rows) return { node, element, rows: 1 };
     return { node, element, rows, items, group, title, children };
@@ -56,7 +48,7 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
   function laneInputs(node) {
     if (node.kind === 'InputField') return [node];
     const items = containers.get(node.key);
-    const children = node.children.filter(child => elements.has(child.key));
+    const children = mountedChildren(node);
     if (node.kind !== 'UsualGroup' || !items || number(node, 'Width') > 0
         || items.parentElement.querySelector(':scope > .taxi-group-title')
         || node.presentation.grouping !== 'Vertical' && children.length !== 1) return;
@@ -68,11 +60,14 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
     if (os !== 'linux') return;
     const inputs = children.map(laneInputs);
     if (inputs.some(row => !row?.length)) return;
-    const fields = inputs.map((row, index) => row.map(node => ({
-      element: elements.get(node.key), preferred: fieldWidth(node, os),
-      flexible: stretches(children[index], 'x', collapsed) && stretches(node, 'x', collapsed),
-      bounds: laneInputBounds(node, os),
-    })));
+    const fields = inputs.map((row, index) => {
+      const flexible = stretches(children[index], 'x', collapsed);
+      return row.map(node => {
+        const bounds = laneInputBounds(node, os);
+        return { element: elements.get(node.key), preferred: bounds?.preferred ?? fieldWidth(node, os),
+          flexible: flexible && stretches(node, 'x', collapsed), bounds };
+      });
+    });
     if (fields.some(row => row.some(field => field.flexible && !field.bounds))) return;
     const tracks = fields.map((row, index) => {
       const preferred = borderBoxSize(elements.get(children[index].key), scale).width;
@@ -86,16 +81,16 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
       if (Number.isFinite(field.bounds.maximum)) style(field.element, '--taxi-lane-input-max-width', `${field.bounds.maximum}px`);
     }
     allocations.push({items, tracks});
-    undo.push(() => items.style.removeProperty('--taxi-united-allocated-columns'));
+    style(items, '--taxi-united-allocated-columns', '');
   }
 
   function visit(node) {
-    const children = node.children.filter(child => elements.has(child.key));
+    const children = mountedChildren(node);
     const items = containers.get(node.key);
-    if (items && ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping)
+    if (items && horizontalGrouping(node)
       && children.length > 1 && children.every(ordinaryVerticalGroup)) {
       owners.add(node.key);
-      if (scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto') mark(items, 'data-united-auto-spacing');
+      if (automaticHorizontalSpacing(node)) mark(items, 'data-united-auto-spacing');
       if (!wrapped.has(node.key)) shareRows(items, children);
     }
     for (const child of node.children) visit(child);
@@ -129,8 +124,8 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
     allocateWidths() {
       const widths = allocations.map(({items, tracks}) => {
         const css = getComputedStyle(items);
-        const insets = ['paddingLeft','paddingRight','borderLeftWidth','borderRightWidth'].reduce((sum, key) => sum + parseFloat(css[key]), 0);
-        const available = Math.round(borderBoxSize(items, scale).width - insets - parseFloat(css.columnGap) * (tracks.length - 1));
+        const available = Math.round(borderBoxSize(items, scale).width - boxInsets(css).width
+          - parseFloat(css.columnGap) * (tracks.length - 1));
         return horizontalLaneWidths(available, tracks).map(value => `${value}px`).join(' ');
       });
       for (const [index, {items}] of allocations.entries()) {
@@ -139,6 +134,5 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed,
         }
       }
     },
-    clear: () => { for (const restore of undo) restore(); },
   };
 }

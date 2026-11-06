@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, fontPixels, fontLineHeight, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
@@ -19,7 +19,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
 import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
@@ -178,7 +178,7 @@ export function Preview(props) {
 }
 export function Items(props) {
   const layout = useFormLayout();
-  const horizontal = () => ['Horizontal', 'HorizontalIfPossible'].includes(props.node.presentation.grouping) && !layout?.wrapped(props.node);
+  const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const children = () => props.node.children.filter(displayedInPreview);
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
     && children().length > 0 && children().every(node => node.kind === 'Button');
@@ -208,11 +208,13 @@ export function Items(props) {
           || bar.children.some(child => child.presentation.displayed && tableSearchReference(scalar(child, 'CommandName'))?.table === table.name));
     }).map(node => node.key));
   });
-  const rows = () => children().map(node => layout?.stretch(node, 'y') ? `minmax(${layout.minimumFor(node)?.height ?? 0}px, ${stretchWeight(node, 'y')}fr)` : 'max-content').join(' ');
-  const columns = () => horizontal() ? children().map(node => layout?.stretch(node, 'x')
-    ? `minmax(${layout.minimumFor(node)?.width ?? 0}px, ${stretchWeight(node, 'x')}fr)` : 'max-content').join(' ') : undefined;
+  const tracks = axis => {
+    const dimension = axis === 'x' ? 'width' : 'height';
+    return children().map(node => layout?.stretch(node, axis)
+      ? `minmax(${layout.minimumFor(node)?.[dimension] ?? 0}px, ${stretchWeight(node, axis)}fr)` : 'max-content').join(' ');
+  };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
-    data-auto-spacing={scalar(props.node, 'HorizontalSpacing', 'Auto') === 'Auto' ? '' : undefined} style={{ '--taxi-layout-rows': rows(), '--taxi-layout-columns': columns() }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
@@ -399,7 +401,7 @@ function LabelDecoration(props) {
   const style = () => ({
     ...font(node().presentation.font, state.os),
     ...(state.os === 'linux' ? {
-      'font-size': `${Math.round(node().presentation.font.points * 4 / 3)}px`,
+      'font-size': `${fontPixels(node().presentation.font)}px`,
       width: value() === '' ? `${Math.max(0, number(node(), 'Width')) * 10}px` : undefined,
     } : {}),
     color: color(node().presentation.foreground),
@@ -409,12 +411,7 @@ function LabelDecoration(props) {
 }
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
-  const bounds = axis => {
-    const value = controlBounds(node(), axis, undefined, state.os);
-    const manual = ['false', 'No', '0'].includes(scalar(node(), axis === 'x' ? 'AutoMaxWidth' : 'AutoMaxHeight', 'Auto'));
-    // Manual bounds do not alter Designer's initial size; automatic maxima belong to its natural preference.
-    return layout?.atPreferred(axis) && manual ? { ...value, maximum: undefined } : value;
-  };
+  const bounds = axis => controlBounds(node(), axis, undefined, state.os, layout?.atPreferred(axis));
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
