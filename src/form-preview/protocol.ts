@@ -25,6 +25,7 @@ export interface Presentation {
   united?: boolean | null;
   markIncomplete?: boolean;
   footerText?: FormText | null;
+  tabularTotal?: "automatic" | "overridden";
   tableColumnAppearance?: TableColumnAppearance;
   picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
@@ -99,6 +100,7 @@ function presentation(value: unknown): boolean {
   return isRecord(value) && (value.picture === null || isRecord(value.picture) && (value.picture.kind === "standard" && typeof value.picture.name === "string" || value.picture.kind === "common" && hash(value.picture.source) || value.picture.kind === "missing" && typeof value.picture.reference === "string"))
     && (value.markIncomplete === undefined || typeof value.markIncomplete === "boolean")
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
+    && (value.tabularTotal === undefined || value.tabularTotal === "automatic" || value.tabularTotal === "overridden")
     && tableColumnAppearance(value.tableColumnAppearance)
     && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"

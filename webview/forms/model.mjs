@@ -31,7 +31,13 @@ export function text(value, locale, strings) {
   const language = locale.toLowerCase(), base = language.split('-')[0];
   return (value.items.find(item => item.language.toLowerCase() === language) ?? value.items.find(item => item.language.toLowerCase() === base) ?? value.items[0])?.content ?? '';
 }
-export function caption(node, state) { return text(node?.presentation?.caption, state.locale, state.strings); }
+export function caption(node, state) {
+  const view = node?.presentation;
+  const value = text(view?.caption, state.locale, state.strings);
+  return view?.tabularTotal === 'automatic'
+    ? (state.strings?.['attribute.TabularTotal'] ?? '{caption}').replace('{caption}', () => value)
+    : value;
+}
 export function automaticCommands(node) {
   return node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
 }
@@ -114,6 +120,29 @@ function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) /
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
 }
+/** Intrinsic size of a single-line numeric label in Linux Designer. */
+export function numericLabelMetrics(node, os) {
+  const type = node.presentation.valueType;
+  if (os !== 'linux' || node.kind !== 'LabelField' || type?.kind !== 'number' || !type.digits
+      || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
+  const painted = !!property(node, 'BackColor');
+  const widthOutset = painted ? 2 : 0;
+  const size = fontLineMetrics(node.presentation.font);
+  const scale = (size.pixels - 1) / 12;
+  const fraction = type.fraction ?? 0;
+  const separators = Math.floor(Math.max(0, type.digits - fraction - 1) / 3);
+  const digits = type.digits * 8 + separators * 4 + (fraction ? 2 : 0);
+  const authored = Math.trunc(number(node, 'Width'));
+  const preferred = (authored > 0 ? authored * 10 : Math.round(Math.max(50, digits) * scale)) + widthOutset;
+  return {
+    preferred,
+    minimum: Math.min(preferred, Math.round(60 * scale) + widthOutset),
+    maximum: Math.max(preferred, Math.round(400 * scale) + widthOutset),
+    height: size.ascent + size.descent + (painted ? 4 : 2),
+    widthOutset,
+  };
+}
+
 export function inputHeight(node, os) {
   const line = fontLineHeight(node.presentation.font);
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.

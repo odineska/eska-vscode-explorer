@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth } from './model.mjs';
+import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -65,20 +65,24 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   if (explicit > 0 && !stretch) return {};
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
-  const minimum = node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
-    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0;
+  const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
+  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
+    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0);
   let maximum;
-  if (explicit <= 0) {
+  if (explicit <= 0 || numericLabel) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
       // Manual bounds apply after leaving the initial Designer size.
-      if (!atPreferred) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
+      const limit = positive(number(node, `Max${dimension}`));
+      if (!atPreferred && limit) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
+    } else if (numericLabel) {
+      maximum = numericLabel.maximum;
     } else if (axis === 'x' && node.kind === 'InputField') {
       const automatic = automaticInputMaximum(node, os);
       if (automatic !== undefined) maximum = Math.max(preferred || 0, automatic);
     }
   }
-  return { minimum: minimum || undefined, maximum: maximum ? Math.max(minimum, maximum) : undefined };
+  return { minimum: minimum || undefined, maximum: maximum ? Math.max(numericLabel?.preferred ?? minimum, maximum) : undefined };
 }
 
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */

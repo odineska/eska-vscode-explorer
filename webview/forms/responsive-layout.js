@@ -5,6 +5,7 @@ import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels } from './through-align.js';
+import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 
 export const FormLayoutContext = createContext();
@@ -67,6 +68,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       alignUnitedColumns(state.model.root, context);
+      alignNumericLabelRows(state.model.root, context);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;

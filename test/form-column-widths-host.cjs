@@ -2,18 +2,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const {frame, until} = require('./webview-host.cjs');
+const {frame, until, allocateFormViewport, editFormSource} = require('./webview-host.cjs');
 
 async function pose(ui, keys, expected) {
-  await ui.evaluate(`(() => {
-    const [width,height]=${JSON.stringify(expected.frame)}, viewport=document.querySelector('.preview-scroll');
-    const css=getComputedStyle(viewport);
-    Object.assign(viewport.style,{
-      width:(width+8+parseFloat(css.paddingLeft)+parseFloat(css.paddingRight))+'px',
-      height:(height+8+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom))+'px',
-      minHeight:'0',flex:'0 0 auto'
-    });
-  })()`);
+  await allocateFormViewport(ui, expected.frame);
   let actual;
   try {
     await until(async () => {
@@ -63,14 +55,7 @@ exports.run = async () => {
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     const nodes = [...view.nodes.values()].filter(node => node.kind === 'InputField');
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
-    async function replace(xml) {
-      if (document.getText() === xml) return;
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),xml);
-      assert.equal(await vscode.workspace.applyEdit(edit),true);
-      await until(() => view.phase === 'ready' && !view.running && !view.timer
-        && view.snapshot.dependencies.some(dep => dep.role === 'form' && dep.version === String(document.version)), 'column width XML updated');
-    }
+    const replace = xml => editFormSource(document, view, xml);
     if (process.platform === 'linux') {
       const revision = view.snapshot.revision;
       for (const expected of form.cases.filter(sample => !sample.edit)) {

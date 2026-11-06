@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, caption, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 import { parsePreviewNavigation } from '../out/form-preview/navigation.js';
 
@@ -30,6 +30,21 @@ test('both preview windows validate the same navigation snapshot', () => {
   assert.equal(parsePreviewNavigation({ ...navigation, pages: [] }), undefined);
   assert.equal(parsePreviewNavigation({ ...navigation, collapsed: { 'source:group': 'true' } }), undefined);
   assert.equal(parsePreviewNavigation({ ...navigation, pages: { invalid: 'source:page' } }), undefined);
+});
+
+test('tabular total captions use the viewer locale and preserve form overrides', () => {
+  const input = fixture(), node = input.model.root;
+  node.presentation.caption = { kind: 'literal', items: [
+    { language: 'ru', content: 'Количество' }, { language: 'en', content: 'Quantity' },
+  ] };
+  node.presentation.tabularTotal = 'automatic';
+  assert.equal(parseFormSnapshot(input).model.root.presentation.tabularTotal, 'automatic');
+  assert.equal(caption(node, { locale: 'ru-RU', strings: formStrings('ru-RU') }), 'Количество (итог)');
+  assert.equal(caption(node, { locale: 'en-US', strings: formStrings('en-US') }), 'Quantity (total)');
+  node.presentation.tabularTotal = 'overridden';
+  assert.equal(caption(node, { locale: 'ru-RU', strings: formStrings('ru-RU') }), 'Количество');
+  node.presentation.tabularTotal = true;
+  assert.throws(() => parseFormSnapshot(input));
 });
 
 test('optional table column appearance validates color and font values', () => {

@@ -269,15 +269,20 @@ export async function createGroupGallery(fixture) {
     'PagesTop', 'PagesBottom', 'PagesNone', 'PagesAuto', 'PagesLeft', 'PagesRight', 'PagesSwipe', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
 }
 
+async function addNativeGoods(fixture, catalog) {
+  await mkdir(join(fixture.source, 'Catalogs'), {recursive:true});
+  await writeFile(join(fixture.source, 'Catalogs', 'NativeGoods.xml'), await readFile(catalog));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  const xml = await readFile(configuration, 'utf8');
+  await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
+}
+
 export async function createTableGallery(fixture) {
   const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
   if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {
     const input = process.env.ESKA_FORM_CONTEXT_FIXTURES;
     if (!isAbsolute(input)) throw new Error('ESKA_FORM_CONTEXT_FIXTURES must be absolute.');
-    await mkdir(join(fixture.source, 'Catalogs'), { recursive: true });
-    await writeFile(join(fixture.source, 'Catalogs', 'NativeGoods.xml'), await readFile(join(input, 'Catalog.xml')));
-    const root = join(fixture.source, 'Configuration.xml');
-    await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
+    await addNativeGoods(fixture, join(input, 'Catalog.xml'));
     result.push(...await createGallery(fixture, ['MetadataTable', 'DynamicList'], input));
   }
   if (process.env.ESKA_FORM_ADDITION_FIXTURES) result.push(...await createGallery(fixture, ['NoViewStatus', 'NoSearchControl'], process.env.ESKA_FORM_ADDITION_FIXTURES));
@@ -293,14 +298,19 @@ export function createUnitedGallery(fixture) {
 export async function createColumnWidthGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
-  const catalog = join(input, '..', 'native-context-tables', 'Catalog.xml');
-  await mkdir(join(fixture.source, 'Catalogs'), {recursive:true});
-  await writeFile(join(fixture.source,'Catalogs','NativeGoods.xml'),await readFile(catalog));
-  const configuration = join(fixture.source,'Configuration.xml');
-  await writeFile(configuration,(await readFile(configuration,'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
   const {fixtures} = JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
   const forms = await createGallery(fixture,Object.keys(fixtures),input);
   return forms.map(form => ({...form,cases:fixtures[form.kind].cases}));
+}
+
+export async function createNumericLabelGallery(fixture, locale) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute numeric labels directory.');
+  await addNativeGoods(fixture, join(input, 'NativeGoods.xml'));
+  const {fixtures} = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  const forms = await createGallery(fixture, Object.keys(fixtures), input);
+  return forms.map(form => ({...form, ...fixtures[form.kind][locale]}));
 }
 
 export async function createThroughAlignGallery(fixture) {
