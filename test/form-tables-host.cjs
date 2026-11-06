@@ -261,8 +261,30 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   const changed = footer.replace(/<InputField\b[^>]*\bname="Text"[^>]*>/,
     opening => opening + `<Width>${widthEdit}</Width>`);
   assert.notEqual(changed, footer, 'controlled Text column fixture exists');
-  await replace(changed);
+  const fixed = kind === 'Default' && process.platform === 'linux';
+  const wide = fixed ? changed.replace('<Table name="Rows" id="1">',
+    '$&<Width>60</Width><HorizontalStretch>false</HorizontalStretch>') : changed;
+  await replace(wide);
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns !== __tableIdentity.tracks"), 'dirty column width rendered');
+  if (process.platform === 'linux') {
+    const bar = "document.querySelector('.taxi-table-horizontal-scrollbar')";
+    const viewport = "document.querySelector('.taxi-table-content')";
+    await until(() => ui.evaluate(`!!${bar} && ${viewport}.scrollWidth > ${viewport}.clientWidth`), 'horizontal table strip visible');
+    const geometry = await ui.evaluate(`(() => {
+      const content = ${viewport}, strip = ${bar}, table = content.parentElement;
+      return { height: strip.offsetHeight, reserved: table.clientHeight - content.clientHeight,
+        controls: strip.getAttribute('aria-controls') === content.id, tableWidth: table.offsetWidth,
+        frameWidth: table.closest('.taxi-form-frame').offsetWidth };
+    })()`);
+    assert.equal(geometry.height, 14);
+    assert.equal(geometry.reserved, 14);
+    assert.equal(geometry.controls, true);
+    if (fixed) assert.deepEqual([geometry.tableWidth, geometry.frameWidth], [600, 634]);
+    await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key: 'End', bubbles: true, cancelable: true}))`);
+    assert.equal(await ui.evaluate(`${viewport}.scrollLeft === ${viewport}.scrollWidth - ${viewport}.clientWidth`), true);
+    await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key: 'Home', bubbles: true, cancelable: true}))`);
+    assert.equal(await ui.evaluate(`${viewport}.scrollLeft`), 0);
+  }
   const retained = await ui.evaluate(`({
     headers: __tableIdentity.headers.filter(node => node.isConnected).length,
     footer: __tableIdentity.footer.filter(node => node.isConnected).length
@@ -274,6 +296,7 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   await until(() => view.selected?.key?.value === '4', 'retained header selects its original source column');
   await replace(original);
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns === __tableIdentity.tracks"), 'width restored');
+  if (process.platform === 'linux') await until(() => ui.evaluate("!document.querySelector('.taxi-table-horizontal-scrollbar')"), 'restoring Width removes overflow');
   assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
   assert.equal(document.getText(), original);
   return {headers: retained.headers, footerCells: retained.footer, widthEdit, selection: '4', restored: true};

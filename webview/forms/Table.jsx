@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
-import { scalar, flag, caption, font, color, text, fontLineHeight } from './model.mjs';
+import { scalar, flag, property, caption, font, color, text, fontLineHeight } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
 import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
 import { CommandButton, Element } from './Preview.jsx';
@@ -7,7 +7,8 @@ import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { TableSearch } from './TableSearch.jsx';
 import { NativeTableMovement } from './NativeTableMovement.jsx';
-import { tableScrollbarGrays, tablePaginationGlyphs } from './table-scrollbar.mjs';
+import { TableHorizontalScrollbar } from './TableHorizontalScrollbar.jsx';
+import { minimumHorizontalTableViewport, tableScrollbarGrays, tablePaginationGlyphs } from './table-scrollbar.mjs';
 
 function bandTextStyle(value, foreground, background, alignment, os) {
   return { ...font(value, os), color: color(foreground), 'background-color': color(background),
@@ -106,6 +107,11 @@ export function Table(props) {
     onCleanup(() => observer.disconnect());
   });
   const tracks = createMemo(() => tableTracks(layout(), columnSpace()));
+  const horizontal = createMemo(() => layout().nativeColumns && columnSpace() >= minimumHorizontalTableViewport
+    && columnSpace() < layout().contentMinWidth);
+  const enabled = () => flag(node(), 'Enabled');
+  const inactive = () => horizontal() && !enabled();
+  const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
   return <div class="taxi-table-field" data-native-column-sizing={layout().nativeColumns ? '' : undefined} data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': 'var(--taxi-table-preferred-width)', '--taxi-table-preferred-width': `${layout().preferredWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25)}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? "" : undefined} data-table-lookup={lookup() ? '' : undefined}>
@@ -116,13 +122,16 @@ export function Table(props) {
     </div></Show>
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>
     <ViewStatus node={node()} controller={props.controller}/>
-    <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
-      <div ref={content} class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
+    <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
+      aria-disabled={inactive() || undefined} style={{ height: `${layout().height}px`, 'border-color': border(), 'background-color': color(node().presentation.background) }}>
+      <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
         <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': tracks() }}><For each={layout().columns}>{column => <FooterCell column={column} table={node()} controller={props.controller}/>}</For></div></Show>
       </div>
       <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><For each={[0,1]}>{()=><span><Show when={state.os==='linux'}><svg width="6" height="4" viewBox="0 0 6 4" shape-rendering="crispEdges"><For each={tableScrollbarGrays}>{(value,index)=><rect x={index()%6} y={Math.floor(index()/6)} width="1" height="1" fill={`rgb(${value},${value},${value})`}/>}</For></svg></Show></span>}</For></div></Show>
+      <Show when={horizontal()}><TableHorizontalScrollbar target={content} viewport={columnSpace()} grid={layout().contentMinWidth}
+        columns={layout().columns} enabled={enabled()} label={caption(node(), state)}/></Show>
     </div>
     <Show when={layout().dynamic}><div class="taxi-table-pagination" aria-hidden="true"><For each={['M2 9L6 5l4 4zM2 3h8', 'M2 8l4-4 4 4z', 'M2 4l4 4 4-4z', 'M2 3l4 4 4-4zM2 9h8']}>{(path,index) => <span><Show when={state.os==='linux'} fallback={<svg viewBox="0 0 12 12"><path d={path}/></svg>}><svg width="9" height={tablePaginationGlyphs[index()].height} viewBox={`0 0 9 ${tablePaginationGlyphs[index()].height}`} shape-rendering="crispEdges"><For each={tablePaginationGlyphs[index()].grays}>{(gray,pixel)=><rect x={pixel()%9} y={Math.floor(pixel()/9)} width="1" height="1" fill={`rgb(${gray},${gray},${gray})`}/>}</For></svg></Show></span>}</For></div></Show>
   </div>;
