@@ -290,6 +290,19 @@ export function createUnitedGallery(fixture) {
   return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
 }
 
+export async function createColumnWidthGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
+  const catalog = join(input, '..', 'native-context-tables', 'Catalog.xml');
+  await mkdir(join(fixture.source, 'Catalogs'), {recursive:true});
+  await writeFile(join(fixture.source,'Catalogs','NativeGoods.xml'),await readFile(catalog));
+  const configuration = join(fixture.source,'Configuration.xml');
+  await writeFile(configuration,(await readFile(configuration,'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
+  const {fixtures} = JSON.parse(await readFile(join(input,'metrics.json'),'utf8'));
+  const forms = await createGallery(fixture,Object.keys(fixtures),input);
+  return forms.map(form => ({...form,cases:fixtures[form.kind].cases}));
+}
+
 export async function createThroughAlignGallery(fixture) {
   const forms = await createGallery(fixture, ['Labels']);
   const rows = process.env.ESKA_FORM_THROUGH_ROWS;

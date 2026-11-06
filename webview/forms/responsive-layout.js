@@ -50,7 +50,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       clearUnitedColumns?.();
       const scale = boundingScale(root);
       clearThroughLabels = alignThroughLabels(state.model.root, containers, scale);
-      unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed);
+      unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed, state.os, scale);
       clearUnitedColumns = alignUnitedColumns(state.model.root, elementByKey, containers, state.os, state.ui.collapsed, scale);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
@@ -80,6 +80,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       setViewportResized(true);
     }
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
+    unitedRows?.allocateWidths();
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
       const children = [...items.children];

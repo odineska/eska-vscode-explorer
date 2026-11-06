@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize } from '../webview/forms/layout-model.mjs';
+import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
@@ -32,6 +32,31 @@ test('fixed explicit dimensions ignore maximums; zero maximum means unlimited',(
   assert.deepEqual(controlBounds(node('InputField',{AutoMaxWidth:false,MaxWidth:0}),'x',200,'linux'),{minimum:80,maximum:undefined});
   assert.deepEqual(controlBounds(node('InputField',{AutoMaxWidth:false,MaxWidth:30,MinWidth:4}),'x',200,'linux'),{minimum:80,maximum:300});
   assert.equal(controlBounds(node('InputField',{Width:4,MaxWidth:1}),'x',200,'linux').maximum,undefined,'explicit stretch dimensions are weights');
+});
+
+test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {
+  const left = {reserve:0, preferred:131, minimum:71, maximum:410};
+  const right = {...left, preferred:191};
+  assert.deepEqual(horizontalLaneWidths(142, [left, right]), [71,71]);
+  assert.deepEqual(horizontalLaneWidths(190, [left, right]), [87,103]);
+  assert.deepEqual(horizontalLaneWidths(240, [left, right]), [103,137]);
+  assert.deepEqual(horizontalLaneWidths(330, [left, right]), [134,196]);
+  assert.deepEqual(horizontalLaneWidths(430, [left, right]), [175,255]);
+  assert.deepEqual(horizontalLaneWidths(710, [left, right]), [300,410]);
+  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [410,410]);
+  assert.deepEqual(horizontalLaneWidths(710, [left, {...right, minimum:191, maximum:191}]), [410,191]);
+  assert.deepEqual(horizontalLaneWidths(700, [left, right, {...left, preferred:111}]), [212,309,179]);
+  const titled = [left, right].map(lane => Object.fromEntries(Object.entries(lane).map(([key,value]) => [key,value+34])));
+  assert.deepEqual(horizontalLaneWidths(710, titled), [295,415]);
+});
+
+test('standard reference inputs reserve both buttons and cap stretch in the measured lane', () => {
+  const field = node('InputField', {Width:30});
+  field.presentation.valueType.kind = 'reference';
+  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:353,minimum:80,maximum:410});
+  const automatic = {...field, properties:[]};
+  assert.deepEqual(laneInputBounds(automatic,'linux'), {preferred:203,minimum:80,maximum:410});
+  assert.equal(laneInputBounds(automatic,'windows'), undefined);
 });
 
 test('frame allocation uses local CSS pixels, preserves zoom, and scrolls below minimums',()=>{

@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight } from './model.mjs';
+import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -31,6 +31,14 @@ export function stretches(node, axis, collapsed = {}) {
 /** An explicit dimension of a stretchable item is its proportional allocation weight. */
 export function stretchWeight(node, axis) { return positive(number(node, axis === 'x' ? 'Width' : 'Height')) || 1; }
 
+const explicitNo = value => ['false', 'No', '0'].includes(value);
+const explicitYes = value => ['true', 'Yes', '1'].includes(value);
+
+function automaticTextMaximum(node) {
+  const pixels = Math.round((node.presentation.font?.points ?? 10) * 4 / 3);
+  return Math.round((pixels - 1) * 100 / 3 + 10);
+}
+
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
 export function controlBounds(node, axis, preferred, os) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
@@ -44,16 +52,75 @@ export function controlBounds(node, axis, preferred, os) {
   let maximum;
   if (explicit <= 0) {
     const auto = scalar(node, `AutoMax${dimension}`, 'Auto');
-    if (['false', 'No', '0'].includes(auto)) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
-    else if (axis === 'x' && node.kind === 'InputField' && (['true', 'Yes', '1'].includes(auto)
-      || !['true', 'Yes', '1'].includes(scalar(node, 'HorizontalStretch', 'Auto'))
+    if (explicitNo(auto)) maximum = positive(number(node, `Max${dimension}`)) * unit || undefined;
+    else if (axis === 'x' && node.kind === 'InputField' && (explicitYes(auto)
+      || !explicitYes(scalar(node, 'HorizontalStretch', 'Auto'))
         && ['string', 'reference'].includes(node.presentation.valueType.kind))) {
-      const type = node.presentation.valueType, pixels = Math.round((node.presentation.font?.points ?? 10) * 4 / 3);
-      const automatic = type.kind === 'string' && !type.length ? Math.round((pixels - 1) * 100 / 3 + 10) : fieldWidth(node, os);
+      const type = node.presentation.valueType;
+      const automatic = type.kind === 'string' && !type.length || nativeReferenceInput(node, os)
+        ? automaticTextMaximum(node) : fieldWidth(node, os);
       maximum = Math.max(preferred || 0, automatic);
     }
   }
   return { minimum: minimum || undefined, maximum: maximum ? Math.max(minimum, maximum) : undefined };
+}
+
+/** Width bounds of the measured input profiles inside a horizontal group of columns. */
+export function laneInputBounds(node, os) {
+  const type = node.presentation.valueType;
+  const reference = nativeReferenceInput(node, os);
+  const plain = type.kind === 'string' && !type.length && linuxFixedInputWidth(node, os);
+  if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
+  const preferred = fieldWidth(node, os);
+  const bounds = controlBounds(node, 'x', preferred, os);
+  const auto = scalar(node, 'AutoMaxWidth', 'Auto');
+  const maximum = !explicitNo(auto) && (reference || explicitYes(auto) || !explicitYes(scalar(node, 'HorizontalStretch')))
+    ? automaticTextMaximum(node) : bounds.maximum ?? Infinity;
+  return { preferred, minimum: Math.min(reference ? bounds.minimum ?? preferred : 71, preferred), maximum: Math.max(preferred, maximum) };
+}
+
+/** Allocate column widths in native pixels, including the fixed space reserved for titles. */
+export function horizontalLaneWidths(available, lanes) {
+  const preferred = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
+  let widths;
+  let round = Math.round;
+  if (available <= preferred) {
+    const minimum = lanes.reduce((sum, lane) => sum + lane.minimum, 0);
+    const fraction = Math.max(0, (available - minimum) / (preferred - minimum || 1));
+    widths = lanes.map(lane => lane.minimum + (lane.preferred - lane.minimum) * fraction);
+    round = Math.floor;
+  } else {
+    // Grow proportional control tracks and freeze each one as it reaches its maximum.
+    const events = lanes.flatMap(lane => {
+      const weight = lane.preferred - lane.reserve - 1;
+      if (weight <= 0 || lane.preferred === lane.maximum) return [];
+      const limits = [[(lane.preferred - lane.reserve) / weight, weight]];
+      if (Number.isFinite(lane.maximum)) limits.push([(lane.maximum - lane.reserve) / weight, -weight]);
+      return limits;
+    }).sort((a, b) => a[0] - b[0]);
+    let total = preferred, slope = 0, factor = 0;
+    for (const [next, delta] of events) {
+      const growth = (next - factor) * slope;
+      if (slope > 0 && total + growth >= available) {
+        factor += (available - total) / slope;
+        total = available;
+        break;
+      }
+      total += growth;
+      factor = next;
+      slope += delta;
+    }
+    if (slope > 0) factor += (available - total) / slope;
+    widths = lanes.map(lane => Math.max(lane.preferred,
+      Math.min(lane.maximum, lane.reserve + Math.max(0, lane.preferred - lane.reserve - 1) * factor)));
+  }
+  let edge = 0, previous = 0;
+  return widths.map(width => {
+    edge += width;
+    const next = round(edge + 1e-7), result = next - previous;
+    previous = next;
+    return result;
+  });
 }
 
 /** Convert actual CSS allocation into unzoomed frame bounds, retaining scrolling below minimum size. */

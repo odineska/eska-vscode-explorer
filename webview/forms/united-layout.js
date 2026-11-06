@@ -1,5 +1,6 @@
-import { scalar } from './model.mjs';
-import { stretches } from './layout-model.mjs';
+import { fieldWidth, number, scalar } from './model.mjs';
+import { horizontalLaneWidths, laneInputBounds, stretches } from './layout-model.mjs';
+import { borderBoxSize } from './layout-box.mjs';
 
 function ordinaryVerticalGroup(node) {
   return node.kind === 'UsualGroup' && node.presentation.grouping === 'Vertical'
@@ -8,8 +9,8 @@ function ordinaryVerticalGroup(node) {
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
-export function alignUnitedRows(model, elements, containers, wrapped, collapsed) {
-  const undo = [], owners = new Set();
+export function alignUnitedRows(model, elements, containers, wrapped, collapsed, os, scale) {
+  const undo = [], owners = new Set(), allocations = [];
   const mark = (element, attribute) => {
     element.setAttribute(attribute, '');
     undo.push(() => element.removeAttribute(attribute));
@@ -52,6 +53,42 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed)
     }
   }
 
+  function laneInputs(node) {
+    if (node.kind === 'InputField') return [node];
+    const items = containers.get(node.key);
+    const children = node.children.filter(child => elements.has(child.key));
+    if (node.kind !== 'UsualGroup' || !items || number(node, 'Width') > 0
+        || items.parentElement.querySelector(':scope > .taxi-group-title')
+        || node.presentation.grouping !== 'Vertical' && children.length !== 1) return;
+    const inputs = children.map(laneInputs);
+    if (inputs.every(Boolean)) return inputs.flat();
+  }
+
+  function trackWidths(items, children) {
+    if (os !== 'linux') return;
+    const inputs = children.map(laneInputs);
+    if (inputs.some(row => !row?.length)) return;
+    const fields = inputs.map((row, index) => row.map(node => ({
+      element: elements.get(node.key), preferred: fieldWidth(node, os),
+      flexible: stretches(children[index], 'x', collapsed) && stretches(node, 'x', collapsed),
+      bounds: laneInputBounds(node, os),
+    })));
+    if (fields.some(row => row.some(field => field.flexible && !field.bounds))) return;
+    const tracks = fields.map((row, index) => {
+      const preferred = borderBoxSize(elements.get(children[index].key), scale).width;
+      const reserve = Math.max(0, preferred - Math.max(...row.map(field => field.preferred)));
+      const minimum = reserve + Math.max(...row.map(field => field.flexible ? field.bounds.minimum : field.preferred));
+      const maximum = reserve + Math.max(...row.map(field => field.flexible ? field.bounds.maximum : field.preferred));
+      return { reserve, preferred, minimum: Math.min(preferred, minimum), maximum: Math.max(preferred, maximum) };
+    });
+    for (const field of fields.flat().filter(field => field.flexible)) {
+      style(field.element, '--taxi-lane-input-min-width', `${field.bounds.minimum}px`);
+      if (Number.isFinite(field.bounds.maximum)) style(field.element, '--taxi-lane-input-max-width', `${field.bounds.maximum}px`);
+    }
+    allocations.push({items, tracks});
+    undo.push(() => items.style.removeProperty('--taxi-united-allocated-columns'));
+  }
+
   function visit(node) {
     const children = node.children.filter(child => elements.has(child.key));
     const items = containers.get(node.key);
@@ -77,6 +114,7 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed)
     }
     style(items, '--taxi-united-tracks', Array.from({length: tracks}, (_, index) =>
       flexible.has(index) ? 'minmax(max-content, 1fr)' : 'max-content').join(' '));
+    trackWidths(items, children);
   }
 
   visit(model);
@@ -86,5 +124,21 @@ export function alignUnitedRows(model, elements, containers, wrapped, collapsed)
       style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
     }
   }
-  return { owners, clear: () => { for (const restore of undo) restore(); } };
+  return {
+    owners,
+    allocateWidths() {
+      const widths = allocations.map(({items, tracks}) => {
+        const css = getComputedStyle(items);
+        const insets = ['paddingLeft','paddingRight','borderLeftWidth','borderRightWidth'].reduce((sum, key) => sum + parseFloat(css[key]), 0);
+        const available = Math.round(borderBoxSize(items, scale).width - insets - parseFloat(css.columnGap) * (tracks.length - 1));
+        return horizontalLaneWidths(available, tracks).map(value => `${value}px`).join(' ');
+      });
+      for (const [index, {items}] of allocations.entries()) {
+        if (items.style.getPropertyValue('--taxi-united-allocated-columns') !== widths[index]) {
+          items.style.setProperty('--taxi-united-allocated-columns', widths[index]);
+        }
+      }
+    },
+    clear: () => { for (const restore of undo) restore(); },
+  };
 }
