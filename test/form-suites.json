@@ -827,6 +827,7 @@
         "ESKA_FORM_TABLE_BARS": "native-table-initial-bars",
         "ESKA_FORM_TABLE_SEARCH_PIXELS": "native-table-search",
         "ESKA_FORM_TABLE_SEARCH_FIELDS": "native-table-search-fields",
+        "ESKA_FORM_TABLE_SEARCH_REFLOW": "native-table-search-reflow",
         "ESKA_FORM_TABLE_PICTURE_PIXELS": "native-standard-pictures",
         "ESKA_FORM_TABLE_MOVEMENT_PIXELS": "native-table-movement"
       },

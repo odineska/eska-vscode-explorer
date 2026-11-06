@@ -436,6 +436,15 @@ export async function createTablePixelsGallery(fixture) {
       }
     }
   }
+  const reflow=process.env.ESKA_FORM_TABLE_SEARCH_REFLOW;
+  if(reflow){
+    if(!isAbsolute(reflow))throw new Error('ESKA_FORM_TABLE_SEARCH_REFLOW must be absolute.');
+    for(const field of JSON.parse(await readFile(join(reflow,'metrics.json'),'utf8')).rows){
+      const row=reference.rows.find(row=>row.name===field.name);
+      if(!row||row.sourceSha256!==field.sourceSha256)throw new Error(`Missing matching table for native search reflow ${field.name}.`);
+      for(const [locale,regions]of Object.entries(field.locales))row.locales[locale].searchReflow=regions;
+    }
+  }
   const pictures=process.env.ESKA_FORM_TABLE_PICTURE_PIXELS;
   if(pictures){
     if(!isAbsolute(pictures))throw new Error('ESKA_FORM_TABLE_PICTURE_PIXELS must be absolute.');

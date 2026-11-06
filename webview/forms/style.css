@@ -349,7 +349,7 @@ button { cursor: default; }
 .taxi-table-search { display: flex; height: 23px; border: 1px solid #a0a0a0; border-radius: 2px; flex: 0 1 260px; min-width: 80px; }
 .taxi-table-search input { border: none; background: transparent; width: 0; min-width: 0; flex: 1; padding: 1px 2px; box-shadow: none; }
 .taxi-table-search input::placeholder { color: #ccc; opacity: 1; }
-.taxi-table-search > span { width: 21px; text-align: center; border-left: 1px solid #a0a0a0; line-height: 21px; font-size: 11px; }
+.taxi-table-search > span { width: 21px; text-align: center; border-left: 1px solid; border-left-color: inherit; line-height: 21px; font-size: 11px; }
 .taxi-table-search-controls { display: flex; gap: 14px; height: 21px; margin-bottom: 9px; align-items: stretch; }
 .taxi-table-search-controls > span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #d9d0a5; border-radius: 2px; background: #fff2c2; box-shadow: 0 1px #ddd; white-space: nowrap; }
 .taxi-table-search-controls i { font-style: normal; background: #8e8868; color: #fff2c2; border-radius: 50%; width: 12px; height: 12px; line-height: 11px; text-align: center; }
@@ -484,8 +484,9 @@ button { cursor: default; }
 /* Native pagination retains one lighter pixel where the first left edge starts. */
 .taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child::after { content: ''; position: absolute; width: 1px; height: 1px; left: -1px; top: 0; background: #acacac; }
 
-/* Native initial table search hints use their own LCD color and an integer top edge. */
+/* Native table search hints use their own LCD color and an integer top edge. */
 .taxi-preview[data-os=linux] .taxi-table-search { position: relative; align-self: flex-start; margin-top: 2px; color: #c8c8c8; background: #fff; }
+.taxi-preview[data-os=linux] .taxi-table-search--compact { border-color: #b3ac86; font-size: 11px; }
 .taxi-table-search--top { width: 100%; align-self: stretch; flex: 0 0 auto; margin: 0 0 8px; }
 .taxi-preview[data-os=linux] .taxi-table-search--top { align-self: stretch; margin-top: 0; }
 .taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field:has(> .taxi-table-search--top) { padding-top: 1px; }

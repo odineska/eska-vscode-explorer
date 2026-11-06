@@ -16,6 +16,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
   const [minimum, setMinimum] = createSignal({ width: 28, height: 28 });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
+  const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
     const units = number(state.model.root, 'Height');
     // Linux Designer adds 16 pixels per authored unit to the form's 52-pixel base.
@@ -73,7 +74,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
       height: surface.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
       outerWidth: surface.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
       outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
-    if (Object.keys(next).some(key => size()[key] !== next[key])) { setSize(next); schedule(); }
+    const previous = size();
+    // Compare the outer box so an internal scrollbar does not count as a viewport resize.
+    if (previous.outerWidth !== undefined && (previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight)) {
+      setViewportResized(true);
+    }
+    if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
       const children = [...items.children];
@@ -121,6 +127,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       return { width: allocated.width, height: authoredHeight() || allocated.height };
     },
     authoredHeight,
+    viewportResized,
     invalidate: () => { needsPreferred = true; schedule(); },
     preferred, minimumFor: node => minima().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
