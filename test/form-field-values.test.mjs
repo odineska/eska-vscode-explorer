@@ -8,8 +8,27 @@ test('native empty numeric and date inputs use a zero and the regional input mas
   assert.equal(fieldValue(field('number',{digits:9,fraction:2}),'en-US'),'0');
   assert.equal(fieldValue(field('date',{dateParts:'Date'}),'en-US'),'  /  /    ');
   assert.equal(fieldValue(field('date',{dateParts:'Date'}),'ru-RU'),'  .  .    ');
-  assert.equal(fieldValue(field('date',{dateParts:'DateTime'}),'en-US'),'  /  /       :  :   AM');
+  assert.equal(fieldValue(field('date',{dateParts:'DateTime'}),'en-US'),'  /  /       :  :  ');
   assert.equal(fieldValue(field('date',{dateParts:'DateTime'}),'ru-RU'),'  .  .       :  :  ');
+  assert.equal(fieldValue(field('date',{dateParts:'Time'}),'en-US'),'  :  :  ');
+});
+
+test('an authored edit mask can display 12 hours and keeps its separators and precision', () => {
+  const date = field('date', {dateParts:'DateTime'});
+  date.properties.push({
+    key:{namespace:FORM_NS,name:'EditFormat'},
+    value:{kind:'localized',items:[
+      {language:'en',content:'L=en_US; DF="MM/dd/yyyy hh:mm:ss tt"'},
+      {language:'ru',content:"ДФ='дд.ММ.гггг ЧЧ:мм'"},
+    ]},
+  });
+  assert.equal(fieldValue(date, 'ru-RU', 'en-US'), '  /  /       :  :   AM');
+  assert.equal(fieldValue(date, 'en-US', 'ru-RU'), '  .  .       :  ');
+  date.properties[0].key.name = 'Format';
+  assert.equal(fieldValue(date, 'en-US'), '  /  /       :  :  ', 'display format does not set the empty edit mask');
+  date.properties[0].key.name = 'EditFormat';
+  date.properties[0].value = {kind:'text',text:'DF="MM/dd/yyyy hh:mm"'};
+  assert.equal(fieldValue(date, 'en-US'), '  /  /       :  ', 'a mask without a day period does not add one');
 });
 
 test('native numeric and date widths include their automatic choice button', () => {

@@ -1,6 +1,5 @@
-import { localizedEntries } from '../../resources/properties/model.mjs';
 import { controlCaptionOptions } from './font-metrics.mjs';
-import { buttonMetrics, flag, fontLineMetrics, number, property, scalar, text } from './model.mjs';
+import { buttonMetrics, flag, fontLineMetrics, formatSettings, number, property, scalar } from './model.mjs';
 import { tumblerCaptionLayout, tumblerCaptionWidth } from './tumbler-caption.mjs';
 
 const captions = {
@@ -17,15 +16,7 @@ export function checkboxMode(node) {
 }
 
 export function checkboxLabels(node, locale, culture, scriptVariant) {
-  const value = property(node, 'EditFormat')?.value;
-  const items = value && localizedEntries(value);
-  const format = items ? text({ kind: 'literal', items }, locale) : value?.kind === 'text' ? value.text : '';
-  const settings = new Map();
-  // Quoted values can contain a separator or a doubled quote.
-  const parameters = /(?:^|;)\s*(\p{L}+)\s*=\s*(?:"((?:""|[^"])*)"|'((?:''|[^'])*)'|([^;]*))\s*(?=;|$)/gu;
-  for (const [, key, double, single, plain] of format.matchAll(parameters)) {
-    settings.set(key.trim().toUpperCase(), double?.replaceAll('""', '"') ?? single?.replaceAll("''", "'") ?? plain.trim());
-  }
+  const settings = formatSettings(property(node, 'EditFormat')?.value, locale);
   const language = settings.get('L') ?? settings.get('Л');
   const logicalLanguage = { russian: 'ru', english: 'en' }[scriptVariant] ?? culture;
   const russian = (language || logicalLanguage).toLowerCase().startsWith('ru');

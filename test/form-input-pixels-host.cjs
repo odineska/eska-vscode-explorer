@@ -61,6 +61,7 @@ exports.runGallery=async(options)=>{
     await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'input border form');
     const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
+    await options.checkFieldValues?.({ui, view, document, kind:form.kind});
     const dirtyTo=options.dirtyCases?.[form.kind]??(form.kind===options.dirtyFrom?options.dirtyTo:undefined);
     if(dirtyTo){
       const other=gallery.forms.find(item=>item.kind===dirtyTo),original=document.getText(),changed=await fs.readFile(other.path,'utf8');

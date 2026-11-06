@@ -189,13 +189,25 @@ export async function createFrameCornersGallery(fixture) {
   return {forms:forms.map(form=>({...form,expected:reference.rows.find(row=>row.name===form.kind)})),referencePixels:reference.referencePixels};
 }
 
-export async function createInputBordersGallery(fixture) {
+export async function createInputBordersGallery(fixture, { recordedTimeFormat = false } = {}) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native fixture directory.');
   const reference = JSON.parse(await readFile(join(input,'metrics.json'),'utf8')), forms = [];
   for (const row of reference.forms) {
     const source = row.file.includes('/') ? join(input,'..',row.file) : join(input,row.file);
     const [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
+    if (recordedTimeFormat) {
+      // These Linux pixel references were recorded with the en-US 12-hour mask.
+      const xml = await readFile(form.path, 'utf8');
+      const authored = xml.replace(/<InputField name="([^"]+)"[^>]*>/gu, (opening, name) => {
+        const type = row.fields.find(field => field.name === name)?.type;
+        if (type?.kind !== 'date' || type.dateParts === 'Date') return opening;
+        const date = type.dateParts === 'Time' ? '' : 'MM/dd/yyyy ';
+        return opening + '<EditFormat><v8:item><v8:lang>en</v8:lang><v8:content>L=en_US; DF="' + date
+          + 'hh:mm:ss tt"</v8:content></v8:item></EditFormat>';
+      });
+      if (authored !== xml) await writeFile(form.path, authored);
+    }
     forms.push({...form,kind:row.name,expected:row});
   }
   return {forms};

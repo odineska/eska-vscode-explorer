@@ -1,3 +1,6 @@
+import { localizedEntries } from '../../resources/properties/model.mjs';
+import { emptyDateMask } from './date-mask.mjs';
+
 export const FORM_NS = 'http://v8.1c.ru/8.3/xcf/logform';
 export function key(node) { const id = node?.identity; return id ? `${id.source}:${id.part}:${id.key.kind === 'root' ? 'root' : id.key.value}` : ''; }
 function prepareFields(fields) {
@@ -38,6 +41,17 @@ export function text(value, locale, strings) {
   if (value.kind === 'standard') return strings?.[value.key] ?? value.key.split('.').at(-1);
   const language = locale.toLowerCase(), base = language.split('-')[0];
   return (value.items.find(item => item.language.toLowerCase() === language) ?? value.items.find(item => item.language.toLowerCase() === base) ?? value.items[0])?.content ?? '';
+}
+export function formatSettings(value, locale) {
+  const items = value && localizedEntries(value);
+  const format = items ? text({ kind: 'literal', items }, locale) : value?.kind === 'text' ? value.text : '';
+  const settings = new Map();
+  // Quoted values can contain a separator or a doubled quote.
+  const parameters = /(?:^|;)\s*(\p{L}+)\s*=\s*(?:"((?:""|[^"])*)"|'((?:''|[^'])*)'|([^;]*))\s*(?=;|$)/gu;
+  for (const [, key, double, single, plain] of format.matchAll(parameters)) {
+    settings.set(key.toUpperCase(), double?.replaceAll('""', '"') ?? single?.replaceAll("''", "'") ?? plain.trim());
+  }
+  return settings;
 }
 export function caption(node, state) {
   const view = node?.presentation;
@@ -228,15 +242,12 @@ export function fieldWidth(node, os) {
   if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
   return Math.round(20 * unit + 1);
 }
-export function fieldValue(node, culture) {
+export function fieldValue(node, culture, locale = culture) {
   const type = node.presentation.valueType;
   if (type.kind === 'number') return '0';
   if (type.kind === 'date') {
-    const sample = new Date(2001, 10, 22, 1, 2, 3);
-    const empty = part => ['month', 'day', 'hour', 'minute', 'second'].includes(part.type) ? '  ' : part.type === 'year' ? '    ' : part.value.replaceAll('\u202f', ' ');
-    const date = new Intl.DateTimeFormat(culture, { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(sample).map(empty).join('');
-    const time = new Intl.DateTimeFormat(culture, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(sample).map(empty).join('');
-    return type.dateParts === 'Time' ? time : type.dateParts === 'Date' ? date : `${date} ${time}`;
+    const format = property(node, 'EditFormat')?.value;
+    return emptyDateMask(type.dateParts, culture, format && formatSettings(format, locale));
   }
   return '';
 }
