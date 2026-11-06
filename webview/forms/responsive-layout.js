@@ -98,8 +98,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
       outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
     const previous = size();
     const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
-    // A scrollbar from the previous wrapped height must not prevent the title from unwrapping.
-    if ((refresh || resized) && minimumCaptions.size) next.width = next.outerWidth;
+    const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
+    // Recheck fit against the resized area before scrollbars from the old arrangement settle.
+    const recheckGroups = resized && conditionalGroups.length > 0;
+    const recheckCaptions = (refresh || resized) && minimumCaptions.size > 0;
+    if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
     rootCommands?.allocate();
@@ -112,7 +115,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       schedule();
     }
     const wrap = new Set();
-    for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
+    for (const items of conditionalGroups) {
       const children = [...items.children];
       const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
       const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue('--taxi-preferred-width') || '0'), 0)

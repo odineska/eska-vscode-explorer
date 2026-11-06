@@ -147,6 +147,29 @@ exports.run = async () => {
             assert.notEqual(noGrowth, original);
             await replace(noGrowth);
             results.push(await pose(floating, keys, { ...narrow, name:'automatic-width group shrinks without growing' }));
+            const conditional = noGrowth.replace('<Group>Horizontal</Group>', '<Group>HorizontalIfPossible</Group>');
+            assert.notEqual(conditional, noGrowth);
+            await replace(conditional);
+            await floating.rendered();
+            await floating.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+            const preferred = await floating.evaluate(`(() => {
+              const css = getComputedStyle(document.querySelector('.taxi-form-frame'));
+              return ['width','height'].map(axis => parseFloat(css.getPropertyValue('--taxi-form-preferred-' + axis)));
+            })()`);
+            const [width, height] = preferred;
+            await allocateFormViewport(floating, [Math.floor(width * .67), height]);
+            await until(() => floating.evaluate(`(() => {
+              const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
+              const area = document.querySelector('.preview-scroll');
+              return row.classList.contains('taxi-items--vertical') && area.clientHeight < area.scrollHeight;
+            })()`), 'a wrapped row makes the form scroll vertically');
+            await allocateFormViewport(floating, preferred);
+            await until(() => floating.evaluate(`(() => {
+              const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
+              const area = document.querySelector('.preview-scroll');
+              return row.classList.contains('taxi-items--horizontal') && area.clientHeight === area.scrollHeight;
+            })()`), 'the row returns to horizontal at its preferred size');
+            results.push({label:'conditional-group-restores-horizontal-at-preferred-width', frame:preferred});
             await replace(original);
             await pose(floating, keys, wide);
           });
