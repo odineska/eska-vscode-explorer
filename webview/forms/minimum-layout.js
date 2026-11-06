@@ -1,25 +1,18 @@
-import { borderBoxSize } from './layout-box.mjs';
-
-const pixels = value => parseFloat(value) || 0;
+import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
 export function minimumFormLayout(root, scale = 1) {
   const minima = new Map();
   const size = element => borderBoxSize(element, scale);
-  const extra = (element, type) => {
+  const margins = element => {
     const css = getComputedStyle(element);
-    return { width: pixels(css[`${type}Left`]) + pixels(css[`${type}Right`]),
-      height: pixels(css[`${type}Top`]) + pixels(css[`${type}Bottom`]) };
+    return { width: pixels(css.marginLeft) + pixels(css.marginRight), height: pixels(css.marginTop) + pixels(css.marginBottom) };
   };
   const marginBox = element => {
-    const value = size(element), margin = extra(element, 'margin');
+    const value = size(element), margin = margins(element);
     return { width: value.width + margin.width, height: value.height + margin.height };
   };
-  const insets = element => {
-    const css = getComputedStyle(element), padding = extra(element, 'padding');
-    return { width: padding.width + pixels(css.borderLeftWidth) + pixels(css.borderRightWidth),
-      height: padding.height + pixels(css.borderTopWidth) + pixels(css.borderBottomWidth) };
-  };
+  const insets = element => boxInsets(getComputedStyle(element));
   const add = (value, spacing) => ({ width: value.width + spacing.width, height: value.height + spacing.height });
   function items(element) {
     if (!element) return { width: 0, height: 0 };
@@ -60,14 +53,14 @@ export function minimumFormLayout(root, scale = 1) {
       value = items(group.querySelector(':scope > .taxi-items'));
       const title = group.querySelector(':scope > .taxi-group-title');
       if (title) {
-        const box = marginBox(title), range = document.createRange(); range.selectNodeContents(title);
+        const box = marginBox(title);
         if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, box.height);
         else value.height += box.height;
-        value.width = Math.max(value.width, range.getBoundingClientRect().width / scale);
+        value.width = Math.max(value.width, textWidth(title, scale));
       }
       value = add(value, insets(group));
     } else if (pages) {
-      const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), extra(page, 'margin'))));
+      const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), margins(page))));
       value = { width: Math.max(0, ...children.map(value => value.width)), height: Math.max(0, ...children.map(value => value.height)) };
       const tabs = pages.querySelector(':scope > .taxi-tabs');
       if (tabs) {

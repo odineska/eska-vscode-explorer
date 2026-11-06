@@ -6,11 +6,11 @@
 
 [Полное руководство на сайте](https://odineska.github.io/eska/docs/) ·
 [Практический пример с БСП](https://odineska.github.io/eska/docs/#practice) ·
-[Справочник документации](docs/README.md)
+[Справочник документации](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/README.md)
 
 Просмотр управляемых форм 1С 8.3.27 на SolidJS доступен как **beta**:
 дерево, свойства, живое обновление XML и отдельное окно изображения.
-[Возможности и ограничения beta](docs/form-preview.md). Визуальная приёмка
+[Возможности и ограничения beta](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/form-preview.md). Визуальная приёмка
 продолжается; выполнение BSL и графическое редактирование не входят в просмотр.
 
 ## Возможности
@@ -24,7 +24,7 @@
   конструктор по образцу 1С с темой VS Code, пакетами, соединениями, итогами и UNION.
 - Просмотр управляемых форм на SolidJS: дерево, свойства, реквизиты и команды,
   живое обновление XML и отдельное окно предпросмотра. Визуальная приёмка
-  полного профиля 8.3.27 ещё выполняется. [Возможности и ограничения](docs/form-preview.md).
+  полного профиля 8.3.27 ещё выполняется. [Возможности и ограничения](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/form-preview.md).
 - BSL Analyzer: completion, hover, переходы, диагностика, подсказки параметров,
   безопасные правки; точное выравнивание многострочных аргументов.
 - Форматирование BSL и запросов через `eska-fmt`, со стилем из `eska.toml`.
@@ -62,27 +62,27 @@
 
 Описание относится к текущим исходникам. Возможности согласуются по Metadata API:
 минимум для дерева — 1.12; текущий API — 1.41. Совместимость старого backend
-не означает доступность всех новых функций. [Контракты](docs/cli-management.md).
+не означает доступность всех новых функций. [Контракты](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md).
 
 Библиотеки, группы подпроектов, подсказки и активность прошли
-[повторную native-приёмку Windows в ru/en](docs/windows-review-2026-10-31.md)
+[повторную native-приёмку Windows в ru/en](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/windows-review-2026-10-31.md)
 на VS Code 1.144 и bsl-analyzer 0.4.2. macOS и VSCodium для активности
 workspace требуют отдельной native-приёмки.
 
 ## Документация
 
-[Дерево и активность](docs/usage.md) · [Запросы и конструктор](docs/query-editing.md) ·
-[BSL и выравнивание подсказок](docs/language-service.md) ·
-[Компоненты и обновление](docs/component-setup.md) · [Поддержка](docs/support-policy.md).
+[Дерево и активность](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md) · [Запросы и конструктор](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md) ·
+[BSL и выравнивание подсказок](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) ·
+[Компоненты и обновление](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Поддержка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md).
 
 Все настройки и команды перечислены в
 [полном руководстве](https://odineska.github.io/eska/docs/#settings).
 Редактирование форм, СКД, отладка и запуск приложения не заменяются Explorer;
 изменения свойств ограничены поддержанными существующими узлами Designer XML.
 
-[Разработка и проверки](docs/development.md) · [Упаковка VSIX](docs/packaging.md) ·
-[Публикация](docs/publishing.md) · [Релизы](docs/releases.md) ·
-[Apache License 2.0](LICENSE).
+[Разработка и проверки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/development.md) · [Упаковка VSIX](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) ·
+[Публикация](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/publishing.md) · [Релизы](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/releases.md) ·
+[Apache License 2.0](https://github.com/odineska/eska-vscode-explorer/blob/main/LICENSE).
 
 ## Эталоны форм в тестах
 

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
+import { parsePreviewNavigation } from '../out/form-preview/navigation.js';
 
 const source = 'a'.repeat(64);
 function fixture() {
@@ -20,6 +21,27 @@ function fixture() {
     status: 'ready', lastError: null, dependencies: [{ id: source, root: { encoding: 'utf-8', value: '/project/src' }, path: { encoding: 'utf-8', value: 'Form.xml' }, snapshot: source, version: null, member: null, role: 'form' }],
     model: { importantColor: {kind:"role",value:"ImportantColor"}, root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
+
+test('both preview windows validate the same navigation snapshot', () => {
+  const navigation = { pages: { 'source:pages': 'source:page' }, collapsed: { 'source:group': true } };
+  const parsed = parsePreviewNavigation(navigation);
+  assert.deepEqual(parsed, navigation);
+  assert.notEqual(parsed.pages, navigation.pages);
+  assert.equal(parsePreviewNavigation({ ...navigation, pages: [] }), undefined);
+  assert.equal(parsePreviewNavigation({ ...navigation, collapsed: { 'source:group': 'true' } }), undefined);
+  assert.equal(parsePreviewNavigation({ ...navigation, pages: { invalid: 'source:page' } }), undefined);
+});
+
+test('optional table column appearance validates color and font values', () => {
+  const input = fixture(), presentation = input.model.root.presentation;
+  const color = {kind: 'web', value: 'LightPink'};
+  presentation.tableColumnAppearance = {footerBackground: color, footerFont: {...presentation.font, points: 14}};
+  assert.deepEqual(parseFormSnapshot(input).model.root.presentation.tableColumnAppearance, presentation.tableColumnAppearance);
+  for (const invalid of [{footerForeground: null}, {footerFont: {points: 14}}, null]) {
+    presentation.tableColumnAppearance = invalid;
+    assert.throws(() => parseFormSnapshot(input));
+  }
+});
 
 test('form identities preserve signed XML i64 boundaries without JavaScript rounding', () => {
   for (const value of ['-9223372036854775808', '9223372036854775807', '-1', '0']) {

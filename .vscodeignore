@@ -4,7 +4,9 @@
 !LICENSE
 !README.md
 !CHANGELOG.md
-!out/*.js
+!out/extension.js
+!out/query-designer.js
+!out/form-preview.js
 !out/THIRD-PARTY-NOTICES.txt
 !resources/analyzer-notices/*
 !resources/language/*
@@ -14,9 +16,8 @@
 !resources/properties/*.mjs
 !resources/rename/*.css
 !resources/rename/*.js
-!docs/*.md
-!docs/images/*.png
-!docs/measurements/*.json
+!docs/setup.md
+!docs/setup.ru.md
 !resources/icon.png
 !resources/icons/support/LICENSE
 !resources/icons/support/NOTICE.md

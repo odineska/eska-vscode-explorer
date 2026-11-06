@@ -1,15 +1,14 @@
 import { fieldWidth, number, property, scalar } from './model.mjs';
-import { stretches, stretchWeight } from './layout-model.mjs';
+import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing } from './layout-model.mjs';
+import { pixels, textWidth } from './layout-box.mjs';
 
-const pixels = value => parseFloat(value) || 0;
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
 function ordinaryRow(node) {
-  return node.kind === 'UsualGroup' && node.presentation.grouping === 'Horizontal'
+  return ordinaryGroup(node) && node.presentation.grouping === 'Horizontal'
     && typeof node.presentation.united === 'boolean'
-    && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'))
     && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'))
-    && scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto'
+    && automaticHorizontalSpacing(node)
     && number(node, 'Width') <= 0 && !property(node, 'BackColor');
 }
 
@@ -33,17 +32,10 @@ function intrinsic(entry, gap, labelWidth) {
 }
 
 /** Lay out the shared columns of horizontal groups without changing the Solid owners. */
-export function alignUnitedColumns(model, elements, containers, os, collapsed, scale) {
-  const scopes = [], undo = [];
-  const mark = (element, attribute) => {
-    element.setAttribute(attribute, '');
-    undo.push(() => element.removeAttribute(attribute));
-  };
-  const style = (element, name, value) => {
-    element.style.setProperty(name, `${value}px`);
-    undo.push(() => element.style.removeProperty(name));
-  };
-  const visible = node => node.children.filter(child => elements.has(child.key));
+export function alignUnitedColumns(model, { targets, alignment, os, collapsed, scale }) {
+  const { elements, containers, children: mountedChildren } = targets;
+  const { mark, style } = alignment;
+  const scopes = [];
 
   function entryFor(node) {
     const element = elements.get(node.key);
@@ -56,20 +48,18 @@ export function alignUnitedColumns(model, elements, containers, os, collapsed, s
     if (!ordinaryRow(node)) return;
     const items = containers.get(node.key), group = items?.parentElement;
     if (!items) return;
-    const children = visible(node).map(entryFor);
+    const children = mountedChildren(node).map(entryFor);
     if (!children.length || children.some(child => !child)) return;
     const titleElement = group.querySelector(':scope > .taxi-group-title');
     if (!titleElement) return { kind: 'group', node, element, items, group, children };
     // The title of an exposed group occupies a column before its elements.
     if (node.presentation.united) return;
-    const range = document.createRange();
-    range.selectNodeContents(titleElement);
-    const title = { kind: 'title', element: titleElement, width: range.getBoundingClientRect().width / scale };
+    const title = { kind: 'title', element: titleElement, width: textWidth(titleElement, scale) };
     return { kind: 'group', node, element, items, group, children, title };
   }
 
   function visit(node) {
-    const children = visible(node), items = containers.get(node.key);
+    const children = mountedChildren(node), items = containers.get(node.key);
     if (items && node.presentation.grouping === 'Vertical' && children.length > 1 && children.every(ordinaryRow)) {
       const lanes = children.map(entryFor);
       if (lanes.every(Boolean)) {
@@ -84,16 +74,16 @@ export function alignUnitedColumns(model, elements, containers, os, collapsed, s
 
   function setCell(entry, width) {
     mark(entry.element, 'data-united-horizontal-cell');
-    style(entry.element, '--taxi-united-cell-width', width);
+    style(entry.element, '--taxi-united-cell-width', `${width}px`);
   }
   function setLane(entry, gap) {
     mark(entry.items, 'data-united-horizontal-lane');
-    style(entry.items, '--taxi-united-cell-gap', gap);
+    style(entry.items, '--taxi-united-cell-gap', `${gap}px`);
   }
   function placeCell(entry, width, labelWidth, gap) {
     setCell(entry, width);
     if (entry.kind === 'field') {
-      style(entry.element, '--taxi-united-cell-label-width', labelWidth ?? entry.labelWidth);
+      style(entry.element, '--taxi-united-cell-label-width', `${labelWidth ?? entry.labelWidth}px`);
       return;
     }
     setLane(entry, gap);
@@ -120,8 +110,8 @@ export function alignUnitedColumns(model, elements, containers, os, collapsed, s
     let last = first;
     if (entry.title) {
       mark(entry.group, 'data-united-horizontal-title');
-      style(entry.group, '--taxi-united-cell-gap', gap);
-      style(entry.title.element, '--taxi-united-title-width', tracks[last++].width);
+      style(entry.group, '--taxi-united-cell-gap', `${gap}px`);
+      style(entry.title.element, '--taxi-united-title-width', `${tracks[last++].width}px`);
     }
     for (const child of entry.children) last = placeLane(child, last, tracks, gap);
     setCell(entry, total(tracks.slice(first, last).map(track => track.width)) + gap * (last - first - 1));
@@ -138,5 +128,4 @@ export function alignUnitedColumns(model, elements, containers, os, collapsed, s
     });
     for (const lane of lanes) placeLane(lane, 0, tracks, gap);
   }
-  return () => { for (const restore of undo) restore(); };
 }

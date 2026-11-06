@@ -40,29 +40,37 @@ export function NativeLabel(props) {
         const style = getComputedStyle(label);
         const tab = props.placement === 'tab', link = props.placement === 'buttonLink', title = props.placement === 'formTitle', input = props.placement === 'input';
         const search=props.placement==='tableSearch',tableHeader = props.placement === 'tableHeader', tableFooter = props.placement === 'tableFooter', table = tableHeader || tableFooter;
-        if (input ? !['left','start','right','end'].includes(style.textAlign) : !tab && !link && !['left', 'start'].includes(style.textAlign)) throw new Error('font-raster-alignment');
+        const alignment = style.textAlign;
+        const alignedLeft = ['left', 'start'].includes(alignment);
+        const alignedRight = ['right', 'end'].includes(alignment);
+        if (!tab && !link && !alignedLeft && !((input || table) && alignedRight) && !(table && alignment === 'center')) throw new Error('font-raster-alignment');
         const height = parseFloat(style.height), context = canvas.getContext('2d');
         if (!Number.isFinite(height) || !context) throw new Error('font-raster-layout');
         canvas.width = raster.width; canvas.height = raster.height;
         let baseline = tab || title || input || link ? Math.round((height + metrics.ascent - metrics.descent) / 2) - (tab ? 1 : 0)
           : (height + metrics.ascent - metrics.descent) / 2;
         if(input)baseline=inputTextBaseline(height,value);
-        if(tableHeader)baseline=Math.floor((30+metrics.ascent-metrics.descent)/2)-1;
+        // Adjacent captions keep their own baseline when another column enlarges the band.
+        if(table)baseline=metrics.ascent+(tableHeader?6:7);
         if(search||props.placement==='radioChoice')baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
-        if(tableFooter)baseline=Math.floor((height+metrics.ascent-metrics.descent)/2);
         if(fieldFrame){
           const scale=parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom)||1;
           const top=(label.getBoundingClientRect().top-fieldFrame.getBoundingClientRect().top)/scale;
           // The row may allocate half a CSS pixel; snap the baseline in form coordinates.
           baseline=Math.floor(top+baseline+1e-6)-top;
         }
-        const left = tab || link ? Math.round((parseFloat(style.width) - raster.advance) / 2) - parseFloat(style.borderLeftWidth)
-          : search ? 2 : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (['left','start'].includes(style.textAlign) ? 3 : parseFloat(style.width) - 3 - raster.advance) : 0;
+        const width = parseFloat(style.width), borderLeft = parseFloat(style.borderLeftWidth);
+        let left = tab || link ? Math.round((width - raster.advance) / 2) - borderLeft
+          : search ? 2 : title || table ? parseFloat(style.paddingLeft) : input ? label.offsetLeft + (alignedLeft ? 3 : width - 3 - raster.advance) : 0;
+        if(table && !alignedLeft){
+          left = (alignedRight ? width - raster.advance - (tableHeader ? 9 : 8)
+            : Math.round((width - raster.advance) / 2)) - borderLeft;
+        }
         const canvasLeft=left+raster.originX,canvasTop=baseline-metrics.ascent+raster.originY+(input?label.offsetTop:0)-(tab||link||table||search?parseFloat(style.borderTopWidth):0);
         canvas.style.left=`${canvasLeft}px`;canvas.style.top=`${canvasTop}px`;
         let clipping='';
         if(input){
-          const width=parseFloat(style.width),overflowsHeight=metrics.pixels>height-6,overflowsWidth=raster.advance>width-6;
+          const overflowsHeight=metrics.pixels>height-6,overflowsWidth=raster.advance>width-6;
           // Overflow uses the native text viewport instead of the LCD bitmap's overhang.
           const clipLeft=Math.max(label.offsetLeft+3,overflowsHeight?left:-Infinity);
           const clipRight=Math.min(label.offsetLeft+width,overflowsHeight?left+raster.advance:Infinity,overflowsWidth?label.offsetLeft+width-(props.mask?3:4):Infinity);

@@ -5,7 +5,7 @@
 Установите VSIX через **Extensions → Install from VSIX…**. Идентификатор —
 `1c-tooling.eska-explorer`, минимальная версия VS Code API — **1.109.0**.
 Репозитории и опубликованные файлы проекта находятся в организации `odineska`.
-[Упаковка](packaging.md) · [Установка ESKA](https://odineska.github.io/eska/).
+[Упаковка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [Установка ESKA](https://odineska.github.io/eska/).
 
 По умолчанию запускается `eska-project serve --stdio`. Для дерева нужны только
 Explorer и `eska-project`; Git, полная ESKA, платформа и Analyzer необязательны.
@@ -13,7 +13,7 @@ Explorer и `eska-project`; Git, полная ESKA, платформа и Analyz
 `eska-fmt`. Команда **Подготовить project, форматтер и языковой компонент**
 проверяет их по очереди и предлагает установить отсутствующие инструменты.
 Состав доступных архивов проверяется в выбранном релизе, архитектура не подменяется.
-[Установка и обновление](component-setup.md).
+[Установка и обновление](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md).
 
 Для сборки из checkout ESKA используйте `cargo build -p eska-project` и задайте
 абсолютный путь к полученному executable. Доступны три независимых настройки:
@@ -60,7 +60,7 @@ eska-project --project-dir ./my-project validate --format json
 BSL/SDBL-подсветка доступна без Analyzer. При открытии BSL запускается
 собственный языковой клиент. `eska.explorer.languageFeatures = false` отключает
 его, сохраняя дерево. При конфликте с другим BSL-расширением сначала выберите,
-какой клиент использовать. [Язык, config и lease](language-service.md).
+какой клиент использовать. [Язык, config и lease](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md).
 
 Стиль задаётся в `[format]` файла `eska.toml`; отступы редактора его не заменяют.
 Используйте стандартные Format Document / Format Selection с ESKA как formatter.
@@ -72,7 +72,7 @@ BSL/SDBL-подсветка доступна без Analyzer. При откры�
 связанные подписи и отступы используют шрифт редактора. Независимые однострочные
 подсказки сохраняют обычный вид. Нужен `editor.inlayHints.enabled = "on"`;
 conditional modes, explicit accessibility и actionable hints сохраняют native-вид.
-[Границы выравнивания](language-service.md#многострочные-аргументы-и-подсказки-параметров).
+[Границы выравнивания](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md#многострочные-аргументы-и-подсказки-параметров).
 
 ## Проверить совместимость и активность
 
@@ -80,12 +80,12 @@ conditional modes, explicit accessibility и actionable hints сохраняют
 Запросы/сессии, BSL-литералы, расширенный конструктор, форматирование,
 выравнивание и активность требуют соответствующих capabilities.
 Наличие старого дерева не гарантирует новые операции.
-[Матрица](cli-management.md#версии-пользовательских-возможностей).
+[Матрица](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md#версии-пользовательских-возможностей).
 
 В workspace можно отключать подпроекты. Индексы и watchers освобождаются,
 но общий выбранный LSP остаётся, пока есть активный потребитель. Отключённая зависимость
 сохраняется в семантическом контексте, пока нужна активному потребителю. Фильтр «показывать/скрывать
-отключённые» меняет только дерево. [Подробности](usage.md#активность-подпроектов).
+отключённые» меняет только дерево. [Подробности](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#активность-подпроектов).
 
 ## Без сети и диагностика
 
@@ -97,4 +97,4 @@ conditional modes, explicit accessibility и actionable hints сохраняют
 компоненты. Для отдельного действия используйте **Управление компонентами**.
 При ошибке откройте журнал подключения и Output языкового сервиса.
 Legacy `eska ide` выбирается только явно через `backend = "legacy"` и путь `eska`.
-[Обновление, receipt и recovery](component-setup.md) · [Выбор backend](cli-management.md).
+[Обновление, receipt и recovery](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Выбор backend](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md).

@@ -95,8 +95,21 @@ exports.run=async()=>{
   mainTab.fixedFormArea=true;
   async function sample(expected,label,detached=false){
    await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')&&!document.querySelector('[data-native-label=pending]')&&!document.querySelector('[data-native-caption=pending]')"),'table pixel rasters');const restore=view.selected?.key.value==='1';await ui.evaluate("document.querySelector('.taxi-form-title').click()");await until(()=>view.selected?.key.kind==='root','table pixel root selected');await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
-   const actual=await ui.evaluate("(()=>{const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{frame:rect(document.querySelector('.taxi-form-frame')),control:rect(document.querySelector('.taxi-table-scroll')),headers:[...document.querySelectorAll('.taxi-table-header-cell')].map(n=>({text:n.textContent,height:n.getBoundingClientRect().height,color:getComputedStyle(n).color,font:getComputedStyle(n).fontSize,status:n.querySelector('[data-native-label]')?.dataset.nativeLabel}))}})()");
-   const geometryMatches=actual.control.width===expected.nativeRegion[2]&&actual.control.height===expected.nativeRegion[3]-(expected.extraBottom??0);assert.deepEqual(view.snapshot.model.diagnostics.appearance,[]);assert.deepEqual(view.snapshot.model.diagnostics.composition,[]);
+   const actual=await ui.evaluate(`(()=>{
+    const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};
+    const control=rect(document.querySelector('.taxi-table-scroll'));
+    const relative=selector=>{
+      const node=document.querySelector(selector);
+      if(!node)return null;
+      const r=rect(node);return [r.x-control.x,r.y-control.y,r.width,r.height];
+    };
+    return {frame:rect(document.querySelector('.taxi-form-frame')),control,
+      tableBands:{header:relative('.taxi-table-head'),footer:relative('.taxi-table-footer')},
+      headers:[...document.querySelectorAll('.taxi-table-header-cell')].map(n=>({text:n.textContent,height:n.getBoundingClientRect().height,color:getComputedStyle(n).color,font:getComputedStyle(n).fontSize,status:n.querySelector('[data-native-label]')?.dataset.nativeLabel}))};
+   })()`);
+   const geometryMatches=actual.control.width===expected.nativeRegion[2]&&actual.control.height===expected.nativeRegion[3]-(expected.extraBottom??0)
+     && (!expected.tableBands || Object.keys(expected.tableBands).every(band=>actual.tableBands[band]?.every((value,index)=>value===expected.tableBands[band][index])));
+   assert.deepEqual(view.snapshot.model.diagnostics.appearance,[]);assert.deepEqual(view.snapshot.model.diagnostics.composition,[]);
    const target=detached?await ui.nativeWindow({detached:true}):undefined;if(target)assert.equal(target.url,'about:blank');await ui.parkPointer(target?.targetId);let pixels,captureAttempts=0;const filename='table-pixels-'+label+'-'+locale+'.png';
    await until(async()=>{captureAttempts++;const png=target?await ui.captureTarget(target.targetId,filename,true):await ui.screenshot(filename,true);pixels=await ui.evaluate(`(async()=>{
     if(devicePixelRatio!==1)throw new Error('table-pixel-reference-dpi');const image=await createImageBitmap(new Blob([Uint8Array.from(atob(${JSON.stringify(png)}),c=>c.charCodeAt(0))],{type:'image/png'})),canvas=new OffscreenCanvas(image.width,image.height),context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();const data=context.getImageData(0,0,canvas.width,canvas.height).data,blue=new Set(),frames=[];
@@ -104,7 +117,9 @@ exports.run=async()=>{
     while(blue.size){const seed=blue.values().next().value,stack=[seed];blue.delete(seed);let left=canvas.width,top=canvas.height,right=0,bottom=0;while(stack.length){const p=stack.pop(),x=p%canvas.width,y=Math.floor(p/canvas.width);left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);for(const next of[x?p-1:-1,x+1<canvas.width?p+1:-1,y?p-canvas.width:-1,y+1<canvas.height?p+canvas.width:-1])if(blue.delete(next))stack.push(next)}if(right-left+1===${actual.frame.width}-2&&bottom-top+1===${actual.frame.height}-2)frames.push({x:left-1,y:top-1})}
     if(frames.length!==1)return{waitingForFrame:true,frames};const origin=frames[0],region=[origin.x+${actual.control.x-actual.frame.x},origin.y+${actual.control.y-actual.frame.y},${actual.control.width},${actual.control.height+(expected.extraBottom??0)}];if(region.some(v=>!Number.isInteger(v)))throw new Error('table-pixel-grid-not-aligned '+JSON.stringify(region));async function capture(region){const[x,y,w,h]=region,rgb=new Uint8Array(w*h*3);if(x<0||y<0||x+w>canvas.width||y+h>canvas.height)throw new Error('table-region-outside-capture');let n=0;for(let b=0;b<h;b++)for(let a=0;a<w;a++){const p=((y+b)*canvas.width+x+a)*4;for(let c=0;c<3;c++)rgb[n++]=data[p+c]}const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',rgb));return{region,rgbSha256:[...hash].map(v=>v.toString(16).padStart(2,'0')).join(''),pixels:w*h}}const additionalRegions=[];for(const expected of ${JSON.stringify(expected.additionalRegions??[])}){const region=[origin.x+${actual.control.x-actual.frame.x}+expected.offset[0],origin.y+${actual.control.y-actual.frame.y}+expected.offset[1],expected.width,expected.height],measured=await capture(region);additionalRegions.push({name:expected.name,...measured,expectedRgbSha256:expected.rgbSha256,passed:measured.rgbSha256===expected.rgbSha256})}return{origin,...await capture(region),additionalRegions}
    })()`);return !pixels.waitingForFrame},'complete table grid captured');
-   const passed=geometryMatches&&pixels.rgbSha256===expected.rgbSha256&&pixels.additionalRegions.every(region=>region.passed),result={label,passed,geometryMatches,...actual,...pixels,expectedRgbSha256:expected.rgbSha256,captureAttempts,wholeGridControlCompared:true,extraBottom:expected.extraBottom??0};results.push(result);if(!passed)failures.push(result);
+   const pixelMatches=pixels.rgbSha256===expected.rgbSha256&&pixels.additionalRegions.every(region=>region.passed);
+   const comparison=expected.comparison??'pixels';
+   const passed=geometryMatches&&(comparison==='geometry'||pixelMatches),result={label,passed,geometryMatches,pixelMatches,comparison,detached,...actual,...pixels,expectedRgbSha256:expected.rgbSha256,captureAttempts,wholeGridControlCompared:true,extraBottom:expected.extraBottom??0};results.push(result);if(!passed)failures.push(result);
    if(restore){await ui.evaluate("document.querySelector('.taxi-table-empty').click()");await until(()=>view.selected?.key.value==='1','table identity restored after capture');}return passed;
   }
   const passed=await sample(reference(form),form.kind);
@@ -163,8 +178,10 @@ exports.run=async()=>{
    const hit=await ui.evaluate("(()=>{const n=document.querySelector('.taxi-table-search input'),r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+10,r.y+r.height/2);return n===hit})()");assert.equal(hit,true,'LCD placeholder leaves the input hit-testable');
    await ui.evaluate("document.querySelector('.taxi-table-search input').click()");await until(()=>view.selected?.key.value==='8','search control selects its source identity');assert.equal(await ui.evaluate("document.querySelector('.taxi-table-search input').value"),'');results.at(-1).searchPlaceholderHitTestable=true;
   }
-  if(passed&&['Default','DynamicList'].includes(form.kind)){
-   const dynamic=form.kind==='DynamicList',label=value=>dynamic?'dynamic-'+value:value,other=forms.find(f=>f.kind===(dynamic?'MetadataTable':'GridFooter')),grid=await fs.readFile(other.path,'utf8');await ui.evaluate("document.querySelector('.taxi-table-empty').click();globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await until(()=>view.selected?.key.value==='1','table selected before dirty XML');const identity=view.selected;
+  if(passed&&['Default','DynamicList','BandsDirect'].includes(form.kind)){
+   const dynamic=form.kind==='DynamicList',bands=form.kind==='BandsDirect';
+   const label=value=>dynamic?'dynamic-'+value:bands?'styled-'+value:value;
+   const other=forms.find(f=>f.kind===(dynamic?'MetadataTable':bands?'BandsLarge':'GridFooter')),grid=await fs.readFile(other.path,'utf8');await ui.evaluate("document.querySelector('.taxi-table-empty').click();globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");await until(()=>view.selected?.key.value==='1','table selected before dirty XML');const identity=view.selected;
    const change=async text=>{await replace(document,text);await until(()=>view.phase==='ready'&&!view.running&&!view.timer&&view.snapshot.dependencies.some(d=>d.role==='form'&&d.version===String(document.version)),'dirty table revision');assert.deepEqual(view.selected,identity);assert.equal(await ui.evaluate("globalThis.__tableGrid===document.querySelector('.taxi-table-scroll')"),true);};
    await change(grid);
    await sample(reference(other),label('dirty-footer'));
@@ -204,5 +221,5 @@ exports.run=async()=>{
   await ui.focusWorkbench();ui.close();main.panel.dispose();await until(()=>service.views.size===0,'table pixel session closed');await Promise.all([...service.closing]);
  }
  assert.deepEqual(await Promise.all(forms.map(f=>fs.readFile(f.path))),before);await explorer.shutdown();if(failures.length){await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR??fixture.root,'table-pixel-failures-'+locale+'.json'),JSON.stringify(failures,null,2));assert.deepEqual(failures.map(({label,geometryMatches,rgbSha256,expectedRgbSha256})=>({label,geometryMatches,rgbSha256,expectedRgbSha256})),[],'complete native table grid pixels');}
- await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,locale:vscode.env.language,forms:forms.length,results,dirtyFooter:true,stableTableDom:true,selectedIdentityPreserved:true,logicalColumnSelection:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeGridControlPixelParity:true,wholeFormVisualParity:false}));
+ await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,locale:vscode.env.language,forms:forms.length,results,dirtyFooter:true,stableTableDom:true,selectedIdentityPreserved:true,logicalColumnSelection:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeGridControlPixelParity:results.filter(result=>result.wholeGridControlCompared).every(result=>result.pixelMatches),wholeFormVisualParity:false}));
 };

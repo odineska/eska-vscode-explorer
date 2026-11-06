@@ -30,9 +30,110 @@ async function setGroupMode(document, name, mode) {
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
 
+function withGroupProperty(xml, name, property, value) {
+  const group = new RegExp(`<UsualGroup name="${name}"[^>]*>[\\s\\S]*?(?=<ChildItems>)`);
+  const match = group.exec(xml);
+  assert.ok(match, name);
+  const header = match[0].replace(new RegExp(`\\s*<${property}>[^<]+</${property}>`), '');
+  return xml.replace(match[0], header + (value ? `<${property}>${value}</${property}>\n` : ''));
+}
+
+async function verifyWrappedRows(form, service, results) {
+  const original = await fs.readFile(form.path);
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
+  await vscode.window.showTextDocument(document, { preview: false });
+  await vscode.commands.executeCommand('eska.explorer.previewForm');
+  await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'row group opened');
+  const view = [...service.views.values()].find(view => view.path === form.path), main = view.frames.get('main');
+  const tab = {fixedFormArea: true, state: {title:main.panel.title}};
+  const ui = await frame(tab);
+  const names = Object.keys(form.cases[0].controls);
+  const identities = names.map(name => {
+    const node = [...view.nodes.values()].find(node => node.name === name);
+    assert.ok(node, name);
+    return node.identity;
+  });
+  const keys = identities.map(id => `${id.source}:current:${id.key.value}`);
+  await until(async () => (await rectangles(ui, keys)).every(Boolean), 'row group fields');
+  await ui.evaluate('document.fonts.ready.then(()=>true)');
+
+  async function replace(xml) {
+    if (document.getText() === xml) return;
+    const edit = new vscode.WorkspaceEdit();
+    const range = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
+    edit.replace(document.uri, range, xml);
+    assert.equal(await vscode.workspace.applyEdit(edit), true);
+    await until(() => view.phase === 'ready' && !view.running && !view.timer &&
+      view.snapshot.dependencies.some(dep => dep.role === 'form' && dep.version === String(document.version)), 'wrapped row XML updated');
+  }
+  for (const sample of form.cases) {
+    let xml = original.toString('utf8');
+    if (form.kind === 'Leading') {
+      xml = withGroupProperty(xml, 'Left', 'United', sample.parentUnited);
+      xml = withGroupProperty(xml, 'Wrapper40', 'United', sample.wrapperUnited);
+      xml = withGroupProperty(xml, 'Wrapper40', 'Group', sample.grouping);
+      xml = withGroupProperty(xml, 'Wrapper40', 'ThroughAlign', sample.throughAlign === 'Auto' ? null : sample.throughAlign);
+    }
+    await replace(xml);
+    await ui.evaluate(nextPaint);
+    const boxes = await rectangles(ui, keys);
+    const origin = await ui.evaluate("(()=>{const r=document.querySelector('.taxi-form-frame').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()");
+    const relative = boxes.map(box => [box.x-origin[0],box.y-origin[1],box.width,box.height]);
+    const aligned = sample.throughAlign !== 'DontUse';
+    assert.equal(boxes[0].x === boxes[1].x, aligned, sample.case);
+    if (process.platform === 'linux') {
+      assert.deepEqual(origin.slice(2), sample.frame, sample.case + ' frame');
+      const tolerance = sample.positionTolerancePx ?? 0;
+      for (const [index, name] of names.entries()) {
+        assert.ok(relative[index].every((value, axis) => Math.abs(value - sample.controls[name][axis]) <= tolerance),
+          sample.case + ' ' + name + ' ' + JSON.stringify({actual:relative[index],expected:sample.controls[name]}));
+      }
+    }
+    results.push({label:'nested-row-'+sample.case, frame:origin.slice(2), controls:relative, aligned});
+  }
+  if (form.kind === 'Leading') {
+    await replace(original.toString('utf8'));
+    const identity = identities[1];
+    await service.receive(view, main, {type:'select', identity});
+    await until(() => view.selected?.key.value === identity.key.value, 'row field selected');
+    const workbench = await ui.nativeWindow();
+    await service.receive(view, main, {type:'detach'});
+    await until(() => view.frames.get('preview')?.ready, 'detached row group');
+    const preview = view.frames.get('preview');
+    const floating = await frame({detached:true,state:{title:preview.panel.title}});
+    assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
+    await floating.evaluate("globalThis.__wrappedFields=[...document.querySelectorAll('.taxi-input')];true");
+    const aligned = async () => {
+      const boxes = await rectangles(floating, keys);
+      return boxes.every(Boolean) && boxes[0].x === boxes[1].x;
+    };
+    const revision = view.snapshot.revision;
+    for (const [width, height] of [[430,310],[640,420]]) {
+      await floating.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
+      await floating.evaluate(nextPaint);
+      await until(aligned, 'shared label column after resize');
+      assert.equal(view.snapshot.revision, revision);
+    }
+    await replace(withGroupProperty(original.toString('utf8'), 'Wrapper40', 'ThroughAlign', 'DontUse'));
+    await until(async () => !(await aligned()), 'dirty wrapped group leaves the track');
+    await replace(original.toString('utf8'));
+    await until(aligned, 'dirty wrapped group rejoins the track');
+    assert.deepEqual(view.selected, identity);
+    assert.equal(await floating.evaluate('__wrappedFields.every(field => field.isConnected)'), true);
+    await floating.screenshot('nested-row-detached-'+vscode.env.language+'.png');
+    await service.receive(view, preview, {type:'dock'});
+    await until(() => !view.frames.has('preview'), 'row returned to workbench');
+    results.push({label:'nested-row-detached-resize-dirty', sameDom:true, sameSelection:true});
+  }
+  assert.deepEqual(await fs.readFile(form.path), original);
+  main.panel.dispose();
+  await until(() => service.views.size === 0, 'row form closed');
+  await Promise.all([...service.closing]);
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
-  const [form] = fixture.formGallery;
+  const [form, ...wrapped] = fixture.formGallery;
   const original = await fs.readFile(form.path);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');
@@ -140,6 +241,7 @@ exports.run = async () => {
   main.panel.dispose();
   await until(() => service.views.size === 0, 'preview released');
   await Promise.all([...service.closing]);
+  for (const row of wrapped) await verifyWrappedRows(row, service, results);
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, locale: vscode.env.language, results, dirtyDetached: true, sourceWritesDuringViewing: false,

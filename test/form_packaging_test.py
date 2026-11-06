@@ -15,6 +15,7 @@ class FormPayloadTests(unittest.TestCase):
                     'contributes': {'commands': [{'command': 'eska.explorer.previewForm'}]}}
         self.files = {'package.json': json.dumps(manifest), 'package.nls.json': '{}', 'package.nls.ru.json': '{}',
                       'README.md': 'README', 'CHANGELOG.md': 'Changes', 'LICENSE': 'License',
+                      'docs/setup.md': 'Connection instructions', 'docs/setup.ru.md': 'Подключение',
                       'resources/icons/support/LICENSE': 'Icon license', 'resources/icons/support/NOTICE.md': 'Icon notices',
                       'out/extension.js': 'extension runtime', 'out/query-designer.js': 'query runtime',
                       'out/form-preview.js': 'form runtime', 'out/form-preview.css': 'form styles',
@@ -39,8 +40,8 @@ class FormPayloadTests(unittest.TestCase):
         self.package()
         self.module.check(self.archive, self.source)
 
-    def test_missing_or_changed_style_font_and_wasm_stop_publication(self):
-        for name in ['out/form-preview.css', 'out/form-fonts/LiberationSans-Regular-ABC.ttf',
+    def test_missing_or_changed_form_bundle_style_font_and_wasm_stop_publication(self):
+        for name in ['out/form-preview.js', 'out/form-preview.css', 'out/form-fonts/LiberationSans-Regular-ABC.ttf',
                      'out/form-fonts/font-raster-DEF.wasm']:
             with self.subTest(asset=name, failure='missing'):
                 self.package(removed=name)

@@ -362,12 +362,11 @@ button { cursor: default; }
 .taxi-table-header-cell.selected { outline: 1px solid #1695f3; outline-offset: -1px; }
 .taxi-table-header-horizontal { display: grid; grid-template-columns: subgrid; min-width: 0; }
 .taxi-table-header-title, .taxi-table-header-children { grid-column: 1 / -1; }
-.taxi-table-header-title { height: 30px; }
 .taxi-table-header-children { display: grid; grid-template-columns: subgrid; }
 .taxi-table-header-vertical { display: flex; flex-direction: column; min-width: 0; }
 .taxi-table-empty { flex: 1; min-height: 0; position: relative; }
 .taxi-table-incomplete { position: absolute; top: 27px; left: 3px; right: 3px; border-bottom: 1px dotted #f00; }
-.taxi-table-footer { height: 30px; background: var(--taxi-TableFooterBackColor); }
+.taxi-table-footer { background: var(--taxi-TableFooterBackColor); }
 .taxi-table-footer > div { border-top-color: #ccc; border-bottom-color: #fff; }
 .taxi-table-scrollbar { display: flex; flex-direction: column; justify-content: space-between; align-items: center; width: 14px; flex: 0 0 14px; background: #fff; padding: 9px 0; }
 .taxi-table-scrollbar > span { width: 6px; height: 4px; background: #c2c2c2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
@@ -518,10 +517,11 @@ button { cursor: default; }
 }
 .taxi-preview[data-form-layout=minimum] .taxi-form-frame { width: min-content !important; height: auto !important; }
 .taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--taxi-horizontal-gap); }
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] > .taxi-element { flex-shrink: 0; }
 .taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] > .taxi-element--field { display: block; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-y=false] { min-height: var(--taxi-preferred-height); }
-.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field) { width: var(--taxi-control-min-width, 80px) !important; min-width: 0 !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field) { width: var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 80px)) !important; min-width: 0 !important; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-input { height: var(--taxi-control-min-height, 40px) !important; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack > .taxi-special { height: var(--taxi-control-min-height, var(--taxi-surface-min-height, 64px)) !important; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-y=true] > .taxi-table-field > .taxi-table-scroll { height: var(--taxi-table-min-height, 80px) !important; }
@@ -553,7 +553,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { flex: 1; }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-control-min-width, 0px) !important; max-width: var(--taxi-control-max-width, 100%); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 0px)) !important; max-width: var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%)); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Bottom] { grid-template-rows: minmax(0, 1fr) max-content; }
@@ -579,10 +579,12 @@ button { cursor: default; }
 .taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom],[data-title-location=None]) { grid-template-columns: minmax(0, 1fr); }
 /* Intrinsic minima must include fixed controls, even inside a zero-sized grid track. */
 .taxi-preview[data-form-layout=minimum] .taxi-items--vertical { grid-template-columns: max-content max-content; }
-.taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+:is(.taxi-items[data-through-labels=all] > .taxi-element--field,
+  .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) minmax(0, 1fr);
 }
-.taxi-preview[data-form-layout=minimum] .taxi-items[data-through-labels] > .taxi-element--field > .taxi-field-row[data-title-location=Left] {
+.taxi-preview[data-form-layout=minimum] :is(.taxi-items[data-through-labels=all] > .taxi-element--field,
+  .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) max-content;
 }
 .taxi-preview[data-form-layout=minimum] .taxi-field-control,
@@ -609,7 +611,10 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-special-stack { width: var(--taxi-surface-min-width, 150px) !important; }
 
 /* Ordinary vertical groups in one horizontal layout use the same row tracks. */
-.taxi-preview[data-os=linux] .taxi-items[data-united-auto-spacing] { --taxi-horizontal-gap: 10px; }
+.taxi-preview[data-os=linux] .taxi-items:is([data-united-auto-spacing], [data-through-labels=leading][data-auto-spacing]) { --taxi-horizontal-gap: 10px; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading] > .taxi-element[data-stretch-x=true] {
+  flex-basis: var(--taxi-preferred-width) !important;
+}
 .taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
   display: grid;
   grid-template-columns: repeat(var(--taxi-united-column-count), max-content);
@@ -618,7 +623,7 @@ button { cursor: default; }
   row-gap: 7px;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] {
-  grid-template-columns: var(--taxi-layout-columns);
+  grid-template-columns: var(--taxi-united-allocated-columns, var(--taxi-layout-columns));
   grid-template-rows: var(--taxi-united-tracks);
 }
 .taxi-preview[data-form-layout] .taxi-element[data-united-cell] {
@@ -640,7 +645,7 @@ button { cursor: default; }
   grid-row: var(--taxi-united-start) / -1; grid-template-rows: subgrid; row-gap: normal;
 }
 .taxi-preview[data-form-layout=allocated][data-preferred-x] .taxi-items[data-united-columns] {
-  grid-template-columns: var(--taxi-united-preferred-columns);
+  grid-template-columns: var(--taxi-united-allocated-columns, var(--taxi-united-preferred-columns));
 }
 
 /* Horizontal groups in a vertical stack share their logical column widths. */

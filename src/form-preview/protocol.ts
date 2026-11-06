@@ -15,10 +15,17 @@ export interface FormProperty extends PropertyField { origin: Origin; range: { s
 export type FormText = { kind: "literal"; items: { language: string; content: string }[] } | { kind: "name"; text: string } | { kind: "standard"; key: string };
 export interface Font { face: string | null; points: number; weight: number; italic: boolean; underline: boolean; strikeout: boolean }
 export interface Color { kind: "rgb" | "role" | "web" | "system"; value: string }
+interface TableColumnAppearance {
+  headerBackground?: Color;
+  footerBackground?: Color;
+  footerForeground?: Color;
+  footerFont?: Font;
+}
 export interface Presentation {
   united?: boolean | null;
   markIncomplete?: boolean;
   footerText?: FormText | null;
+  tableColumnAppearance?: TableColumnAppearance;
   picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
   valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
@@ -83,10 +90,16 @@ function text(value: unknown): boolean {
 function font(value: unknown): boolean { return isRecord(value) && (value.face === null || typeof value.face === "string") && typeof value.points === "number" && Number.isFinite(value.points)
   && value.points > 0 && typeof value.weight === "number" && ["italic", "underline", "strikeout"].every(key => typeof value[key] === "boolean"); }
 function color(value: unknown): boolean { return isRecord(value) && ["rgb", "role", "web", "system"].includes(String(value.kind)) && typeof value.value === "string"; }
+function tableColumnAppearance(value: unknown): boolean {
+  return value === undefined || isRecord(value)
+    && ["headerBackground", "footerBackground", "footerForeground"].every(key => value[key] === undefined || color(value[key]))
+    && (value.footerFont === undefined || font(value.footerFont));
+}
 function presentation(value: unknown): boolean {
   return isRecord(value) && (value.picture === null || isRecord(value.picture) && (value.picture.kind === "standard" && typeof value.picture.name === "string" || value.picture.kind === "common" && hash(value.picture.source) || value.picture.kind === "missing" && typeof value.picture.reference === "string"))
     && (value.markIncomplete === undefined || typeof value.markIncomplete === "boolean")
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
+    && tableColumnAppearance(value.tableColumnAppearance)
     && typeof value.displayed === "boolean" && ["Left", "Right", "Top", "Bottom", "None"].includes(String(value.titleLocation)) && ["Vertical", "Horizontal", "HorizontalIfPossible"].includes(String(value.grouping)) && text(value.caption) && (value.tooltip === null || text(value.tooltip)) && font(value.font) && font(value.titleFont)
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
     && (value.united === undefined || value.united === null || typeof value.united === "boolean")

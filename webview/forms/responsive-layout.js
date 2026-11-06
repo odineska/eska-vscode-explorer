@@ -27,7 +27,22 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, clearThroughLabels, clearUnitedColumns;
+  let unitedRows;
+  const undoAlignment = [];
+  const alignment = {
+    mark(element, attribute, value = '') {
+      element.setAttribute(attribute, value);
+      undoAlignment.push(() => element.removeAttribute(attribute));
+    },
+    style(element, name, value) {
+      element.style.setProperty(name, value);
+      undoAlignment.push(() => element.style.removeProperty(name));
+    },
+  };
+  const clearAlignment = () => {
+    for (const undo of undoAlignment) undo();
+    undoAlignment.length = 0;
+  };
   const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
   const rect = borderBoxSize;
   function measure() {
@@ -44,14 +59,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const elementByKey = new Map(elements.map(element => [element.dataset.element, element]));
       const containers = new Map([...root.querySelectorAll('.taxi-items[data-layout-owner]')]
         .map(items => [items.dataset.layoutOwner, items]));
+      const targets = { elements: elementByKey, containers, children: node => node.children.filter(child => elementByKey.has(child.key)) };
       content.dataset.formLayout = 'preferred';
-      unitedRows?.clear();
-      clearThroughLabels?.();
-      clearUnitedColumns?.();
+      clearAlignment();
       const scale = boundingScale(root);
-      clearThroughLabels = alignThroughLabels(state.model.root, containers, scale);
-      unitedRows = alignUnitedRows(state.model.root, elementByKey, containers, wrapped(), state.ui.collapsed);
-      clearUnitedColumns = alignUnitedColumns(state.model.root, elementByKey, containers, state.os, state.ui.collapsed, scale);
+      const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      alignThroughLabels(state.model.root, context);
+      unitedRows = alignUnitedRows(state.model.root, context, wrapped());
+      alignUnitedColumns(state.model.root, context);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -80,6 +95,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       setViewportResized(true);
     }
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
+    unitedRows?.allocateWidths();
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
       const children = [...items.children];
@@ -116,9 +132,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   onCleanup(() => {
     active = false;
     cancelAnimationFrame(scheduled);
-    unitedRows?.clear();
-    clearThroughLabels?.();
-    clearUnitedColumns?.();
+    clearAlignment();
   });
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),

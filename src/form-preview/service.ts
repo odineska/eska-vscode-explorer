@@ -11,6 +11,7 @@ import { querySnapshot } from "../query/text-transfer.js";
 import { FormSession } from "./client.js";
 import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget } from "./protocol.js";
 import { formStrings } from "./strings.js";
+import { parsePreviewNavigation, type PreviewNavigation } from "./navigation.js";
 import { formEditorRange } from "./source.js";
 import { movePreviewToNewWindow } from "./window.js";
 
@@ -18,7 +19,6 @@ const VIEW_TYPE = "eska.formViewer";
 type Role = "main" | "preview";
 type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
 interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean }
-interface PreviewNavigation { pages: Record<string, string>; collapsed: Record<string, boolean> }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
@@ -28,12 +28,6 @@ interface View {
   inputRoots: { wire: WirePath; path: string }[]; formInputs: Map<string, FormInputSource>;
   previewNavigation?: PreviewNavigation;
   palette: FormPalette | undefined;
-}
-function previewNavigation(value: unknown): PreviewNavigation | undefined {
-  if (!isRecord(value) || !isRecord(value.pages) || !isRecord(value.collapsed)
-    || !Object.entries(value.pages).every(([key, page]) => key.includes(":") && typeof page === "string" && page.includes(":"))
-    || !Object.entries(value.collapsed).every(([key, collapsed]) => key.includes(":") && typeof collapsed === "boolean")) return;
-  return { pages: { ...value.pages } as Record<string, string>, collapsed: { ...value.collapsed } as Record<string, boolean> };
 }
 function normalized(path: string): string { return process.platform === "win32" ? path.toLowerCase() : path; }
 function inside(root: string, file: string): string | undefined {
@@ -101,12 +95,12 @@ export class FormPreviewService implements vscode.Disposable {
     if (view.closed || this.disposed || !isRecord(value)) return;
     if (value.type === "ready") {
       frame.ready = true;
-      view.previewNavigation ??= previewNavigation(value.previewNavigation) ?? { pages: {}, collapsed: {} };
+      view.previewNavigation ??= parsePreviewNavigation(value.previewNavigation) ?? { pages: {}, collapsed: {} };
       this.publish(view, true, frame); return;
     }
     if (value.type === "previewNavigation") {
       if (view.frames.get(frame.role) !== frame) return;
-      const navigation = previewNavigation(value.previewNavigation); if (!navigation) return;
+      const navigation = parsePreviewNavigation(value.previewNavigation); if (!navigation) return;
       view.previewNavigation = navigation;
       for (const target of view.frames.values()) if (target !== frame && target.ready)
         void target.panel.webview.postMessage({ type: "previewNavigation", previewNavigation: navigation });
