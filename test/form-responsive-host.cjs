@@ -137,6 +137,13 @@ async function checkCappedHeader(ui, document) {
     const next = sample.amount.x - sample.name.right;
     assert.ok(next >= 0 && next < 80, 'the second field follows the cap and its own caption');
     assert.equal(sample.amount.y, sample.name.y);
+    const preferred = await ui.evaluate(`(() => {
+      const field = document.querySelector('input[aria-label=Name]').closest('[data-horizontal-input-limit]');
+      const width = parseFloat(field.style.getPropertyValue('--taxi-preferred-width'));
+      const caption = parseFloat(field.style.getPropertyValue('--taxi-horizontal-input-reserve'));
+      return width - caption;
+    })()`);
+    assert.equal(preferred, sample.name.width, 'the preferred row reserves the capped input width');
     if (gap !== undefined) assert.equal(next, gap, 'spare row width stays after the capped fields');
     gap = next;
   }
