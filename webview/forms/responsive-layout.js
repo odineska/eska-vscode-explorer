@@ -4,7 +4,7 @@ import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } 
 import { minimumFormLayout } from './minimum-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
-import { alignThroughLabels } from './through-align.js';
+import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
@@ -29,7 +29,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, minimumCaptions, rootCommands;
+  let unitedRows, numericRows, minimumCaptions, allocateThroughCaptions, rootCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -70,10 +70,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       alignUnitedColumns(state.model.root, context);
-      alignThroughLabels(state.model.root, context);
+      const throughScopes = alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       numericRows = alignNumericLabelRows(state.model.root, context);
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
+      allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -107,6 +108,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
     rootCommands?.allocate();
     const captions = new Map(), previousCaptions = fieldCaptions();
+    allocateThroughCaptions(captions, minima());
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);
     if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
