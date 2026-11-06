@@ -243,13 +243,15 @@ button { cursor: default; }
 .taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-track { fill: #d8d8d8; }
 .taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-shadow { display: none; }
 .taxi-checkbox-switch[data-inactive=true] .taxi-checkbox-switch-knob { fill: #ececec; stroke: #cccecf; }
-.taxi-checkbox-tumbler { display: inline-grid; grid-template-columns: max-content max-content; margin-block: 1px;
+.taxi-checkbox-tumbler { display: inline-grid; grid-template-columns: max-content max-content; margin-block: 1px; position: relative;
   vertical-align: top; border: 1px solid var(--taxi-BorderColor); border-radius: 3px;
-  background: linear-gradient(var(--taxi-tumbler-fill), color-mix(in srgb, var(--taxi-tumbler-fill), #000 10%)); }
+  background-image: linear-gradient(var(--taxi-tumbler-fill), color-mix(in srgb, var(--taxi-tumbler-fill), #000 10%)); }
 .taxi-checkbox-tumbler[data-equal-width=true] { grid-template-columns: 1fr 1fr; }
 .taxi-checkbox-tumbler[aria-disabled=true] { color: #808080 !important; }
-.taxi-checkbox-choice { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; }
+.taxi-checkbox-choice { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; position: relative; z-index: 1; }
 .taxi-checkbox-choice:first-child { border-right: 1px solid; border-right-color: inherit; }
+.taxi-checkbox-tumbler[data-native-tumbler=ready] .taxi-checkbox-choice:first-child { border-right-color: transparent; }
+.taxi-tumbler-face { position: absolute; left: -1px; top: -1px; pointer-events: none; }
 .taxi-checkbox-choice > span { padding-inline: var(--taxi-tumbler-padding); max-width: 100%; overflow: hidden; white-space: pre; text-overflow: ellipsis; }
 .taxi-checkbox-tumbler[data-sized] .taxi-checkbox-choice > span { padding-inline: 0; max-width: calc(100% - 2px); }
 .taxi-radios { display: inline-grid; vertical-align: top; grid-auto-columns: max-content; grid-auto-rows: max-content; gap: 7px 10px; }

@@ -3,9 +3,12 @@ import { checkboxGlyph } from './checkbox-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
 import { linuxControlFont } from './font-metrics.mjs';
 import { caption, color, flag, font } from './model.mjs';
+import { tumblerPaint } from './tumbler-paint.mjs';
 
 function Tumbler(props) {
+  let surface, canvas;
   const node = () => props.node, state = props.controller.state;
+  const [painted, setPainted] = createSignal(false);
   const labels = createMemo(() => checkboxLabels(node(), state.locale, state.culture, state.model?.scriptVariant));
   const layout = createMemo(() => checkboxTumblerLayout(node(), labels(), state.os));
   const style = () => {
@@ -14,6 +17,7 @@ function Tumbler(props) {
     return {
       ...(state.os === 'linux' ? linuxControlFont(value.font) : font(value.font, state.os)),
       '--taxi-tumbler-fill': color(value.background),
+      'background-color': color(value.background),
       'border-color': color(value.border),
       color: color(value.foreground),
       'inline-size': width === undefined ? undefined : `${width}px`,
@@ -22,23 +26,46 @@ function Tumbler(props) {
       '--taxi-tumbler-padding': `${side}px`,
     };
   };
-  return <span class="taxi-checkbox-tumbler" role="radiogroup" aria-label={caption(node(), state)} aria-readonly="true"
+  createEffect(on(() => [state.os, state.sequence, layout()], () => {
+    if (state.os !== 'linux' || layout().width === undefined) { setPainted(false); return; }
+    const frame = requestAnimationFrame(() => {
+      const css = getComputedStyle(surface), backdrop = solidBackdrop(surface);
+      const fill = rgb(css.backgroundColor), stroke = rgb(css.borderTopColor);
+      const image = fill && stroke && backdrop ? tumblerPaint({ ...layout(), fill, stroke, backdrop }) : undefined;
+      setPainted(paintCanvas(canvas, image));
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  }));
+  return <span ref={surface} class="taxi-checkbox-tumbler" role="radiogroup" aria-label={caption(node(), state)} aria-readonly="true"
     aria-disabled={props.inactive} data-equal-width={layout().equal}
+    data-native-tumbler={painted() ? 'ready' : undefined}
     data-sized={layout().width === undefined ? undefined : ''} style={style()}>
     <Index each={labels()}>{label => <span class="taxi-checkbox-choice" role="radio" aria-label={label()} aria-checked="false">
       <span>{label()}</span>
     </span>}</Index>
+    <canvas ref={canvas} class="taxi-tumbler-face" aria-hidden="true" hidden={!painted()}/>
   </span>;
 }
+
+const rgb = value => /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value)?.slice(1).map(Number);
 
 function solidBackdrop(surface) {
   for (let parent = surface.parentElement; parent; parent = parent.parentElement) {
     const css = getComputedStyle(parent);
     if (css.backgroundImage !== 'none') return;
     if (css.backgroundColor !== 'rgba(0, 0, 0, 0)') {
-      return /^rgb\((\d+), (\d+), (\d+)\)$/.exec(css.backgroundColor)?.slice(1).map(Number);
+      return rgb(css.backgroundColor);
     }
   }
+}
+
+function paintCanvas(canvas, image) {
+  const context = image && canvas.getContext('2d');
+  if (!context) return false;
+  canvas.width = image.width;
+  canvas.height = image.height;
+  context.putImageData(new ImageData(image.rgba, image.width, image.height), 0, 0);
+  return true;
 }
 
 function Mark(props) {
@@ -49,13 +76,9 @@ function Mark(props) {
   createEffect(on(() => [state.os, state.sequence, props.mode, props.inactive], () => {
     if (state.os !== 'linux') { setPainted(false); return; }
     const draw = requestAnimationFrame(() => {
-      const backdrop = solidBackdrop(surface), context = canvas.getContext('2d');
-      if (!backdrop || !context) { setPainted(false); return; }
-      const image = checkboxGlyph(props.mode, props.inactive, backdrop);
-      canvas.width = image.width;
-      canvas.height = image.height;
-      context.putImageData(new ImageData(image.rgba, image.width, image.height), 0, 0);
-      setPainted(true);
+      const backdrop = solidBackdrop(surface);
+      const image = backdrop ? checkboxGlyph(props.mode, props.inactive, backdrop) : undefined;
+      setPainted(paintCanvas(canvas, image));
     });
     onCleanup(() => cancelAnimationFrame(draw));
   }));

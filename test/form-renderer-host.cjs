@@ -110,6 +110,8 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   const labels = ['Истина','Ложь'];
   const format = value => '<EditFormat><v8:item><v8:lang>ru</v8:lang><v8:content>'+value+'</v8:content></v8:item></EditFormat>';
   const russian = format('БИ=Истина; БЛ=Ложь');
+  const blank = format('BT=; BF='), blankLabels = ['', ''];
+  const largeFont = '<Font ref="sys:DefaultGUIFont" height="16" bold="true" kind="WindowsFont"/>';
   const paint = '<BackColor>web:LightGreen</BackColor><BorderColor>web:Blue</BorderColor><TextColor>web:Red</TextColor>';
   const box = {name:'auto',mode:'CheckBox',xml:'',frame:[92,69],glyph:[55,40,15,15],
     markSha256:'9b9c8570a995e299cfc3729a3cfc7640c72753bd3e5f9a35b4d7e8729d1c54bb'};
@@ -126,8 +128,18 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
       frame:[206,76],glyph:[54,39,131,24],labels:['Вкл','Выключено']},
     {name:'manual',mode:'Tumbler',xml:format('BT=On; BF=Off')+'<ItemWidth>12</ItemWidth><ItemHeight>2</ItemHeight><ItemTitleHeight>2</ItemTitleHeight>',
       frame:[318,98],glyph:[54,39,243,46],labels:['On','Off']},
-    {name:'paint',mode:'Tumbler',xml:russian+paint+'<Font ref="sys:DefaultGUIFont" height="16" bold="true" kind="WindowsFont"/>',
+    {name:'paint',mode:'Tumbler',xml:russian+paint+largeFont,
       frame:[288,90],glyph:[54,39,213,38],labels},
+    {name:'face-blank',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>',dimensions:[243,24],
+      markSha256:'c169cf96e4f28cd69a89b3027f9773cfa002767aa21cb52d73bf068547042a4d'},
+    {name:'face-narrow',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>1</ItemWidth>',dimensions:[23,24],
+      markSha256:'258506e5ea18e44cb699c273b2f02629fef4f4317f936a99d81000c4a0d88a30'},
+    {name:'face-tall',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>'+'<ItemHeight>2</ItemHeight>',dimensions:[243,46],
+      markSha256:'71aeedd26653d0c54bbc86b69439d8725f6f7245944e0778c01b5e466702eb1b'},
+    {name:'face-large-font',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>'+largeFont,dimensions:[243,38],
+      markSha256:'fec83fe7616637c926945ab8f3ac3867b1c2ab91be57bc0c7d72fc2f5845d44b'},
+    {name:'face-colors',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>'+'<BackColor>#2266CC</BackColor><BorderColor>web:Red</BorderColor>',dimensions:[243,24],
+      markSha256:'db2714d266bf323fdb2338a815665f5905d024dddf0e301481323de7d290f52b'},
     switcher,
     {...switcher,name:'switch-top',xml:'<TitleLocation>Top</TitleLocation>',frame:[71,92],glyph:[14,59,34,20]},
     {name:'box-black',mode:'CheckBox',background:true,xml:'',dimensions:[15,15],
@@ -149,7 +161,7 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   const apply = variant => {
     const token = variant.name==='auto' ? 'Auto' : variant.mode;
     const settings = '<CheckBoxType>'+token+'</CheckBoxType>'+variant.xml;
-    const content = source.replace('<CheckBoxType>Auto</CheckBoxType>', settings+(variant.background?'<TitleLocation>None</TitleLocation>':''));
+    const content = source.replace('<CheckBoxType>Auto</CheckBoxType>', settings+(variant.noTitle || variant.background ? '<TitleLocation>None</TitleLocation>' : ''));
     const canvas = '<UsualGroup name="Canvas" id="44"><Group>Vertical</Group><Representation>None</Representation>'
       +'<ShowTitle>false</ShowTitle><BackColor>web:Black</BackColor><ChildItems>'+content+'</ChildItems></UsualGroup>';
     return change(original.replace(field,variant.background?canvas:content));
@@ -163,7 +175,15 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     const settled = Math.abs(form.width - parseFloat(dimensions.getPropertyValue('--taxi-form-preferred-width'))) <= .5
       && Math.abs(form.height - parseFloat(dimensions.getPropertyValue('--taxi-form-preferred-height'))) <= .5;
     const canvas = mark.querySelector('canvas:not([hidden])'), raster = canvas?.getContext('2d');
-    const pixels = raster ? btoa(String.fromCharCode(...raster.getImageData(0,0,canvas.width,canvas.height).data)) : null;
+    let pixels = null;
+    if (raster) {
+      const data = raster.getImageData(0,0,canvas.width,canvas.height).data;
+      let bytes = '';
+      for (let index = 0; index < data.length; index += 8192) {
+        bytes += String.fromCharCode(...data.subarray(index,index+8192));
+      }
+      pixels = btoa(bytes);
+    }
     const track = mark.querySelector('.taxi-checkbox-switch-track');
     const sample = raster && mark.classList.contains('taxi-checkbox-switch') ? [...raster.getImageData(25,9,1,1).data].slice(0,3).join(', ') : null;
     const clipped = [...mark.querySelectorAll('.taxi-checkbox-choice > span')].some(label => label.scrollWidth>label.clientWidth);
@@ -235,6 +255,10 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     markSha256:'b50db8a4d3329ceacc6f86d1e147cf382ec9b69beeb58b0779ed7515a9a5272e'};
   await apply(inactive);
   results.push(await observe(floating,inactive,detachedWindow.targetId));
+  const darkFace = {name:'face-dark-detached',mode:'Tumbler',noTitle:true,labels:blankLabels,background:true,xml:blank+'<ItemWidth>12</ItemWidth>',dimensions:[243,24],
+      markSha256:'a90ea9871b650848a27eee81ab65afd011ad498ec41405d0576ac7f6bd385eb1'};
+  await apply(darkFace);
+  results.push(await observe(floating,darkFace,detachedWindow.targetId));
   await service.receive(view,preview,{type:'dock'});
   await until(() => !view.frames.has('preview'),'checkbox preview docked');
   await change(original);
