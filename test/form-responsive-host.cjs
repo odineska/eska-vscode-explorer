@@ -157,21 +157,37 @@ async function checkTallHeader(ui, document, view) {
   const tall = source.replace(group, group + '<Height>6</Height><VerticalStretch>false</VerticalStretch>')
     .replace(field, field + '<MultiLine>true</MultiLine>');
   assert.ok(source.includes(group) && source.includes(field));
-  try {
-    await editFormSource(document, view, tall);
+  const amount = '<InputField name="Amount" id="3">';
+  assert.ok(tall.includes(amount));
+  async function measured(xml) {
+    await editFormSource(document, view, xml);
     await ui.rendered();
     await ui.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-    const result = await ui.evaluate(`(() => {
+    return ui.evaluate(`(() => {
       const control = document.querySelector('textarea[aria-label=Name]').closest('.taxi-input');
       const row = control.closest('.taxi-field-row');
       const parent = row.closest('.taxi-element').parentElement;
+      const header = parent.getBoundingClientRect();
+      const sibling = document.querySelector('input[aria-label=Amount]').closest('.taxi-element').getBoundingClientRect();
       return { title: row.dataset.titleLocation, direction: getComputedStyle(parent).display,
-        input: control.getBoundingClientRect().height, height: parent.getBoundingClientRect().height };
+        input: control.getBoundingClientRect().height, height: header.height,
+        offset: sibling.y - header.y, spare: header.height - sibling.height };
     })()`);
+  }
+  try {
+    const result = await measured(tall);
     assert.equal(result.title, 'Top');
     assert.equal(result.direction, 'flex');
     assert.ok(result.height >= 96);
     assert.equal(result.input, result.height - 21, 'automatic multiline input fills the height left by its caption');
+    for (const [alignment, fraction] of [['Top', 0], ['Center', .5], ['Bottom', 1]]) {
+      const xml = tall.replace(amount, amount + '<GroupVerticalAlign>' + alignment + '</GroupVerticalAlign>')
+        .replace(field, field + '<GroupVerticalAlign>Bottom</GroupVerticalAlign>');
+      const {offset, spare, input, height} = await measured(xml);
+      assert.ok(spare > 40, 'the row has space for vertical alignment');
+      assert.ok(Math.abs(offset - fraction * spare) < .01, alignment + ' aligns the field in the horizontal row');
+      assert.equal(input, height - 21, 'alignment keeps the stretched field at its allocated height');
+    }
   } finally {
     await editFormSource(document, view, source);
   }

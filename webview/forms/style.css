@@ -593,6 +593,9 @@ button { cursor: default; }
 /* Flex stretch resolves the row's used height even when its group only supplies a minimum. */
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-stretch-y=true] { height: auto; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--vertical > .taxi-element[data-stretch-y=false] { align-self: start; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-stretch-y=false][data-group-vertical-align=Top] { align-self: start; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-stretch-y=false][data-group-vertical-align=Center] { align-self: center; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-stretch-y=false][data-group-vertical-align=Bottom] { align-self: end; }
 .taxi-preview[data-form-layout=allocated] .taxi-group { display: flex; flex-direction: column; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > :is(.taxi-group,.taxi-pages) { height: 100%; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; }
