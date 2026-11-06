@@ -5,14 +5,18 @@ export function linuxControlFont(value) {
   return { ...font(value, 'linux'), 'font-size': `${fontLineMetrics(value).pixels}px` };
 }
 
-export function controlCaptionWidth(text, value) {
+export function controlCaptionOptions(value) {
   const style = linuxControlFont(value);
-  return hintedTextWidth(text, {
+  return {
     family: /^"([^"]+)",/.exec(style['font-family'])?.[1],
     pixels: parseFloat(style['font-size']),
     weight: style['font-weight'],
     italic: style['font-style'] === 'italic',
-  });
+  };
+}
+
+export function controlCaptionWidth(text, value) {
+  return hintedTextWidth(text, controlCaptionOptions(value));
 }
 
 function selectFace({ family, pixels, weight, italic }) {

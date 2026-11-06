@@ -1,6 +1,7 @@
 import { localizedEntries } from '../../resources/properties/model.mjs';
-import { controlCaptionWidth } from './font-metrics.mjs';
+import { controlCaptionOptions } from './font-metrics.mjs';
 import { buttonMetrics, flag, fontLineMetrics, number, property, scalar, text } from './model.mjs';
+import { tumblerCaptionLayout, tumblerCaptionWidth } from './tumbler-caption.mjs';
 
 const captions = {
   ru: { logical: ['Истина', 'Ложь'], regional: ['Да', 'Нет'] },
@@ -44,13 +45,28 @@ export function checkboxTumblerLayout(node, labels, os) {
   const height = items > 0 ? Math.round(items * unitHeight) : unitHeight + 1;
   const equal = flag(node, 'EqualItemsWidth');
   const explicit = equal ? Math.round(Math.max(0, number(node, 'ItemWidth')) * (os === 'linux' ? 10 : 8)) : 0;
-  const widths = labels.map(label => {
-    const text = os === 'linux' ? controlCaptionWidth(label, font) : undefined;
-    return text === undefined ? undefined : text + 2 * side;
+  const paragraphs = labels.map(label => label.split(/\r\n?|\n/u));
+  const options = controlCaptionOptions(font);
+  const widths = paragraphs.map(lines => {
+    if (os !== 'linux') return;
+    let width = 0;
+    for (const line of lines) {
+      const advance = tumblerCaptionWidth(line, options);
+      if (advance === undefined) return;
+      width = Math.max(width, advance);
+    }
+    return width + 2 * side;
   });
   if (!explicit && widths.some(width => width === undefined)) return { height, equal, side };
   const first = explicit > 0 ? explicit : equal ? Math.max(...widths) : widths[0];
   const last = equal ? first : widths[1];
   // The right item keeps the native trailing inset, including the shared divider.
-  return { height, equal, side, first, width: first + last + (equal ? 3 : 2) };
+  const width = first + last + 3;
+  const size = { height, equal, side, first, width };
+  if (os !== 'linux') return size;
+  const titleRows = Math.max(1, Math.trunc(number(node, 'ItemTitleHeight')));
+  const segments = tumblerCaptionLayout(paragraphs, size, font, titleRows);
+  if (!segments) return size;
+  const extraLines = Math.max(...segments.map(segment => segment.lines.length)) - 1;
+  return { ...size, height: height + (items > 0 ? 0 : extraLines * lineHeight), segments };
 }

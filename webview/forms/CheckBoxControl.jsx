@@ -3,12 +3,15 @@ import { checkboxGlyph } from './checkbox-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
 import { linuxControlFont } from './font-metrics.mjs';
 import { caption, color, flag, font } from './model.mjs';
+import { inactiveTumblerTextColor, paintTumblerCaptions } from './tumbler-caption.mjs';
 import { tumblerPaint } from './tumbler-paint.mjs';
 
 function Tumbler(props) {
   let surface, canvas;
   const node = () => props.node, state = props.controller.state;
   const [painted, setPainted] = createSignal(false);
+  const [captionsPainted, setCaptionsPainted] = createSignal(false);
+  const runtime = props.controller.nativeText, owner = {};
   const labels = createMemo(() => checkboxLabels(node(), state.locale, state.culture, state.model?.scriptVariant));
   const layout = createMemo(() => checkboxTumblerLayout(node(), labels(), state.os));
   const style = () => {
@@ -20,25 +23,46 @@ function Tumbler(props) {
       'background-color': color(value.background),
       'border-color': color(value.border),
       color: color(value.foreground),
+      '--taxi-tumbler-label-color': props.inactive ? '#808080' : undefined,
       'inline-size': width === undefined ? undefined : `${width}px`,
       'block-size': `${height}px`,
       'grid-template-columns': first === undefined ? undefined : `${first - 1}px minmax(0, 1fr)`,
       '--taxi-tumbler-padding': `${side}px`,
     };
   };
-  createEffect(on(() => [state.os, state.sequence, layout()], () => {
+  createEffect(on(() => [state.os, state.sequence, layout(), props.inactive], () => {
+    setCaptionsPainted(false);
+    runtime?.issue(owner, false);
     if (state.os !== 'linux' || layout().width === undefined) { setPainted(false); return; }
+    let current = true;
+    const fail = () => { if (current) runtime?.issue(owner, true); };
     const frame = requestAnimationFrame(() => {
       const css = getComputedStyle(surface), backdrop = solidBackdrop(surface);
       const fill = rgb(css.backgroundColor), stroke = rgb(css.borderTopColor);
-      const image = fill && stroke && backdrop ? tumblerPaint({ ...layout(), fill, stroke, backdrop }) : undefined;
-      setPainted(paintCanvas(canvas, image));
+      const { segments, ...size } = layout();
+      const image = fill && stroke && backdrop ? tumblerPaint({ ...size, fill, stroke, backdrop }) : undefined;
+      const visible = paintCanvas(canvas, image);
+      setPainted(visible);
+      if (!visible || !labels().some(Boolean)) return;
+      const font = node().presentation.font, foreground = rgb(css.color), weight = css.fontWeight;
+      const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+      if (!runtime || !segments || !foreground || family !== 'ESKA Taxi Sans' || font?.italic || font?.underline || font?.strikeout) {
+        fail();
+        return;
+      }
+      const ink = props.inactive ? inactiveTumblerTextColor(foreground, fill) : foreground;
+      runtime.face(weight).then(face => {
+        if (!current) return;
+        paintTumblerCaptions(image, segments, font, face, ink);
+        setCaptionsPainted(paintCanvas(canvas, image));
+      }).catch(fail);
     });
-    onCleanup(() => cancelAnimationFrame(frame));
+    onCleanup(() => { current = false; cancelAnimationFrame(frame); runtime?.issue(owner, false); });
   }));
   return <span ref={surface} class="taxi-checkbox-tumbler" role="radiogroup" aria-label={caption(node(), state)} aria-readonly="true"
     aria-disabled={props.inactive} data-equal-width={layout().equal}
     data-native-tumbler={painted() ? 'ready' : undefined}
+    data-native-tumbler-captions={captionsPainted() ? 'ready' : undefined}
     data-sized={layout().width === undefined ? undefined : ''} style={style()}>
     <Index each={labels()}>{label => <span class="taxi-checkbox-choice" role="radio" aria-label={label()} aria-checked="false">
       <span>{label()}</span>
@@ -62,8 +86,8 @@ function solidBackdrop(surface) {
 function paintCanvas(canvas, image) {
   const context = image && canvas.getContext('2d');
   if (!context) return false;
-  canvas.width = image.width;
-  canvas.height = image.height;
+  if (canvas.width !== image.width) canvas.width = image.width;
+  if (canvas.height !== image.height) canvas.height = image.height;
   context.putImageData(new ImageData(image.rgba, image.width, image.height), 0, 0);
   return true;
 }

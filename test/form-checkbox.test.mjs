@@ -47,11 +47,13 @@ test('checkbox captions use regional defaults and the chosen localization of Edi
 test('native tumbler width follows equal or independent labels and the manual height unit', () => {
   const labels = ['Вкл', 'Выключено'];
   const unequal = field({ EqualItemsWidth: 'false', ItemWidth: '12' });
-  assert.deepEqual(checkboxTumblerLayout(unequal, labels, 'linux'),
-    { height: 24, equal: false, side: 9, first: 41, width: 131 });
+  const { segments, ...unequalSize } = checkboxTumblerLayout(unequal, labels, 'linux');
+  assert.deepEqual(unequalSize, { height: 24, equal: false, side: 9, first: 41, width: 131 });
+  assert.deepEqual(segments.map(segment => segment.lines), [['Вкл'], ['Выключено']]);
   const manual = field({ ItemWidth: '12', ItemHeight: '2' });
-  assert.deepEqual(checkboxTumblerLayout(manual, labels, 'linux'),
-    { height: 46, equal: true, side: 9, first: 120, width: 243 });
+  const { segments: manualSegments, ...manualSize } = checkboxTumblerLayout(manual, labels, 'linux');
+  assert.deepEqual(manualSize, { height: 46, equal: true, side: 9, first: 120, width: 243 });
+  assert.deepEqual(manualSegments.map(segment => segment.lines), [['Вкл'], ['Выключено']]);
   const automatic = field({ ItemWidth: '-2' });
   assert.equal(checkboxTumblerLayout(automatic, labels, 'win32').width, undefined);
 });

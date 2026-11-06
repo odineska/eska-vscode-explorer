@@ -122,14 +122,19 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     {...box,name:'right',xml:'<TitleLocation>Right</TitleLocation>',frame:[88,69],glyph:[14,40,15,15]},
     {...box,name:'box-read-only',inactive:true,xml:'<ReadOnly>true</ReadOnly>',
       markSha256:'1b66a0f5b52fc8382694de9ea37e19bbfcf606d08133a10f2ac981306a8c1a4e'},
-    {name:'tumbler',mode:'Tumbler',xml:russian,frame:[200,76],glyph:[54,39,125,24],labels},
-    {name:'tumbler-right',mode:'Tumbler',xml:russian+'<TitleLocation>Right</TitleLocation>',frame:[196,76],glyph:[13,39,125,24],labels},
+    {name:'tumbler',mode:'Tumbler',xml:russian,frame:[200,76],glyph:[54,39,125,24],labels,
+      markSha256:'8e642348eb44e72fe915ad4e1eb202263ffe09ddef0212dcfe29086e559c63f6'},
+    {name:'tumbler-right',mode:'Tumbler',xml:russian+'<TitleLocation>Right</TitleLocation>',frame:[196,76],glyph:[13,39,125,24],labels,
+      markSha256:'8e642348eb44e72fe915ad4e1eb202263ffe09ddef0212dcfe29086e559c63f6'},
     {name:'unequal',mode:'Tumbler',xml:format('БИ=Вкл; БЛ=Выключено')+'<EqualItemsWidth>false</EqualItemsWidth><ItemWidth>12</ItemWidth>',
-      frame:[206,76],glyph:[54,39,131,24],labels:['Вкл','Выключено']},
+      frame:[206,76],glyph:[54,39,131,24],labels:['Вкл','Выключено'],
+      markSha256:'6c8f5a4e6fb965d621050aa2020820236a45a2b6d65ebc5c3079984ee361f3ab'},
     {name:'manual',mode:'Tumbler',xml:format('BT=On; BF=Off')+'<ItemWidth>12</ItemWidth><ItemHeight>2</ItemHeight><ItemTitleHeight>2</ItemTitleHeight>',
-      frame:[318,98],glyph:[54,39,243,46],labels:['On','Off']},
+      frame:[318,98],glyph:[54,39,243,46],labels:['On','Off'],
+      markSha256:'c7c554fa06955018c53628fc888ba8c9842420e89642c1740b2dc5ef6af7f8e3'},
     {name:'paint',mode:'Tumbler',xml:russian+paint+largeFont,
-      frame:[288,90],glyph:[54,39,213,38],labels},
+      frame:[288,90],glyph:[54,39,213,38],labels,
+      markSha256:'0b427cd914c2d3179723796f8b7c10c17a415c6dee148210bd24c0b18f806751'},
     {name:'face-blank',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>',dimensions:[243,24],
       markSha256:'c169cf96e4f28cd69a89b3027f9773cfa002767aa21cb52d73bf068547042a4d'},
     {name:'face-narrow',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>1</ItemWidth>',dimensions:[23,24],
@@ -140,6 +145,22 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
       markSha256:'fec83fe7616637c926945ab8f3ac3867b1c2ab91be57bc0c7d72fc2f5845d44b'},
     {name:'face-colors',mode:'Tumbler',noTitle:true,labels:blankLabels,xml:blank+'<ItemWidth>12</ItemWidth>'+'<BackColor>#2266CC</BackColor><BorderColor>web:Red</BorderColor>',dimensions:[243,24],
       markSha256:'db2714d266bf323fdb2338a815665f5905d024dddf0e301481323de7d290f52b'},
+    {name:'caption-language',mode:'Tumbler',noTitle:true,xml:format('L=en_US'),
+      dimensions:[81,24],labels:['Yes','No'],markSha256:'645a5657eb03f61c95643afae093c4b795320abd0238e1c53cf15c89558c07a0'},
+    {name:'caption-leading',mode:'Tumbler',noTitle:true,xml:format('BT=" Yes; really "; BF=No'),
+      dimensions:[167,24],labels:[' Yes; really','No'],markSha256:'4f589afd340f48b7d3820a5ea7f9ab038be22c93036b8f45e0b5364afa138f4b'},
+    {name:'caption-ellipsis',mode:'Tumbler',noTitle:true,xml:russian+'<ItemWidth>3</ItemWidth>',
+      dimensions:[63,24],labels:labels,markSha256:'a4a56b557aaeb828333a8e316288f8df8e56705e47d3fc6fc4d162f64eb684b1'},
+    {name:'caption-wrap-clipped',mode:'Tumbler',noTitle:true,xml:format('BT=Very long short; BF=Two lines here')+'<ItemWidth>3</ItemWidth><ItemHeight>2</ItemHeight><ItemTitleHeight>2</ItemTitleHeight>',
+      dimensions:[63,46],labels:["Very long short", "Two lines here"],markSha256:'effa90787b8c16ae8b280b1c70c7434ece1b6410498dec8fe066aa7ffc7f0f4c'},
+    {name:'caption-wrap-auto',mode:'Tumbler',noTitle:true,xml:format('BT=Long custom single phrase; BF=Small')+'<ItemWidth>4</ItemWidth><ItemTitleHeight>3</ItemTitleHeight>',
+      dimensions:[83,54],labels:["Long custom single phrase", "Small"],markSha256:'153bb6c03947561b63135a3408809bafc78e4095670ea1aebc396d14bbffdf31'},
+    {name:'caption-newline',mode:'Tumbler',noTitle:true,xml:format('BT="One&#10;Two&#10;Three"; BF=Short')+'<ItemWidth>6</ItemWidth><ItemHeight>1</ItemHeight><ItemTitleHeight>1</ItemTitleHeight>',
+      dimensions:[123,23],labels:["One\nTwo\nThree", "Short"],markSha256:'36167a5a9deaca04fe236f37319e977212596ed90271d997110d30a111f2accc'},
+    {name:'caption-disabled-fill',mode:'Tumbler',noTitle:true,inactive:true,xml:format('BT=XXX; BF=ШШШ')+'<ItemWidth>6</ItemWidth><TextColor>web:Red</TextColor><BackColor>web:LightGreen</BackColor><Enabled>false</Enabled>',
+      dimensions:[123,24],labels:["XXX", "ШШШ"],markSha256:'9ec769f7f7cd1e22627ceafc951c544fe428d1fd7d5e794929b0730e0d9cc5a9'},
+    {name:'caption-read-only',mode:'Tumbler',noTitle:true,inactive:true,xml:russian+'<ItemWidth>12</ItemWidth><TextColor>web:Red</TextColor><ReadOnly>true</ReadOnly>',
+      dimensions:[243,24],labels:labels,markSha256:'6a00f2663b682d09bd4f950f69e243099a02d8460133e23195c3a2d79b5b788e'},
     switcher,
     {...switcher,name:'switch-top',xml:'<TitleLocation>Top</TitleLocation>',frame:[71,92],glyph:[14,59,34,20]},
     {name:'box-black',mode:'CheckBox',background:true,xml:'',dimensions:[15,15],
@@ -187,7 +208,7 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
     const track = mark.querySelector('.taxi-checkbox-switch-track');
     const sample = raster && mark.classList.contains('taxi-checkbox-switch') ? [...raster.getImageData(25,9,1,1).data].slice(0,3).join(', ') : null;
     const clipped = [...mark.querySelectorAll('.taxi-checkbox-choice > span')].some(label => label.scrollWidth>label.clientWidth);
-    return {settled,frame:[form.width,form.height],glyph:[glyph.x-form.x,glyph.y-form.y,glyph.width,glyph.height],clipped,
+    return {settled,nativeCaption:mark.dataset.nativeTumblerCaptions==='ready',frame:[form.width,form.height],glyph:[glyph.x-form.x,glyph.y-form.y,glyph.width,glyph.height],clipped,
       role:mark.getAttribute('role'),disabled:mark.getAttribute('aria-disabled'),
       labels:[...mark.querySelectorAll('[role=radio]')].map(node=>node.getAttribute('aria-label')),
       checked:mark.querySelectorAll('[aria-checked=true]').length,color:css.color,border:css.borderTopColor,
@@ -195,14 +216,16 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   })()`;
   const observe = async (target, variant, nativeTarget) => {
     const role = {CheckBox:'checkbox',Tumbler:'radiogroup',Switcher:'switch'}[variant.mode];
+    const caption = variant.mode === 'Tumbler' && variant.labels?.some(Boolean);
     await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
     await until(async () => {
       const result = await target.evaluate(measure);
-      return result?.settled && result.role===role && (process.platform!=='linux' || !variant.markSha256 || result.pixels);
+      return result?.settled && result.role===role && (process.platform!=='linux'
+        || (!variant.markSha256 || result.pixels) && (!caption || result.nativeCaption));
     },'checkbox layout for '+variant.name);
     const {pixels,...result} = await target.evaluate(measure);
     assert.deepEqual(result.labels,variant.labels ?? [],variant.name);
-    if (process.platform==='linux') assert.equal(result.clipped,false,variant.name+' captions fit');
+    if (process.platform==='linux' && !caption) assert.equal(result.clipped,false,variant.name+' captions fit');
     assert.equal(result.checked,0,variant.name);
     assert.equal(result.disabled,variant.inactive?'true':'false',variant.name);
     if (process.platform==='linux') {
@@ -231,8 +254,10 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   const configurationXml = configuration.getText();
   const configurationDisk = await fs.readFile(configuration.uri.fsPath);
   const scripts = [
-    ['Russian',{name:'script-russian',mode:'Tumbler',xml:'',frame:[200,76],glyph:[54,39,125,24],labels}],
-    ['English',{name:'script-english',mode:'Tumbler',xml:'',frame:[178,76],glyph:[54,39,103,24],labels:['True','False']}],
+    ['Russian',{name:'script-russian',mode:'Tumbler',xml:'',frame:[200,76],glyph:[54,39,125,24],labels,
+      markSha256:'8e642348eb44e72fe915ad4e1eb202263ffe09ddef0212dcfe29086e559c63f6'}],
+    ['English',{name:'script-english',mode:'Tumbler',xml:'',frame:[178,76],glyph:[54,39,103,24],labels:['True','False'],
+      markSha256:'78c66e63abbb9b542b72d1a9850f51ce9187ffc7261e3c4639b8edcb80ce507b'}],
   ];
   for (const [script,variant] of scripts) {
     const xml = configurationXml.replace(/<ScriptVariant>[^<]*<\/ScriptVariant>/,'')
@@ -259,6 +284,10 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
       markSha256:'a90ea9871b650848a27eee81ab65afd011ad498ec41405d0576ac7f6bd385eb1'};
   await apply(darkFace);
   results.push(await observe(floating,darkFace,detachedWindow.targetId));
+  const darkCaption = {name:'caption-dark-detached',mode:'Tumbler',noTitle:true,background:true,xml:russian,
+      dimensions:[125,24],labels:labels,markSha256:'caac14caaed911aa43f41ead62e105ec2224213d61ea82e1443dcddc8f170c42'};
+  await apply(darkCaption);
+  results.push(await observe(floating,darkCaption,detachedWindow.targetId));
   await service.receive(view,preview,{type:'dock'});
   await until(() => !view.frames.has('preview'),'checkbox preview docked');
   await change(original);
