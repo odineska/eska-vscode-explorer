@@ -1,7 +1,7 @@
-/** Match native raster coordinates as the surrounding preview resizes. */
-export function observeRasterPosition(element, observer) {
-  let viewport, shell;
-  return (height, zoom) => {
+/** Paint after layout settles, with one redraw per animation frame. */
+export function observeRasterPaint(element, paint) {
+  let viewport, shell, scheduled;
+  const position = (height, zoom) => {
     // A Solid branch may paint once before all its ancestors are attached.
     if (!viewport) {
       viewport = element.closest('.preview-scroll');
@@ -17,5 +17,22 @@ export function observeRasterPosition(element, observer) {
     const y = rect.y + viewport.scrollTop + (shell?.scrollTop ?? 0);
     if (rect.height === height && rect.width >= 7 && [x,y,rect.width].every(value => Number.isInteger(value) && Math.abs(value) < 16000))
       return {x,y,width:rect.width};
+  };
+
+  // A resize callback can see the element and its ancestors in the same
+  // delivery. Defer SVG and canvas writes until that delivery has finished.
+  const schedule = () => {
+    if (scheduled !== undefined) return;
+    scheduled = requestAnimationFrame(() => {
+      scheduled = undefined;
+      paint(position);
+    });
+  };
+  const observer = new ResizeObserver(schedule);
+  observer.observe(element);
+  schedule();
+  return () => {
+    if (scheduled !== undefined) cancelAnimationFrame(scheduled);
+    observer.disconnect();
   };
 }
