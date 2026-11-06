@@ -1,18 +1,26 @@
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
 import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
+import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
+import { paintRadioTumbler, radioTumblerLayout } from './radio-tumbler.mjs';
+import { inactiveTumblerTextColor } from './tumbler-caption.mjs';
 
 export function RadioChoices(props) {
+  let surface, canvas;
+  const [painted, setPainted] = createSignal(false);
   const node = () => props.node, state = props.controller.state;
   const linux = state.os === 'linux';
   const valueFont = () => node().presentation.font;
   const foreground = () => node().presentation.foreground;
   const enabled = () => flag(node(), 'Enabled');
   const segments = () => scalar(node(), 'RadioButtonType') === 'Tumbler';
+  const inactive = () => !enabled() || segments() && flag(node(), 'ReadOnly', false);
   const fallback = [1, 2, 3].map(value => ({ kind: 'name', text: state.strings.sampleValue.replace('{0}', value) }));
   const choices = () => node().presentation.choices.length ? node().presentation.choices : fallback;
   const columns = () => Math.min(choices().length, Math.max(0, Math.trunc(number(node(), 'ColumnsCount'))) || choices().length);
+  const labels = createMemo(() => choices().map(choice => text(choice, state.locale, state.strings).trimEnd()));
+  const layout = createMemo(() => linux && segments() ? radioTumblerLayout(labels(), columns(), valueFont()) : undefined);
   const positions = createMemo(() => {
     const count = choices().length, width = columns();
     if (segments()) return choices().map((_, index) => ({ row: Math.floor(index / width), column: index % width }));
@@ -27,15 +35,46 @@ export function RadioChoices(props) {
     const metrics = buttonMetrics(valueFont());
     return { ...(linux ? linuxControlFont(valueFont()) : font(valueFont(), state.os)),
       color: color(foreground()),
+      '--taxi-radio-segment-fill': linux && segments() ? color(node().presentation.background) : undefined,
+      '--taxi-radio-segment-border': linux && segments() ? color(node().presentation.border) : undefined,
       '--taxi-radio-height': `${Math.max(19, metrics.lineHeight + 2)}px`,
       '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
   };
 
-  return <div class="taxi-radios" data-representation={segments() ? 'segments' : 'buttons'} data-rows={rows()}
-    role="radiogroup" aria-label={caption(node(), state)} aria-disabled={!enabled()} style={style()}>
-    <For each={choices()}>{(choice, index) => {
-      const label = () => text(choice, state.locale, state.strings).trimEnd();
-      const width = createMemo(() => linux ? controlCaptionWidth(label(), valueFont()) : undefined);
+  const runtime = props.controller.nativeText, owner = {};
+  createEffect(on(() => [state.sequence, layout(), inactive()], () => {
+    setPainted(false);
+    runtime?.issue(owner, false);
+    const size = layout(), font = valueFont();
+    if (!size || !runtime) return;
+    let current = true;
+    const fail = () => { if (current) runtime.issue(owner, true); };
+    const frame = requestAnimationFrame(() => {
+      const css = getComputedStyle(surface), style = getComputedStyle(surface.firstElementChild);
+      const family = css.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+      const fill = rgb(style.backgroundColor), stroke = rgb(style.borderTopColor), backdrop = solidBackdrop(surface);
+      const foreground = rgb(css.color);
+      if (!fill || !stroke || !backdrop || !foreground || family !== 'ESKA Taxi Sans'
+          || font?.italic || font?.underline || font?.strikeout) {
+        fail();
+        return;
+      }
+      const ink = inactive() ? inactiveTumblerTextColor(foreground, fill) : foreground;
+      runtime.face(css.fontWeight).then(face => {
+        if (!current) return;
+        const image = paintRadioTumbler(size, font, face, { fill, stroke, backdrop }, ink);
+        setPainted(paintCanvas(canvas, image));
+      }).catch(fail);
+    });
+    onCleanup(() => { current = false; cancelAnimationFrame(frame); runtime.issue(owner, false); });
+  }));
+
+  return <div ref={surface} class="taxi-radios" data-representation={segments() ? 'segments' : 'buttons'} data-rows={rows()}
+    data-native-segments={painted() ? 'ready' : undefined}
+    role="radiogroup" aria-label={caption(node(), state)} aria-disabled={inactive()} style={style()}>
+    <For each={choices()}>{(_choice, index) => {
+      const label = () => labels()[index()];
+      const width = createMemo(() => linux ? layout()?.advances[index()] ?? controlCaptionWidth(label(), valueFont()) : undefined);
       const checked = () => !segments() && index() === 0;
       const position = () => positions()[index()];
       const edge = (match) => segments() && match ? '' : undefined;
@@ -60,5 +99,6 @@ export function RadioChoices(props) {
         </span>
       </span>;
     }}</For>
+    <canvas ref={canvas} class="taxi-radio-segments-face" aria-hidden="true" hidden={!painted()}/>
   </div>;
 }

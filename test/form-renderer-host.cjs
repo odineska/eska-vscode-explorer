@@ -31,7 +31,7 @@ exports.run = async function () {
     if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
     if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
     const checkboxModes = form.kind === 'CheckBoxField' ? await checkCheckboxModes(ui, service, view, document, fixture.source) : undefined;
-    if (form.kind === 'RadioButtonField') await checkRadioChoices(ui, service, view, document);
+    const radioModes = form.kind === 'RadioButtonField' ? await checkRadioChoices(ui, service, view, document) : undefined;
     if (form.kind === 'SpreadSheetDocumentField') {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet th').length"), 0);
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet-cell-selected').length"), 1);
@@ -96,7 +96,7 @@ exports.run = async function () {
     }
     await ui.screenshot(`renderer-${form.kind}-${vscode.env.language}.png`);
     assert.deepEqual(await fs.readFile(form.path),before);
-    results.push({kind:form.kind,...geometry,...(checkboxModes && {checkboxModes})}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(checkboxModes && {checkboxModes}),...(radioModes && {radioModes})}); panel.panel.dispose();
     await until(()=>service.views.size===0,'release gallery form');await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
@@ -308,9 +308,15 @@ async function checkRadioChoices(ui, service, view, document) {
     assert.equal(await vscode.workspace.applyEdit(edit), true);
     await until(() => view.snapshot.revision !== revision, 'dirty radio properties applied');
   }
-  const editOptions = (properties, labels) => original.replace('<RadioButtonType>Auto</RadioButtonType>',
-    properties + '<TitleLocation>None</TitleLocation>' + options(labels));
-  const measure = `(() => {
+  const editOptions = (properties, labels, dark = false) => {
+    const xml = original.replace('<RadioButtonType>Auto</RadioButtonType>',
+      properties + '<TitleLocation>None</TitleLocation>' + options(labels));
+    if (!dark) return xml;
+    const group = '<UsualGroup name="Canvas" id="44"><Group>Vertical</Group><Representation>None</Representation>'
+      +'<ShowTitle>false</ShowTitle><BackColor>web:Black</BackColor><ChildItems>';
+    return xml.replace('<ChildItems>','<ChildItems>'+group).replace('</ChildItems>','</ChildItems></UsualGroup></ChildItems>');
+  };
+  const measure = `(async () => {
     const frame = document.querySelector('.taxi-form-frame');
     const control = document.querySelector('.taxi-radios');
     if (!frame || !control) return null;
@@ -322,9 +328,14 @@ async function checkRadioChoices(ui, service, view, document) {
       const box = glyph.getBoundingClientRect();
       return [box.x - origin.x, box.y - origin.y, box.width, box.height];
     });
-    return { settled, size: [form.width, form.height], mode: control.dataset.representation, glyphs,
-      disabled: control.getAttribute('aria-disabled'), captions: [...control.children].map(option => option.getAttribute('aria-label')),
-      checked: [...control.children].filter(option => option.getAttribute('aria-checked') === 'true').length };
+    const options = [...control.querySelectorAll(':scope > [role=radio]')];
+    const canvas = control.querySelector('.taxi-radio-segments-face:not([hidden])'), ctx = canvas?.getContext('2d');
+    const bytes = ctx?.getImageData(0,0,canvas.width,canvas.height).data;
+    const digest = bytes ? new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)) : undefined;
+    const raster = digest ? {size:[canvas.width,canvas.height],sha256:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')} : null;
+    return { settled, size: [form.width, form.height], mode: control.dataset.representation, glyphs, raster,
+      disabled: control.getAttribute('aria-disabled'), captions: options.map(option => option.getAttribute('aria-label')),
+      checked: options.filter(option => option.getAttribute('aria-checked') === 'true').length };
   })()`;
   const labels = ['First', 'Second long', 'Third', 'Fourth', 'Fifth'];
   await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
@@ -340,18 +351,58 @@ async function checkRadioChoices(ui, service, view, document) {
     assert.deepEqual(buttons.size, [255, 95]);
     assert.deepEqual(buttons.glyphs, [[1, 2, 15, 15], [1, 28, 15, 15], [105, 2, 15, 15], [105, 28, 15, 15], [174, 2, 15, 15]]);
   }
+
+  const style = '<BackColor>web:LightGreen</BackColor><BorderColor>web:Blue</BorderColor><TextColor>web:Red</TextColor>';
+  const largeFont = '<Font ref="sys:DefaultGUIFont" height="16" bold="true" kind="WindowsFont"/>';
+  const variants = [
+    {name:'unequal',labels:["A", "A much longer option"],columns:2,
+      raster:{size:[171,24],sha256:'bf011cabd0804cd5c880742980a8e94a1ce2966c4c156400f92342cbeac82973'}},
+    {name:'grid',labels:["First", "Second long", "Third", "Fourth", "Fifth"],columns:3,
+      raster:{size:[196,46],sha256:'37a7e0cfc223491ad818a32f1e4deb34273cdb85b1c94703478c2a5b8437be23'}},
+    {name:'tall',labels:["First", "Second long", "Third", "Fourth", "Fifth", "Sixth", "Seventh"],columns:3,
+      raster:{size:[208,69],sha256:'3aa517d55b9b189c11217736a43eae720bc37555a58254edb3f346e35ec451b6'}},
+    {name:'bold',labels:["Да", "Широкий вариант", "Третья кнопка", "Четвёртая", "Пятая"],columns:2,extra:largeFont,
+      raster:{size:[402,111],sha256:'22730c965f7593aa8a730950aba2e39ea0cb953239366aac3082b457b0e440be'}},
+    {name:'style',labels:["Update", "Skip", "More"],columns:2,extra:style,
+      raster:{size:[106,46],sha256:'7238b179d2abd86542cc3cf62e17df5e81da8663325675d29a1e22e5de10fafc'}},
+    {name:'disabled',labels:["Update", "Skip", "More"],columns:2,inactive:true,extra:style+'<Enabled>false</Enabled>',
+      raster:{size:[106,46],sha256:'d8f9922354257dd078948952ad6dffe2f21d245b5bcbadbe7b5f8767e64375ae'}},
+  ];
+  const observe = async (target, variant, nativeTarget) => {
+    const settings = '<RadioButtonType>Tumbler</RadioButtonType><ColumnsCount>'+variant.columns+'</ColumnsCount>'+(variant.extra ?? '');
+    await change(editOptions(settings,variant.labels,variant.dark));
+    await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
+    await until(async () => {
+      const result = await target.evaluate(measure);
+      return result?.settled && result.mode==='segments' && (process.platform!=='linux' || result.raster);
+    },'radio tumbler layout for '+variant.name);
+    const result = await target.evaluate(measure);
+    assert.deepEqual(result.captions,variant.labels,variant.name);
+    assert.equal(result.checked,0,variant.name);
+    assert.equal(result.disabled,variant.inactive?'true':'false',variant.name);
+    if (process.platform==='linux') assert.deepEqual(result.raster,variant.raster,variant.name);
+    const screenshot = `renderer-radio-tumbler-${variant.name}-${vscode.env.language}.png`;
+    if (nativeTarget) await target.captureTarget(nativeTarget,screenshot);
+    else await target.screenshot(screenshot);
+    return {name:variant.name,...result};
+  };
+  const results = [];
+  for (const variant of variants) results.push(await observe(ui,variant));
+  await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
+  await until(async () => (await ui.evaluate(measure))?.mode==='buttons','radio buttons restored before detaching');
   const workbench = await ui.nativeWindow();
   await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
   await until(() => view.frames.get('preview')?.ready, 'detached radio preview ready');
   const detached = view.frames.get('preview');
   const floating = await frame({ detached: true, fixedFormArea: true, state: { title: detached.panel.title } });
-  assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+  const detachedWindow = await floating.nativeWindow({ detached: true });
+  assert.notEqual(detachedWindow.targetId, workbench.targetId);
   await until(() => floating.evaluate("!!document.querySelector('.taxi-radios')"), 'initial choices rendered in the detached window');
   await floating.evaluate("globalThis.__radioChoices = document.querySelector('.taxi-radios'); true");
   await change(editOptions('<RadioButtonType>Tumbler</RadioButtonType><ColumnsCount>1</ColumnsCount><Enabled>false</Enabled>', ['Update  ', 'Skip']));
   await until(async () => {
     const result = await floating.evaluate(measure);
-    return result?.settled && result.mode === 'segments';
+    return result?.settled && result.mode === 'segments' && (process.platform!=='linux' || result.raster);
   }, 'segments rendered at the preferred size in detached preview');
   const segments = await floating.evaluate(measure);
   assert.deepEqual(segments.captions, ['Update', 'Skip']);
@@ -362,8 +413,26 @@ async function checkRadioChoices(ui, service, view, document) {
   if (process.platform === 'linux') assert.deepEqual(segments.size, [95, 99]);
   await service.receive(view, detached, { type: 'dock' });
   await until(() => !view.frames.has('preview'), 'radio preview docked');
-  await until(async () => (await ui.evaluate(measure))?.settled, 'docked radio geometry settled');
+  await until(async () => {
+    const result = await ui.evaluate(measure);
+    return result?.settled && result.mode==='segments' && (process.platform!=='linux' || result.raster);
+  }, 'docked radio geometry settled');
   assert.deepEqual(await ui.evaluate(measure), segments);
+  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await until(() => view.frames.get('preview')?.ready, 'radio raster detached again');
+  const finalFrame = view.frames.get('preview');
+  const finalUi = await frame({ detached:true,fixedFormArea:true,state:{title:finalFrame.panel.title} });
+  const finalWindow = await finalUi.nativeWindow({detached:true});
+  assert.notEqual(finalWindow.targetId,workbench.targetId);
+  const readOnly = {name:'read-only-detached',labels:["Update", "Skip", "More"],columns:2,inactive:true,extra:style+'<ReadOnly>true</ReadOnly>',
+      raster:{size:[106,46],sha256:'d8f9922354257dd078948952ad6dffe2f21d245b5bcbadbe7b5f8767e64375ae'}};
+  const dark = {name:'dark-detached',labels:["First", "Second long", "Third", "Fourth", "Fifth", "Sixth", "Seventh"],columns:3,dark:true,
+      raster:{size:[208,69],sha256:'9b6e19e73467cf3a8d608856402a620f10afc669c831a78607fa839cda070b81'}};
+  results.push(await observe(finalUi,readOnly,finalWindow.targetId));
+  results.push(await observe(finalUi,dark,finalWindow.targetId));
+  await service.receive(view,finalFrame,{type:'dock'});
+  await until(() => !view.frames.has('preview'),'radio raster docked');
   await change(original);
   await until(async () => (await ui.evaluate(measure))?.glyphs.length === 3, 'automatic sample restored');
+  return results;
 }

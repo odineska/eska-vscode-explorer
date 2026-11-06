@@ -50,11 +50,12 @@ function blend(stroke, other, coverage) {
     + Math.round(other[index] * (255 - coverage) / 255));
 }
 
-/** The Linux Taxi face stretches its 17 middle rows and keeps its three-pixel corners. */
-export function tumblerPaint({ width, height, first, fill, stroke, backdrop }) {
-  const divider = first - 1;
-  if (![width, height, divider].every(Number.isInteger) || height < 7 || divider < 3
-      || width - divider < 4 || width * height > 1_048_576) return;
+/** Paint one row of Linux Taxi segments with optional shared edges. */
+export function tumblerPaint({ width, height, first, fill, stroke, backdrop,
+  dividers = [first - 1], corners = [true, true, true, true] }) {
+  if (![width, height].every(Number.isInteger) || width < 7 || height < 7 || width * height > 1_048_576
+      || dividers.some((x, index) => !Number.isInteger(x) || x < 3 || width - x < 4
+        || index > 0 && x - dividers[index - 1] < 3)) return;
   const ramp = tintedRamp(fill);
   const outer = backdrop.map(channel => Math.round(Math.max(...stroke) * 11 / 255) + Math.round(channel * 239 / 255));
   const outside = blend(stroke, backdrop, 178);
@@ -64,15 +65,22 @@ export function tumblerPaint({ width, height, first, fill, stroke, backdrop }) {
     const dy = Math.min(y, height - 1 - y);
     const [center, smooth, strip = smooth] = fillRow(y, height, ramp);
     const inner = blend(stroke, smooth, 178), adjacent = blend(stroke, smooth, 109);
+    let seam = 0, left = -1, right = dividers[0] ?? width;
     for (let x = 0; x < width; x++) {
-      const dx = Math.min(x, width - 1 - x), toDivider = Math.abs(x - divider);
-      const slot = x < divider ? first : width - divider;
+      if (x > right) {
+        left = right;
+        right = dividers[++seam] ?? width;
+      }
+      const dx = Math.min(x, width - 1 - x);
+      const toDivider = Math.min(left < 0 ? Infinity : x - left, right === width ? Infinity : right - x);
+      const slot = right - left;
+      const corner = corners[(y * 2 < height ? 0 : 2) + Number(x * 2 >= width)];
       let color;
-      if (dx === 0 && dy === 0) color = outer;
-      else if (dx + dy === 1) color = outside;
+      if (corner && dx === 0 && dy === 0) color = outer;
+      else if (corner && dx + dy === 1) color = outside;
       else if (dx === 0 || dy === 0 || toDivider === 0) color = stroke;
-      else if (dx === 1 && dy === 1) color = inner;
-      else if (dx + dy === 3 && dx < 3 && dy < 3) color = adjacent;
+      else if (corner && dx === 1 && dy === 1) color = inner;
+      else if (corner && dx + dy === 3 && dx < 3 && dy < 3) color = adjacent;
       else if (Math.min(dx, toDivider) <= 2) color = strip;
       else color = slot <= 40 ? smooth : center;
       rgba[pixel++] = color[0];

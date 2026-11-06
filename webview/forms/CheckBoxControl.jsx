@@ -3,6 +3,7 @@ import { checkboxGlyph } from './checkbox-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
 import { linuxControlFont } from './font-metrics.mjs';
 import { caption, color, flag, font } from './model.mjs';
+import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
 import { inactiveTumblerTextColor, paintTumblerCaptions } from './tumbler-caption.mjs';
 import { tumblerPaint } from './tumbler-paint.mjs';
 
@@ -69,27 +70,6 @@ function Tumbler(props) {
     </span>}</Index>
     <canvas ref={canvas} class="taxi-tumbler-face" aria-hidden="true" hidden={!painted()}/>
   </span>;
-}
-
-const rgb = value => /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value)?.slice(1).map(Number);
-
-function solidBackdrop(surface) {
-  for (let parent = surface.parentElement; parent; parent = parent.parentElement) {
-    const css = getComputedStyle(parent);
-    if (css.backgroundImage !== 'none') return;
-    if (css.backgroundColor !== 'rgba(0, 0, 0, 0)') {
-      return rgb(css.backgroundColor);
-    }
-  }
-}
-
-function paintCanvas(canvas, image) {
-  const context = image && canvas.getContext('2d');
-  if (!context) return false;
-  if (canvas.width !== image.width) canvas.width = image.width;
-  if (canvas.height !== image.height) canvas.height = image.height;
-  context.putImageData(new ImageData(image.rgba, image.width, image.height), 0, 0);
-  return true;
 }
 
 function Mark(props) {
