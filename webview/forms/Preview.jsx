@@ -9,7 +9,8 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionOptions, controlCaptionWidth, designTextAdvances, linuxControlFont } from './font-metrics.mjs';
+import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
+import { numericCaptionProfile } from './numeric-label-model.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
@@ -373,7 +374,9 @@ function Field(props) {
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
+  const layout = useFormLayout();
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
+  const numericWidth = createMemo(() => numericLabel() ? numericCaptionProfile(label(), labelFont())?.preferred : undefined);
   const labelValueStyle = () => {
     const size = numericLabel();
     return size ? {
@@ -384,9 +387,8 @@ function Field(props) {
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
     const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
-    const advances = numericLabel() && designTextAdvances(label(), controlCaptionOptions(labelFont()));
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
-      width: advances ? `${advances.reduce((total, advance) => total + advance, 0)}px` : undefined,
+      width: numericWidth() === undefined ? undefined : `var(--taxi-numeric-label-caption-width, ${numericWidth()}px)`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
       'line-height': numericLabel() ? `${fontLineHeight(labelFont())}px` : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
@@ -405,7 +407,7 @@ function Field(props) {
   return <div class="taxi-field-row" data-title-location={titleLocation()}
     data-numeric-label-title={numericLabel() ? '' : undefined}
     data-multiline={state.os === 'linux' && node().kind === 'InputField' && flag(node(), 'MultiLine', false) ? '' : undefined} style={{ 'min-height': numericLabel() ? '0' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
-    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={labelStyle()}><NativeLabel placement="fieldTitle" text={label()} font={labelFont()} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField' && ['Left','Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/></label></Show>
+    <Show when={titleLocation() !== 'None'}><label class="taxi-field-label" aria-label={label()} style={labelStyle()}><NativeLabel placement="fieldTitle" text={layout?.numericCaption(node()) ?? label()} font={labelFont()} foreground={node().presentation.titleColor} runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField' && ['Left','Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/></label></Show>
     <div class="taxi-field-control">{control()}</div>
   </div>;
 }

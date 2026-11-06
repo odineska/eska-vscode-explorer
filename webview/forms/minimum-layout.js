@@ -1,7 +1,7 @@
 import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale = 1) {
+export function minimumFormLayout(root, scale = 1, minimumCaptions) {
   const minima = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -37,6 +37,7 @@ export function minimumFormLayout(root, scale = 1) {
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') {
+        title.width = minimumCaptions?.get(element.dataset.element) ?? title.width;
         const sharedWidth = pixels(element.parentElement.style.getPropertyValue('--taxi-through-label-width'));
         title.width = Math.max(title.width, sharedWidth);
       }

@@ -16,10 +16,12 @@ async function geometry(ui) {
       const {x,y,width,height} = element.getBoundingClientRect();
       return [x-origin.x,y-origin.y,width,height];
     }
+    const labels = fields.map(field => field.querySelector('.taxi-field-label'));
     const controls = fields.map(field => field.querySelector('.taxi-label-field'));
     return {
       frame:[origin.width,origin.height], row:box(row),
-      captions:fields.map(field => field.querySelector('.taxi-field-label')?.getAttribute('aria-label') ?? null),
+      captions:labels.map(label => label?.getAttribute('aria-label') ?? null),
+      lines:labels.map(label => label?.textContent.split(String.fromCharCode(10)) ?? []),
       values:controls.map(control => control.textContent.trim()), controls:controls.map(box),
     };
   })()`);
@@ -35,6 +37,7 @@ async function verifyPose(ui, form, sample, label = sample.name) {
         && actual.values.length === 2 && actual.values.every(value => value === '')
         && (!linux || (
           actual.frame.every((value, index) => value === sample.frame[index])
+          && (!sample.lines || JSON.stringify(actual.lines) === JSON.stringify(sample.lines))
           && actual.row.every((value, index) => Math.abs(value - sample.row[index]) <= (index === 1 ? 1 : 0))
           && (!sample.controls || actual.controls.every((rect, index) =>
             rect.every((value, axis) => Math.abs(value - sample.controls[index][axis]) <= 1)))
@@ -64,7 +67,7 @@ async function verifyDetached(service, view, main, ui, document, original, form)
   await editFormSource(document, view, changed);
   const results = [await verifyPose(floating, form, sample('manual-max'), 'detached-manual-max')];
   await editFormSource(document, view, original);
-  for (const name of ['beyond-cap', 'medium', 'at-cap']) {
+  for (const name of ['beyond-cap', 'wrap-minimum', 'wrap-one', 'auto', 'medium', 'at-cap']) {
     results.push(await verifyPose(floating, form, sample(name), 'detached-' + name));
   }
   assert.deepEqual(view.selected, identity);
@@ -105,10 +108,18 @@ exports.run = async () => {
     assert.deepEqual(nodes.map(node => node.presentation.tabularTotal ?? null),
       form.kind === 'Numbers' ? [null, null] : ['automatic', 'automatic']);
     const revision = view.snapshot.revision;
-    const samples = form.cases.filter(sample => sample.name !== 'manual-max');
+    const samples = form.cases.filter(sample => sample.name !== 'manual-max' && !sample.edit);
     for (const sample of linux ? samples : samples.slice(0, 1)) {
       results.push(await verifyPose(ui, form, sample));
       assert.equal(view.snapshot.revision, revision);
+    }
+    const fixedCases = form.cases.filter(sample => sample.edit === 'left-fixed');
+    if (linux && fixedCases.length) {
+      const changed = original.replace('<HorizontalStretch>true</HorizontalStretch>', '<HorizontalStretch>false</HorizontalStretch>');
+      assert.notEqual(changed, original);
+      await editFormSource(document, view, changed);
+      for (const sample of fixedCases) results.push(await verifyPose(ui, form, sample));
+      await editFormSource(document, view, original);
     }
     if (linux && form.kind === 'Totals') {
       results.push(...await verifyDetached(service, view, main, ui, document, original, form));

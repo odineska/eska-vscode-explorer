@@ -309,8 +309,14 @@ export async function createNumericLabelGallery(fixture, locale) {
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute numeric labels directory.');
   await addNativeGoods(fixture, join(input, 'NativeGoods.xml'));
   const {fixtures} = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
-  const forms = await createGallery(fixture, Object.keys(fixtures), input);
-  return forms.map(form => ({...form, ...fixtures[form.kind][locale]}));
+  const wraps = JSON.parse(await readFile(join(input, 'wrap-metrics.json'), 'utf8'));
+  const kinds = [...new Set([...Object.keys(fixtures), ...Object.keys(wraps.fixtures)])];
+  const forms = await createGallery(fixture, kinds, input);
+  return forms.map(form => {
+    const base = fixtures[form.kind]?.[locale], narrow = wraps.fixtures[form.kind]?.[locale];
+    const cases = [...(base?.cases ?? []), ...(narrow ?? [])];
+    return {...form, captions:base?.captions ?? wraps.captions[locale], cases};
+  });
 }
 
 export async function createThroughAlignGallery(fixture) {

@@ -1,12 +1,63 @@
 import { number, numericLabelMetrics } from './model.mjs';
 import { ordinaryGroup, automaticHorizontalSpacing, controlBounds, stretches } from './layout-model.mjs';
 import { borderBoxSize, boxInsets, pixels } from './layout-box.mjs';
+import { narrowNumericTracks, numericCaptionLines, numericCaptionProfile } from './numeric-label-model.mjs';
 
-/** Numeric labels stretch from their measured row widths and stop at each value's limit. */
+function updateStyle(element, name, value) {
+  if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
+}
+
+function availableWidth(items, tracks, scale) {
+  const css = getComputedStyle(items);
+  return Math.round(borderBoxSize(items, scale).width - boxInsets(css).width - pixels(css.columnGap) * (tracks.length - 1));
+}
+
+/** Numeric labels grow to their value limits and wrap their titles within the available row. */
 export function alignNumericLabelRows(model, { targets, alignment, os, collapsed, scale }) {
   if (os !== 'linux') return;
   const { elements, containers, children: mountedChildren } = targets;
   const { mark, style } = alignment;
+  const allocations = [], minimumCaptions = new Map();
+
+  function row(node, items, group, owner, children) {
+    mark(items, 'data-numeric-label-row');
+    if (automaticHorizontalSpacing(node)) mark(items, 'data-numeric-label-auto-spacing');
+    const tracks = children.map(child => {
+      const element = elements.get(child.key);
+      const preferred = borderBoxSize(element, scale).width;
+      const control = element.querySelector('.taxi-label-field');
+      const valueWidth = borderBoxSize(control, scale).width;
+      const stretch = stretches(child, 'x', collapsed);
+      const bounds = stretch ? controlBounds(child, 'x', undefined, os) : {};
+      const title = element.querySelector('.taxi-field-label')?.getAttribute('aria-label') ?? '';
+      const caption = numericCaptionProfile(title, child.presentation.titleFont);
+      const value = { preferred:valueWidth, minimum:bounds.minimum ?? valueWidth, maximum:stretch ? bounds.maximum ?? Infinity : valueWidth };
+      return { key:child.key, element, preferred, caption, value, stretch,
+        reserve:preferred - valueWidth - (caption?.preferred ?? 0), maximum:preferred - valueWidth + value.maximum };
+    });
+    for (const track of tracks) {
+      style(track.element, '--taxi-numeric-label-grow', String(track.preferred));
+      if (Number.isFinite(track.maximum)) style(track.element, '--taxi-numeric-label-track-max', `${track.maximum}px`);
+    }
+    if (tracks.every(track => Number.isFinite(track.maximum))) {
+      const css = getComputedStyle(items);
+      const insets = boxInsets(css).width + boxInsets(getComputedStyle(group)).width;
+      const gap = pixels(css.columnGap) * (tracks.length - 1);
+      const maximum = tracks.reduce((sum, track) => sum + track.maximum, insets + gap);
+      mark(owner, 'data-numeric-label-row-owner');
+      style(owner, '--taxi-numeric-label-row-max', `${maximum}px`);
+    }
+    if (tracks.some(track => track.stretch) && tracks.every(track => track.caption)
+        && tracks.some(track => track.caption.minimum < track.caption.preferred)) {
+      allocations.push({items, tracks});
+      style(items, '--taxi-numeric-label-align', '');
+      for (const track of tracks) {
+        minimumCaptions.set(track.key, track.caption.minimum);
+        style(track.element, '--taxi-numeric-label-allocation', '');
+        style(track.element, '--taxi-numeric-label-caption-width', '');
+      }
+    }
+  }
 
   function visit(node) {
     const items = containers.get(node.key);
@@ -15,33 +66,32 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
     const children = mountedChildren(node);
     if (group && owner && ordinaryGroup(node) && node.presentation.grouping === 'Horizontal'
         && !group.querySelector(':scope > .taxi-group-title') && number(node, 'Width') <= 0
-        && children.length && children.every(child => numericLabelMetrics(child, os))) {
-      mark(items, 'data-numeric-label-row');
-      if (automaticHorizontalSpacing(node)) mark(items, 'data-numeric-label-auto-spacing');
-      const tracks = children.map(child => {
-        const element = elements.get(child.key);
-        const preferred = borderBoxSize(element, scale).width;
-        const control = element.querySelector('.taxi-label-field');
-        if (!stretches(child, 'x', collapsed)) return { element, preferred, maximum: preferred };
-        const bounds = controlBounds(child, 'x', undefined, os);
-        const reserve = preferred - borderBoxSize(control, scale).width;
-        return { element, preferred, maximum: reserve + (bounds.maximum ?? Infinity) };
-      });
-      for (const track of tracks) {
-        style(track.element, '--taxi-numeric-label-grow', String(track.preferred));
-        if (Number.isFinite(track.maximum)) style(track.element, '--taxi-numeric-label-track-max', `${track.maximum}px`);
-      }
-      if (tracks.every(track => Number.isFinite(track.maximum))) {
-        const css = getComputedStyle(items);
-        const insets = boxInsets(css).width + boxInsets(getComputedStyle(group)).width;
-        const gap = pixels(css.columnGap) * (tracks.length - 1);
-        const maximum = tracks.reduce((sum, track) => sum + track.maximum, insets + gap);
-        mark(owner, 'data-numeric-label-row-owner');
-        style(owner, '--taxi-numeric-label-row-max', `${maximum}px`);
-      }
-    }
+        && children.length && children.every(child => numericLabelMetrics(child, os))) row(node, items, group, owner, children);
     for (const child of node.children) visit(child);
   }
 
   visit(model);
+  return {
+    minimumCaptions,
+    allocateWidths() {
+      const captions = new Map();
+      const widths = allocations.map(({items, tracks}) => narrowNumericTracks(availableWidth(items, tracks, scale), tracks));
+      for (const [index, {items, tracks}] of allocations.entries()) {
+        let wrapped = false;
+        for (const [column, track] of tracks.entries()) {
+          const size = widths[index]?.[column];
+          updateStyle(track.element, '--taxi-numeric-label-allocation', size ? `0 0 ${size.width}px` : '');
+          updateStyle(track.element, '--taxi-numeric-label-caption-width', size ? `${size.caption}px` : '');
+          if (!size || size.caption >= track.caption.preferred) continue;
+          const lines = numericCaptionLines(track.caption, size.caption);
+          if (lines.length > 1) {
+            captions.set(track.key, lines.join('\n'));
+            wrapped = true;
+          }
+        }
+        updateStyle(items, '--taxi-numeric-label-align', wrapped ? 'start' : '');
+      }
+      return captions;
+    },
+  };
 }

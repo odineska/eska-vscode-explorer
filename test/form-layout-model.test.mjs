@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
+import { numericCaptionLines, numericCaptionProfile, narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
   presentation:{displayed:true,valueType:{kind:'string'},font:{points:10,weight:400}}});
@@ -103,4 +104,29 @@ test('native automatic string maximum does not cap explicitly stretched number o
     const field=node('InputField',{HorizontalStretch:true});field.presentation.valueType.kind=kind;
     assert.equal(controlBounds(field,'x',undefined,'linux').maximum,undefined,kind+' explicit stretch');
   }
+});
+
+test('numeric captions preserve words, explicit lines and the native suffix break', () => {
+  const font = {points:10, weight:400};
+  const total = numericCaptionProfile('Сумма (итог):', font);
+  assert.equal(total.minimum, 40);
+  assert.deepEqual(numericCaptionLines(total, 40), ['Сумма', '(итог)', ':']);
+  assert.deepEqual(numericCaptionLines(total, 41), ['Сумма', '(итог):']);
+  assert.deepEqual(numericCaptionLines(total, 81), ['Сумма (итог):']);
+  const custom = numericCaptionProfile('Очень длинная надпись:', font);
+  assert.deepEqual(numericCaptionLines(custom, custom.minimum), ['Очень', 'длинная', 'надпись:']);
+  assert.deepEqual(numericCaptionLines(custom, custom.compact), ['Очень длинная', 'надпись:']);
+  const explicit = numericCaptionProfile('Quantity\n\nAmount:', font);
+  assert.deepEqual(numericCaptionLines(explicit, explicit.preferred), ['Quantity', '', 'Amount:']);
+});
+
+test('narrow numeric rows fill the value boxes before restoring trailing captions', () => {
+  const font = {points:10, weight:400};
+  const tracks = ['Количество (итог):', 'Сумма (итог):'].map(title => ({
+    caption:numericCaptionProfile(title, font), reserve:5, value:{minimum:52, preferred:77, maximum:335},
+  }));
+  assert.deepEqual(narrowNumericTracks(225, tracks), [{width:128, caption:71}, {width:97, caption:40}]);
+  assert.deepEqual(narrowNumericTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
+  assert.deepEqual(narrowNumericTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
+  assert.equal(narrowNumericTracks(357, tracks), undefined);
 });
