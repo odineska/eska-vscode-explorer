@@ -660,6 +660,8 @@ button { cursor: default; }
 .taxi-preview[data-form-layout] .taxi-element[data-lane-input-maximum] > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: var(--taxi-lane-input-max-width) !important;
 }
+.taxi-preview[data-form-layout=preferred] .taxi-table-field[data-native-column-sizing] { width: var(--taxi-table-preferred-width); }
+
 /* The table control can shrink while its column grid remains horizontally scrollable. */
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { width: var(--taxi-table-control-min-width); min-width: var(--taxi-table-control-min-width) !important; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { min-width: var(--taxi-table-control-min-width) !important; }

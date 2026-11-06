@@ -256,8 +256,10 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
     return {headers: __tableIdentity.headers.length, footer: __tableIdentity.footer.length};
   })()`);
   assert.ok(captured.headers >= 3 && captured.footer >= 2);
+  // Exceed the available group width so a fill column cannot absorb the edit.
+  const widthEdit = 72;
   const changed = footer.replace(/<InputField\b[^>]*\bname="Text"[^>]*>/,
-    opening => opening + '<Width>32</Width>');
+    opening => opening + `<Width>${widthEdit}</Width>`);
   assert.notEqual(changed, footer, 'controlled Text column fixture exists');
   await replace(changed);
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns !== __tableIdentity.tracks"), 'dirty column width rendered');
@@ -274,7 +276,7 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns === __tableIdentity.tracks"), 'width restored');
   assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
   assert.equal(document.getText(), original);
-  return {headers: retained.headers, footerCells: retained.footer, widthEdit: 32, selection: '4', restored: true};
+  return {headers: retained.headers, footerCells: retained.footer, widthEdit, selection: '4', restored: true};
 }
 
 

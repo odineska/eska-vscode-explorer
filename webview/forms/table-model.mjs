@@ -1,4 +1,5 @@
-import { flag, number, scalar, fieldWidth, fontLineHeight, viewStatusAddition } from './model.mjs';
+import { flag, number, scalar, caption, fieldWidth, fontLineHeight, viewStatusAddition } from './model.mjs';
+import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
 const bandHeight = value => fontLineHeight(value) + 15;
@@ -79,35 +80,121 @@ export function tableAdditionsProjection(root, table) {
   return bar ? { bar, search, control } : undefined;
 }
 
-function column(node, readOnly, dynamic) {
-  const explicit = number(node, 'Width'), type = node.presentation.valueType.kind;
-  if (explicit > 0) return { node, fields: [node], width: explicit * 8 + 4, flexible: false };
-  if (node.kind === 'CheckBoxField') return { node, fields: [node], width: 54, flexible: false };
+function linuxColumnWidth(node, readOnly, explicit, stretch, state) {
+  const { kind, length, digits, fraction, dateParts, types } = node.presentation.valueType;
+  const title = flag(node, 'ShowInHeader') ? designCaptionWidth(caption(node, state), node.presentation.titleFont) : 0;
+  const label = title ?? 0;
+  const captionWidth = label + 17;
+  const compactCaption = Math.floor((label + .5) * 3 / 4) + 13;
+  const fixed = stretch === false;
+  const editable = node.kind === 'InputField' && !readOnly && !flag(node, 'ReadOnly', false);
+  // A flexible column uses narrower character units than a fixed column.
+  if (explicit > 0) return fixed ? Math.max(captionWidth, explicit * 10 + 17)
+    : Math.max(compactCaption, explicit * 7.5 + 13);
+  if (node.kind === 'CheckBoxField') return Math.max(34, captionWidth);
+  if (kind === 'string') {
+    if (fixed) return Math.max(captionWidth, Math.min(length || 15, 40) * 10 + 18);
+    if (!length) return Math.max(126, compactCaption);
+    if (stretch !== true && length <= 10) return Math.max(captionWidth, length * 10 + 18);
+    return Math.max(compactCaption, Math.min(length, 40) * 7.5 + 14);
+  }
+  const stretchWidth = width => stretch === true ? Math.round(width * 3 / 4) : width;
+  if (kind === 'number' && digits != null) {
+    if (!digits) return fixed ? Math.max(168, captionWidth) : Math.max(126, compactCaption);
+    const decimals = fraction ?? 0, integer = Math.max(1, digits - decimals);
+    const groups = Math.floor((integer - 1) / 3);
+    // The value estimate includes the sign and grouping before snapping to 10px units.
+    const value = (integer + decimals) * 7.5 + groups * 4 + (decimals ? 4.5 : 0) + 17;
+    const choice = editable && flag(node, 'ChoiceButton', decimals > 0) ? 21 : 0;
+    const spin = editable && flag(node, 'SpinButton', false) ? 21 : 0;
+    const control = Math.floor(value / 10) * 10 + (node.kind === 'LabelField' ? 17 : 18) + choice + spin;
+    return stretchWidth(Math.max(captionWidth, control));
+  }
+  if (kind === 'reference') {
+    const enumeration = types?.some(type => type.name.startsWith('EnumRef.'));
+    const width = (enumeration ? 126 : 142) + (editable ? 16 : 0);
+    return fixed ? Math.floor(width * 4 / 3) : width;
+  }
+  if (kind === 'date') {
+    if (dateParts === 'Time') return stretchWidth(98);
+    const width = (dateParts === 'Date' ? 108 : 168) + (editable && flag(node, 'ChoiceButton') ? 21 : 0);
+    return stretchWidth(width);
+  }
+}
+
+function column(node, readOnly, dynamic, native, state) {
+  const explicit = number(node, 'Width'), type = node.presentation.valueType;
   const standard = node.presentation.caption?.kind === 'standard' ? node.presentation.caption.key : '';
-  if (standard === 'table.LineNumber') return { node, fields: [node], width: Math.round((node.presentation.valueType.digits ?? 9) * 7.4 + 30), flexible: false };
-  if (type === 'number') return { node, fields: [node], width: (node.presentation.valueType.digits === 0 ? 155 : 108) + (!readOnly && !flag(node, 'ReadOnly', false) ? 21 : 0) + (flag(node, 'SpinButton', false) ? 21 : 0), flexible: false };
-  return { node, fields: [node], width: fieldWidth(node) + (dynamic ? 8 : 16), flexible: ['string', 'reference', 'unknown'].includes(type) && !['attribute.Code', 'attribute.Number'].includes(standard) };
+  const regular = !['attribute.Code', 'attribute.Number'].includes(standard);
+  const result = (width, growthWeight = 0) => ({ node, fields: [node], width, growthWeight });
+  if (standard === 'table.LineNumber' && explicit <= 0) {
+    return result(Math.max(native ? 87 : 0, Math.round((type.digits ?? 9) * 7.4 + 30)));
+  }
+  if (native) {
+    const stretch = flag(node, 'HorizontalStretch', null);
+    const width = linuxColumnWidth(node, readOnly, explicit, stretch, state);
+    if (width !== undefined) {
+      const automatic = type.kind === 'string' && (!type.length || type.length > 10)
+        || type.kind === 'number' && type.digits === 0 || type.kind === 'reference';
+      const grows = node.kind !== 'CheckBoxField' && (stretch ?? (automatic && regular));
+      return result(Math.floor(width), grows ? width : 0);
+    }
+  }
+  if (explicit > 0) return result(explicit * 8 + 4);
+  if (node.kind === 'CheckBoxField') return result(54);
+  if (type.kind === 'number') {
+    const choice = !readOnly && !flag(node, 'ReadOnly', false) ? 21 : 0;
+    return result((type.digits === 0 ? 155 : 108) + choice + (flag(node, 'SpinButton', false) ? 21 : 0));
+  }
+  const width = fieldWidth(node) + (dynamic ? 8 : 16);
+  return result(width, regular && ['string', 'reference', 'unknown'].includes(type.kind) ? width : 0);
+}
+
+/** Snap proportional surplus to CSS pixels while keeping the last edge at the available width. */
+export function tableTracks(layout, available) {
+  if (!layout.nativeColumns || available <= layout.contentMinWidth || !layout.columns.length) return layout.tracks;
+  const { columns } = layout;
+  const extra = available - layout.contentMinWidth;
+  const flexibleWidth = columns.reduce((sum, item) => sum + item.growthWeight, 0);
+  const firstNumber = flexibleWidth ? -1 : columns.findIndex(item => item.node.presentation.valueType?.kind === 'number');
+  const fallback = firstNumber < 0 ? columns.length - 1 : firstNumber;
+  let used = 0, weight = 0;
+  return columns.map((item, index) => {
+    if (!flexibleWidth) return `${item.width + (index === fallback ? extra : 0)}px`;
+    if (!item.growthWeight) return `${item.width}px`;
+    weight += item.growthWeight;
+    const end = Math.round(weight * extra / flexibleWidth);
+    const width = item.width + end - used;
+    used = end;
+    return `${width}px`;
+  }).join(' ');
 }
 
 /** Physical columns differ from logical fields for Vertical and InCell groups. */
-export function tableLayout(table, locale = 'ru', additions) {
+export function tableLayout(table, state = {}, additions) {
+  const { os, locale = 'ru' } = state;
   const readOnly = flag(table, 'ReadOnly', false);
   const dynamic = isDynamicList(table);
+  const nativeColumns = os === 'linux' && !dynamic;
+  const captions = { locale, strings: state.strings };
+  const metrics = node => column(node, readOnly, dynamic, nativeColumns, captions);
   function visit(node) {
     const titleHeight = bandHeight(node.presentation.titleFont);
     if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1,
       height: flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight,
-      columns: [column(node, readOnly, dynamic)], children: [] };
+      columns: [metrics(node)], children: [] };
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
     const captionHeight = show ? titleHeight : 0;
     if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children,
       height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight),
       depth: (show ? 1 : 0) + Math.max(1, ...children.map(child => child.depth)), columns: children.flatMap(child => child.columns) };
-    const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(field => column(field, readOnly, dynamic));
+    const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(metrics);
+    const width = mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width));
+    const growthWeight = parts.some(part => part.growthWeight) ? width : 0;
     return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, captionHeight, children,
       height: captionHeight + (mode === 'InCell' ? titleHeight : children.reduce((sum, child) => sum + child.height, 0)),
       depth: (show ? 1 : 0) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
-      columns: [{ node, fields, width: mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width)), flexible: parts.some(part => part.flexible) }] };
+      columns: [{ node, fields, width, growthWeight }] };
   }
   const children = table.children.filter(visible).map(visit), columns = children.flatMap(child => child.columns);
   const depth = Math.max(1, ...children.map(child => child.depth));
@@ -132,11 +219,17 @@ export function tableLayout(table, locale = 'ru', additions) {
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);
-  const controlMinWidth = Math.max(400, toolbar && search ? toolbarWidth : 0);
-  const minWidth = Math.max(controlMinWidth, number(table, 'Width') * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
-  const flexible = columns.some(column => column.flexible);
-  const tracks = columns.map((column, index) => column.flexible || !flexible && index === 0 ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, minWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic };
+  const explicit = number(table, 'Width');
+  const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth : 0);
+  const controlMinWidth = nativeColumns && explicit > 0 ? Math.min(explicit * 10, toolbarMinimum) : toolbarMinimum;
+  // The native table viewport has its own preferred width, independent of the scrolling grid.
+  const preferredWidth = nativeColumns
+    ? explicit > 0 ? explicit * 10 : Math.max(controlMinWidth, Math.min(880, 40 + columns.length * 120))
+    : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
+  const flexible = columns.some(column => column.growthWeight);
+  const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
+    ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
+  return { children, columns, depth, header, footer, height, preferredWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

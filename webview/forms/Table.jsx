@@ -1,7 +1,7 @@
-import { For, Show, Switch, Match, createMemo } from 'solid-js';
+import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { scalar, flag, caption, font, color, text, fontLineHeight } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
-import { tableAdditionsProjection, tableFooterFont } from './table-model.mjs';
+import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
 import { CommandButton, Element } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
@@ -96,9 +96,18 @@ export function TableToolbarSearch(props) {
 export function Table(props) {
   const state = props.controller.state, node = () => props.node;
   const additions = createMemo(() => tableAdditionsProjection(state.model.root, node()));
-  const layout = createTableLayout(node, () => state.locale, additions);
+  const layout = createTableLayout(node, state, additions);
+  let content;
+  const [columnSpace, setColumnSpace] = createSignal(0);
+  createEffect(() => {
+    if (!layout().nativeColumns) return;
+    const observer = new ResizeObserver(([entry]) => setColumnSpace(Math.round(entry.contentRect.width)));
+    observer.observe(content);
+    onCleanup(() => observer.disconnect());
+  });
+  const tracks = createMemo(() => tableTracks(layout(), columnSpace()));
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
-  return <div class="taxi-table-field" data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': `${layout().minWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25)}px` }}>
+  return <div class="taxi-table-field" data-native-column-sizing={layout().nativeColumns ? '' : undefined} data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': 'var(--taxi-table-preferred-width)', '--taxi-table-preferred-width': `${layout().preferredWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-min-height': `${Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25)}px` }}>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? "" : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
@@ -108,10 +117,10 @@ export function Table(props) {
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" style={{ height: `${layout().height}px`, 'border-color': color(node().presentation.border), 'background-color': color(node().presentation.background) }}>
-      <div class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
-        <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': layout().tracks }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
+      <div ref={content} class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
+        <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
-        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': layout().tracks }}><For each={layout().columns}>{column => <FooterCell column={column} table={node()} controller={props.controller}/>}</For></div></Show>
+        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': tracks() }}><For each={layout().columns}>{column => <FooterCell column={column} table={node()} controller={props.controller}/>}</For></div></Show>
       </div>
       <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><For each={[0,1]}>{()=><span><Show when={state.os==='linux'}><svg width="6" height="4" viewBox="0 0 6 4" shape-rendering="crispEdges"><For each={tableScrollbarGrays}>{(value,index)=><rect x={index()%6} y={Math.floor(index()/6)} width="1" height="1" fill={`rgb(${value},${value},${value})`}/>}</For></svg></Show></span>}</For></div></Show>
     </div>
