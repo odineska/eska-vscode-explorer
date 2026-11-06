@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds, horizontalInputMaximum } from '../webview/forms/layout-model.mjs';
+import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -98,6 +98,20 @@ test('explicit group sizes are separated from stretch weights and converted thro
   assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:48});
   assert.deepEqual(groupPreferredSize(group,'win32'),{width:280,height:60});
   assert.deepEqual(groupPreferredSize(node('InputField',{Width:35}),'linux'),{});
+});
+
+test('picture fields reserve the measured Linux slot and accept a Designer border override', () => {
+  const picture = node('PictureField', {Width:2, Height:1});
+  assert.deepEqual([pictureFieldStyle(picture,'linux').width, pictureFieldStyle(picture,'linux').height], ['20px','18px']);
+  assert.deepEqual([pictureFieldStyle(picture,'win32').width, pictureFieldStyle(picture,'win32').height], ['16px','20px']);
+  picture.properties.push({
+    key: property('Border', '').key,
+    value: {kind:'record',fields:[{
+      key:{namespace:'http://v8.1c.ru/8.1/data/ui',name:'style'},
+      value:{kind:'text',text:'WithoutBorder'},
+    }]},
+  });
+  assert.equal(pictureFieldStyle(picture, 'linux')['border-style'], 'none');
 });
 
 test('native automatic string maximum does not cap explicitly stretched number or date controls',()=>{

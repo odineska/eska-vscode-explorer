@@ -20,7 +20,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle } from './layout-model.mjs';
 import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 
@@ -445,7 +445,7 @@ function Field(props) {
     </span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
-    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
+    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={pictureFieldStyle(node(), state.os)}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()}
     data-wrapped-input-caption={inputCaption() ? '' : undefined}

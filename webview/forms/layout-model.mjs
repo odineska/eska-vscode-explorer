@@ -1,4 +1,4 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { color, property, number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -249,4 +249,19 @@ export function groupPreferredSize(node, os) {
   if (!containers.has(node.kind) || node.kind === 'Form') return {};
   return { width: positive(number(node,'Width')) * (os === 'linux' ? 10 : 8),
     height: positive(number(node,'Height')) * (os === 'linux' ? linuxContainerHeightUnit : 20) };
+}
+
+export function pictureFieldStyle(node, os) {
+  const width = number(node, 'Width'), height = number(node, 'Height');
+  const linux = os === 'linux';
+  const fixedHeight = linux ? height * linuxContainerHeightUnit + 2 : height * 20;
+  const border = property(node, 'Border')?.value;
+  const borderStyle = border?.kind === 'record' && border.fields.find(field =>
+    field.key.namespace === 'http://v8.1c.ru/8.1/data/ui' && field.key.name === 'style')?.value.text;
+  return {
+    width: (width > 0 ? width * (linux ? 10 : 8) : 122) + 'px',
+    height: (height > 0 ? fixedHeight : 120) + 'px',
+    'border-style': borderStyle === 'WithoutBorder' ? 'none' : undefined,
+    'border-color': color(node.presentation.border),
+  };
 }
