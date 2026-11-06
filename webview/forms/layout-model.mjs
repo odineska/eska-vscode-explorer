@@ -98,8 +98,10 @@ export function laneInputBounds(node, os) {
   const maximum = limit ? limit * 10 + 10 : automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
   // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
   const preferred = Math.min(intrinsic, maximum + 1);
-  const minimum = reference ? node.presentation.titleLocation === 'None' ? 113 : bounds.minimum ?? intrinsic : 71;
-  return { preferred, minimum: Math.min(minimum, preferred), maximum: Math.max(preferred, maximum) };
+  const narrowMinimum = Math.min(reference ? 113 : 71, preferred);
+  const minimum = reference && node.presentation.titleLocation !== 'None'
+    ? Math.min(bounds.minimum ?? intrinsic, preferred) : narrowMinimum;
+  return { preferred, minimum, narrowMinimum, maximum: Math.max(preferred, maximum), valueWeight: reference ? 98 : 78 };
 }
 
 /** Share free space proportionally, redistributing a track’s excess after its cap. */
@@ -121,7 +123,7 @@ export function cappedTrackGrowth(space, limits) {
 }
 
 /** Choose the caption widths that fit beside the preferred value boxes. */
-export function fitCaptionWidths(available, tracks) {
+export function fitCaptionWidths(available, tracks, trailingOnly = false) {
   const sum = values => values.reduce((total, value) => total + value, 0);
   const insets = sum(tracks.map(track => track.reserve));
   const preferredValues = sum(tracks.map(track => track.value.preferred));
@@ -146,7 +148,7 @@ export function fitCaptionWidths(available, tracks) {
     if (width >= captionTotal + delta + preferredValues) {
       captions[index] += delta;
       captionTotal += delta;
-    }
+    } else if (delta > 0 && trailingOnly) break;
   }
 
   return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };

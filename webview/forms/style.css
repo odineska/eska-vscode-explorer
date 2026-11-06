@@ -124,7 +124,7 @@ button { cursor: default; }
 .taxi-disabled { color: #a0a0a0 !important; }
 .taxi-disabled .taxi-input { background: #fff !important; border-color: #d7d7d7 !important; }
 .taxi-disabled[data-kind=InputField] .taxi-field-label, .taxi-disabled .taxi-input input { color: #aaa !important; }
-.taxi-field-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 19px; gap: 0 4px; }
+.taxi-field-row { display: grid; grid-template-columns: var(--taxi-field-columns, subgrid); grid-column: 1 / -1; align-items: center; min-height: 19px; gap: 0 4px; }
 .taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
 .taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
 .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
@@ -136,7 +136,10 @@ button { cursor: default; }
 .taxi-field-label { position: relative; }
 .taxi-native-label { position: absolute; pointer-events: none; }
 .taxi-input:has(> [data-native-value=ready]) > input { -webkit-text-fill-color: transparent; }
-.taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: calc-size(max-content, round(nearest, size, 1px)); }
+.taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: var(--taxi-field-caption-width, calc-size(max-content, round(nearest, size, 1px))); }
+.taxi-field-caption-line { display: block; position: relative; white-space: pre; }
+.taxi-field-row[data-wrapped-input-caption] { align-items: start; }
+.taxi-field-row[data-wrapped-input-caption] > .taxi-field-control { display: grid; align-items: center; min-height: inherit; }
 .taxi-field-row[data-multiline] { padding-block: 1px; }
 .taxi-field-row[data-numeric-label-title] { column-gap: 5px; align-items: var(--taxi-numeric-label-align, center); }
 .taxi-field-row[data-numeric-label-title] > .taxi-field-label { white-space: pre; }
@@ -600,7 +603,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=minimum] .taxi-items--vertical { grid-template-columns: max-content max-content; }
 :is(.taxi-items[data-through-labels=all] > .taxi-element--field,
   .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
-  grid-template-columns: var(--taxi-through-label-width) minmax(0, 1fr);
+  grid-template-columns: var(--taxi-field-columns, var(--taxi-through-label-width) minmax(0, 1fr));
 }
 .taxi-preview[data-form-layout=minimum] :is(.taxi-items[data-through-labels=all] > .taxi-element--field,
   .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {

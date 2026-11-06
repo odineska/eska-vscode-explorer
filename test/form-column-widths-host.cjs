@@ -5,24 +5,35 @@ const vscode = require('vscode');
 const {frame, until, allocateFormViewport, editFormSource} = require('./webview-host.cjs');
 
 async function pose(ui, keys, expected) {
-  await allocateFormViewport(ui, expected.frame);
+  await allocateFormViewport(ui, expected.viewport ?? expected.frame);
   let actual;
   try {
     await until(async () => {
       actual = await ui.evaluate(`(() => {
         const root=document.querySelector('.taxi-form-frame'), origin=root.getBoundingClientRect();
-        const fields=[...root.querySelectorAll('[data-kind=InputField]')];
-        const controls=Object.fromEntries(Object.entries(${JSON.stringify(keys)}).map(([name,key]) => {
-          const input=fields.find(field=>field.dataset.element===key)?.querySelector('.taxi-input');
-          if(!input)return [name,null];
-          const r=input.getBoundingClientRect();return [name,[r.x-origin.x,r.y-origin.y,r.width,r.height]];
-        }));
-        return {frame:[origin.width,origin.height],controls};
+        const fields=new Map([...root.querySelectorAll('[data-kind=InputField]')].map(field=>[field.dataset.element,field]));
+        const controls={}, captions={};
+        for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
+          const field=fields.get(key), input=field?.querySelector('.taxi-input');
+          if (!input) continue;
+          const r=input.getBoundingClientRect();
+          controls[name]=[r.x-origin.x,r.y-origin.y,r.width,r.height];
+          const label=field.querySelector('.taxi-field-label');
+          if (!label) continue;
+          const wrapped=[...label.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
+          captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : [label.textContent]};
+        }
+        return {frame:[origin.width,origin.height],controls,captions};
       })()`);
       const tolerance = expected.tolerancePx ?? 0;
       return actual.frame.every((v,i) => v === expected.frame[i])
         && Object.entries(expected.controls).every(([name, rect]) =>
-          actual.controls[name]?.every((value,i) => Math.abs(value-rect[i]) <= tolerance));
+          actual.controls[name]?.every((value,i) => Math.abs(value-rect[i]) <= tolerance))
+        && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
+          const caption = actual.captions[name];
+          return caption?.accessible === lines.join(' ') && caption.lines.length === lines.length
+            && lines.every((line,index) => line === caption.lines[index]);
+        });
     }, expected.name);
   } catch (error) {
     throw new Error(JSON.stringify({case:expected.name,actual,expected}), {cause:error});
@@ -54,6 +65,9 @@ function sourceVariant(xml, edit) {
   let changed = xml;
   for (const [name, title] of Object.entries(edit.titles ?? {})) {
     changed = editField(changed, name, properties => properties.replace(/<Title>[\s\S]*?<\/Title>/u, titleXml(title)));
+  }
+  for (const [name, width] of Object.entries(edit.widths ?? {})) {
+    changed = editField(changed, name, properties => `<Width>${width}</Width>` + properties.replace(/<Width>.*?<\/Width>/u, ''));
   }
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
@@ -132,7 +146,12 @@ exports.run = async () => {
           results.push({label:'detached-column-resize-dirty', ...observation});
         } else {
           const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
-            await pose(floating, keys, sample('Standard94'));
+            const wide = sample('Standard94'), narrow = sample('NarrowMinimum');
+            await pose(floating, keys, wide);
+            await pose(floating, keys, narrow);
+            await pose(floating, keys, { ...narrow, name: 'below the minimum width', viewport: [narrow.frame[0]-50, narrow.frame[1]] });
+            assert.equal(await floating.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
+            await pose(floating, keys, wide);
             const short = sample('Short74');
             await replace(sourceVariant(original, short.edit));
             await pose(floating, keys, short);
@@ -142,7 +161,8 @@ exports.run = async () => {
               await pose(floating, keys, limited);
             }
             await replace(original);
-            await pose(floating, keys, sample('Standard94'));
+            await pose(floating, keys, narrow);
+            await pose(floating, keys, wide);
           });
           results.push({label:'detached-auto-reference-resize-dirty', ...observation});
         }

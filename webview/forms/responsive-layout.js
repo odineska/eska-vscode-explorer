@@ -27,9 +27,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
   const [minima, setMinima] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
-  const [numericCaptions, setNumericCaptions] = createSignal(new Map());
+  const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows;
+  let unitedRows, numericRows, minimumCaptions;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -65,13 +65,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const targets = { elements: elementByKey, containers, children: node => node.children.filter(child => elementByKey.has(child.key)) };
       content.dataset.formLayout = 'preferred';
       clearAlignment();
-      if (numericCaptions().size) setNumericCaptions(new Map());
+      if (fieldCaptions().size) setFieldCaptions(new Map());
       const scale = boundingScale(root);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       alignUnitedColumns(state.model.root, context);
       numericRows = alignNumericLabelRows(state.model.root, context);
+      minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -84,7 +85,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), numericRows?.minimumCaptions);
+      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions);
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -97,17 +98,16 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const previous = size();
     const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
     // A scrollbar from the previous wrapped height must not prevent the title from unwrapping.
-    if ((refresh || resized) && numericRows?.minimumCaptions.size) next.width = next.outerWidth;
+    if ((refresh || resized) && minimumCaptions.size) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
-    unitedRows?.allocateWidths();
-    if (numericRows) {
-      const captions = numericRows.allocateWidths(), previous = numericCaptions();
-      if (captions.size !== previous.size || [...captions].some(([key, value]) => previous.get(key) !== value)) {
-        setNumericCaptions(captions);
-        needsMinimum = true;
-        schedule();
-      }
+    const captions = new Map(), previousCaptions = fieldCaptions();
+    unitedRows.allocateWidths(captions);
+    numericRows?.allocateWidths(captions);
+    if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
+      setFieldCaptions(captions);
+      needsMinimum = true;
+      schedule();
     }
     const wrap = new Set();
     for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
@@ -159,7 +159,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     preferred, minimumFor: node => minima().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
     wrapped: node => wrapped().has(node.key),
-    numericCaption: node => numericCaptions().get(node.key),
+    captionFor: node => fieldCaptions().get(node.key),
     initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
   };
 }

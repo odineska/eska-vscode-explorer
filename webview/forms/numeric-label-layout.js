@@ -2,7 +2,8 @@ import { number, numericLabelMetrics } from './model.mjs';
 import { ordinaryGroup, automaticHorizontalSpacing, controlBounds, stretches } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { narrowNumericTracks } from './numeric-label-model.mjs';
-import { fieldCaptionLines, fieldCaptionProfile } from './font-metrics.mjs';
+import { fieldCaptionProfile } from './font-metrics.mjs';
+import { allocateFieldCaption, throughCaptionWidth } from './field-caption-layout.js';
 
 /** Numeric labels grow to their value limits and wrap their titles within the available row. */
 export function alignNumericLabelRows(model, { targets, alignment, os, collapsed, scale }) {
@@ -44,9 +45,9 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
       allocations.push({items, tracks});
       style(items, '--taxi-numeric-label-align', '');
       for (const track of tracks) {
-        minimumCaptions.set(track.key, track.caption.minimum);
+        minimumCaptions.set(track.key, Math.max(track.caption.minimum, throughCaptionWidth(track.element)));
         style(track.element, '--taxi-numeric-label-allocation', '');
-        style(track.element, '--taxi-numeric-label-caption-width', '');
+        style(track.element, '--taxi-field-caption-width', '');
       }
     }
   }
@@ -65,25 +66,17 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
   visit(model);
   return {
     minimumCaptions,
-    allocateWidths() {
-      const captions = new Map();
+    allocateWidths(captions) {
       const widths = allocations.map(({items, tracks}) => narrowNumericTracks(availableTrackWidth(items, tracks.length, scale), tracks));
       for (const [index, {items, tracks}] of allocations.entries()) {
         let wrapped = false;
         for (const [column, track] of tracks.entries()) {
           const size = widths[index]?.[column];
           updateStyle(track.element, '--taxi-numeric-label-allocation', size ? `0 0 ${size.width}px` : '');
-          updateStyle(track.element, '--taxi-numeric-label-caption-width', size ? `${size.caption}px` : '');
-          if (!size || size.caption >= track.caption.preferred) continue;
-          const lines = fieldCaptionLines(track.caption, size.caption);
-          if (lines.length > 1) {
-            captions.set(track.key, lines.join('\n'));
-            wrapped = true;
-          }
+          if (allocateFieldCaption(captions, track, size?.caption)) wrapped = true;
         }
         updateStyle(items, '--taxi-numeric-label-align', wrapped ? 'start' : '');
       }
-      return captions;
     },
   };
 }

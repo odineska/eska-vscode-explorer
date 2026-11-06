@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
+import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
@@ -55,9 +56,9 @@ test('native horizontal lanes divide control space and honor minima, caps and fi
 test('standard reference inputs reserve both buttons and cap stretch in the measured lane', () => {
   const field = node('InputField', {Width:30});
   field.presentation.valueType.kind = 'reference';
-  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:353,minimum:80,maximum:410});
+  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:353,minimum:80,narrowMinimum:113,maximum:410,valueWeight:98});
   const automatic = {...field, properties:[]};
-  assert.deepEqual(laneInputBounds(automatic,'linux'), {preferred:203,minimum:80,maximum:410});
+  assert.deepEqual(laneInputBounds(automatic,'linux'), {preferred:203,minimum:80,narrowMinimum:113,maximum:410,valueWeight:98});
   assert.equal(laneInputBounds(automatic,'windows'), undefined);
 });
 
@@ -145,8 +146,36 @@ test('manual limits on measured automatic lanes keep their preferred trailing bo
   const field = node('InputField', {AutoMaxWidth:false, MaxWidth:14});
   field.presentation.valueType.kind = 'reference';
   field.presentation.titleLocation = 'None';
-  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:151, minimum:113, maximum:151});
+  assert.deepEqual(laneInputBounds(field,'linux'), {preferred:151, minimum:113, narrowMinimum:113, maximum:151, valueWeight:98});
   const raised = node('InputField', {AutoMaxWidth:false, MaxWidth:30});
   raised.presentation = field.presentation;
-  assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, maximum:310});
+  assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, narrowMinimum:113, maximum:310, valueWeight:98});
+});
+
+
+test('narrow input lanes restore a trailing full title before expanding the leading title', () => {
+  const tracks = ['Customer group:', 'Settlement currency:'].map((title, index) => ({
+    caption: fieldCaptionProfile(title, { points: 10, weight: 400 }),
+    reserve: 5,
+    value: { minimum: 113, preferred: 203, maximum: 410 },
+    valueWeight: 98,
+    growthWeight: [143, 156][index],
+  }));
+  const partial = narrowInputLaneWidths(580, tracks);
+  assert.deepEqual(partial.map(track => track.caption), [61, 68]);
+  assert.equal(partial.reduce((width, track) => width + track.width, 0), 580);
+  assert.deepEqual(narrowInputLaneWidths(600, tracks).map(track => track.caption), [57, 121]);
+  assert.equal(narrowInputLaneWidths(640, tracks), undefined);
+});
+
+test('reference and string lanes retain their own minimum value boxes', () => {
+  const tracks = ['Organization:', 'Settlement currency:'].map((title, index) => ({
+    caption: fieldCaptionProfile(title, { points: 10, weight: 400 }),
+    reserve: 5,
+    value: { minimum: [113, 71][index], preferred: [203, 161][index], maximum: 410 },
+    valueWeight: [98, 78][index],
+    growthWeight: [98, 136][index],
+  }));
+  assert.deepEqual(narrowInputLaneWidths(300, tracks), [{ width: 195, caption: 77 }, { width: 139, caption: 63 }]);
+  assert.deepEqual(narrowInputLaneWidths(510, tracks), [{ width: 281, caption: 77 }, { width: 229, caption: 63 }]);
 });

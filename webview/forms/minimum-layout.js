@@ -1,4 +1,5 @@
 import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
+import { throughCaptionWidth } from './field-caption-layout.js';
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
 export function minimumFormLayout(root, scale = 1, minimumCaptions) {
@@ -37,9 +38,7 @@ export function minimumFormLayout(root, scale = 1, minimumCaptions) {
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') {
-        title.width = minimumCaptions?.get(element.dataset.element) ?? title.width;
-        const sharedWidth = pixels(element.parentElement.style.getPropertyValue('--taxi-through-label-width'));
-        title.width = Math.max(title.width, sharedWidth);
+        title.width = minimumCaptions.get(element.dataset.element) ?? Math.max(title.width, throughCaptionWidth(element));
       }
       const vertical = ['Top', 'Bottom'].includes(location), gap = label ? pixels(getComputedStyle(field)[vertical ? 'rowGap' : 'columnGap']) : 0;
       value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }

@@ -299,11 +299,17 @@ export async function createColumnWidthGallery(fixture, locale) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
   await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
-  const {fixtures} = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
-  const {fixtures: automatic} = JSON.parse(await readFile(join(input, 'automatic-metrics.json'), 'utf8'));
-  const kinds = [...Object.keys(fixtures), ...Object.keys(automatic).filter(kind => automatic[kind][locale]?.length)];
-  const forms = await createGallery(fixture, kinds, input);
-  return forms.map(form => ({...form, cases:fixtures[form.kind]?.cases ?? automatic[form.kind][locale]}));
+  const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json']
+    .map(async file => JSON.parse(await readFile(join(input, file), 'utf8'))));
+  const cases = new Map();
+  for (const { fixtures } of measurements) {
+    for (const [kind, profiles] of Object.entries(fixtures)) {
+      const samples = profiles.cases ?? profiles[locale] ?? [];
+      if (samples.length) cases.set(kind, [...(cases.get(kind) ?? []), ...samples]);
+    }
+  }
+  const forms = await createGallery(fixture, [...cases.keys()], input);
+  return forms.map(form => ({ ...form, cases: cases.get(form.kind) }));
 }
 
 export async function createNumericLabelGallery(fixture, locale) {
