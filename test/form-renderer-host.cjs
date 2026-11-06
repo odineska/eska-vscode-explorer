@@ -31,7 +31,7 @@ exports.run = async function () {
     if (frameHeights[form.kind]) assert.equal(geometry.frame.height, frameHeights[form.kind], `${form.kind} native auto form height`);
     if (form.kind === 'TrackBarField') assert.equal(geometry.title, 'Top');
     const checkboxModes = form.kind === 'CheckBoxField' ? await checkCheckboxModes(ui, service, view, document, fixture.source) : undefined;
-    const radioModes = form.kind === 'RadioButtonField' ? await checkRadioChoices(ui, service, view, document) : undefined;
+    const radio = form.kind === 'RadioButtonField' ? await checkRadioChoices(ui, service, view, document) : undefined;
     if (form.kind === 'SpreadSheetDocumentField') {
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet th').length"), 0);
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-sheet-cell-selected').length"), 1);
@@ -96,7 +96,7 @@ exports.run = async function () {
     }
     await ui.screenshot(`renderer-${form.kind}-${vscode.env.language}.png`);
     assert.deepEqual(await fs.readFile(form.path),before);
-    results.push({kind:form.kind,...geometry,...(checkboxModes && {checkboxModes}),...(radioModes && {radioModes})}); panel.panel.dispose();
+    results.push({kind:form.kind,...geometry,...(checkboxModes && {checkboxModes}),...(radio && {radioModes:radio.segments,radioCircleModes:radio.circles})}); panel.panel.dispose();
     await until(()=>service.views.size===0,'release gallery form');await Promise.all([...service.closing]);
   }
   await explorer.shutdown();
@@ -308,12 +308,12 @@ async function checkRadioChoices(ui, service, view, document) {
     assert.equal(await vscode.workspace.applyEdit(edit), true);
     await until(() => view.snapshot.revision !== revision, 'dirty radio properties applied');
   }
-  const editOptions = (properties, labels, dark = false) => {
+  const editOptions = (properties, labels, backdrop) => {
     const xml = original.replace('<RadioButtonType>Auto</RadioButtonType>',
       properties + '<TitleLocation>None</TitleLocation>' + options(labels));
-    if (!dark) return xml;
+    if (!backdrop) return xml;
     const group = '<UsualGroup name="Canvas" id="44"><Group>Vertical</Group><Representation>None</Representation>'
-      +'<ShowTitle>false</ShowTitle><BackColor>web:Black</BackColor><ChildItems>';
+      +'<ShowTitle>false</ShowTitle><BackColor>'+backdrop+'</BackColor><ChildItems>';
     return xml.replace('<ChildItems>','<ChildItems>'+group).replace('</ChildItems>','</ChildItems></UsualGroup></ChildItems>');
   };
   const measure = `(async () => {
@@ -324,17 +324,25 @@ async function checkRadioChoices(ui, service, view, document) {
     const settled = Math.abs(form.width - parseFloat(css.getPropertyValue('--taxi-form-preferred-width'))) <= .5
       && Math.abs(form.height - parseFloat(css.getPropertyValue('--taxi-form-preferred-height'))) <= .5;
     const origin = control.getBoundingClientRect();
-    const glyphs = [...control.querySelectorAll('.taxi-radio')].map(glyph => {
+    const marks = [...control.querySelectorAll('.taxi-radio')];
+    const glyphs = marks.map(glyph => {
       const box = glyph.getBoundingClientRect();
       return [box.x - origin.x, box.y - origin.y, box.width, box.height];
     });
     const options = [...control.querySelectorAll(':scope > [role=radio]')];
-    const canvas = control.querySelector('.taxi-radio-segments-face:not([hidden])'), ctx = canvas?.getContext('2d');
-    const bytes = ctx?.getImageData(0,0,canvas.width,canvas.height).data;
-    const digest = bytes ? new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)) : undefined;
-    const raster = digest ? {size:[canvas.width,canvas.height],sha256:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')} : null;
-    return { settled, size: [form.width, form.height], mode: control.dataset.representation, glyphs, raster,
-      disabled: control.getAttribute('aria-disabled'), captions: options.map(option => option.getAttribute('aria-label')),
+    const read = async canvas => {
+      const ctx = canvas?.getContext('2d');
+      if (!ctx) return null;
+      const bytes = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+      return {size:[canvas.width,canvas.height],sha256:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')};
+    };
+    const raster = await read(control.querySelector('.taxi-radio-segments-face:not([hidden])'));
+    const circles = await Promise.all(marks.map(mark=>read(mark.querySelector('canvas:not([hidden])'))));
+    const captionColors = options.map(option=>getComputedStyle(option.querySelector('.taxi-radio-caption')).color);
+    const nativeCaptions = options.every(option=>!!option.querySelector('[data-native-label=ready]'));
+    return { settled, size: [form.width, form.height], mode: control.dataset.representation, glyphs, raster, circles,
+      captionColors, nativeCaptions, disabled: control.getAttribute('aria-disabled'), captions: options.map(option => option.getAttribute('aria-label')),
       checked: options.filter(option => option.getAttribute('aria-checked') === 'true').length };
   })()`;
   const labels = ['First', 'Second long', 'Third', 'Fourth', 'Fifth'];
@@ -370,7 +378,7 @@ async function checkRadioChoices(ui, service, view, document) {
   ];
   const observe = async (target, variant, nativeTarget) => {
     const settings = '<RadioButtonType>Tumbler</RadioButtonType><ColumnsCount>'+variant.columns+'</ColumnsCount>'+(variant.extra ?? '');
-    await change(editOptions(settings,variant.labels,variant.dark));
+    await change(editOptions(settings,variant.labels,variant.backdrop));
     await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
     await until(async () => {
       const result = await target.evaluate(measure);
@@ -388,6 +396,41 @@ async function checkRadioChoices(ui, service, view, document) {
   };
   const results = [];
   for (const variant of variants) results.push(await observe(ui,variant));
+  const circleResults = [];
+  const observeCircles = async (target, variant, nativeTarget) => {
+    const labels = variant.labels ?? ['Update','Skip'];
+    const columns = variant.columns ? '<ColumnsCount>'+variant.columns+'</ColumnsCount>' : '';
+    await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType>'+columns+(variant.extra ?? ''),labels,variant.backdrop));
+    await target.evaluate('document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))))');
+    await until(async () => {
+      const result = await target.evaluate(measure);
+      return result?.settled && result.mode==='buttons' && result.glyphs.length===2
+        && (process.platform!=='linux' || result.circles.every(Boolean) && result.nativeCaptions
+          && (!variant.color || result.captionColors.every(color=>color===variant.color)));
+    },'radio circles for '+variant.name);
+    const result = await target.evaluate(measure);
+    assert.deepEqual(result.captions,labels,variant.name);
+    assert.equal(result.checked,1,variant.name);
+    assert.equal(result.disabled,variant.inactive?'true':'false',variant.name);
+    if (process.platform==='linux') assert.deepEqual(result.circles,variant.sha256.map(sha256=>({size:[15,15],sha256})),variant.name);
+    const screenshot = `renderer-radio-circles-${variant.name}-${vscode.env.language}.png`;
+    if (nativeTarget) await target.captureTarget(nativeTarget,screenshot);
+    else await target.screenshot(screenshot);
+    circleResults.push({name:variant.name,...result});
+  };
+  const circleCases = [
+    {name:'white',sha256:["3743ea24120bc04b11630fabc1458119a8759ef589e5ce53ac4e662f3113d07e", "01511f7e1ef69ea6ab67d100c894b2238c41dbfc2b0adca63c094f4280eecfdf"]},
+    {name:'black',backdrop:'web:Black',sha256:["9d9f5b730562fe6407cd43c914aa0475b6ccc81a889e3d81b7907d8508147713", "14735fb5dc4632a7aad8de5152eb10a47e48d60e472a02d6b5992113de06304a"]},
+    {name:'blue-parent',backdrop:'#2266CC',sha256:["da2e7060787e453218ef569de34b8286c3a2f50ffeda4b39a720da701ae91633", "cf617e35974a4d59b564b3bd9db77e831dfa17cb9eea3adcfc56ddbb63a6ad9e"]},
+    {name:'disabled-white',color:'rgb(166, 166, 166)',extra:'<Enabled>false</Enabled>',inactive:true,sha256:["5e386c042b8c28a8aeb98951931abd56c444f89587126557a5123cd426fe03c9", "6c710aae1722905e05c597c7f8bfa67d64d366ecbbcc099ab13914f2a8f99e96"]},
+    {name:'disabled-blue',backdrop:'#2266CC',extra:'<Enabled>false</Enabled>',inactive:true,
+      color:'rgb(154, 154, 154)',sha256:["0a5593a7e054b0ff0a40f11857ea2c467bc8f5655f15fce4a3278e4d801f8c50", "40adcf8527d1f21f63fbed48d4e9d5217470a95d9bb5fd15e8521ae67e26651e"]},
+    {name:'disabled-paint-blue',backdrop:'#2266CC',extra:'<Enabled>false</Enabled><TextColor>web:Red</TextColor>',inactive:true,
+      color:'rgb(243, 71, 71)',sha256:["0a5593a7e054b0ff0a40f11857ea2c467bc8f5655f15fce4a3278e4d801f8c50", "40adcf8527d1f21f63fbed48d4e9d5217470a95d9bb5fd15e8521ae67e26651e"]},
+    {name:'paint',extra:style,sha256:["3743ea24120bc04b11630fabc1458119a8759ef589e5ce53ac4e662f3113d07e", "01511f7e1ef69ea6ab67d100c894b2238c41dbfc2b0adca63c094f4280eecfdf"]},
+    {name:'bold',extra:largeFont+'<TextColor>web:Blue</TextColor>',columns:1,labels:['Обновлять','Пропускать'],sha256:["3743ea24120bc04b11630fabc1458119a8759ef589e5ce53ac4e662f3113d07e", "01511f7e1ef69ea6ab67d100c894b2238c41dbfc2b0adca63c094f4280eecfdf"]},
+  ];
+  for (const variant of circleCases) await observeCircles(ui,variant);
   await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
   await until(async () => (await ui.evaluate(measure))?.mode==='buttons','radio buttons restored before detaching');
   const workbench = await ui.nativeWindow();
@@ -426,13 +469,15 @@ async function checkRadioChoices(ui, service, view, document) {
   assert.notEqual(finalWindow.targetId,workbench.targetId);
   const readOnly = {name:'read-only-detached',labels:["Update", "Skip", "More"],columns:2,inactive:true,extra:style+'<ReadOnly>true</ReadOnly>',
       raster:{size:[106,46],sha256:'d8f9922354257dd078948952ad6dffe2f21d245b5bcbadbe7b5f8767e64375ae'}};
-  const dark = {name:'dark-detached',labels:["First", "Second long", "Third", "Fourth", "Fifth", "Sixth", "Seventh"],columns:3,dark:true,
+  const dark = {name:'dark-detached',labels:["First", "Second long", "Third", "Fourth", "Fifth", "Sixth", "Seventh"],columns:3,backdrop:'web:Black',
       raster:{size:[208,69],sha256:'9b6e19e73467cf3a8d608856402a620f10afc669c831a78607fa839cda070b81'}};
   results.push(await observe(finalUi,readOnly,finalWindow.targetId));
   results.push(await observe(finalUi,dark,finalWindow.targetId));
+  await observeCircles(finalUi,{name:'disabled-black-detached',color:'rgb(103, 103, 103)',backdrop:'web:Black',extra:'<Enabled>false</Enabled>',inactive:true,sha256:["9f8ad32a9f1760b7631476c86f2a06a5a5870fd73ec829c19d8e220d623f13d5", "ce076d7dde79a435be421a068301555f933a155b96d95784a15d79d4b1ae00ee"]},finalWindow.targetId);
+  await observeCircles(finalUi,{name:'read-only-detached',color:'rgb(166, 166, 166)',extra:'<ReadOnly>true</ReadOnly>',inactive:true,sha256:["5e386c042b8c28a8aeb98951931abd56c444f89587126557a5123cd426fe03c9", "6c710aae1722905e05c597c7f8bfa67d64d366ecbbcc099ab13914f2a8f99e96"]},finalWindow.targetId);
   await service.receive(view,finalFrame,{type:'dock'});
   await until(() => !view.frames.has('preview'),'radio raster docked');
   await change(original);
   await until(async () => (await ui.evaluate(measure))?.glyphs.length === 3, 'automatic sample restored');
-  return results;
+  return {segments:results,circles:circleResults};
 }

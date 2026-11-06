@@ -1,10 +1,11 @@
 import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
-import { checkboxGlyph } from './checkbox-glyph.mjs';
+import { checkboxGlyph } from './choice-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
 import { linuxControlFont } from './font-metrics.mjs';
 import { caption, color, flag, font } from './model.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
-import { inactiveTumblerTextColor, paintTumblerCaptions } from './tumbler-caption.mjs';
+import { inactiveTumblerTextColor } from './choice-colors.mjs';
+import { paintTumblerCaptions } from './tumbler-caption.mjs';
 import { tumblerPaint } from './tumbler-paint.mjs';
 
 function Tumbler(props) {

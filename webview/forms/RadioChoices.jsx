@@ -2,20 +2,21 @@ import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
 import { controlCaptionWidth, linuxControlFont } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
+import { radioGlyph } from './choice-glyph.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
 import { paintRadioTumbler, radioTumblerLayout } from './radio-tumbler.mjs';
-import { inactiveTumblerTextColor } from './tumbler-caption.mjs';
+import { inactiveRadioTextColor, inactiveTumblerTextColor } from './choice-colors.mjs';
 
 export function RadioChoices(props) {
   let surface, canvas;
   const [painted, setPainted] = createSignal(false);
+  const [inactiveColor, setInactiveColor] = createSignal();
   const node = () => props.node, state = props.controller.state;
   const linux = state.os === 'linux';
   const valueFont = () => node().presentation.font;
   const foreground = () => node().presentation.foreground;
-  const enabled = () => flag(node(), 'Enabled');
   const segments = () => scalar(node(), 'RadioButtonType') === 'Tumbler';
-  const inactive = () => !enabled() || segments() && flag(node(), 'ReadOnly', false);
+  const inactive = () => !flag(node(), 'Enabled') || flag(node(), 'ReadOnly', false);
   const fallback = [1, 2, 3].map(value => ({ kind: 'name', text: state.strings.sampleValue.replace('{0}', value) }));
   const choices = () => node().presentation.choices.length ? node().presentation.choices : fallback;
   const columns = () => Math.min(choices().length, Math.max(0, Math.trunc(number(node(), 'ColumnsCount'))) || choices().length);
@@ -35,11 +36,22 @@ export function RadioChoices(props) {
     const metrics = buttonMetrics(valueFont());
     return { ...(linux ? linuxControlFont(valueFont()) : font(valueFont(), state.os)),
       color: color(foreground()),
+      '--taxi-radio-inactive-text': inactiveColor(),
       '--taxi-radio-segment-fill': linux && segments() ? color(node().presentation.background) : undefined,
       '--taxi-radio-segment-border': linux && segments() ? color(node().presentation.border) : undefined,
       '--taxi-radio-height': `${Math.max(19, metrics.lineHeight + 2)}px`,
       '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
   };
+
+  createEffect(on(() => [state.sequence, segments(), inactive()], () => {
+    setInactiveColor(undefined);
+    if (!linux || segments() || !inactive()) return;
+    const frame = requestAnimationFrame(() => {
+      const foreground = rgb(getComputedStyle(surface).color), backdrop = solidBackdrop(surface);
+      if (foreground && backdrop) setInactiveColor(`rgb(${inactiveRadioTextColor(foreground, backdrop).join(', ')})`);
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  }));
 
   const runtime = props.controller.nativeText, owner = {};
   createEffect(on(() => [state.sequence, layout(), inactive()], () => {
@@ -92,7 +104,7 @@ export function RadioChoices(props) {
       return <span class="taxi-radio-option" role="radio" aria-label={label()} aria-checked={checked()} style={optionStyle()}
         data-top={edge(position().row === 0)} data-bottom={edge(index() + columns() >= choices().length)}
         data-left={edge(position().column === 0)} data-right={edge(position().column === columns() - 1 || index() === choices().length - 1)}>
-        <Show when={!segments()}><i classList={{ 'taxi-radio': true, checked: checked() }} aria-hidden="true"/></Show>
+        <Show when={!segments()}><RadioMark state={state} selected={checked()} inactive={inactive()}/></Show>
         <span class="taxi-radio-caption" style={{ width: width() === undefined ? undefined : `${width()}px` }}>
           <NativeLabel enabled={linux && !segments()} placement="radioChoice" text={label()} font={valueFont()}
             foreground={foreground()} runtime={props.controller.nativeText}/>
@@ -101,4 +113,22 @@ export function RadioChoices(props) {
     }}</For>
     <canvas ref={canvas} class="taxi-radio-segments-face" aria-hidden="true" hidden={!painted()}/>
   </div>;
+}
+
+function RadioMark(props) {
+  let mark, canvas;
+  const [painted, setPainted] = createSignal(false);
+  createEffect(on(() => [props.state.os, props.state.sequence, props.selected, props.inactive], () => {
+    if (props.state.os !== 'linux') { setPainted(false); return; }
+    const frame = requestAnimationFrame(() => {
+      const backdrop = solidBackdrop(mark);
+      const image = backdrop ? radioGlyph(props.selected, props.inactive, backdrop) : undefined;
+      setPainted(paintCanvas(canvas, image));
+    });
+    onCleanup(() => cancelAnimationFrame(frame));
+  }));
+  return <i ref={mark} classList={{ 'taxi-radio': true, checked: props.selected }} aria-hidden="true"
+    data-native-radio={painted() ? 'ready' : undefined}>
+    <canvas ref={canvas} hidden={!painted()}/>
+  </i>;
 }

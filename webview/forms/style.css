@@ -260,6 +260,10 @@ button { cursor: default; }
 .taxi-radio-caption { position: relative; display: flex; align-items: center; align-self: stretch; }
 .taxi-radio { display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid #aaa; border-radius: 50%; background: #fff; }
 .taxi-radio.checked::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #009646; }
+.taxi-radio[data-native-radio=ready] { border: 0; background: transparent; }
+.taxi-radio.checked[data-native-radio=ready]::after { content: none; }
+.taxi-radio canvas { display: block; }
+.taxi-radio canvas[hidden] { display: none; }
 .taxi-radios[data-representation=segments] { gap: 0; padding-block: 1px; position: relative; }
 .taxi-radios[data-representation=segments]:not([data-rows="1"]) { padding-bottom: 2px; }
 .taxi-radios[data-representation=segments] > .taxi-radio-option {
@@ -277,7 +281,7 @@ button { cursor: default; }
 }
 .taxi-radio-segments-face { position: absolute; left: 0; top: 1px; z-index: 1; pointer-events: none; }
 .taxi-radios[data-native-segments=ready] .taxi-radio-caption { visibility: hidden; }
-.taxi-radios[aria-disabled=true][data-representation=buttons] { color: #a0a0a0 !important; }
+.taxi-radios[aria-disabled=true][data-representation=buttons] .taxi-radio-caption { color: var(--taxi-radio-inactive-text, #a0a0a0); }
 .taxi-radios[aria-disabled=true][data-representation=segments] .taxi-radio-caption { color: #808080; }
 .taxi-radios[aria-disabled=true] .taxi-radio { border-color: #d7d7d7; }
 .taxi-radios[aria-disabled=true] .taxi-radio.checked::after { background: #d1d1d1; }

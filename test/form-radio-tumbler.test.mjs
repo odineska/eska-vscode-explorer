@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { createFontRaster } from '../webview/forms/font-raster.mjs';
 import { paintRadioTumbler, radioTumblerLayout } from '../webview/forms/radio-tumbler.mjs';
-import { inactiveTumblerTextColor } from '../webview/forms/tumbler-caption.mjs';
+import { inactiveTumblerTextColor } from '../webview/forms/choice-colors.mjs';
 
 test('Linux radio tumblers match the complete native segments, shared edges and captions', async () => {
   const cases = [

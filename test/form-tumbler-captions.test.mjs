@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import { checkboxTumblerLayout } from '../webview/forms/checkbox-model.mjs';
 import { createFontRaster } from '../webview/forms/font-raster.mjs';
 import { FORM_NS } from '../webview/forms/model.mjs';
-import { inactiveTumblerTextColor, paintTumblerCaptions } from '../webview/forms/tumbler-caption.mjs';
+import { inactiveTumblerTextColor } from '../webview/forms/choice-colors.mjs';
+import { paintTumblerCaptions } from '../webview/forms/tumbler-caption.mjs';
 import { tumblerPaint } from '../webview/forms/tumbler-paint.mjs';
 
 test('Linux tumbler option text matches complete native rasters with kerning, wrapping and clipping', async () => {

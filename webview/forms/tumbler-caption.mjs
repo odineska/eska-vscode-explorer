@@ -72,16 +72,6 @@ export function tumblerCaptionLayout(paragraphs, { width, first, side }, font, t
   });
 }
 
-export function inactiveTumblerTextColor(foreground, fill) {
-  const high = Math.max(...foreground), range = high - Math.min(...foreground);
-  // Taxi mixes HSV saturation and value with the face after lowering its RGB levels.
-  const fillHigh = Math.max(0, Math.max(...fill) - 76);
-  const fillLow = Math.max(0, Math.min(...fill) - 76);
-  const value = (high + fillHigh) / 2;
-  const saturation = ((high ? range / high : 0) + (fillHigh ? (fillHigh - fillLow) / fillHigh : 0)) / 2;
-  return foreground.map(channel => Math.round(range ? value * (1 - saturation * (high - channel) / range) : value));
-}
-
 export function paintTumblerCaptions(image, captions, font, face, foreground) {
   const { pixels, ascent, descent } = fontLineMetrics(font);
   const lineHeight = ascent + descent, options = controlCaptionOptions(font);
