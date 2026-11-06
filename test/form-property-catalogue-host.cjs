@@ -278,6 +278,76 @@ exports.run = async () => {
     await select(group);
     await until(() => ui.evaluate("document.querySelectorAll('[data-palette-id]').length===35"), 'selection returns to verified catalogue');
     cases.push('rapid-context-switch-and-raw-fallback');
+    if (process.env.ESKA_HOST_PROPERTY_CATALOGUE === undefined) {
+      const local = '<CommandName>Form.Command.Sample</CommandName>';
+      const start = '<Button name="Action" id="3">';
+      const base = original.replace(start,start+'<Type>UsualButton</Type>'+local)
+        .replace('</Form>','<Commands><Command name="Sample" id="1"><Title>Command caption</Title></Command></Commands></Form>');
+      assert.ok(base.includes(local));
+      const rows = () => ui.evaluate(`(() => {
+        const row = id => document.querySelector('[data-palette-id="platform:'+id+'"]');
+        const value = id => row(id)?.querySelector('td').textContent;
+        return {
+          count:document.querySelectorAll('.form-properties [data-palette-id^="platform:"]').length,
+          type:value('Type'),command:value('CommandName'),font:value('Font'),representation:value('Representation'),
+          width:value('MaxWidth'),height:value('MaxHeight'),shape:value('Shape'),importance:value('DisplayImportance'),
+          rawImportance:row('DisplayImportance')?.querySelector('td span')?.title,
+          primary:row('DefaultButton')?.querySelector('input')?.checked,
+          unique:row('CommandUniqueness')?.querySelector('input')?.checked,
+        };
+      })()`);
+      await select(button);
+      await edit(base);
+      await until(async () => view.phase==='ready' && (await rows()).count===35, 'local command button palette');
+      const normal = await rows();
+      assert.equal(normal.type,ru?'Обычная кнопка':'Common button');
+      assert.equal(normal.command,'Sample');
+      assert.equal(normal.font,ru?'Авто':'Auto');
+      assert.equal(normal.representation,ru?'Авто':'Auto');
+      assert.equal(normal.width,undefined);
+      assert.equal(normal.primary,false);
+      assert.equal(normal.unique,true);
+      cases.push('button-palette-local-command-and-defaults');
+
+      const attr = 'DisplayImportance="High"';
+      const explicit = base.replace(start,start.slice(0,-1)+' '+attr+'>'
+        +'<DefaultButton>true</DefaultButton><CommandUniqueness>false</CommandUniqueness><Shape>Oval</Shape>'
+        +'<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>25</MaxWidth><AutoMaxHeight>false</AutoMaxHeight>');
+      await edit(explicit);
+      await until(async () => view.phase==='ready' && (await rows()).count===37, 'button manual bounds visible');
+      const manual = await rows();
+      assert.equal(manual.width,'25');
+      assert.equal(manual.height,'0');
+      assert.equal(manual.shape,ru?'Овальная':'Rounded');
+      assert.equal(manual.importance,ru?'Высокая':'High');
+      assert.equal(manual.rawImportance,'High');
+      assert.equal(manual.primary,true);
+      assert.equal(manual.unique,false);
+      cases.push('button-palette-dirty-manual-bounds-and-importance');
+      for (const [id,xml] of [['DisplayImportance',attr],['CommandName',local]]) {
+        await ui.evaluate(`document.querySelector('[data-palette-id="platform:${id}"]').dispatchEvent(new KeyboardEvent('keydown',{key:'F12',bubbles:true}))`);
+        await until(() => vscode.window.activeTextEditor?.document.uri.fsPath===file
+          && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===xml,
+          'exact button source for '+id);
+        main.panel.reveal();
+      }
+      cases.push('button-palette-caption-keeps-xml-source');
+
+      const xml = base.match(/<Button name="Action" id="3">[\s\S]*?<\/Button>/)[0];
+      const bar = base.replace(xml,'').replace('<ChildItems>',
+        '<ChildItems><CommandBar name="ProbeBar" id="55"><ChildItems>'
+        +xml.replace('UsualButton','CommandBarHyperlink')+'</ChildItems></CommandBar>');
+      await edit(bar);
+      await until(async () => view.phase==='ready' && (await rows()).type===(ru?'Гиперссылка командной панели':'Command bar hyperlink'),
+        'button palette follows move to command bar');
+      await edit(bar.replace('<Type>CommandBarHyperlink</Type>',''));
+      await until(async () => view.phase==='ready' && (await rows()).type==='' && (await rows()).count===35, 'missing type in command bar');
+      assert.equal(view.selected.key.value,button.identity.key.value);
+      await edit(original);
+      await until(async () => view.phase==='ready' && await ui.evaluate(
+        "!!document.querySelector('.form-properties [data-property-name=Title]') && !document.querySelector('[data-palette-id]')"), 'unbound button source restored');
+      cases.push('button-palette-command-bar-and-absent-type');
+    }
   }
   assert.deepEqual(await fs.readFile(file),before);
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,locale:vscode.env.language,cases,diskUnchanged:true}));

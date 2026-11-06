@@ -33,7 +33,7 @@ type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: numbe
   | { kind: "declaredEvent"; propertyIndex: number; occurrence: number; entryIndex: number; sourceKind: "form" | "extension" }
   | { kind: "absent"; default: PaletteDefault; caption: PaletteCaption | null }
   | { kind: "name"; value: string | null } | { kind: "elementKind"; value: string; caption: PaletteCaption }
-  | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin };
+  | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin; caption?: PaletteCaption };
 export interface PaletteRow { id: string; category: string | null; editor: string | null; caption: PaletteCaption | null; available?: boolean; value: PaletteValue }
 export interface FormPalette {
   formSessionId: string; revision: string; identity: ElementIdentity;
@@ -216,7 +216,7 @@ export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, nod
       case "elementKind": if (data.value !== node.kind || data.caption === undefined || !caption(data.caption)) invalid(); break;
       case "qualifier":
         if (!key(data.key) || typeof data.text !== "string" || !(data.sourceKind === "form" || data.sourceKind === "extension")
-          || !origin(data.origin)) invalid();
+          || !origin(data.origin) || !caption(data.caption)) invalid();
         break;
       default: invalid();
     }

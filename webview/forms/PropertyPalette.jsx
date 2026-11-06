@@ -51,7 +51,7 @@ function Row(props) {
           <input type="checkbox" disabled checked={value().default.value} aria-label={label()}/>
         </Match>
         <Match when={value().kind === 'absent'}>{caption(value().caption, state) ?? value().default.value}</Match>
-        <Match when={value().kind === 'qualifier'}>{value().text}</Match>
+        <Match when={value().kind === 'qualifier'}><span title={value().text}>{caption(value().caption, state) ?? value().text}</span></Match>
         <Match when={true}>{caption(value().caption, state) ?? value().value ?? state.strings.form}</Match>
       </Switch>
     </td>
