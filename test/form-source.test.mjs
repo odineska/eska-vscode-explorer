@@ -1,6 +1,7 @@
+import { win32 } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formEditorRange } from '../out/form-preview/source.js';
+import { formEditorRange, formSourceKey } from '../out/form-preview/source.js';
 
 test('form source ranges follow native LF/CRLF normalization while retaining BOM and Unicode byte boundaries', () => {
   const prefix = '\ufeff<?xml?>\r\n<!-- 😀 -->\n<Form>\r', selected = '<Title>Привет 😀</Title>', suffix = '\r\n</Form>';
@@ -16,4 +17,20 @@ test('form source ranges follow native LF/CRLF normalization while retaining BOM
   const exact = formEditorRange(bytes, start, end, unchanged, '\n');
   assert.equal(unchanged.slice(exact.start, exact.end), selected);
   assert.throws(() => formEditorRange(Buffer.from('x\r\ny'), 2, 4, 'x\ny', '\n'), {code:'sourceChanged'});
+});
+
+test('form source identity joins editor and backend Windows spellings without joining different files', () => {
+  if (process.platform === 'win32') {
+    const source = 'C:/Sources/Формы [проверка]/Form.xml';
+    const identity = formSourceKey(source);
+    assert.equal(formSourceKey(source.toLowerCase()), identity);
+    assert.equal(formSourceKey(win32.normalize(source)), identity);
+    assert.equal(formSourceKey(win32.toNamespacedPath(source)), identity);
+    assert.notEqual(formSourceKey(source.replace('C:', 'D:')), identity);
+    assert.notEqual(formSourceKey(source.replace('Form.xml', 'Module.bsl')), identity);
+    const unc = '//server/share/Формы/Form.xml';
+    assert.equal(formSourceKey(unc), formSourceKey(win32.toNamespacedPath(unc)));
+  } else {
+    assert.notEqual(formSourceKey('/sources/Form.xml'), formSourceKey('/sources/form.xml'));
+  }
 });

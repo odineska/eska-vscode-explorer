@@ -1,5 +1,11 @@
+import { toNamespacedPath } from "node:path";
 import { ExplorerError } from "../protocol.js";
 import { editorRange } from "../source.js";
+
+/** Share file identity across backend, watcher and editor spellings; callers resolve symlinks. */
+export function formSourceKey(path: string): string {
+  return process.platform === "win32" ? toNamespacedPath(path).toLowerCase() : path;
+}
 
 /** VS Code normalizes physical line endings on open; retain the backend's exact byte snapshot check. */
 export function formEditorRange(bytes: Buffer, start: number, end: number, text: string, eol: "\n" | "\r\n"): { start: number; end: number } {
