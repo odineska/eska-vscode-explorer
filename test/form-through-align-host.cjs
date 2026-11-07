@@ -71,8 +71,10 @@ async function verifyPaymentLayout(ui, names, keys, sample, results) {
           return [name,[rect.x-origin.x,rect.y-origin.y,rect.width,rect.height]];
         }));
         const bank=fields.get(${JSON.stringify(bankKey)}).querySelector('.taxi-field-label');
-        const lines=[...bank.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
-        return {frame:[origin.width,origin.height],controls,lines:lines.length ? lines : [bank.getAttribute('aria-label')]};
+        const lineNodes=[...bank.querySelectorAll('.taxi-field-caption-line')];
+        const lines=lineNodes.map(line=>line.textContent);
+        return {frame:[origin.width,origin.height],controls,lines:lines.length ? lines : [bank.getAttribute('aria-label')],
+          lineHeights:lineNodes.map(line=>line.getBoundingClientRect().height),captionHeight:bank.getBoundingClientRect().height};
       })()`);
       return near(actual.frame, sample.frame, 1)
         && (actual.controls.Num[0] === actual.controls.Bank[0]) === sample.aligned
@@ -81,6 +83,10 @@ async function verifyPaymentLayout(ui, names, keys, sample, results) {
     }, sample.case);
   } catch (error) {
     throw new Error(JSON.stringify({case:sample.case,actual,expected:sample}), {cause:error});
+  }
+  if (actual.lines.length > 1) {
+    assert.deepEqual(actual.lineHeights, actual.lines.map(() => 15), 'wrapped captions use the native font line height');
+    assert.equal(actual.captionHeight, 15 * actual.lines.length + 2, 'the caption has one pair of vertical insets');
   }
   results.push({label:'adaptive-caption-'+sample.case,...actual});
 }

@@ -548,6 +548,7 @@ function Field(props) {
   const checkbox = () => node().kind === 'CheckBoxField';
   const layout = useFormLayout();
   const titleLocation = () => layout?.titleAbove(node()) ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
@@ -556,7 +557,7 @@ function Field(props) {
   const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
-      && ['Left', 'Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/>;
+      && sideTitle()) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const referenceTitleWidth = createMemo(() => titleLocation() === 'Left' && nativeReferenceInput(node(), state.os)
@@ -573,10 +574,11 @@ function Field(props) {
     const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
     const reference = referenceTitleWidth();
     const titleWidth = numericWidth() ?? (reference === undefined ? undefined : reference + inputCaptionInset);
+    const wrapped = checkboxCaption() || (inputCaption() && sideTitle());
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-field-caption-width, ${titleWidth}px)`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
-      'line-height': numericLabel() || checkboxCaption() ? `${fontLineHeight(labelFont())}px` : undefined,
+      'line-height': numericLabel() || wrapped ? `${fontLineHeight(labelFont())}px` : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>

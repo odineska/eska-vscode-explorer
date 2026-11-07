@@ -139,7 +139,10 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: var(--taxi-field-caption-width, calc-size(max-content, round(nearest, size, 1px))); }
 .taxi-field-caption-line { display: block; position: relative; white-space: pre; }
 .taxi-field-row:is([data-wrapped-input-caption], [data-wrapped-checkbox-caption]) { align-items: start; }
-.taxi-field-row[data-wrapped-checkbox-caption] > .taxi-field-label { padding-block: 1px; }
+.taxi-field-row[data-wrapped-checkbox-caption] > .taxi-field-label,
+.taxi-field-row[data-wrapped-input-caption]:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label {
+  padding-block: 1px;
+}
 .taxi-field-row[data-wrapped-input-caption] > .taxi-field-control { display: grid; align-items: center; min-height: inherit; }
 .taxi-field-row[data-multiline] { padding-block: 1px; }
 .taxi-field-row[data-numeric-label-title] { column-gap: 5px; align-items: var(--taxi-numeric-label-align, center); }
