@@ -1,17 +1,10 @@
-import { fieldWidth, flag, number, scalar } from './model.mjs';
-import { horizontalGrouping, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
+import { fieldWidth, number, scalar } from './model.mjs';
+import { horizontalGrouping, laneInputBounds, ordinaryGroup, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
-
-function sharesLabels(node) {
-  // An authored non-stretching group owns its caption tracks, including explicit Use.
-  if (!ordinaryGroup(node) || !flag(node, 'HorizontalStretch')) return false;
-  const mode = scalar(node, 'ThroughAlign', 'Auto');
-  return mode === 'Use' || mode === 'Auto' && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'));
-}
 
 function labelScope(node) {
   return node.presentation.grouping === 'Vertical' && (['Form', 'Page'].includes(node.kind) || ordinaryGroup(node));
@@ -34,7 +27,7 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     // A horizontal group continues the parent's column through its leading branch.
     // Other branches can still align within their own vertical scopes.
     for (const child of node.children) {
-      const shared = scope && sharesLabels(child) && (!horizontal || child.key === leading?.dataset.element);
+      const shared = scope && sharesGroupLabels(child) && (!horizontal || child.key === leading?.dataset.element);
       visit(child, shared ? scope : undefined);
     }
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.

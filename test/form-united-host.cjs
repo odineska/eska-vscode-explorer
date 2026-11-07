@@ -145,7 +145,9 @@ async function verifyMixedColumns(main, view, document) {
     await until(async () => {
       narrow = await measure();
       return narrow.frame === 480 && narrow.first?.x === narrow.second?.x && narrow.outer?.x > narrow.first.x + 40;
-    }, 'mixed rows have an independent shared caption column');
+    }, 'mixed rows have an independent shared caption column').catch(error => {
+      throw new Error(JSON.stringify({phase:'mixed-caption-column',actual:narrow}), {cause:error});
+    });
     assert.deepEqual([narrow.picture.width,narrow.picture.height], [20,18]);
     assert.ok(Math.abs(narrow.picture.x - narrow.first.right - 10) < .1);
     await allocateFormViewport(ui, [720, 420]);

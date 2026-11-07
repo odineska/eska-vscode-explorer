@@ -1,5 +1,5 @@
-import { fieldWidth, flag, number, property, scalar } from './model.mjs';
-import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, horizontalInputMaximum } from './layout-model.mjs';
+import { fieldWidth, number, property, scalar } from './model.mjs';
+import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, horizontalInputMaximum, sharesGroupLabels } from './layout-model.mjs';
 import { borderBoxSize, pixels, textWidth } from './layout-box.mjs';
 import { mixedColumnLayout } from './mixed-column-layout.js';
 
@@ -15,8 +15,7 @@ function ordinaryRow(node) {
 
 function leadingField(entry) {
   if (entry.kind === 'field') return entry.location === 'Left' ? entry : undefined;
-  if (entry.kind !== 'group' || scalar(entry.node, 'ThroughAlign', 'Auto') === 'DontUse'
-    || !flag(entry.node, 'HorizontalStretch')) return;
+  if (entry.kind !== 'group' || !sharesGroupLabels(entry.node)) return;
   return leadingField(entry.children[0]);
 }
 

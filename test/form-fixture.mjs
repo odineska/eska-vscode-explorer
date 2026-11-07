@@ -344,12 +344,13 @@ export async function createThroughAlignGallery(fixture) {
   const rows = process.env.ESKA_FORM_THROUGH_ROWS;
   if (!rows) return forms;
   if (!isAbsolute(rows)) throw new Error('ESKA_FORM_THROUGH_ROWS must be absolute.');
-  const { cases, boundaryCases = [], valueCases = [] } = JSON.parse(await readFile(join(rows, 'metrics.json'), 'utf8'));
-  const inputs = [...new Set([...cases, ...boundaryCases, ...valueCases].flatMap(sample => sample.fixture ? [sample.fixture] : []))];
+  const { cases, boundaryCases = [], valueCases = [], representationCases = [] } = JSON.parse(await readFile(join(rows, 'metrics.json'), 'utf8'));
+  const inputs = [...new Set([...cases, ...boundaryCases, ...valueCases, ...representationCases].flatMap(sample => sample.fixture ? [sample.fixture] : []))];
   const wrapped = await createGallery(fixture, inputs, rows);
   return forms.concat(wrapped.map(form => ({...form, cases:cases.filter(sample => sample.fixture === form.kind),
     boundaryCases:boundaryCases.filter(sample => sample.fixture === form.kind),
-    valueCases:valueCases.filter(sample => sample.fixture === form.kind)})));
+    valueCases:valueCases.filter(sample => sample.fixture === form.kind),
+    representationCases:representationCases.filter(sample => sample.fixture === form.kind)})));
 }
 
 async function createGallery(fixture, kinds, input = process.env.ESKA_FORM_FIXTURES) {

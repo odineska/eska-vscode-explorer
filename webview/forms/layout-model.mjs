@@ -20,6 +20,13 @@ export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }
 
+/** Only an explicitly undecorated group continues automatic caption tracks. */
+export function sharesGroupLabels(node) {
+  if (!ordinaryGroup(node) || !flag(node, 'HorizontalStretch')) return false;
+  const mode = scalar(node, 'ThroughAlign', 'Auto');
+  return mode === 'Use' || mode === 'Auto' && scalar(node, 'Representation') === 'None';
+}
+
 export function hasAuthoredGroupHeight(node, os) {
   return os === 'linux' && ordinaryGroup(node) && number(node, 'Height') > 0;
 }

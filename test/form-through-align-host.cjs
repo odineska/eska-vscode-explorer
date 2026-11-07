@@ -30,12 +30,16 @@ async function setGroupMode(document, name, mode) {
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
 
-function withGroupProperty(xml, name, property, value) {
-  const group = new RegExp(`<UsualGroup name="${name}"[^>]*>[\\s\\S]*?(?=<ChildItems>)`);
+function withContainerProperty(xml, tag, name, property, value) {
+  const group = new RegExp(`<${tag} name="${name}"[^>]*>[\\s\\S]*?(?=<ChildItems>)`);
   const match = group.exec(xml);
   assert.ok(match, name);
   const header = match[0].replace(new RegExp(`\\s*<${property}>[^<]+</${property}>`), '');
   return xml.replace(match[0], header + (value ? `<${property}>${value}</${property}>\n` : ''));
+}
+
+function withGroupProperty(xml, name, property, value) {
+  return withContainerProperty(xml, 'UsualGroup', name, property, value);
 }
 
 async function inDetachedRow(service, view, main, ui, identity, run) {
@@ -292,7 +296,7 @@ exports.run = async () => {
   await Promise.all([...service.closing]);
   for (const row of wrapped) {
     if (row.valueCases.length) await verifyValueColumns(row, service, results);
-    else if (row.boundaryCases.length) await verifyStretchBoundary(row, service, results);
+    else if (row.boundaryCases.length || row.representationCases.length) await verifyStretchBoundary(row, service, results);
     else await verifyWrappedRows(row, service, results);
   }
   await explorer.shutdown();
@@ -302,8 +306,8 @@ exports.run = async () => {
 };
 
 
-function withOptionTitle(xml, location) {
-  const field = /<(?:RadioButtonField|InputField|CheckBoxField) name="Option"[^>]*>[\s\S]*?(?=<ContextMenu)/u.exec(xml);
+function withFieldTitle(xml, name, location) {
+  const field = new RegExp(`<(?:RadioButtonField|InputField|CheckBoxField) name="${name}"[^>]*>[\\s\\S]*?(?=<ContextMenu)`, 'u').exec(xml);
   assert.ok(field);
   const header = field[0].replace(/\s*<TitleLocation>[^<]+<\/TitleLocation>/u, '');
   return xml.replace(field[0], header + (location ? `<TitleLocation>${location}</TitleLocation>` : ''));
@@ -311,6 +315,8 @@ function withOptionTitle(xml, location) {
 
 async function verifyStretchBoundary(form, service, results) {
   const original = await fs.readFile(form.path), source = original.toString('utf8');
+  const representation = form.representationCases.length > 0;
+  const samples = representation ? form.representationCases : form.boundaryCases;
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, {preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');
@@ -336,11 +342,16 @@ async function verifyStretchBoundary(form, service, results) {
   };
   const verify = async (target, sample) => {
     let actual;
+    await until(()=>target.evaluate('__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current caption scope rendered');
     await until(async () => {
       actual = await observe(target);
-      return actual.fields[sample.scopeField].control !== null;
+      return actual.fields[sample.scopeField ?? 'Option'].control !== null;
     }, 'stretch boundary controls');
-    const field = actual.fields[sample.scopeField];
+    const field = actual.fields[sample.scopeField ?? 'Option'];
+    if (representation && process.platform === 'linux') {
+      for (const name of ['Wide','Option']) assert.ok(Math.abs(actual.fields[name].control[0]-sample.controls[name].logical[0])<=3,
+        sample.case+' native caption origin of '+name);
+    }
     assert.equal(field.captionEnd === actual.fields.Wide.captionEnd, sample.alignedWithParent, sample.case + ' shared caption scope');
     if (process.platform === 'linux' && sample.ownControlX !== undefined) {
       assert.equal(field.control[0], sample.ownControlX, sample.case + ' own caption origin');
@@ -350,16 +361,22 @@ async function verifyStretchBoundary(form, service, results) {
     return actual;
   };
   try {
-    for (const sample of form.boundaryCases) {
+    await editFormSource(document,view,source+'\n');
+    for (const sample of samples) {
       let xml = source;
-      if (sample.row) {
+      if (sample.row || representation) {
         for (const [property,value] of [['Group',sample.grouping === 'Absent' ? null : sample.grouping],
           ['HorizontalStretch',sample.horizontalStretch],['ThroughAlign',sample.throughAlign],['United',sample.united]]) {
           xml = withGroupProperty(xml, 'Row', property, value);
         }
       }
-      await editFormSource(document, view, withOptionTitle(xml, sample.titleLocation));
-      results.push({label:'stretch-scope-'+sample.case,...await verify(ui,sample)});
+      if (representation) {
+        xml=withGroupProperty(xml,'Row','Representation',sample.representation);
+        xml=withFieldTitle(xml,'Wide',sample.topTitle);
+        if (form.kind==='ScopePage') xml=withContainerProperty(xml,'Page','Page','Group',sample.pageGrouping);
+      }
+      await editFormSource(document, view, withFieldTitle(xml, 'Option', sample.titleLocation));
+      results.push({label:(representation?'representation-scope-':'stretch-scope-')+sample.case,...await verify(ui,sample)});
     }
     await editFormSource(document,view,source);
     if (form.kind === 'StretchRadio') {
@@ -378,6 +395,20 @@ async function verifyStretchBoundary(form, service, results) {
         }
       });
       results.push({label:'stretch-scope-detached-resize-dirty',sameDom:true,sameSelection:true});
+    }
+    if (form.kind==='ScopeInputs') {
+      const own=samples.find(sample=>sample.case==='TwoInputsAuto'),shared=samples.find(sample=>sample.case==='RepNoneInputs');
+      const identity=nodes.find(node=>node.name==='Option').identity;
+      await inDetachedRow(service,view,main,ui,identity,async floating=>{
+        for (const size of [[600,300],[380,300],[600,300]]) {
+          await allocateFormViewport(floating,size);
+          await editFormSource(document,view,withGroupProperty(source,'Row','Representation','None'));
+          await verify(floating,shared);
+          await editFormSource(document,view,source);
+          await verify(floating,own);
+        }
+      });
+      results.push({label:'representation-scope-detached-resize-dirty',sameDom:true,sameSelection:true});
     }
     assert.deepEqual(await fs.readFile(form.path),original);
   } finally {
