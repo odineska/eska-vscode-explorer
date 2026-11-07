@@ -112,10 +112,13 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       }
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
     }
+    const spacing = { width: pixels(element.style.getPropertyValue('--taxi-group-spacing-x')),
+      height: pixels(element.style.getPropertyValue('--taxi-group-spacing-y')) };
+    value = add(value, spacing);
     minima.set(element.dataset.element, value);
     if (value.fullWidth > value.width) headingFloors.set(element, value);
-    element.style.setProperty('--taxi-min-width', `${value.width}px`);
-    element.style.setProperty('--taxi-min-height', `${value.height}px`);
+    element.style.setProperty('--taxi-min-width', `${value.width - spacing.width}px`);
+    element.style.setProperty('--taxi-min-height', `${value.height - spacing.height}px`);
     return value;
   }
   const content = root.querySelector(':scope > .taxi-form-content'), title = root.querySelector(':scope > .taxi-form-title');
@@ -131,7 +134,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     minimum.width = minimum.fullWidth;
     for (const [element, bounds] of headingFloors) {
       bounds.width = bounds.fullWidth;
-      element.style.setProperty('--taxi-min-width', `${bounds.width}px`);
+      element.style.setProperty('--taxi-min-width', `${bounds.width - pixels(element.style.getPropertyValue('--taxi-group-spacing-x'))}px`);
     }
   }
   return { minimum, minima, itemsHeight, chromeHeight };

@@ -1,5 +1,6 @@
 import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
 import { inputLaneLayout } from './input-lane-layout.js';
+import { shareUnitedGroupSpacing } from './group-spacing-layout.js';
 
 function ordinaryVerticalGroup(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
@@ -70,6 +71,7 @@ export function alignUnitedRows(model, context, wrapped) {
       place(entry, 1, 0, flexible);
       style(entry.element, '--taxi-united-column', String(index + 1));
     }
+    shareUnitedGroupSpacing(lanes, alignment);
     style(items, '--taxi-united-tracks', Array.from({length: tracks}, (_, index) =>
       flexible.has(index) ? 'minmax(max-content, 1fr)' : 'max-content').join(' '));
     register(items, children, allowWrap);

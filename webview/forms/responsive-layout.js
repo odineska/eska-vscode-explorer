@@ -13,6 +13,7 @@ import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
 import { authoredGroupRows } from './authored-group-rows.js';
 import { commandBarLayout } from './command-bar-layout.js';
+import { layoutGroupSpacing } from './group-spacing-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -80,6 +81,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       allocateTableCommands = measureTableCommands(root, scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      layoutGroupSpacing(state.model.root, context);
       unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
       unitedColumns.alignColumns();
