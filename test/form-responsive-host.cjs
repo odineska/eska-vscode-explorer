@@ -54,7 +54,7 @@ function check(sample, baseline, label) {
   assert.ok(sample.memo.height>=39.9&&sample.memo.height<=160.1,label+' applies vertical bounds');
   assert.ok(Math.abs(sample.close.height-baseline.close.height)<.001,label+' keeps fixed button height');
   assert.ok(Math.abs(sample.fixedGroup.width-350)<.01 && Math.abs(sample.fixedGroup.height-baseline.fixedGroup.height)<.01,label+' retains explicit non-stretch group dimensions');
-  assert.ok(sample.fixedGroup.height>=48 && sample.fixedGroup.height<=50,label+' retains the native unit and the content minimum');
+  assert.ok(Math.abs(sample.fixedGroup.height-50)<.01,label+' retains the authored Linux group height');
 
   assert.ok(sample.table.right <= sample.chart.x + .5, label+' keeps table and chart separate');
   assert.ok(sample.close.bottom <= sample.frame.bottom + .5, label+' keeps the last button inside the form');

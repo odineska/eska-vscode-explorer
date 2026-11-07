@@ -83,6 +83,17 @@ function sourceVariant(xml, edit) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
   }
   if (edit.united) changed = changed.replaceAll('<United>false</United>', '<United>true</United>');
+  for (const [name, settings] of Object.entries(edit.groups ?? {})) {
+    const group = new RegExp(`(<UsualGroup name="${name}" id="\\d+">)([\\s\\S]*?)(<ChildItems>)`, 'u');
+    assert.match(changed, group);
+    changed = changed.replace(group, (_, open, properties, items) => {
+      for (const [tag, value] of Object.entries(settings)) {
+        properties = properties.replace(new RegExp(`<${tag}>[^<]*</${tag}>`, 'u'), '');
+        if (value !== null) properties = `<${tag}>${value}</${tag}>` + properties;
+      }
+      return open + properties + items;
+    });
+  }
   if (edit.maximum) {
     changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
   }

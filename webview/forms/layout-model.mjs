@@ -261,8 +261,10 @@ export function atPreferredAxis(outerSize, preferredSize, zoom = 100) {
 /** Explicit group dimensions provide an initial constraint; child natural minima still take precedence. */
 export function groupPreferredSize(node, os) {
   if (!containers.has(node.kind) || node.kind === 'Form') return {};
-  return { width: positive(number(node,'Width')) * (os === 'linux' ? 10 : 8),
-    height: positive(number(node,'Height')) * (os === 'linux' ? linuxContainerHeightUnit : 20) };
+  const linux = os === 'linux', height = positive(number(node, 'Height'));
+  // The authored height of an ordinary group includes its two layout edge pixels.
+  return { width: positive(number(node, 'Width')) * (linux ? 10 : 8),
+    height: height * (linux ? linuxContainerHeightUnit : 20) + (linux && height > 0 && ordinaryGroup(node) ? 2 : 0) };
 }
 
 export function pictureFieldStyle(node, os) {

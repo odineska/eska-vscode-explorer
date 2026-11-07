@@ -99,7 +99,7 @@ test('reference-axis detection uses the outer area before native scrollbars and 
 
 test('explicit group sizes are separated from stretch weights and converted through the OS profile',()=>{
   const group=node('UsualGroup',{Width:35,Height:3,HorizontalStretch:false,VerticalStretch:false});
-  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:48});
+  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:50});
   assert.deepEqual(groupPreferredSize(group,'win32'),{width:280,height:60});
   assert.deepEqual(groupPreferredSize(node('InputField',{Width:35}),'linux'),{});
 });

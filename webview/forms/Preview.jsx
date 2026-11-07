@@ -20,7 +20,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, ordinaryGroup } from './layout-model.mjs';
 import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, rootCommandPlacement, startsRootCommandSection } from './command-menu-model.mjs';
@@ -219,6 +219,16 @@ export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const children = () => props.node.children.filter(displayedInPreview);
+  const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
+  const alignment = {Top:'start', Center:'center', Bottom:'end'};
+  const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
+  const contentAlignment = createMemo(() => {
+    if (!nativeGroup()) return;
+    const nodes = children();
+    const onlyChild = nodes.length === 1 && alignment[scalar(nodes[0], 'GroupVerticalAlign')];
+    return onlyChild || inheritedAlignment()
+      || (number(props.node, 'Height') > 0 ? 'var(--taxi-inherited-vertical-align, start)' : undefined);
+  });
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
     && children().length > 0 && children().every(node => node.kind === 'Button');
   const uniform = () => buttonRow() && children().every(node => scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
@@ -261,7 +271,8 @@ export function Items(props) {
     }).join(' ');
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
-    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+    data-content-vertical-align={contentAlignment() ? '' : undefined}
+    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
