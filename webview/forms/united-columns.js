@@ -1,6 +1,7 @@
 import { fieldWidth, number, property, scalar } from './model.mjs';
-import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, controlBounds, horizontalInputMaximum, laneInputBounds } from './layout-model.mjs';
+import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing } from './layout-model.mjs';
 import { borderBoxSize, pixels, textWidth } from './layout-box.mjs';
+import { mixedColumnLayout } from './mixed-column-layout.js';
 
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
@@ -13,7 +14,7 @@ function ordinaryRow(node) {
 }
 
 function leadingField(entry) {
-  if (entry.kind === 'field') return entry;
+  if (entry.kind === 'field') return entry.location === 'Left' ? entry : undefined;
   if (entry.kind !== 'group' || scalar(entry.node, 'ThroughAlign', 'Auto') === 'DontUse') return;
   return leadingField(entry.children[0]);
 }
@@ -24,7 +25,10 @@ function cells(entry) {
 }
 
 function intrinsic(entry, gap, labelWidth) {
-  if (entry.kind === 'field') return (labelWidth ?? entry.labelWidth) + entry.labelGap + entry.controlWidth;
+  if (entry.kind === 'field') {
+    return entry.location === 'Top' ? Math.max(entry.controlWidth, entry.labelWidth)
+      : (labelWidth ?? entry.labelWidth) + entry.labelGap + entry.controlWidth;
+  }
   if (entry.kind !== 'group') return entry.width;
   const firstLabel = leadingField(entry) ? labelWidth : undefined;
   const children = entry.children.map((child, index) => intrinsic(child, gap, index === 0 ? firstLabel : undefined));
@@ -32,17 +36,19 @@ function intrinsic(entry, gap, labelWidth) {
 }
 
 /** Lay out the shared columns of horizontal groups without changing the Solid owners. */
-export function alignUnitedColumns(model, { targets, alignment, os, collapsed, scale }) {
+export function alignUnitedColumns(model, context) {
+  const { targets, alignment, os, collapsed, scale } = context;
   const { elements, containers, children: mountedChildren } = targets;
   const { mark, style } = alignment;
-  const scopes = [];
+  const scopes = [], mixed = mixedColumnLayout(context);
 
-  function entryFor(node) {
-    const element = elements.get(node.key);
-    if (node.kind === 'InputField' && node.presentation.titleLocation === 'Left') {
+  function entryFor(node, mixedRow = false) {
+    const element = elements.get(node.key), location = node.presentation.titleLocation;
+    if (node.kind === 'InputField' && (location === 'Left' || mixedRow && location === 'Top')) {
       const row = element.querySelector(':scope > .taxi-field-row'), label = row?.querySelector('.taxi-field-label');
       if (!label) return;
-      return { kind: 'field', node, element, labelWidth: pixels(getComputedStyle(label).width),
+      const labelWidth = location === 'Left' ? pixels(getComputedStyle(label).width) : Math.round(textWidth(label, scale));
+      return { kind: 'field', node, element, location, labelWidth,
         labelGap: pixels(getComputedStyle(row).columnGap), controlWidth: fieldWidth(node, os) };
     }
     if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
@@ -52,7 +58,9 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     if (!ordinaryRow(node)) return;
     const items = containers.get(node.key), group = items?.parentElement;
     if (!items) return;
-    const children = mountedChildren(node).map(entryFor);
+    const nodes = mountedChildren(node);
+    const mixed = os === 'linux' && nodes.some(child => ['LabelField', 'PictureField'].includes(child.kind));
+    const children = nodes.map(child => entryFor(child, mixed));
     if (!children.length || children.some(child => !child)) return;
     const titleElement = group.querySelector(':scope > .taxi-group-title');
     if (!titleElement) return { kind: 'group', node, element, items, group, children };
@@ -65,11 +73,11 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
   function visit(node) {
     const children = mountedChildren(node), items = containers.get(node.key);
     if (items && node.presentation.grouping === 'Vertical' && children.length > 1 && children.every(ordinaryRow)) {
-      const lanes = children.map(entryFor);
+      const lanes = children.map(child => entryFor(child));
       if (lanes.every(Boolean)) {
         // The native gap between fields on this axis also separates the logical tracks.
         const gap = os === 'linux' ? 11 : pixels(getComputedStyle(lanes[0].items).columnGap);
-        scopes.push({ lanes, gap });
+        scopes.push({ node, items, lanes, gap });
       }
     }
     for (const child of children) visit(child);
@@ -84,53 +92,6 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     mark(entry.items, 'data-united-horizontal-lane');
     style(entry.items, '--taxi-united-cell-gap', `${gap}px`);
   }
-  function mixedCell(entry, labelWidth) {
-    const value = entry.kind === 'field' ? entry.controlWidth : entry.width;
-    const reserve = intrinsic(entry, 0, labelWidth) - value;
-    if (!stretches(entry.node, 'x', collapsed)) {
-      const width = reserve + value;
-      return { width, minimum: width, maximum: width, growth: 0 };
-    }
-    const bounds = controlBounds(entry.node, 'x', value, os);
-    const maximum = horizontalInputMaximum(entry.node, os) ?? bounds.maximum ?? Infinity;
-    const preferred = Math.min(value, maximum);
-    const minimum = laneInputBounds(entry.node, os)?.narrowMinimum
-      ?? bounds.minimum ?? (entry.node.kind === 'LabelField' ? 60 : 80);
-    return { width: reserve + preferred, minimum: reserve + Math.min(preferred, minimum),
-      maximum: reserve + maximum, growth: preferred };
-  }
-
-  function mixedTracks(lanes) {
-    const count = Math.max(0, ...lanes.map(lane => lane.children.length));
-    return Array.from({length: count}, (_, index) => {
-      const entries = lanes.flatMap(lane => lane.children[index] ?? []);
-      const labelWidth = Math.max(...entries.map(entry => entry.labelWidth ?? 0));
-      const sizes = entries.map(entry => mixedCell(entry, labelWidth));
-      const widest = name => Math.max(...sizes.map(size => size[name]));
-      return { labelWidth, width: widest('width'), minimum: widest('minimum'),
-        maximum: widest('maximum'), growth: widest('growth') };
-    });
-  }
-
-  function placeMixedRows(lanes) {
-    const shared = mixedTracks(lanes.filter(lane => !lane.node.presentation.united));
-    for (const lane of lanes) {
-      const tracks = lane.node.presentation.united ? mixedTracks([lane]) : shared;
-      mark(lane.items, 'data-united-flex-lane');
-      setLane(lane, 10);
-      for (const [index, entry] of lane.children.entries()) {
-        const {width, minimum, maximum, growth, labelWidth} = tracks[index];
-        setCell(entry, width);
-        if (entry.kind === 'field') style(entry.element, '--taxi-united-cell-label-width', labelWidth + 'px');
-        style(entry.element, '--taxi-united-cell-min-width', minimum + 'px');
-        style(entry.element, '--taxi-united-cell-max-width', Number.isFinite(maximum) ? maximum + 'px' : 'none');
-        // Flexbox distributes each deficit by shrink factor times basis.
-        const shrink = width > 0 ? (width - minimum) / width : 0;
-        style(entry.element, '--taxi-united-cell-flex', [growth, shrink, width + 'px'].join(' '));
-      }
-    }
-  }
-
   function placeCell(entry, width, labelWidth, gap) {
     setCell(entry, width);
     if (entry.kind === 'field') {
@@ -170,10 +131,10 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     return last;
   }
 
-  for (const {lanes, gap} of scopes) {
+  for (const {node, items, lanes, gap} of scopes) {
     if (lanes.every(lane => !lane.title && lane.children.every(entry => entry.kind !== 'group'))
       && lanes.some(lane => lane.children.some(entry => entry.kind === 'control'))) {
-      placeMixedRows(lanes);
+      mixed.register(node, items, lanes, setCell, setLane);
       continue;
     }
     const rows = lanes.map(cells), count = Math.max(...rows.map(row => row.length));
@@ -185,4 +146,5 @@ export function alignUnitedColumns(model, { targets, alignment, os, collapsed, s
     });
     for (const lane of lanes) placeLane(lane, 0, tracks, gap);
   }
+  return mixed;
 }

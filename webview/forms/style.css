@@ -605,7 +605,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns]) > .taxi-element[data-stretch-y=false][data-group-vertical-align=Bottom] { align-self: end; }
 .taxi-preview[data-form-layout=allocated] .taxi-group { display: flex; flex-direction: column; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > :is(.taxi-group,.taxi-pages) { height: 100%; min-height: 0; }
-.taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; }
+.taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; white-space: var(--taxi-group-heading-space, normal); }
 .taxi-preview[data-form-layout=allocated] .taxi-group > .taxi-items { flex: 1; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages { display: flex; flex-direction: column; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnBottom] { flex-direction: column-reverse; }
@@ -757,6 +757,9 @@ button { cursor: default; }
 }
 
 /* Horizontal groups in a vertical stack share their logical column widths. */
+.taxi-preview[data-form-layout] .taxi-items[data-united-mixed-titles] > .taxi-element > .taxi-field-row[data-title-location=Top] {
+  row-gap: 3px; padding-block: 1px;
+}
 .taxi-preview[data-form-layout] .taxi-items[data-united-horizontal-lane] {
   align-items: start;
   column-gap: var(--taxi-united-cell-gap);

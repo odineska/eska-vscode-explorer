@@ -33,7 +33,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -74,7 +74,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const scale = boundingScale(root);
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
-      alignUnitedColumns(state.model.root, context);
+      unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       numericRows = alignNumericLabelRows(state.model.root, context);
@@ -82,7 +82,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
       adaptiveTitles = inputTitleLayout(state.model.root, context, minimumCaptions);
       checkboxes = checkboxLayout(state.model.root, context);
-      minimumRows = new Map([...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
+      minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
       unitedRows.capturePreferredColumns();
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
@@ -99,7 +99,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth, minimumRows);
+      const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
+      const measured = minimumFormLayout(root, boundingScale(root), {
+        minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
+        headingWidths: unitedColumns.headingWidths, available,
+      });
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -117,7 +121,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
-    if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
+    if (Object.keys(next).some(key => previous[key] !== next[key])) {
+      if (unitedColumns.headingWidths.size && next.width !== previous.width) needsMinimum = true;
+      setSize(next); schedule();
+    }
     rootCommands?.allocate();
     const captions = new Map(), previousCaptions = fieldCaptions();
     allocateThroughCaptions(captions, minima());
@@ -125,6 +132,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     numericRows?.allocateWidths(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    unitedColumns.allocate(above);
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);

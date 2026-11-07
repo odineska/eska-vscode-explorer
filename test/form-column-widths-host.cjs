@@ -11,10 +11,10 @@ async function pose(ui, keys, expected) {
     await until(async () => {
       actual = await ui.evaluate(`(() => {
         const root=document.querySelector('.taxi-form-frame'), origin=root.getBoundingClientRect();
-        const fields=new Map([...root.querySelectorAll('[data-kind=InputField], [data-kind=CheckBoxField]')].map(field=>[field.dataset.element,field]));
+        const fields=new Map([...root.querySelectorAll('.taxi-element--field')].map(field=>[field.dataset.element,field]));
         const controls={}, captions={}, locations={};
         for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
-          const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox');
+          const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox,.taxi-picture-field');
           if (!control) continue;
           const r=control.getBoundingClientRect();
           controls[name]=[r.x-origin.x,r.y-origin.y,r.width,r.height];
@@ -82,6 +82,7 @@ function sourceVariant(xml, edit) {
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
   }
+  if (edit.united) changed = changed.replaceAll('<United>false</United>', '<United>true</United>');
   if (edit.maximum) {
     changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
   }
@@ -98,7 +99,7 @@ async function verifyDetached(service, view, main, ui, identity, run) {
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true, state:{title:preview.panel.title}});
   assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
-  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox')];true");
+  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field')];true");
   await run(floating);
   assert.deepEqual(view.selected, identity);
   assert.equal(await floating.evaluate('__widthInputs.length>0 && __widthInputs.every(input=>input.isConnected)'), true);
@@ -123,22 +124,23 @@ exports.run = async () => {
     const view = [...service.views.values()].find(view => view.path === form.path), main=view.frames.get('main');
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
-    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField'].includes(node.kind));
+    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField'].includes(node.kind));
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
-    if (process.platform === 'linux' && (form.cases[0]?.locations || checkbox)) {
-      const identity = (checkbox ?? nodes.find(node => node.name === 'Currency')).identity;
+    const placements = form.cases[0]?.locations;
+    if (process.platform === 'linux' && (placements || checkbox)) {
+      const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
         const wide = checkbox ? form.cases[0] : {name:'wide captions',frame:[1180,250],
-          locations:Object.fromEntries(Object.keys(form.cases[0].locations).map(name => [name, 'Left']))};
+          locations:Object.fromEntries(Object.keys(placements).map(name => [name, 'Left']))};
         const initial = await pose(floating, keys, wide);
         if (checkbox) results.push(initial);
         for (const expected of form.cases.slice(checkbox ? 1 : 0)) {
           await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
           const revision = view.snapshot.revision;
           results.push(await pose(floating, keys, expected));
-          if (checkbox && expected.viewport) {
+          if (expected.viewport?.[0] < expected.frame[0]) {
             assert.equal(await floating.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
           }
           assert.equal(view.snapshot.revision, revision);
