@@ -158,7 +158,17 @@ exports.run = async function () {
     assert.equal(geometry.paging, form.kind === 'DynamicList' ? 4 : 0);
     assert.equal(geometry.fabricatedRows, 0);
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
-    if (form.kind !== 'DynamicList') assert.equal(geometry.frame.height, explicitCommands || form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225 : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342);
+    if (form.kind !== 'DynamicList') {
+      const height = explicitCommands ? process.platform === 'linux' ? 314 : 312
+        : form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225
+        : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342;
+      assert.equal(geometry.frame.height, height, `${form.kind} native frame height`);
+    }
+    if (explicitCommands && process.platform === 'linux') {
+      assert.equal(geometry.control.y - geometry.frame.y, 74, `${form.kind} native grid offset`);
+      assert.deepEqual(geometry.buttons.map(button => [button.x - geometry.frame.x, button.y - geometry.frame.y, button.width, button.height]),
+        form.kind === 'TablePopup' ? [[13, 39, 77, 26]] : [[13, 39, 115, 26], [137, 39, 133, 26]]);
+    }
     if (form.kind === 'MetadataTable') assert.deepEqual(geometry.columns.map(column => column.width), [97, 177, 176, 54]);
     if (form.kind === 'DynamicList') assert.deepEqual(geometry.columns.map(column => column.width), [108, english ? 344 : 308]);
     if (form.kind === 'ColumnHidden') assert.deepEqual(geometry.columns.map(column => column.label),['Amount','Active']);
