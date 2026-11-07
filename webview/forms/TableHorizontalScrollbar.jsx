@@ -23,7 +23,8 @@ export function TableHorizontalScrollbar(props) {
     onCleanup(() => target.removeEventListener('scroll', read));
   });
 
-  const geometry = createMemo(() => horizontalScrollbarGeometry(props.viewport, props.grid, position()));
+  const railWidth = () => props.railWidth ?? props.viewport;
+  const geometry = createMemo(() => horizontalScrollbarGeometry(props.viewport, props.grid, position(), railWidth()));
   const before = () => props.enabled && geometry().position > 0;
   const after = () => props.enabled && geometry().position < geometry().maximum;
   const overThumb = x => x >= geometry().thumbLeft && x < geometry().thumbRight;
@@ -36,7 +37,7 @@ export function TableHorizontalScrollbar(props) {
   const leftArrow = () => !before() ? tableHorizontalPaint.left.disabled
     : pointer() >= 0 && pointer() < geometry().trackLeft ? tableHorizontalPaint.left.hover : tableHorizontalPaint.left.active;
   const rightArrow = () => !after() ? tableHorizontalPaint.right.disabled
-    : pointer() >= geometry().trackRight && pointer() < props.viewport ? tableHorizontalPaint.right.hover : tableHorizontalPaint.right.active;
+    : pointer() >= geometry().trackRight && pointer() < railWidth() ? tableHorizontalPaint.right.hover : tableHorizontalPaint.right.active;
 
   function scrollTo(next) {
     props.target.scrollLeft = Math.round(next);
@@ -52,7 +53,7 @@ export function TableHorizontalScrollbar(props) {
   function press(event) {
     if (!props.enabled || event.button !== 0 || drag) return;
     const x = pointerPosition(event);
-    if (x < 0 || x >= props.viewport) return;
+    if (x < 0 || x >= railWidth()) return;
     setPointer(x);
     if (!overThumb(x)) {
       step(x < geometry().thumbLeft ? -1 : 1);
@@ -112,6 +113,6 @@ export function TableHorizontalScrollbar(props) {
     <ScrollFragment image={startCap()} x={geometry().thumbLeft} y={3}/>
     <ScrollFragment image={endCap()} x={geometry().thumbRight - 4} y={3}/>
     <ScrollFragment image={leftArrow()} x={9} y={4}/>
-    <ScrollFragment image={rightArrow()} x={props.viewport - 13} y={4}/>
+    <ScrollFragment image={rightArrow()} x={railWidth() - 13} y={4}/>
   </div>;
 }

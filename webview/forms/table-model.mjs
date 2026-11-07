@@ -190,7 +190,7 @@ export function tableLayout(table, state = {}, additions) {
   const nativeColumns = linux && !dynamic;
   const nativeDynamicList = linux && dynamic;
   const captions = { locale, strings: state.strings };
-  const metrics = node => column(node, readOnly, dynamic, nativeColumns, captions);
+  const metrics = node => column(node, readOnly, dynamic, linux, captions);
   function visit(node) {
     const titleHeight = bandHeight(node.presentation.titleFont);
     if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1,

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource } = require('./webview-host.cjs');
 
 async function checkSourceBar(ui, view, document, english) {
   const bar = "document.querySelector('.taxi-command-bar')";
@@ -226,6 +226,7 @@ exports.run = async function () {
       identity = await verifyGeometryIdentity(document, view, ui, form.kind);
     }
     const dynamicSearch = form.kind === 'DynamicList' ? await verifyDynamicSearch(document, view, ui, english) : undefined;
+    if (dynamicSearch && process.platform === 'linux') dynamicSearch.pagination = await verifyDynamicPagination(document, view, ui);
     assert.deepEqual(await fs.readFile(form.path), before);
     results.push({kind:form.kind,...geometry,...(identity ? {identity} : {}), ...(dynamicSearch ? {dynamicSearch} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
@@ -302,6 +303,36 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   return {headers: retained.headers, footerCells: retained.footer, widthEdit, selection: '4', restored: true};
 }
 
+
+async function verifyDynamicPagination(document, view, ui) {
+  const original = document.getText();
+  const narrow = original.replace('<DataPath>Rows</DataPath>', '<DataPath>Rows</DataPath><Width>24</Width><HorizontalStretch>false</HorizontalStretch><CommandBarLocation>None</CommandBarLocation><SearchStringLocation>None</SearchStringLocation><SearchControlLocation>None</SearchControlLocation><ViewStatusLocation>None</ViewStatusLocation>');
+  assert.notEqual(narrow, original);
+  await ui.evaluate("globalThis.__dynamicGrid=document.querySelector('.taxi-table-content');true");
+  const sizes = () => ui.evaluate(`(() => {
+    const grid = document.querySelector('.taxi-table-scroll'), page = document.querySelector('.taxi-table-pagination');
+    const rail = page?.querySelector('[role=scrollbar]');
+    if (!rail) return;
+    const [g,p,r] = [grid,page,rail].map(node => node.getBoundingClientRect());
+    return [g.width, g.height, p.height, r.left-p.left, r.top-p.top, r.width, Number(rail.getAttribute('aria-valuemax'))];
+  })()`);
+  try {
+    await editFormSource(document, view, narrow);
+    await until(async () => (await sizes())?.[0] === 240, 'narrow list acquires a pagination scrollbar');
+    assert.deepEqual(await sizes(), [240, 452, 21, 1, 2, 123, 71]);
+    const key = name => ui.evaluate(`document.querySelector('.taxi-table-pagination [role=scrollbar]')
+      .dispatchEvent(new KeyboardEvent('keydown', {key:${JSON.stringify(name)}, bubbles:true})); true`);
+    await key('End');
+    assert.equal(await ui.evaluate('__dynamicGrid.scrollLeft'), 71);
+    await key('Home');
+    assert.equal(await ui.evaluate('__dynamicGrid.scrollLeft'), 0);
+  } finally {
+    await editFormSource(document, view, original);
+  }
+  await until(async () => !(await sizes()), 'restored list fits without its pagination scrollbar');
+  assert.equal(await ui.evaluate("__dynamicGrid===document.querySelector('.taxi-table-content')"), true);
+  return { width: 240, railWidth: 123, scrollRange: 71 };
+}
 
 async function verifyDynamicSearch(document, view, ui, english) {
   const original = document.getText();

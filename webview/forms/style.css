@@ -403,7 +403,7 @@ button { cursor: default; }
   max-width: var(--taxi-dynamic-grid-width, 100%);
 }
 .taxi-table-title { position: relative; margin-bottom: 4px; }
-.taxi-table-scroll { display: flex; overflow: hidden; border: 1px solid #a0a0a0; max-width: 100%; }
+.taxi-table-scroll { display: flex; overflow: hidden; border: 1px solid var(--taxi-table-border-color, #a0a0a0); max-width: 100%; }
 .taxi-table-content { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow: hidden; }
 .taxi-table-head, .taxi-table-footer { display: grid; flex-shrink: 0; }
 .taxi-table-head { background: var(--taxi-HeaderBackColor); }
@@ -422,8 +422,50 @@ button { cursor: default; }
 .taxi-table-scrollbar > span { width: 6px; height: 4px; background: #c2c2c2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .taxi-table-scrollbar > span:last-child { transform: rotate(180deg); }
 .taxi-table-pagination { height: 21px; display: flex; justify-content: flex-end; }
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-scroll { border-bottom-color: transparent; }
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination {
+  position: relative;
+  --taxi-pagination-border: var(--taxi-table-border-color, #a0a0a0);
+  --taxi-pagination-corner: color-mix(in srgb, var(--taxi-pagination-border) 87.5%, white);
+}
+/* The scrolling rail and the four buttons share the grid's lower border. */
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination::before {
+  content: '';
+  position: absolute;
+  inset: -1px 0 auto auto;
+  width: var(--taxi-table-pagination-width);
+  height: 1px;
+  background: var(--taxi-pagination-border);
+}
+.taxi-table-pagination-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding-right: var(--taxi-table-pagination-gap);
+  border-left: 1px solid var(--taxi-pagination-border);
+  border-bottom: 1px solid var(--taxi-pagination-border);
+}
+.taxi-table-pagination-scroll::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 1px;
+  height: 1px;
+  background: var(--taxi-pagination-border);
+}
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination > span:last-of-type::before,
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination > span:last-of-type::after {
+  content: '';
+  position: absolute;
+  width: 1px;
+  background: var(--taxi-pagination-corner);
+}
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination > span:last-of-type::before { right: 0; top: -1px; height: 1px; }
+.taxi-table-field[data-dynamic-horizontal] > .taxi-table-pagination > span:last-of-type::after { right: -1px; bottom: -1px; height: 2px; }
+.taxi-table-pagination-scroll > .taxi-table-horizontal-scrollbar { flex: 1; height: 14px; margin-top: 2px; }
 .taxi-table-pagination > span { display: grid; place-items: center; width: 24px; border: 1px solid #a0a0a0; border-top: 0; border-left: 0; }
-.taxi-table-pagination > span:first-child { border-left: 1px solid #a0a0a0; }
+.taxi-table-pagination > span:first-of-type { border-left: 1px solid #a0a0a0; }
 .taxi-table-pagination svg { width: 12px; height: 12px; fill: #aaa; stroke: #aaa; stroke-width: .5; }
 .taxi-special-stack { max-width: 100%; }
 .taxi-special { display: flex; flex-direction: column; max-width: 100%; border: 1px solid #a0a0a0; overflow: hidden; background: #fff; }
@@ -528,11 +570,11 @@ button { cursor: default; }
 /* A browser dotted border changes phase with width; native dots always start at the left. */
 .taxi-preview[data-os=linux] .taxi-table-incomplete { border: 0; height: 1px; background: repeating-linear-gradient(to right, #f00 0 1px, transparent 1px 2px); }
 .taxi-preview[data-os=linux] .taxi-table-pagination > span { position: relative; }
-.taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child { width: 25px; }
+.taxi-preview[data-os=linux] .taxi-table-pagination > span:first-of-type { width: 25px; }
 .taxi-preview[data-os=linux] .taxi-table-pagination svg { position: absolute; left: 7px; top: 8px; width: 9px; height: auto; stroke: none; }
-.taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child svg { left: 7px; top: 7px; }
+.taxi-preview[data-os=linux] .taxi-table-pagination > span:first-of-type svg { left: 7px; top: 7px; }
 /* Native pagination retains one lighter pixel where the first left edge starts. */
-.taxi-preview[data-os=linux] .taxi-table-pagination > span:first-child::after { content: ''; position: absolute; width: 1px; height: 1px; left: -1px; top: 0; background: #acacac; }
+.taxi-preview[data-os=linux] .taxi-table-field:not([data-dynamic-horizontal]) > .taxi-table-pagination > span:first-of-type::after { content: ''; position: absolute; width: 1px; height: 1px; left: -1px; top: 0; background: #acacac; }
 
 /* Native table search hints use their own LCD color and an integer top edge. */
 .taxi-preview[data-os=linux] .taxi-table-search { position: relative; align-self: flex-start; margin-top: 2px; color: #c8c8c8; background: #fff; }
@@ -734,8 +776,10 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-table-content > :is(.taxi-table-head,.taxi-table-empty,.taxi-table-footer) { min-width: var(--taxi-table-content-min-width); }
 
 .taxi-table-scroll[data-native-horizontal] { display: grid; grid-template-columns: minmax(0, 1fr) 14px; grid-template-rows: minmax(0, 1fr) 14px; }
-.taxi-table-scroll[data-native-horizontal] > .taxi-table-content { scrollbar-width: none; }
-.taxi-preview[data-form-layout=allocated] .taxi-table-scroll[data-native-horizontal][aria-disabled=true] > .taxi-table-content { overflow-x: hidden; }
+.taxi-table-scroll[data-native-horizontal] > .taxi-table-content,
+.taxi-table-field[data-native-dynamic-list] > .taxi-table-scroll > .taxi-table-content { scrollbar-width: none; }
+.taxi-preview[data-form-layout=allocated] .taxi-table-scroll[data-native-horizontal][aria-disabled=true] > .taxi-table-content,
+.taxi-table-field[data-dynamic-horizontal] .taxi-table-scroll[aria-disabled=true] > .taxi-table-content { overflow-x: hidden; }
 .taxi-table-horizontal-scrollbar { position: relative; grid-column: 1 / -1; background: #fff; touch-action: none; user-select: none; }
 .taxi-table-horizontal-scrollbar:focus-visible { outline: 1px solid #1e90ff; outline-offset: -1px; }
 .taxi-table-horizontal-scrollbar > :is(span, canvas) { position: absolute; pointer-events: none; }

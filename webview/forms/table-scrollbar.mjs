@@ -11,8 +11,8 @@ const horizontalInset = 23;
 const minimumThumb = 8;
 export const minimumHorizontalTableViewport = 2 * horizontalInset + minimumThumb;
 
-export function horizontalScrollbarGeometry(viewport, grid, offset) {
-  const trackLength = Math.max(0, viewport - 2 * horizontalInset);
+export function horizontalScrollbarGeometry(viewport, grid, offset, railWidth = viewport) {
+  const trackLength = Math.max(0, railWidth - 2 * horizontalInset);
   const maximum = Math.max(0, grid - viewport);
   const position = Math.min(maximum, Math.max(0, Math.round(offset)));
   const minimum = Math.min(trackLength, minimumThumb);

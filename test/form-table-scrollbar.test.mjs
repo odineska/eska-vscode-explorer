@@ -22,6 +22,12 @@ test('the native horizontal thumb rounds the edges independently as the table sc
   assert.deepEqual(ends(2500), [429, 561]);
 });
 
+test('a dynamic list preserves its scroll range when the rail shares space with navigation', () => {
+  const { trackLeft, trackRight, maximum, thumbLeft, thumbRight } = horizontalScrollbarGeometry(238, 309, 0, 123);
+  assert.deepEqual([trackLeft, trackRight, maximum, thumbLeft, thumbRight], [23, 100, 71, 23, 82]);
+  assert.equal(horizontalScrollbarGeometry(238, 309, maximum, 123).thumbRight, 100);
+});
+
 test('a very wide grid preserves the minimum thumb at either end', () => {
   const minimum = offset => horizontalScrollbarGeometry(164, 9704, offset);
   const initial = minimum(0), end = minimum(9540);
