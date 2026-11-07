@@ -9,6 +9,8 @@ test('native source identity follows the host path rules',()=>{
   if(process.platform==='win32') {
     assert.equal(sameSourcePath('C:\\Fixture\\Form.xml','c:/Fixture/Form.xml'),true);
     assert.equal(sameSourcePath('C:\\Fixture\\Form.xml','D:\\Fixture\\Form.xml'),false);
+    assert.equal(sameSourcePath(String.raw`\\?\C:\Fixture\Form.xml`,'c:/Fixture/Form.xml'),true);
+    assert.equal(sameSourcePath(String.raw`\\?\UNC\server\share\Form.xml`,String.raw`\\server\share\Form.xml`),true);
   } else assert.equal(sameSourcePath('source/Form.xml','source/form.xml'),false);
 });
 

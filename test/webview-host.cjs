@@ -4,7 +4,7 @@ const publications = new WeakMap();
 
 /** Compare native paths with the host OS rules, including Windows drive casing. */
 function sameSourcePath(left, right) {
-  return path.relative(left, right) === '';
+  return path.relative(path.toNamespacedPath(left), path.toNamespacedPath(right)) === '';
 }
 
 /** Wait for a concrete context or DOM condition in the isolated native test window. */

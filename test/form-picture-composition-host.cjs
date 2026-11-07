@@ -57,6 +57,6 @@ exports.run=async()=>{
   revision=view.snapshot.revision;await fs.rename(ownExt,ownBackup);await check('#2050EE','external-own-empty-definition',undefined,revision,null);
   revision=view.snapshot.revision;await fs.rename(ownBackup,ownExt);await check('#2050EE','external-own-image-restored',undefined,revision);
   assert.ok(descriptor.isDirty&&pictureXml.isDirty);ui.close();main.panel.dispose();await until(()=>service.views.size===0,'own picture session released');await Promise.all([...service.closing]);await explorer.shutdown();
-  await fs.rm(path.dirname(files.secondPictureXml),{recursive:true});assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);
+  await fs.rm(path.dirname(files.secondPictureXml),{recursive:true,maxRetries:process.platform==='win32'?20:0,retryDelay:250});assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,pictureComposition:true,locale:vscode.env.language,results,sourceWritesDuringViewing:false,controlledExternalChangesRestored:true,stableIdentity:true,stableDom:true,detachedUpdates:true,nativeEmptyPayload:true}));
 };

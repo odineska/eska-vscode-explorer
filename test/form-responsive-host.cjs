@@ -288,7 +288,7 @@ exports.run=async function(){
   if (process.platform === 'win32') {
     // Keep the conditional row wider than the Windows table minimum so both arrangements are exercised.
     const revision = view.snapshot.revision;
-    await replace(document, '<Width>35</Width>\n        </InputField>', '<Width>75</Width>\n        </InputField>', 1);
+    await replace(document, '<Width>35</Width>\n        </InputField>', '<Width>60</Width>\n        </InputField>', 1);
     await until(() => view.phase === 'ready' && view.snapshot.revision !== revision && !view.running && !view.timer, 'Windows conditional row fixture ready');
     await settled(ui);
   }
@@ -341,16 +341,24 @@ exports.run=async function(){
   await service.receive(view,detached,{type:'dock'});await until(()=>!view.frames.has('preview'),'dock responsive preview');
   main.panel.reveal();ui=await frame({state:{title:main.panel.title}});
   await until(async()=>await ui.evaluate("document.querySelector('.taxi-preview')?.dataset.formLayout==='allocated'"),'docked allocation ready');
-  await ui.evaluate(`[...document.querySelectorAll('.taxi-tabs button')].find(button=>button.textContent==='Canvas').click();globalThis.__sheetCanvas=document.querySelector('[data-native-spreadsheet] canvas');true`);
+  await ui.evaluate(`[...document.querySelectorAll('.taxi-tabs button')].find(button=>button.textContent==='Canvas').click();globalThis.__sheetCanvas=document.querySelector('[data-native-spreadsheet] canvas');globalThis.__sheetTable=document.querySelector('[data-native-spreadsheet] table');true`);
   const canvasResults=[];
   for(const [width,height] of [[480,400],[900,650],[1250,800]]) {
     await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
-    await until(async()=>await ui.evaluate("document.querySelector('[data-native-spreadsheet]')?.dataset.nativeSpreadsheet==='ready'"),'native spreadsheet repainted');
+    const sheetMode=process.platform==='linux'?'ready':'browser';
+    await until(async()=>await ui.evaluate("document.querySelector('[data-native-spreadsheet]')?.dataset.nativeSpreadsheet==="+JSON.stringify(sheetMode)),'spreadsheet rendering mode ready');
     await settled(ui);
-    const sample=await ui.evaluate(`(() => {const surface=document.querySelector('[data-native-field=SpreadSheetDocumentField]'),canvas=surface.querySelector('canvas'),r=surface.getBoundingClientRect();return {width:r.width,height:r.height,pixels:[canvas.width,canvas.height],sameCanvas:canvas===__sheetCanvas,page:document.querySelector('.taxi-tabs [aria-selected=true]').textContent}})()`);
-    assert.deepEqual(sample.pixels,[sample.width-2,sample.height-2],'canvas is rebuilt at the allocated size');assert.equal(sample.sameCanvas,true);assert.equal(sample.page,'Canvas');canvasResults.push(sample);
+    const sample=await ui.evaluate(`(() => {const surface=document.querySelector('[data-native-field=SpreadSheetDocumentField]'),canvas=surface.querySelector('canvas'),table=surface.querySelector('table'),r=surface.getBoundingClientRect();return {width:r.width,height:r.height,pixels:[canvas.width,canvas.height],sameCanvas:canvas===__sheetCanvas,sameTable:table===__sheetTable,tableVisible:getComputedStyle(table.parentElement).display!=='none',cells:table.querySelectorAll('td').length,canvasVisible:getComputedStyle(canvas).display!=='none',page:document.querySelector('.taxi-tabs [aria-selected=true]').textContent}})()`);
+    if(process.platform==='linux')assert.deepEqual(sample.pixels,[sample.width-2,sample.height-2],'canvas is rebuilt at the allocated size');
+    else {
+      assert.equal(sample.sameTable,true,'Windows resize keeps the spreadsheet table owner');
+      assert.equal(sample.tableVisible,true);assert.equal(sample.canvasVisible,false);
+      assert.equal(sample.cells,360,'the Windows spreadsheet grid remains available');
+    }
+    assert.equal(sample.sameCanvas,true);assert.equal(sample.page,'Canvas');canvasResults.push(sample);
   }
-  assert.ok(new Set(canvasResults.map(row=>row.pixels.join(':'))).size>1,'canvas buffer changes with allocation');
+  if(process.platform==='linux')assert.ok(new Set(canvasResults.map(row=>row.pixels.join(':'))).size>1,'canvas buffer changes with allocation');
+  else assert.ok(new Set(canvasResults.map(row=>[row.width,row.height].join(':'))).size>1,'Windows spreadsheet area follows allocation');
   await ui.evaluate(`[...document.querySelectorAll('.taxi-tabs button')].find(button=>button.textContent==='Other').click();true`);
   const otherBefore=await settled(ui);
   await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'480px',height:'400px'});true`);
