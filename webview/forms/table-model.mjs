@@ -5,6 +5,16 @@ const defaultBandHeight = 30;
 const nativeRowHeight = 28;
 const bandHeight = value => fontLineHeight(value) + 15;
 
+function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, heightUnits) {
+  // A constrained grid keeps at most three body rows. Multiple header levels leave two.
+  const bodyRows = rowCount > 0 ? rowCount - 1
+    : heightUnits > 0 ? heightUnits - headerDepth - Number(footer) - 1 : Infinity;
+  const visibleRows = Math.max(0, Math.min(headerDepth > 1 ? 2 : 3, bodyRows));
+  const bands = headerDepth + Number(footer) + visibleRows;
+  const headerGrowth = headerDepth ? 1 + headerExtra + Math.round(headerExtra * 5 / 8) : 0;
+  return Math.min(height, Math.max(2, bands * (nativeRowHeight + 1) + headerGrowth));
+}
+
 export function tableFooterFont(table, column) {
   return column.presentation.tableColumnAppearance?.footerFont ?? table.presentation.font;
 }
@@ -213,7 +223,8 @@ export function tableLayout(table, state = {}, additions) {
   const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
   // Native row-count sizing retains the default allocation for small captions.
   // An enlarged band also adds five eighths of its extra height to the body.
-  const extraBands = Math.max(0, header - defaultHeader) + Math.max(0, footer - defaultFooter);
+  const headerExtra = Math.max(0, header - defaultHeader);
+  const extraBands = headerExtra + Math.max(0, footer - defaultFooter);
   const bandGrowth = extraBands + Math.round(extraBands * 5 / 8);
   const rowCount = number(table, 'HeightInTableRows');
   const heightUnits = nativeColumns ? number(table, 'Height') : 0;
@@ -235,6 +246,8 @@ export function tableLayout(table, state = {}, additions) {
       height = bands + 6;
     }
   }
+  const groupMinimumHeight = nativeColumns
+    ? groupGridMinimum(height, header ? depth : 0, !!footer, headerExtra, rowCount, heightUnits) : undefined;
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -248,7 +261,7 @@ export function tableLayout(table, state = {}, additions) {
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, preferredWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns };
+  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

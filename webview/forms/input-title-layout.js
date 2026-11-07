@@ -1,5 +1,5 @@
 import { fieldWidth, inputRows, number, scalar } from './model.mjs';
-import { automaticHorizontalSpacing, horizontalInputMaximum, horizontalLaneWidths, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
+import { automaticHorizontalSpacing, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
 import { borderBoxSize, boundingScale, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
@@ -142,7 +142,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         const available = borderBoxSize(items, scale).width - boxInsets(css).width;
         const fit = plans.find(plan => plan.width + spacing <= available + .5) ?? plans.at(-1);
         const plan = fit.above.size || available + .5 < preferred ? fit : undefined;
-        const sizes = plan && horizontalLaneWidths(available - spacing, columns.map(({fields}, index) => {
+        const sizes = plan && allocateLaneSizes(available - spacing, columns.map(({fields}, index) => {
           const width = bound => Math.max(...fields.map(field => widthFor(field, field[bound], plan.above, plan.captionWidths[index])));
           const preferred = width('preferred');
           return { reserve: 0, minimum: width('minimum'), preferred, maximum: preferred };

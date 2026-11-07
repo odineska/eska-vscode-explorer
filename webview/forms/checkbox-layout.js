@@ -2,7 +2,7 @@ import { checkboxMode } from './checkbox-model.mjs';
 import { allocateFieldCaption } from './field-caption-layout.js';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { availableTrackWidth, boxInsets, pixels, updateStyle } from './layout-box.mjs';
-import { groupCanShrink, horizontalLaneWidths } from './layout-model.mjs';
+import { groupCanShrink, allocateLaneSizes } from './layout-model.mjs';
 import { number } from './model.mjs';
 
 function checkboxField(node, { targets, scale }) {
@@ -71,7 +71,7 @@ export function checkboxLayout(model, context) {
     allocate(captions) {
       for (const {items, columns} of rows) {
         const available = availableTrackWidth(items, columns.length, scale);
-        const widths = horizontalLaneWidths(available, columns);
+        const widths = allocateLaneSizes(available, columns);
         for (const [index, { element, fields }] of columns.entries()) {
           const width = widths[index];
           updateStyle(element, '--taxi-field-track', `${width}px`);

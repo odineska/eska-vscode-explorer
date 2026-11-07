@@ -1,5 +1,5 @@
 import { fieldWidth, flag, linuxFixedInputWidth, number } from './model.mjs';
-import { horizontalLaneWidths, laneInputBounds, stretches, groupCanShrink } from './layout-model.mjs';
+import { allocateLaneSizes, laneInputBounds, stretches, groupCanShrink } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, updateStyle } from './layout-box.mjs';
 import { designCaptionWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, throughCaptionWidth } from './field-caption-layout.js';
@@ -141,7 +141,7 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
     const measured = allocations.map(({ items, tracks, narrow, minimum }) => {
       const available = availableTrackWidth(items, tracks.length, scale);
       const reflow = narrow && narrowInputLaneWidths(available, narrow);
-      const widths = reflow ? reflow.map(track => track.width) : horizontalLaneWidths(available, tracks);
+      const widths = reflow ? reflow.map(track => track.width) : allocateLaneSizes(available, tracks);
       return { widths, reflow, atMinimum: available <= minimum };
     });
     for (const [index, { items, narrow }] of allocations.entries()) {

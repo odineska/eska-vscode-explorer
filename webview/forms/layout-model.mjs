@@ -20,6 +20,10 @@ export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }
 
+export function hasAuthoredGroupHeight(node, os) {
+  return os === 'linux' && ordinaryGroup(node) && number(node, 'Height') > 0;
+}
+
 /** An automatic group width can contract even if the group receives no extra space. */
 export function groupCanShrink(node, os) {
   return os === 'linux' && ordinaryGroup(node) && number(node, 'Width') <= 0;
@@ -77,7 +81,7 @@ function automaticMultilineMaximum(node, os) {
 function inputMinimum(node, axis, os, authoredHeight) {
   if (axis === 'x') return Math.min(80, fieldWidth(node, os));
   if (os === 'linux') {
-    // An authored form height can compress the input to one line. Viewport overflow keeps its XML height.
+    // An authored container height can compress the input to one line. Viewport overflow keeps its XML height.
     return authoredHeight ? inputHeight(node, os) : inputControlHeight(node, os);
   }
   return flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os);
@@ -199,8 +203,8 @@ export function fitCaptionWidths(available, tracks, trailingOnly = false) {
   return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };
 }
 
-/** Allocate column widths in native pixels, including the fixed space reserved for titles. */
-export function horizontalLaneWidths(available, lanes) {
+/** Allocate bounded tracks in native pixels, including space reserved for control chrome. */
+export function allocateLaneSizes(available, lanes) {
   const preferred = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
   let widths;
   let round = Math.round;

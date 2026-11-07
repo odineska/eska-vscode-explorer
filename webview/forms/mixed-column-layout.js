@@ -1,6 +1,6 @@
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { availableTrackWidth, updateStyle } from './layout-box.mjs';
-import { controlBounds, groupCanShrink, horizontalInputMaximum, horizontalLaneWidths, laneInputBounds, stretches } from './layout-model.mjs';
+import { controlBounds, groupCanShrink, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
 import { inputRows, nativeReferenceInput, scalar } from './model.mjs';
 
 const sum = values => values.reduce((total, value) => total + value, 0);
@@ -138,7 +138,7 @@ export function mixedColumnLayout(context) {
       const weights = heading?.wraps ? tracks : widest;
       const widths = moved && !tracks[0].reserve
         ? topTrackWidths(room, tracks, weights, united ? Math.floor : Math.ceil)
-        : horizontalLaneWidths(room, tracks);
+        : allocateLaneSizes(room, tracks);
       for (const lane of lanes) {
         for (const [index, entry] of lane.children.entries()) {
           const track = tracks[index];

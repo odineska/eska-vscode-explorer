@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -63,17 +63,17 @@ test('Linux multiline input keeps its XML height under viewport pressure', () =>
 test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {
   const left = {reserve:0, preferred:131, minimum:71, maximum:410};
   const right = {...left, preferred:191};
-  assert.deepEqual(horizontalLaneWidths(142, [left, right]), [71,71]);
-  assert.deepEqual(horizontalLaneWidths(190, [left, right]), [87,103]);
-  assert.deepEqual(horizontalLaneWidths(240, [left, right]), [103,137]);
-  assert.deepEqual(horizontalLaneWidths(330, [left, right]), [134,196]);
-  assert.deepEqual(horizontalLaneWidths(430, [left, right]), [175,255]);
-  assert.deepEqual(horizontalLaneWidths(710, [left, right]), [300,410]);
-  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [410,410]);
-  assert.deepEqual(horizontalLaneWidths(710, [left, {...right, minimum:191, maximum:191}]), [410,191]);
-  assert.deepEqual(horizontalLaneWidths(700, [left, right, {...left, preferred:111}]), [212,309,179]);
+  assert.deepEqual(allocateLaneSizes(142, [left, right]), [71,71]);
+  assert.deepEqual(allocateLaneSizes(190, [left, right]), [87,103]);
+  assert.deepEqual(allocateLaneSizes(240, [left, right]), [103,137]);
+  assert.deepEqual(allocateLaneSizes(330, [left, right]), [134,196]);
+  assert.deepEqual(allocateLaneSizes(430, [left, right]), [175,255]);
+  assert.deepEqual(allocateLaneSizes(710, [left, right]), [300,410]);
+  assert.deepEqual(allocateLaneSizes(930, [left, right]), [410,410]);
+  assert.deepEqual(allocateLaneSizes(710, [left, {...right, minimum:191, maximum:191}]), [410,191]);
+  assert.deepEqual(allocateLaneSizes(700, [left, right, {...left, preferred:111}]), [212,309,179]);
   const titled = [left, right].map(lane => Object.fromEntries(Object.entries(lane).map(([key,value]) => [key,value+34])));
-  assert.deepEqual(horizontalLaneWidths(710, titled), [295,415]);
+  assert.deepEqual(allocateLaneSizes(710, titled), [295,415]);
 });
 
 test('standard reference inputs reserve both buttons and cap stretch in the measured lane', () => {
@@ -173,10 +173,10 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
   const left = {reserve:82, preferred:285, minimum:195, maximum:492, growthWeight:98};
   const right = {reserve:126, preferred:329, minimum:239, maximum:536, growthWeight:156};
-  assert.deepEqual(horizontalLaneWidths(614, [left, right]), [285,329]);
-  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [407,523]);
-  assert.deepEqual(horizontalLaneWidths(980, [left, right]), [444,536]);
-  assert.deepEqual(horizontalLaneWidths(1090, [left, right]), [492,536]);
+  assert.deepEqual(allocateLaneSizes(614, [left, right]), [285,329]);
+  assert.deepEqual(allocateLaneSizes(930, [left, right]), [407,523]);
+  assert.deepEqual(allocateLaneSizes(980, [left, right]), [444,536]);
+  assert.deepEqual(allocateLaneSizes(1090, [left, right]), [492,536]);
 });
 
 test('manual limits on measured automatic lanes keep their preferred trailing border', () => {

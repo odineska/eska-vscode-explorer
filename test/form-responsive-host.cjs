@@ -207,7 +207,7 @@ async function checkCompactTable(ui, document, view) {
     tab.click();
     globalThis.__compactGrid = ${grid};
   })()`);
-  const read = async height => {
+  const read = async expected => {
     let sample;
     await until(async () => {
       sample = await ui.evaluate(`(() => {
@@ -215,12 +215,16 @@ async function checkCompactTable(ui, document, view) {
         const viewport = frame.closest('.preview-scroll'), title = frame.querySelector('.taxi-form-title');
         const last = [...frame.querySelectorAll('.taxi-button')].find(button => button.textContent === 'Close');
         const grid = ${grid}, box = grid.getBoundingClientRect();
+        const group = frame.querySelector('[data-element$=":current:200"]');
+        const memo = group?.querySelector('.taxi-input textarea')?.closest('.taxi-input');
         return { height: box.height, width: box.width, frame: frame.getBoundingClientRect().height,
+          groupHeight: group?.getBoundingClientRect().height, memoHeight: memo?.getBoundingClientRect().height,
           title: title.getBoundingClientRect().y, offset: body.scrollTop, scrolls: body.scrollHeight > body.clientHeight,
           outerScrolls: viewport.scrollHeight > viewport.clientHeight, sameGrid: grid === __compactGrid,
           lastVisible: last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom };
       })()`);
-      return sample.height === height && sample.frame === 240 && sample.scrolls;
+      const matches = typeof expected === 'function' ? expected(sample) : sample.height === expected;
+      return matches && sample.frame === 240 && sample.scrolls;
     }, 'compact table height and frame settled');
     return sample;
   };
@@ -250,7 +254,19 @@ async function checkCompactTable(ui, document, view) {
     const restored = await read(227);
     assert.equal(restored.offset, offset);
     assert.equal(restored.sameGrid, true);
-    return { compact, end, dirty, restored };
+    const bounded = source.replace(/(<Table name="FixedRows" id="28">[\s\S]*?<\/Table>)/u,
+      '<UsualGroup name="DeclaredHeight" id="200"><Height>8</Height><Group>Vertical</Group><VerticalStretch>false</VerticalStretch><ChildItems>' +
+      '$1<InputField name="MemoInGroup" id="201"><DataPath>Name</DataPath><TitleLocation>None</TitleLocation><MultiLine>true</MultiLine></InputField>' +
+      '</ChildItems></UsualGroup>');
+    assert.notEqual(bounded, source);
+    await editFormSource(document, view, bounded);
+    const limited = await read(sample => sample.groupHeight === 174 && sample.height === 117 && sample.memoHeight === 23);
+    await ui.evaluate(`globalThis.__compactGrid=${grid};true`);
+    await editFormSource(document, view, bounded.replace('id="200"><Height>8', 'id="200"><Height>12'));
+    const shared = await read(sample => sample.groupHeight === 194 && sample.height + sample.memoHeight === 160);
+    assert.ok(Math.abs(shared.height-130)<=3 && Math.abs(shared.memoHeight-30)<=3, 'controls share the group height');
+    assert.equal(shared.sameGrid,true);
+    return { compact, end, dirty, restored, limited, shared };
   } finally {
     await editFormSource(document, view, source);
     await ui.evaluate(`document.querySelector('.preview-scroll').style.cssText=${JSON.stringify(viewportStyle)};true`);

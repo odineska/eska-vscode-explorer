@@ -20,7 +20,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, ordinaryGroup } from './layout-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, rootCommandPlacement, startsRootCommandSection } from './command-menu-model.mjs';
@@ -220,6 +220,7 @@ export function Preview(props) {
 export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
+  const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(displayedInPreview);
   const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
   const alignment = {Top:'start', Center:'center', Bottom:'end'};
@@ -275,7 +276,7 @@ export function Items(props) {
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
-    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)}
+    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
   </div>;
@@ -290,7 +291,7 @@ function Pages(props) {
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
     <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist" style={{height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined}}><For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()} pageBackground={pages().find(page=>page.key===selected())?.presentation.background} pageHasBackground={!!property(pages().find(page=>page.key===selected()),'BackColor')} pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} active={page.key === selected()}/>}</For></div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
-      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller}/></div>}</For></div>
+      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {
@@ -626,7 +627,7 @@ export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
   const bounds = axis => controlBounds(node(), axis, undefined, state.os, {
     atPreferred: layout?.atPreferred(axis),
-    authoredHeight: axis === 'y' && !!layout?.authoredHeight(),
+    authoredHeight: axis === 'y' && (props.heightConstrained || !!layout?.authoredHeight()),
   });
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
@@ -644,7 +645,7 @@ export function Element(props) {
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
     '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
-  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-authored-group-height={state.os === 'linux' && groupSize().height > 0 ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>

@@ -72,6 +72,31 @@ test('Linux table Height counts whole table units and yields to HeightInTableRow
   assert.equal(height(12, prop('HeightInTableRows', 2)), 87);
 });
 
+test('Linux constrained groups preserve the measured grid floor', () => {
+  const table = fixture(), linux = { os: 'linux' };
+  const height = (...properties) => {
+    table.properties = properties;
+    return tableLayout(table, linux).groupMinimumHeight;
+  };
+  assert.equal(height(), 117);
+  assert.equal(height(prop('Header', false)), 87);
+  assert.equal(height(prop('Header', false), prop('Footer', true)), 116);
+  assert.equal(height(prop('Footer', true)), 146);
+  assert.equal(height(prop('HeightInTableRows', 1)), 30);
+  assert.equal(height(prop('HeightInTableRows', 2)), 59);
+  assert.equal(height(prop('HeightInTableRows', 4)), 117);
+  assert.equal(height(prop('Height', 4)), 88);
+  table.children[0].presentation.titleFont = { points: 14 };
+  assert.equal(height(), 130);
+  delete table.children[0].presentation.titleFont;
+  const group = { ...field('Group', 'ColumnGroup', 'unknown'), children: table.children.slice(0, 2),
+    properties: [prop('Group', 'Horizontal'), prop('ShowInHeader', true)] };
+  table.children = [group, table.children[2]];
+  assert.equal(height(), 117);
+  group.properties[0] = prop('Group', 'Vertical');
+  assert.equal(height(), 146);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

@@ -66,9 +66,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       }
       value.height = Math.max(value.height, pixels(getComputedStyle(field).minHeight));
     } else if (table) {
-      const children = [...table.children].map(marginBox);
-      value = { width: Math.max(pixels(getComputedStyle(table).minWidth), ...children.map(value => value.width)),
-        height: children.reduce((sum, value) => sum + value.height, 0) };
+      const children = [...table.children].map(marginBox), spacing = insets(table);
+      value = { width: Math.max(pixels(getComputedStyle(table).minWidth), ...children.map(value => value.width + spacing.width)),
+        height: children.reduce((sum, value) => sum + value.height, spacing.height) };
     } else if (group) {
       value = items(group.querySelector(':scope > .taxi-items'));
       const title = group.querySelector(':scope > .taxi-group-title');
@@ -80,6 +80,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
         reserveWidth(value, heading?.minimum ?? textWidth(title, scale), heading?.preferred);
       }
       value = add(value, insets(group));
+      if (element.hasAttribute('data-authored-group-height')) {
+        value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-group-height')));
+      }
     } else if (pages) {
       const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), margins(page))));
       value = { width: Math.max(0, ...children.map(value => value.width)), fullWidth: Math.max(0, ...children.map(widthWithHeadings)),
