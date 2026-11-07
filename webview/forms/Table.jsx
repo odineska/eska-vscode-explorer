@@ -2,9 +2,10 @@ import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCle
 import { scalar, flag, property, caption, font, color, text, fontLineHeight } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
 import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
-import { CommandButton, Element } from './Preview.jsx';
+import { CommandButton, Element, PopupMenu } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
+import { menuItems } from './command-menu-model.mjs';
 import { TableSearch } from './TableSearch.jsx';
 import { NativeTableMovement } from './NativeTableMovement.jsx';
 import { TableHorizontalScrollbar } from './TableHorizontalScrollbar.jsx';
@@ -69,7 +70,7 @@ export function TableCommandActions(props) {
   return <>
     <For each={props.commands.filter(item => !isMovement(item))}>{item => {
       const copy = item.key.endsWith('.Copy');
-      return <CommandButton controller={props.controller} label={label(item)}
+      return <CommandButton controller={props.controller} command={item} label={label(item)}
         iconOnly={copy} picture={copy ? 'StdPicture.CloneListItem' : undefined}/>;
     }}</For>
     <Show when={movement().length}>
@@ -119,6 +120,14 @@ export function Table(props) {
   const inactive = () => (horizontal() || dynamicHorizontal()) && !enabled();
   const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
+  const menu = createMemo(() => {
+    if (!layout().adaptiveToolbar) return [];
+    const declared = menuItems(layout().bar?.children.filter(item => item.presentation.displayed) ?? []);
+    const source = `Form.Item.${node().name}.StandardCommand.`;
+    const keys = new Set(declared.map(item => scalar(item, 'CommandName')).filter(name => name.startsWith(source))
+      .map(name => 'Table.StandardCommand.' + name.slice(source.length)));
+    return [...layout().commands.filter(item => !keys.has(item.key)), ...declared];
+  });
   const title = () => layout().nativeDynamicList && scalar(node(), 'TitleLocation') === 'Top' && caption(node(), state);
   const compressedHeight = () => layout().nativeDynamicList ? layout().groupMinimumHeight
     : Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25);
@@ -144,11 +153,16 @@ export function Table(props) {
       <NativeLabel placement="fieldTitle" enabled text={title() + ':'} font={node().presentation.titleFont}
         foreground={node().presentation.titleColor} runtime={props.controller.nativeText}/>
     </div></Show>
-    <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? "" : undefined} data-table-lookup={lookup() ? '' : undefined}>
+    <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? '' : undefined}
+      data-adaptive-table-toolbar={layout().adaptiveToolbar ? '' : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <TableToolbarSearch search={layout().search} control={layout().searchControl} controller={props.controller} spacer/>
-      <Show when={layout().more}><CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/></Show>
+      <Show when={layout().more}>
+        <Show when={layout().adaptiveToolbar} fallback={<CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>}>
+          <PopupMenu controller={props.controller} label={state.strings.more} rows={menu()} tableBar nativeDropdown/>
+        </Show>
+      </Show>
     </div></Show>
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>
     <ViewStatus node={node()} controller={props.controller}/>

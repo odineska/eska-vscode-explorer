@@ -10,6 +10,7 @@ import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
+import { measureTableCommands } from './table-command-layout.mjs';
 import { authoredGroupRows } from './authored-group-rows.js';
 
 export const FormLayoutContext = createContext();
@@ -35,7 +36,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -76,6 +77,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       if (aboveTitles().size) setAboveTitles(new Set());
       const scale = boundingScale(root);
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
+      allocateTableCommands = measureTableCommands(root, scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
@@ -131,6 +133,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       setSize(next); schedule();
     }
     rootCommands?.allocate();
+    allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
     allocateThroughCaptions(captions, geometry().minima);
     unitedRows.allocateWidths(captions);

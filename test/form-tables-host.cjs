@@ -226,7 +226,10 @@ exports.run = async function () {
       identity = await verifyGeometryIdentity(document, view, ui, form.kind);
     }
     const dynamicSearch = form.kind === 'DynamicList' ? await verifyDynamicSearch(document, view, ui, english) : undefined;
-    if (dynamicSearch && process.platform === 'linux') dynamicSearch.pagination = await verifyDynamicPagination(document, view, ui);
+    if (dynamicSearch && process.platform === 'linux') {
+      dynamicSearch.toolbar = await verifyDynamicToolbar(document, view, ui, english);
+      dynamicSearch.pagination = await verifyDynamicPagination(document, view, ui);
+    }
     assert.deepEqual(await fs.readFile(form.path), before);
     results.push({kind:form.kind,...geometry,...(identity ? {identity} : {}), ...(dynamicSearch ? {dynamicSearch} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
@@ -303,6 +306,49 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   return {headers: retained.headers, footerCells: retained.footer, widthEdit, selection: '4', restored: true};
 }
 
+
+async function verifyDynamicToolbar(document, view, ui, english) {
+  const original = document.getText(), binding = '<DataPath>Rows</DataPath>';
+  assert.ok(original.includes(binding));
+  const steps = english ? [[24, 300, 1, 181], [36, 360, 2, 168], [40, 400, 3, 169], [62, 620, 4, 260]]
+    : [[24, 300, 1, 225], [32, 320, 2, 164], [36, 360, 3, 165], [62, 620, 4, 260]];
+  const grid = '.taxi-table-scroll', bar = '.taxi-table-command-bar', search = '.taxi-table-search';
+  const selectors = [grid, bar, search];
+  await ui.evaluate(`globalThis.__toolbarNodes = ${JSON.stringify(selectors)}.map(selector=>document.querySelector(selector));true`);
+  const measure = () => ui.evaluate(`(() => {
+    const [grid,bar,search] = ${JSON.stringify(selectors)}.map(selector=>document.querySelector(selector));
+    const buttons = [...bar.querySelectorAll('.taxi-button')].filter(button=>button.offsetWidth);
+    const r = node => node.getBoundingClientRect();
+    const body = document.querySelector('.taxi-form-content');
+    return [r(grid).width, r(grid).height, r(bar).width, buttons.length, r(search).width,
+      body.scrollWidth-body.clientWidth, __toolbarNodes[0]===grid && __toolbarNodes[1]===bar && __toolbarNodes[2]===search];
+  })()`);
+  const results = [];
+  try {
+    for (const [width, toolbar, buttons, searchWidth] of steps) {
+      const properties = `<Width>${width}</Width><HorizontalStretch>false</HorizontalStretch>`;
+      await editFormSource(document, view, original.replace(binding, binding + properties));
+      const expected = [width * 10, 452, toolbar, buttons, searchWidth, 0, true];
+      await until(async () => (await measure()).every((value,index)=>value===expected[index]), `dynamic toolbar allocation at Width=${width}`);
+      results.push(await measure());
+      if (buttons === 1) {
+        await ui.evaluate("document.querySelector('[data-table-more] > button').click()");
+        assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].slice(0,2).map(item=>item.getAttribute('aria-label'))"),
+          english ? ['Create','Copy'] : ['Создать','Скопировать']);
+        await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+        await until(() => ui.evaluate("!document.querySelector('[data-table-more] [role=menu]')"), 'overflow menu closes with Escape');
+      }
+    }
+    const withoutFilters = binding + '<Width>24</Width><HorizontalStretch>false</HorizontalStretch><ViewStatusLocation>None</ViewStatusLocation>';
+    await editFormSource(document, view, original.replace(binding, withoutFilters));
+    const expected = [240, 452, 240, english ? 0 : 1, english ? 234 : 171, 0, true];
+    await until(async () => (await measure()).every((value,index)=>value===expected[index]), 'search fits without the filter row');
+    results.push(await measure());
+  } finally {
+    await editFormSource(document, view, original);
+  }
+  return results;
+}
 
 async function verifyDynamicPagination(document, view, ui) {
   const original = document.getText();

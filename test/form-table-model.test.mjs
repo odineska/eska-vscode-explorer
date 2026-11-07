@@ -113,6 +113,22 @@ test('Linux dynamic lists use native width units and reserve the pagination edge
   assert.deepEqual(measure(prop('Width', 43), prop('Footer', true)), [430, 452, 147]);
 });
 
+test('an automatic dynamic toolbar can be wider than its fixed grid', () => {
+  const table = fixture(), state = { os: 'linux', locale: 'ru' };
+  table.presentation.valueType = { types: [{ namespace: 'http://v8.1c.ru/8.1/data/enterprise/current-config', name: 'DynamicList' }] };
+  table.properties = [prop('Width', 24), prop('HorizontalStretch', false)];
+  table.auxiliary.push(field('Search', 'SearchStringAddition', 'unknown'), field('Status', 'ViewStatusAddition', 'unknown'));
+  const dimensions = () => {
+    const { preferredWidth, fixedGridWidth, adaptiveToolbar } = tableLayout(table, state);
+    return [preferredWidth, fixedGridWidth, adaptiveToolbar];
+  };
+  assert.deepEqual(dimensions(), [300, 240, true]);
+  table.properties.push(prop('ViewStatusLocation', 'None'));
+  assert.deepEqual(dimensions(), [240, 240, true]);
+  table.properties.push(prop('CommandBarLocation', 'None'));
+  assert.deepEqual(dimensions(), [240, 240, false]);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

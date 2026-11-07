@@ -3,6 +3,7 @@ import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
 const nativeRowHeight = 28;
+const dynamicToolbarMinimum = 300;
 const bandHeight = value => fontLineHeight(value) + 15;
 
 function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, heightUnits) {
@@ -213,7 +214,9 @@ export function tableLayout(table, state = {}, additions) {
   const depth = Math.max(1, ...children.map(child => child.depth));
   const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
-  const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || bar?.children.some(child => child.presentation.displayed));
+  const authoredCommands = bar?.children.some(child => child.presentation.displayed);
+  const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || authoredCommands);
+  const more = flag(bar, 'Autofill');
   const searchField = tableSearch(table);
   const topSearch = scalar(table, 'SearchStringLocation') === 'Top' ? searchField : undefined;
   const search = additions?.search || topSearch ? undefined : searchField;
@@ -258,17 +261,22 @@ export function tableLayout(table, state = {}, additions) {
   const explicit = number(table, 'Width');
   const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth : 0);
   const nativeWidth = linux && explicit > 0 ? explicit * 10 : 0;
-  const controlMinWidth = nativeWidth ? Math.min(nativeWidth, toolbarMinimum) : toolbarMinimum;
+  const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
+    ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
+  const adaptiveToolbar = nativeDynamicList && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
+  const compactToolbar = adaptiveToolbar && chips ? dynamicToolbarMinimum : 0;
+  const controlMinWidth = nativeWidth
+    ? Math.max(compactToolbar, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
   // The native table viewport has its own preferred width, independent of the scrolling grid.
   const automaticWidth = nativeColumns ? Math.max(controlMinWidth, Math.min(880, 40 + columns.length * 120))
     : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
-  const preferredWidth = nativeWidth || automaticWidth;
-  const fixedGridWidth = nativeDynamicList && !nativeWidth && flag(table, 'HorizontalStretch', null) === false
-    ? Math.max(400, contentMinWidth + 2) : undefined;
+  const preferredWidth = nativeWidth ? Math.max(nativeWidth, compactToolbar) : automaticWidth;
+  const fixedGridWidth = nativeDynamicList && flag(table, 'HorizontalStretch', null) === false
+    ? nativeWidth || Math.max(400, contentMinWidth + 2) : undefined;
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

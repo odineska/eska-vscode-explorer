@@ -361,9 +361,22 @@ button { cursor: default; }
 .taxi-table-field { max-width: 100%; }
 /* The table model supplies the minimum width; the search field shrinks within it. */
 .taxi-table-command-bar { gap: 9px; height: 26px; min-height: 26px; margin-bottom: 9px; contain: inline-size; }
-.taxi-table-command-bar[data-table-lookup] { contain: none; min-width: max-content; }
+.taxi-table-command-bar[data-table-lookup]:not([data-adaptive-table-toolbar]) { contain: none; min-width: max-content; }
 .taxi-table-command-bar > .taxi-button { padding-left: 13px; padding-right: 13px; }
-.taxi-table-command-bar > .taxi-button--dropdown { padding-left: 8px; padding-right: 8px; }
+.taxi-table-command-bar > .taxi-button--dropdown,
+.taxi-table-command-bar > [data-table-more] > .taxi-button--dropdown { padding-inline: 8px; }
+.taxi-table-command-bar > [data-table-more] { display: flex; flex: none; }
+.taxi-table-command-bar > [data-table-more] > .taxi-button--dropdown .taxi-down { margin-left: 5px; }
+.taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar] > [data-table-command-hidden] { display: none; }
+.taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar][data-table-search-only] > [data-table-more] > button {
+  width: var(--taxi-table-more-width) !important;
+}
+.taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar][data-table-search-only] > [data-table-more] .taxi-native-caption {
+  translate: var(--taxi-table-more-caption-offset, 0px);
+}
+.taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar][data-table-search-only] > .taxi-command-spacer {
+  min-width: var(--taxi-table-search-leading);
+}
 .taxi-table-command-bar > .taxi-button--icon-only { padding-left: 0; padding-right: 0; }
 .taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only > canvas[data-native-picture=ready] { position: relative; left: -1px; }
 .taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only.taxi-button--dropdown > canvas[data-native-picture=ready] { left: -2px; }
@@ -376,6 +389,7 @@ button { cursor: default; }
 .taxi-command-bar[data-advanced-search] { --taxi-projected-search-width: 161px; }
 .taxi-command-bar[data-table-commands] > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-command-spacer--wide { min-width: 11px; }
+.taxi-table-command-bar[data-adaptive-table-toolbar]:has(> [data-table-search-control][data-table-command-hidden]) > .taxi-command-spacer--wide { min-width: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-element { flex-shrink: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-table-move + .taxi-element { margin-left: 11px; }
 .taxi-command-bar[data-table-commands] > .taxi-table-search { min-width: var(--taxi-projected-search-width); }

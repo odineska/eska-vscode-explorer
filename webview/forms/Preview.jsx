@@ -148,7 +148,8 @@ export function CommandButton(props) {
     report(value ? parseFloat(value) : undefined);
     onCleanup(() => report(undefined));
   });
-  return <button ref={button} type="button" data-command-key={props.command?.key} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
+  return <button ref={button} type="button" data-command-key={props.command?.key}
+    data-table-search-control={props.node?.kind === 'SearchControlAddition' ? '' : undefined} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
@@ -379,7 +380,7 @@ function CommandBar(props) {
     <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
 }
-function PopupMenu(props) {
+export function PopupMenu(props) {
   const [open, setOpen] = createSignal(false);
   let container, handleMenuKey;
   const trigger = () => container.querySelector(':scope > button');
@@ -392,10 +393,18 @@ function PopupMenu(props) {
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
     document.addEventListener('pointerdown', outside);
     onCleanup(() => document.removeEventListener('pointerdown', outside));
+    if (props.tableBar) {
+      const observer = new MutationObserver(() => {
+        if (container.hasAttribute('data-table-command-hidden')) setOpen(false);
+      });
+      observer.observe(container, { attributeFilter: ['data-table-command-hidden'] });
+      onCleanup(() => observer.disconnect());
+    }
   });
   const children = () => props.rows ?? menuItems(props.command?.items ?? props.items ?? menuChildren(props.node));
   return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined}
     data-command-group={props.command?.key} data-root-menu={props.rootMenu ? '' : undefined}
+    data-table-more={props.tableBar ? '' : undefined}
     ref={container} onKeyDown={event => {
       if (event.target !== container && event.target !== trigger()) return;
       if (open()) handleMenuKey?.(event);
@@ -408,7 +417,7 @@ function PopupMenu(props) {
       onClick={() => setOpen(!open())}/>
     <Show when={open()}>
       <MenuLevel rows={children()} anchor={trigger} close={close} dismiss={close} controller={props.controller}
-        rootMenu={props.rootMenu} registerKeyHandler={handler => { handleMenuKey = handler; }} focusOnMount/>
+        rootMenu={props.rootMenu} floating={props.tableBar} registerKeyHandler={handler => { handleMenuKey = handler; }} focusOnMount/>
     </Show>
   </div>;
 }
@@ -419,6 +428,7 @@ function MenuLevel(props) {
   const [active, setActive] = createSignal(0);
   const [expanded, setExpanded] = createSignal();
   const [activeInk, setActiveInk] = createSignal();
+  const floating = () => props.rootMenu || props.nested || props.floating;
   const state = props.controller.state;
   let menu;
   const rowSelector = ':scope > [role=menuitem], :scope > .taxi-submenu > [role=menuitem]';
@@ -449,7 +459,7 @@ function MenuLevel(props) {
   onMount(() => {
     props.registerKeyHandler?.(handleKey);
     onCleanup(() => props.registerKeyHandler?.(undefined));
-    if (props.rootMenu || props.nested) positionCommandMenu(menu, props.anchor(), props.nested);
+    if (floating()) positionCommandMenu(menu, props.anchor(), props.nested);
     if (props.focusOnMount) focus(0);
   });
   const activity = () => color(state.model.activityColor) || 'var(--taxi-ActivityColor)';
@@ -470,7 +480,7 @@ function MenuLevel(props) {
     setActiveInk(ink === undefined ? undefined : `rgb(${ink}, ${ink}, ${ink})`);
   });
   return <div role="menu" class="taxi-menu" data-root-menu-level={props.rootMenu ? '' : undefined}
-    data-floating-menu={props.rootMenu || props.nested ? '' : undefined}
+    data-floating-menu={floating() ? '' : undefined}
     style={{ ...(native() ? linuxControlFont(menuFont) : {}), '--taxi-menu-natural-width': menuWidth() ?? 'max-content',
       '--taxi-menu-activity': props.rootMenu ? activity() : undefined, '--taxi-menu-activity-ink': activeInk() }}
     ref={menu} onClick={event => event.stopPropagation()} onKeyDown={handleKey}>
