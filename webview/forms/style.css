@@ -870,7 +870,7 @@ button { cursor: default; }
   row-gap: 3px; padding-block: 1px;
 }
 .taxi-preview[data-form-layout] .taxi-items[data-united-horizontal-lane] {
-  align-items: start;
+  align-items: var(--taxi-united-lane-align, start);
   column-gap: var(--taxi-united-cell-gap);
 }
 .taxi-preview[data-form-layout] .taxi-element[data-united-horizontal-cell] {

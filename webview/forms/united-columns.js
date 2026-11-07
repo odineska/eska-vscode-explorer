@@ -1,5 +1,5 @@
-import { fieldWidth, number, property, scalar } from './model.mjs';
-import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing } from './layout-model.mjs';
+import { fieldWidth, flag, number, property, scalar } from './model.mjs';
+import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, horizontalInputMaximum } from './layout-model.mjs';
 import { borderBoxSize, pixels, textWidth } from './layout-box.mjs';
 import { mixedColumnLayout } from './mixed-column-layout.js';
 
@@ -15,7 +15,8 @@ function ordinaryRow(node) {
 
 function leadingField(entry) {
   if (entry.kind === 'field') return entry.location === 'Left' ? entry : undefined;
-  if (entry.kind !== 'group' || scalar(entry.node, 'ThroughAlign', 'Auto') === 'DontUse') return;
+  if (entry.kind !== 'group' || scalar(entry.node, 'ThroughAlign', 'Auto') === 'DontUse'
+    || !flag(entry.node, 'HorizontalStretch')) return;
   return leadingField(entry.children[0]);
 }
 
@@ -44,12 +45,17 @@ export function alignUnitedColumns(model, context) {
 
   function entryFor(node, mixedRow = false) {
     const element = elements.get(node.key), location = node.presentation.titleLocation;
-    if (node.kind === 'InputField' && (location === 'Left' || mixedRow && location === 'Top')) {
+    const choice = ['RadioButtonField', 'CheckBoxField'].includes(node.kind);
+    if ((node.kind === 'InputField' || choice) && (location === 'Left' || mixedRow && location === 'Top')) {
       const row = element.querySelector(':scope > .taxi-field-row'), label = row?.querySelector('.taxi-field-label');
       if (!label) return;
       const labelWidth = location === 'Left' ? pixels(getComputedStyle(label).width) : Math.round(textWidth(label, scale));
-      return { kind: 'field', node, element, location, labelWidth,
-        labelGap: pixels(getComputedStyle(row).columnGap), controlWidth: fieldWidth(node, os) };
+      const control = row.querySelector(':scope > .taxi-field-control')?.firstElementChild;
+      if (choice && !control) return;
+      return { kind: 'field', node, element, row, location, labelWidth,
+        labelGap: pixels(getComputedStyle(row).columnGap),
+        controlWidth: choice ? borderBoxSize(control, scale).width
+          : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity) };
     }
     if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
       const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
@@ -70,17 +76,46 @@ export function alignUnitedColumns(model, context) {
     return { kind: 'group', node, element, items, group, children, title };
   }
 
+  function exposedStack(node) {
+    return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && node.presentation.united === false
+      && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'))
+      && number(node, 'Width') <= 0 && !property(node, 'BackColor')
+      && !containers.get(node.key)?.parentElement.querySelector(':scope > .taxi-group-title');
+  }
+
+  function lanesFor(node, exposed) {
+    return mountedChildren(node).flatMap(child => {
+      if (!exposedStack(child)) return [entryFor(child)];
+      exposed.push(child.key);
+      return lanesFor(child, exposed);
+    });
+  }
+
+  function fixedLane(entry) {
+    return entry.kind === 'group' ? entry.children.every(fixedLane) : !stretches(entry.node, 'x', collapsed);
+  }
+
+  const covered = new Set();
+  function registerColumns(node) {
+    const items = containers.get(node.key);
+    if (!items || node.presentation.grouping !== 'Vertical' || covered.has(node.key)) return;
+    const exposed = [], lanes = lanesFor(node, exposed);
+    if (lanes.length < 2 || lanes.some(lane => !lane)) return;
+    const rowsOnly = lanes.every(lane => lane.kind === 'group');
+    const exposedRow = lanes.some(lane => lane.kind === 'group' && !lane.node.presentation.united);
+    // Combined rows with flexible inputs keep the existing adaptive caption layout.
+    const mixedTracks = lanes.some(lane => lane.kind === 'group' && lane.children.length > 1)
+      && (exposedRow || lanes.every(fixedLane));
+    if (!rowsOnly && !mixedTracks) return;
+    // Uncombined vertical groups continue the same column scope; united ones own a new scope.
+    for (const key of exposed) covered.add(key);
+    const firstGroup = lanes.find(lane => lane.kind === 'group');
+    const gap = os === 'linux' ? 11 : pixels(getComputedStyle(firstGroup.items).columnGap);
+    scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly });
+  }
   function visit(node) {
-    const children = mountedChildren(node), items = containers.get(node.key);
-    if (items && node.presentation.grouping === 'Vertical' && children.length > 1 && children.every(ordinaryRow)) {
-      const lanes = children.map(child => entryFor(child));
-      if (lanes.every(Boolean)) {
-        // The native gap between fields on this axis also separates the logical tracks.
-        const gap = os === 'linux' ? 11 : pixels(getComputedStyle(lanes[0].items).columnGap);
-        scopes.push({ node, items, lanes, gap });
-      }
-    }
-    for (const child of children) visit(child);
+    registerColumns(node);
+    for (const child of mountedChildren(node)) visit(child);
   }
   visit(model);
 
@@ -91,6 +126,7 @@ export function alignUnitedColumns(model, context) {
   function setLane(entry, gap) {
     mark(entry.items, 'data-united-horizontal-lane');
     style(entry.items, '--taxi-united-cell-gap', `${gap}px`);
+    style(entry.items, '--taxi-united-lane-align', entry.itemAlignment ?? 'start');
   }
   function placeCell(entry, width, labelWidth, gap) {
     setCell(entry, width);
@@ -131,20 +167,40 @@ export function alignUnitedColumns(model, context) {
     return last;
   }
 
-  for (const {node, items, lanes, gap} of scopes) {
-    if (lanes.every(lane => !lane.title && lane.children.every(entry => entry.kind !== 'group'))
+  const columns = [];
+  for (const scope of scopes) {
+    const {node, items, lanes} = scope;
+    if (lanes.every(lane => lane.kind === 'group' && !lane.title && lane.children.every(entry => entry.kind !== 'group'))
       && lanes.some(lane => lane.children.some(entry => entry.kind === 'control'))) {
       mixed.register(node, items, lanes, setCell, setLane);
-      continue;
-    }
-    const rows = lanes.map(cells), count = Math.max(...rows.map(row => row.length));
-    const tracks = Array.from({length: count}, (_, index) => {
-      const items = rows.map(row => row[index]).filter(Boolean);
-      const labelWidth = Math.max(...items.map(entry => leadingField(entry)?.labelWidth ?? 0));
-      const width = Math.max(...items.map(entry => intrinsic(entry, gap, labelWidth)));
-      return { width, labelWidth };
-    });
-    for (const lane of lanes) placeLane(lane, 0, tracks, gap);
+    } else columns.push(scope);
   }
-  return mixed;
+
+  function captureCaption(entry) {
+    if (entry.kind === 'field' && entry.location === 'Left') {
+      const width = parseFloat(getComputedStyle(entry.row).gridTemplateColumns);
+      if (Number.isFinite(width)) entry.labelWidth = width;
+    }
+    for (const child of entry.children ?? []) captureCaption(child);
+  }
+
+  function alignColumns() {
+    // Through-align may contribute a caption from a different vertical branch.
+    for (const {lanes, gap, preserveAlignment} of columns) {
+      for (const lane of lanes) {
+        captureCaption(lane);
+        if (preserveAlignment && lane.kind === 'group') lane.itemAlignment = getComputedStyle(lane.items).alignItems;
+      }
+      const rows = lanes.map(cells), count = Math.max(...rows.map(row => row.length));
+      const tracks = Array.from({length: count}, (_, index) => {
+        const items = rows.map(row => row[index]).filter(Boolean);
+        const labelWidth = Math.max(...items.map(entry => leadingField(entry)?.labelWidth ?? 0));
+        const width = Math.max(...items.map(entry => intrinsic(entry, gap, labelWidth)));
+        return { width, labelWidth };
+      });
+      // Standalone fields already use their vertical grid and remain free to resize.
+      for (const lane of lanes) if (lane.kind === 'group') placeLane(lane, 0, tracks, gap);
+    }
+  }
+  return { ...mixed, alignColumns };
 }

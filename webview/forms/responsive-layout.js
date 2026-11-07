@@ -81,6 +81,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
+      unitedColumns.alignColumns();
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
       numericRows = alignNumericLabelRows(state.model.root, context);
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);

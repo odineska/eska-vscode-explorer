@@ -291,7 +291,8 @@ exports.run = async () => {
   await until(() => service.views.size === 0, 'preview released');
   await Promise.all([...service.closing]);
   for (const row of wrapped) {
-    if (row.boundaryCases.length) await verifyStretchBoundary(row, service, results);
+    if (row.valueCases.length) await verifyValueColumns(row, service, results);
+    else if (row.boundaryCases.length) await verifyStretchBoundary(row, service, results);
     else await verifyWrappedRows(row, service, results);
   }
   await explorer.shutdown();
@@ -383,6 +384,94 @@ async function verifyStretchBoundary(form, service, results) {
     await editFormSource(document,view,source);
     ui.close();main.panel.dispose();
     await until(()=>service.views.size===0,'stretch boundary closed');
+    await Promise.all([...service.closing]);
+  }
+}
+
+async function verifyValueColumns(form, service, results) {
+  const original = await fs.readFile(form.path), source = original.toString('utf8');
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
+  await vscode.window.showTextDocument(document, {preview:false});
+  await vscode.commands.executeCommand('eska.explorer.previewForm');
+  const current = () => [...service.views.values()].find(view => view.path === form.path);
+  await until(() => current()?.phase === 'ready', 'value columns ready');
+  const view = current(), main = view.frames.get('main');
+  const tab = {fixedFormArea:true,state:{title:main.panel.title}}, ui = await frame(tab);
+  const names = new Set(['Wide','Last','Tail','Option','OuterWide','SiblingWide']);
+  const nodes = [...view.nodes.values()].filter(node => names.has(node.name));
+  const identities = nodes.map(node => [node.name, `${node.identity.source}:current:${node.identity.key.value}`]);
+  const observe = async target => {
+    await target.evaluate(nextPaint);
+    return target.evaluate(`(() => {
+      const form=document.querySelector('.taxi-form-frame'),origin=form.getBoundingClientRect();
+      const box=element=>{if(!element)return null;const r=element.getBoundingClientRect();return [r.x-origin.x,r.y-origin.y,r.width,r.height];};
+      const elements=new Map([...form.querySelectorAll('[data-element]')].map(element=>[element.dataset.element,element]));
+      const fields=Object.fromEntries(${JSON.stringify(identities)}.map(([name,key])=>[name,elements.get(key)]));
+      return {frame:[origin.width,origin.height],controls:Object.fromEntries(Object.entries(fields)
+        .filter(([,element])=>element.querySelector('.taxi-input')).map(([name,element])=>[name,box(element.querySelector('.taxi-input'))])),
+        marks:[...fields.Option.querySelectorAll('.taxi-radio')].map(box)};
+    })()`);
+  };
+  const configured = sample => {
+    let xml = source;
+    for (const [group,property,value] of [
+      ['Parent','United',sample.parent],['Row','United',sample.united],
+      ['Row','HorizontalStretch',sample.fixed ? false : undefined],['Row','ThroughAlign',sample.through],
+      ...(form.kind === 'ValueSibling' ? [['Sibling','United',sample.sibling]] : []),
+    ]) xml = withGroupProperty(xml,group,property,value === undefined ? null : String(value));
+    if (sample.input) {
+      const field = /<InputField name="Option"[^>]*>[\s\S]*?(?=<ContextMenu)/u.exec(xml);
+      assert.ok(field);
+      xml = xml.replace(field[0],field[0].replace(/<Width>[^<]+<\/Width>/u,`<Width>${sample.input}</Width>`));
+    }
+    return xml;
+  };
+  const verify = async (target, sample, preferred = true) => {
+    const actual = await observe(target);
+    if (process.platform === 'linux') {
+      // Keep the known caption metric residual separate from all column/control dimensions.
+      const captionDelta = actual.controls.Wide[0] - sample.controls.Wide[0];
+      assert.ok(captionDelta >= 0 && captionDelta <= 3, sample.case + ' caption metric residual');
+      for (const [name,expected] of Object.entries(sample.controls)) {
+        assert.deepEqual(actual.controls[name],expected.map((value,axis)=>value+(axis===0?captionDelta:0)),
+          sample.case + ' native column placement of ' + name);
+      }
+      assert.deepEqual(actual.marks,sample.marks.map(mark=>mark.box.map((value,axis)=>value+(axis===0?captionDelta:0))),
+        sample.case + ' native radio placement');
+      if (preferred) assert.deepEqual(actual.frame,[sample.frame[0]+captionDelta,sample.frame[1]],sample.case+' preferred frame');
+      actual.captionOriginDeltaPx = captionDelta;
+    }
+    return actual;
+  };
+  try {
+    await ui.evaluate('document.fonts.ready.then(()=>true)');
+    for (const sample of form.valueCases) {
+      await editFormSource(document,view,configured(sample));
+      results.push({label:'value-columns-'+sample.case,...await verify(ui,sample)});
+    }
+    if (form.kind === 'ValueRadio') {
+      const combined = form.valueCases.find(sample=>sample.case==='RadioTrue');
+      const exposed = form.valueCases.find(sample=>sample.case==='RadioFalse');
+      const identity = nodes.find(node=>node.name==='Option').identity;
+      await inDetachedRow(service,view,main,ui,identity,async floating=>{
+        await floating.evaluate("globalThis.__valueFields=[...document.querySelectorAll('.taxi-input,.taxi-radios')];true");
+        for (const width of [600,800,600]) {
+          await allocateFormViewport(floating,[width,300]);
+          await editFormSource(document,view,configured(combined));
+          const before = await verify(floating,combined,false);
+          await editFormSource(document,view,configured(exposed));
+          const after = await verify(floating,exposed,false);
+          if (process.platform === 'linux') assert.equal(after.controls.Tail[0]-before.controls.Tail[0],87,'native United displacement');
+          assert.equal(await floating.evaluate('__valueFields.every(field=>field.isConnected)'),true);
+        }
+      });
+      results.push({label:'value-columns-detached-resize-dirty',sameDom:true,sameSelection:true});
+    }
+    assert.deepEqual(await fs.readFile(form.path),original);
+  } finally {
+    await editFormSource(document,view,source);
+    ui.close();main.panel.dispose();
+    await until(()=>service.views.size===0,'value columns closed');
     await Promise.all([...service.closing]);
   }
 }
