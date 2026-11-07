@@ -25,15 +25,21 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
 });
 
-test('an undecorated empty group remains a source node without allocating a preview row', () => {
-  const hiddenTitle = { Behavior: 'Usual', ShowTitle: false };
-  assert.equal(displayedInPreview(node('UsualGroup', hiddenTitle)), false);
-  assert.equal(displayedInPreview(node('UsualGroup', hiddenTitle, [node('InputField')])), true);
-  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, Height: 2 })), true);
-  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, Representation: 'StrongSeparation' })), true);
-  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, BackColor: 'web:LightYellow' })), true);
-  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, VerticalStretch: true })), true);
-  assert.equal(displayedInPreview(node('UsualGroup')), true);
+test('groups without rendered descendants retain their source nodes but allocate no preview space', () => {
+  const hidden = node('InputField');hidden.presentation.displayed = false;
+  const hiddenTable = node('Table');hiddenTable.auxiliary = [node('AutoCommandBar', { Autofill: false })];
+  const nested = node('UsualGroup', {}, [node('UsualGroup', {}, [hidden])]);
+  const properties = [{}, {ShowTitle:true}, {Width:12}, {Height:2}, {Representation:'StrongSeparation'},
+    {BackColor:'web:LightYellow'}, {VerticalStretch:true}, {HorizontalStretch:true}, {Behavior:'Collapsible'}];
+  for (const own of properties) {
+    for (const children of [[], [hidden], [hiddenTable], [nested]]) {
+      const group = node('UsualGroup', own, children);
+      assert.equal(displayedInPreview(group), false, JSON.stringify(own));
+      assert.equal(group.children, children, 'visibility does not remove source children');
+    }
+    assert.equal(displayedInPreview(node('UsualGroup', own, [node('InputField')])), true);
+  }
+  assert.equal(displayedInPreview(node('UsualGroup', {}, [node('LabelDecoration')])), true, 'an empty label is a visible spacer');
 });
 
 test('explicit stretch and weights are independent of preferred size',()=>{
