@@ -50,14 +50,18 @@ async function inDetachedRow(service, view, main, ui, identity, run) {
   await until(() => view.frames.get('preview')?.ready, 'detached row group');
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true,state:{title:preview.panel.title}});
-  assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
-  await floating.evaluate("globalThis.__wrappedFields=[...document.querySelectorAll('.taxi-input')];true");
-  await run(floating);
-  assert.deepEqual(view.selected, identity);
-  assert.equal(await floating.evaluate('__wrappedFields.length>0 && __wrappedFields.every(field => field.isConnected)'), true);
-  await service.receive(view, preview, {type:'dock'});
-  await until(() => !view.frames.has('preview'), 'row returned to workbench');
-  floating.close();
+  try {
+    assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
+    await floating.evaluate("globalThis.__wrappedFields=[...document.querySelectorAll('.taxi-input')];true");
+    await run(floating);
+    assert.deepEqual(view.selected, identity);
+    assert.equal(await floating.evaluate('__wrappedFields.length>0 && __wrappedFields.every(field => field.isConnected)'), true);
+  } finally {
+    try {
+      await service.receive(view, preview, {type:'dock'});
+      await until(() => !view.frames.has('preview'), 'row returned to workbench');
+    } finally { floating.close(); }
+  }
 }
 
 async function verifyPaymentLayout(ui, names, keys, sample, results) {
@@ -350,12 +354,12 @@ async function verifyStretchBoundary(form, service, results) {
     const field = actual.fields[sample.scopeField ?? 'Option'];
     if (representation && process.platform === 'linux') {
       for (const name of ['Wide','Option']) assert.ok(Math.abs(actual.fields[name].control[0]-sample.controls[name].logical[0])<=3,
-        sample.case+' native caption origin of '+name);
+        sample.case+' native caption origin of '+name+' '+JSON.stringify(actual));
     }
-    assert.equal(field.captionEnd === actual.fields.Wide.captionEnd, sample.alignedWithParent, sample.case + ' shared caption scope');
+    assert.equal(field.captionEnd === actual.fields.Wide.captionEnd, sample.alignedWithParent, sample.case + ' shared caption scope '+JSON.stringify(actual));
     if (process.platform === 'linux' && sample.ownControlX !== undefined) {
-      assert.equal(field.control[0], sample.ownControlX, sample.case + ' own caption origin');
-      assert.deepEqual(field.marks, sample.ownMarks, sample.case + ' complete mark rectangles');
+      assert.equal(field.control[0], sample.ownControlX, sample.case + ' own caption origin '+JSON.stringify(actual));
+      assert.deepEqual(field.marks, sample.ownMarks, sample.case + ' complete mark rectangles '+JSON.stringify(actual));
       if (sample.ownControl) assert.deepEqual(field.control, sample.ownControl, sample.case + ' own input rectangle');
     }
     return actual;
@@ -458,6 +462,7 @@ async function verifyValueColumns(form, service, results) {
     return xml;
   };
   const verify = async (target, sample, preferred = true) => {
+    await until(()=>target.evaluate('__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current value columns rendered');
     const actual = await observe(target);
     if (process.platform === 'linux') {
       // Keep the known caption metric residual separate from all column/control dimensions.
@@ -476,6 +481,7 @@ async function verifyValueColumns(form, service, results) {
   };
   try {
     await ui.evaluate('document.fonts.ready.then(()=>true)');
+    await editFormSource(document,view,source+'\n');
     for (const sample of form.valueCases) {
       await editFormSource(document,view,configured(sample));
       results.push({label:'value-columns-'+sample.case,...await verify(ui,sample)});
