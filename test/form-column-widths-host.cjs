@@ -24,11 +24,13 @@ async function pose(ui, keys, expected) {
           const wrapped=[...label.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : [label.textContent]};
         }
-        return {frame:[origin.width,origin.height],controls,captions,locations};
+        return {frame:[origin.width,origin.height],controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
+      actual.browserErrors=ui.scriptErrors();
       const tolerance = expected.tolerancePx ?? 0;
       const aligned = expected.alignedY?.map(name => actual.controls[name]?.[1]);
-      return actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
+      return actual.layout === 'allocated' && actual.browserErrors.length === 0
+        && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
         && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
         && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
@@ -110,6 +112,7 @@ async function verifyDetached(service, view, main, ui, identity, run) {
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true, state:{title:preview.panel.title}});
   assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
+  await floating.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
   await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field')];true");
   await run(floating);
   assert.deepEqual(view.selected, identity);
@@ -135,6 +138,7 @@ exports.run = async () => {
     const view = [...service.views.values()].find(view => view.path === form.path), main=view.frames.get('main');
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
+    await ui.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
     const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField'].includes(node.kind));
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);

@@ -16,9 +16,11 @@ async function frame(tab) {
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
   const nativeWindowIds = new Map();
   let serial = 0;
-  const pending = new Map(), contexts = [], attached = new Map();
+  const pending = new Map(), contexts = [], attached = new Map(), scriptErrors = [];
   socket.addEventListener('message', event => {
     const message = JSON.parse(event.data);
+    if(message.method==='Log.entryAdded'&&message.params.entry.level==='error')scriptErrors.push({...message.params.entry,sessionId:message.sessionId});
+    if(message.method==='Runtime.exceptionThrown')scriptErrors.push({...message.params.exceptionDetails,sessionId:message.sessionId});
     if (message.method === 'Runtime.executionContextCreated') contexts.push({ id: message.params.context.id, sessionId: message.sessionId, frameId:message.params.context.auxData?.frameId });
     if (message.method === 'Runtime.executionContextDestroyed' || message.method === 'Runtime.executionContextsCleared' || message.method === 'Target.detachedFromTarget') {
       const lost=message.method==='Target.detachedFromTarget'?message.params.sessionId:message.sessionId;
@@ -76,7 +78,7 @@ async function frame(tab) {
       seen.add(id);id=parents.get(id);
     }
   }
-  await send('Runtime.enable');
+  await send('Runtime.enable');await send('Log.enable');
   let context, discovery;
   try { await until(async () => {
     const all = await send('Target.getTargets');
@@ -84,7 +86,7 @@ async function frame(tab) {
       try {
         const { sessionId } = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
         attached.set(target.targetId,sessionId);
-        await send('Runtime.enable', {}, sessionId);
+        await send('Runtime.enable', {}, sessionId);await send('Log.enable',{},sessionId);
       } catch (error) {
         // A newly shown webview can replace its iframe between enumeration and attachment.
         // A hidden renderer may suspend domain enablement. Keep its session so
@@ -177,6 +179,7 @@ async function frame(tab) {
     if(result.exceptionDetails)throw new Error(JSON.stringify(result.exceptionDetails));
   }
   return {
+    scriptErrors() { return scriptErrors.filter(error=>error.sessionId===context.sessionId&&(/form-preview\.js/.test(error.url??'')||/form-preview\.js/.test(error.exception?.description??'')||error.executionContextId===context.id)); },
     /** A file acknowledgement alone does not mean that the next control has been rendered. */
     async rendered() {
       await currentState(true);
