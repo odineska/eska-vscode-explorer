@@ -220,14 +220,13 @@ export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
-  return flag(node, 'ChoiceButton', automatic && !readOnly);
+  return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
   return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
     && (kind === 'string' || !flag(node, 'MultiLine', false))
-    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false)
-    && !(kind === 'string' && inputChoiceButton(node, os));
+    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
 }
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
@@ -292,7 +291,8 @@ export function fieldStyle(node, os) {
 export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
   if (value?.kind === 'text') return value.text;
-  if (value?.kind === 'localized') return text({ kind: 'literal', items: value.items }, locale);
+  const items = value && localizedEntries(value);
+  if (items) return text({ kind: 'literal', items }, locale);
   if (value?.kind === 'record') return value.fields.map(field => `${field.caption?.[locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}: ${localizedProperty(field.value, locale)}`).join('; ');
   return value?.issue ?? '';
 }

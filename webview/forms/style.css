@@ -148,6 +148,9 @@ button { cursor: default; }
 .taxi-field-row[data-numeric-label-title] { column-gap: 5px; align-items: var(--taxi-numeric-label-align, center); }
 .taxi-field-row[data-numeric-label-title] > .taxi-field-label { white-space: pre; }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
+.taxi-field-control[data-tooltip-button] { display: flex; column-gap: 5px; align-items: center; }
+.taxi-field-tooltip { flex: 0 0 10px; color: #0071bc; font: 13.3333px/16px 'ESKA Taxi Sans', Arial, sans-serif; text-align: center; }
+.taxi-input > :is(input,textarea)::placeholder { color: #ccc; opacity: 1; }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .taxi-field-row[data-title-location=Top] > *, .taxi-field-row[data-title-location=Bottom] > * { grid-column: 1; }
@@ -554,6 +557,8 @@ button { cursor: default; }
 
 /* Include the choice border outset when the field determines an intrinsic column. */
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready]:has(> .taxi-input-button) { margin-right: 1px; }
+/* The help gap already includes the choice input's border outset. */
+.taxi-preview[data-os=linux] .taxi-field-control[data-tooltip-button] > .taxi-input[data-native-border=ready] { margin-right: 0; }
 
 /* Horizontal button rows reserve space for their raised-button shadows. */
 .taxi-preview[data-os=linux] .taxi-items--buttons { gap: 10px; }

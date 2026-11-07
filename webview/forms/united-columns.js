@@ -49,12 +49,14 @@ export function alignUnitedColumns(model, context) {
       const row = element.querySelector(':scope > .taxi-field-row'), label = row?.querySelector('.taxi-field-label');
       if (!label) return;
       const labelWidth = location === 'Left' ? pixels(getComputedStyle(label).width) : Math.round(textWidth(label, scale));
-      const control = row.querySelector(':scope > .taxi-field-control')?.firstElementChild;
+      const surface = row.querySelector(':scope > .taxi-field-control'), control = surface?.firstElementChild;
       if (choice && !control) return;
+      const tooltip = surface?.querySelector(':scope > .taxi-field-tooltip');
+      const accessoryWidth = tooltip ? borderBoxSize(tooltip, scale).width + pixels(getComputedStyle(surface).columnGap) : 0;
       return { kind: 'field', node, element, row, location, labelWidth,
         labelGap: pixels(getComputedStyle(row).columnGap),
-        controlWidth: choice ? borderBoxSize(control, scale).width
-          : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity) };
+        controlWidth: (choice ? borderBoxSize(control, scale).width
+          : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity)) + accessoryWidth };
     }
     if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
       const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
