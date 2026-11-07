@@ -138,7 +138,8 @@ button { cursor: default; }
 .taxi-input:has(> [data-native-value=ready]) > input { -webkit-text-fill-color: transparent; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label { width: var(--taxi-field-caption-width, calc-size(max-content, round(nearest, size, 1px))); }
 .taxi-field-caption-line { display: block; position: relative; white-space: pre; }
-.taxi-field-row[data-wrapped-input-caption] { align-items: start; }
+.taxi-field-row:is([data-wrapped-input-caption], [data-wrapped-checkbox-caption]) { align-items: start; }
+.taxi-field-row[data-wrapped-checkbox-caption] > .taxi-field-label { padding-block: 1px; }
 .taxi-field-row[data-wrapped-input-caption] > .taxi-field-control { display: grid; align-items: center; min-height: inherit; }
 .taxi-field-row[data-multiline] { padding-block: 1px; }
 .taxi-field-row[data-numeric-label-title] { column-gap: 5px; align-items: var(--taxi-numeric-label-align, center); }
@@ -314,7 +315,7 @@ button { cursor: default; }
 .taxi-radios[aria-disabled=true] .taxi-radio { border-color: #d7d7d7; }
 .taxi-radios[aria-disabled=true] .taxi-radio.checked::after { background: #d1d1d1; }
 .taxi-preview[data-os=linux] .taxi-element:is([data-kind=RadioButtonField], [data-kind=CheckBoxField]) .taxi-field-label {
-  width: var(--taxi-choice-title-width, auto);
+  width: var(--taxi-field-caption-width, var(--taxi-choice-title-width, auto));
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] > .taxi-field-row[data-title-location=Top] { row-gap: 3px; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left],[data-title-location=Right]):has(> .taxi-field-control > .taxi-radios:not([data-rows="1"]))
@@ -672,7 +673,7 @@ button { cursor: default; }
   max-width: min(100%, var(--taxi-horizontal-input-maximum));
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns], [data-united-horizontal-lane], [data-numeric-label-row]) > .taxi-element[data-horizontal-input-limit]:not(:only-child) {
-  max-width: var(--taxi-input-title-track, calc(var(--taxi-horizontal-input-maximum) + var(--taxi-horizontal-input-reserve) + var(--taxi-through-caption-reserve, 0px)));
+  max-width: var(--taxi-field-track, calc(var(--taxi-horizontal-input-maximum) + var(--taxi-horizontal-input-reserve) + var(--taxi-through-caption-reserve, 0px)));
 }
 .taxi-preview[data-form-layout] .taxi-element[data-lane-input-maximum] > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: var(--taxi-lane-input-max-width) !important;
@@ -699,7 +700,7 @@ button { cursor: default; }
 /* Ordinary vertical groups in one horizontal layout use the same row tracks. */
 .taxi-preview[data-os=linux] .taxi-items:is([data-united-auto-spacing], [data-through-labels=leading][data-auto-spacing], [data-through-separated-row][data-auto-spacing]) { --taxi-horizontal-gap: 10px; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading] > .taxi-element[data-stretch-x=true] {
-  flex-basis: var(--taxi-input-title-track, var(--taxi-preferred-width)) !important;
+  flex-basis: var(--taxi-field-track, var(--taxi-preferred-width)) !important;
 }
 .taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
   display: grid;
@@ -734,6 +735,9 @@ button { cursor: default; }
   grid-template-columns: var(--taxi-input-title-columns, var(--taxi-united-allocated-columns, var(--taxi-united-preferred-columns)));
 }
 
+.taxi-preview .taxi-items[data-checkbox-row] { align-items: start; }
+.taxi-preview .taxi-items[data-checkbox-row][data-auto-spacing] { --taxi-horizontal-gap: 10px; }
+
 /* Fixed inputs retain their value width when a side caption moves above them. */
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-control {
   padding-top: var(--taxi-input-title-offset, 0px);
@@ -745,11 +749,11 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-field-columns);
 }
-.taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] > .taxi-element {
-  flex: 0 0 var(--taxi-input-title-track) !important;
-  width: var(--taxi-input-title-track);
-  min-width: var(--taxi-input-title-track);
-  max-width: var(--taxi-input-title-track);
+.taxi-preview[data-form-layout=allocated] .taxi-items:is([data-input-title-reflow=true], [data-checkbox-row]) > .taxi-element {
+  flex: 0 0 var(--taxi-field-track) !important;
+  width: var(--taxi-field-track);
+  min-width: var(--taxi-field-track);
+  max-width: var(--taxi-field-track);
 }
 
 /* Horizontal groups in a vertical stack share their logical column widths. */

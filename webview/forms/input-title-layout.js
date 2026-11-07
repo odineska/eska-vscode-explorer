@@ -117,7 +117,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     for (const name of ['--taxi-input-title-columns', '--taxi-input-title-gap']) alignment.style(items, name, '');
     alignment.mark(items, 'data-input-title-reflow', 'false');
     for (const column of columns) {
-      alignment.style(column.element, '--taxi-input-title-track', '');
+      alignment.style(column.element, '--taxi-field-track', '');
       for (const field of column.fields) {
         for (const name of ['--taxi-field-columns', '--taxi-field-caption-width', '--taxi-input-title-value-min', '--taxi-input-title-value-max']) {
           alignment.style(field.element, name, '');
@@ -152,7 +152,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         updateStyle(items, '--taxi-input-title-gap', plan ? `${gap}px` : '');
         for (const [index, {element, fields}] of columns.entries()) {
           const width = sizes?.[index];
-          updateStyle(element, '--taxi-input-title-track', width === undefined ? '' : `${width}px`);
+          updateStyle(element, '--taxi-field-track', width === undefined ? '' : `${width}px`);
           for (const field of fields) {
             const moves = plan?.above.has(field.key);
             if (moves) above.add(field.key);

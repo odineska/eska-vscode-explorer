@@ -540,6 +540,7 @@ function Field(props) {
   const labelFont = () => node().presentation.titleFont;
   const allocatedCaption = () => layout?.captionFor(node());
   const inputCaption = () => node().kind === 'InputField' ? allocatedCaption() : undefined;
+  const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
       && ['Left', 'Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/>;
@@ -562,7 +563,7 @@ function Field(props) {
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-field-caption-width, ${titleWidth}px)`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
-      'line-height': numericLabel() ? `${fontLineHeight(labelFont())}px` : undefined,
+      'line-height': numericLabel() || checkboxCaption() ? `${fontLineHeight(labelFont())}px` : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
@@ -578,11 +579,12 @@ function Field(props) {
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()}
     data-wrapped-input-caption={inputCaption() ? '' : undefined}
+    data-wrapped-checkbox-caption={checkboxCaption() ? '' : undefined}
     data-numeric-label-title={numericLabel() ? '' : undefined}
     data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? '0' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}>
       <label class="taxi-field-label" aria-label={label()} style={labelStyle()}>
-        <Show when={inputCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>
+        <Show when={inputCaption() || checkboxCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>
           {text => <For each={text().split('\n')}>{line =>
             <span class="taxi-field-caption-line">{nativeLabel(() => line)}</span>}</For>}
         </Show>

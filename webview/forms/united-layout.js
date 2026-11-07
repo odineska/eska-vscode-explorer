@@ -76,11 +76,13 @@ export function alignUnitedRows(model, context, wrapped) {
   }
 
   visit(model);
-  for (const owner of owners) {
-    const items = containers.get(owner);
-    if (items.hasAttribute('data-united-columns')) {
-      style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+  function capturePreferredColumns() {
+    for (const owner of owners) {
+      const items = containers.get(owner);
+      if (items.hasAttribute('data-united-columns')) {
+        style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+      }
     }
   }
-  return { owners, minimumCaptions, allocateWidths };
+  return { owners, minimumCaptions, allocateWidths, capturePreferredColumns };
 }

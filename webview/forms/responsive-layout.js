@@ -3,6 +3,7 @@ import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
 import { inputTitleLayout } from './input-title-layout.js';
+import { checkboxLayout } from './checkbox-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
@@ -32,7 +33,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, adaptiveTitles, minimumCaptions, allocateThroughCaptions, rootCommands;
+  let unitedRows, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -80,6 +81,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
       allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
       adaptiveTitles = inputTitleLayout(state.model.root, context, minimumCaptions);
+      checkboxes = checkboxLayout(state.model.root, context);
+      minimumRows = new Map([...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
+      unitedRows.capturePreferredColumns();
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -95,7 +99,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth, adaptiveTitles.minimumRows);
+      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions, rootCommands?.minimumWidth, minimumRows);
       batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
@@ -110,7 +114,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
     // Recheck fit against the resized area before scrollbars from the old arrangement settle.
     const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || adaptiveTitles.minimumRows.size > 0);
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
@@ -119,6 +123,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateThroughCaptions(captions, minima());
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);
+    checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
