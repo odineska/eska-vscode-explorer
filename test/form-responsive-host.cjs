@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
-const { until, frame, editFormSource } = require('./webview-host.cjs');
+const { until, frame, allocateFormViewport, editFormSource } = require('./webview-host.cjs');
 
 const geometry = `(() => {
   const frame=document.querySelector('.taxi-form-frame'),css=getComputedStyle(frame),frameWidth=parseFloat(css.width)+(css.boxSizing==='content-box'?parseFloat(css.borderLeftWidth)+parseFloat(css.borderRightWidth):0),scale=frame.getBoundingClientRect().width/frameWidth;
@@ -11,8 +11,10 @@ const geometry = `(() => {
   const fixedGroup=[...document.querySelectorAll('.taxi-group-title')].find(node=>node.textContent==='Fixed group')?.closest('.taxi-element');
   const input=name=>document.querySelector('.taxi-input input[aria-label="'+name+'"]')?.closest('.taxi-input');
   const surface=document.querySelector('.taxi-special[data-native-field=ChartField]'),svg=surface?.querySelector('svg.taxi-chart'),canvas=surface?.querySelector('canvas');
-  const viewport=document.querySelector('.preview-scroll'),root=document.querySelector('.taxi-form-frame');
-  return {viewport:{width:viewport.clientWidth,height:viewport.clientHeight},frame:rect(root),fixedGroup:rect(fixedGroup),code:rect(input('Code')),amount:rect(input('Amount')),name:rect(input('Name')),limited:rect(input('Limited')),memo:rect(document.querySelector('textarea[aria-label=Memo]')?.closest('.taxi-input')),
+  const viewport=document.querySelector('.preview-scroll'),body=frame.querySelector('.taxi-form-content');
+  const innerScroll=frame.hasAttribute('data-native-form-scroll') && body.scrollHeight>body.clientHeight;
+  const contentBottom=innerScroll?rect(body).y+body.scrollHeight-body.scrollTop:rect(frame).bottom;
+  return {viewport:{width:viewport.clientWidth,height:viewport.clientHeight},frame:rect(frame),contentBottom,fixedGroup:rect(fixedGroup),code:rect(input('Code')),amount:rect(input('Amount')),name:rect(input('Name')),limited:rect(input('Limited')),memo:rect(document.querySelector('textarea[aria-label=Memo]')?.closest('.taxi-input')),
     table:rect(document.querySelector('.taxi-table-field')),grid:rect(document.querySelector('.taxi-table-scroll')),columns:{width:document.querySelector('.taxi-table-content').clientWidth,scrollWidth:document.querySelector('.taxi-table-content').scrollWidth},fixedTable:rect(document.querySelector('.taxi-element[data-kind=Table][data-stretch-x=false] > .taxi-table-field')),chart:rect(surface),
     chartVisible:!!surface&&getComputedStyle(surface).visibility==='visible',
     chartDrawing:svg?{width:svg.viewBox.baseVal.width,height:svg.viewBox.baseVal.height}:canvas&&getComputedStyle(canvas).display!=='none'?{width:canvas.width,height:canvas.height}:null,
@@ -20,7 +22,7 @@ const geometry = `(() => {
     selected:document.querySelector('.taxi-element.taxi-selected')?.dataset.element,
     page:document.querySelector('.taxi-tabs [aria-selected=true]')?.textContent,collapsed:document.querySelector('.taxi-group-title button')?.getAttribute('aria-expanded')==='false',
     close:rect([...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close')),
-    scroll:{x:viewport.scrollWidth>viewport.clientWidth,y:viewport.scrollHeight>viewport.clientHeight},zoom:document.querySelector('.form-zoom select').value,
+    scroll:{x:viewport.scrollWidth>viewport.clientWidth,y:viewport.scrollHeight>viewport.clientHeight,innerY:innerScroll},zoom:document.querySelector('.form-zoom select').value,
     sameNodes:!globalThis.__resizeNodes||__resizeNodes.every(node=>node.isConnected),liveObservers:globalThis.__resizeLive?.size??0,errors:globalThis.__resizeErrors??[]};
 })()`;
 async function observeResize(ui) {
@@ -57,7 +59,7 @@ function check(sample, baseline, label) {
   assert.ok(Math.abs(sample.fixedGroup.height-50)<.01,label+' retains the authored Linux group height');
 
   assert.ok(sample.table.right <= sample.chart.x + .5, label+' keeps table and chart separate');
-  assert.ok(sample.close.bottom <= sample.frame.bottom + .5, label+' keeps the last button inside the form');
+  assert.ok(sample.close.bottom <= sample.contentBottom + .5, label+' keeps the last button in the scrollable form');
   assert.ok(chartFits(sample), label+' redraws the chart at its allocated size');
 }
 async function cssCycle(ui, service, view, label) {
@@ -82,7 +84,8 @@ async function cssCycle(ui, service, view, label) {
   }
   assert.equal(samples[0].headerDirection,'grid','HorizontalIfPossible becomes vertical below preferred widths');
   assert.equal(samples[2].headerDirection,'flex','HorizontalIfPossible returns to horizontal when it fits');
-  assert.deepEqual(samples[0].scroll,{x:true,y:true},'small allocation retains access through both scrollbars');
+  const nativeScroll = process.platform === 'linux';
+  assert.deepEqual(samples[0].scroll, {x:true,y:!nativeScroll,innerY:nativeScroll}, 'compact forms retain access on both axes');
   assert.ok(samples.at(-1).liveObservers<=samples[0].liveObservers,'repeated resize does not accumulate observers');
   const returned=await settled(ui);check(returned,baseline,label+' return');
   if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,'responsive-return.json'),JSON.stringify({label,baseline,returned}));
@@ -193,6 +196,66 @@ async function checkTallHeader(ui, document, view) {
   }
 }
 
+async function checkCompactTable(ui, document, view) {
+  const source = document.getText(), table = '<Table name="FixedRows" id="28">';
+  assert.ok(source.includes(table));
+  const viewportStyle = await ui.evaluate("document.querySelector('.preview-scroll').style.cssText");
+  const grid = 'document.querySelector(\'.taxi-element[data-element$=":current:28"] .taxi-table-scroll\')';
+  await ui.evaluate(`(() => {
+    const tab = [...document.querySelectorAll('.taxi-tabs button')].find(button => button.textContent === 'Fixed table');
+    tab.click();
+    globalThis.__compactGrid = ${grid};
+  })()`);
+  const read = async height => {
+    let sample;
+    await until(async () => {
+      sample = await ui.evaluate(`(() => {
+        const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-content');
+        const viewport = frame.closest('.preview-scroll'), title = frame.querySelector('.taxi-form-title');
+        const last = [...frame.querySelectorAll('.taxi-button')].find(button => button.textContent === 'Close');
+        const grid = ${grid}, box = grid.getBoundingClientRect();
+        return { height: box.height, width: box.width, frame: frame.getBoundingClientRect().height,
+          title: title.getBoundingClientRect().y, offset: body.scrollTop, scrolls: body.scrollHeight > body.clientHeight,
+          outerScrolls: viewport.scrollHeight > viewport.clientHeight, sameGrid: grid === __compactGrid,
+          lastVisible: last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom };
+      })()`);
+      return sample.height === height && sample.frame === 240 && sample.scrolls;
+    }, 'compact table height and frame settled');
+    return sample;
+  };
+  const scroll = offset => ui.evaluate(`(() => {
+    const body = document.querySelector('.taxi-form-content');
+    body.scrollTop = ${offset};
+    return body.scrollTop;
+  })()`);
+  await allocateFormViewport(ui, [850, 240]);
+  try {
+    const compact = await read(227);
+    assert.equal(compact.outerScrolls, false, 'the preview fits the compact frame');
+    assert.equal(compact.sameGrid, true);
+    assert.ok(await scroll(1e6) > 0);
+    const end = await read(227);
+    assert.equal(end.title, compact.title, 'scroll keeps the form caption in place');
+    assert.equal(end.lastVisible, true, 'the last control is reachable');
+    const offset = await scroll(40);
+    assert.equal(offset, 40);
+    const resized = source.replace(table, table + '<Height>12</Height><HeightInTableRows>9</HeightInTableRows>');
+    await editFormSource(document, view, resized);
+    const dirty = await read(283);
+    assert.equal(dirty.width, compact.width, 'vertical allocation preserves the grid width');
+    assert.equal(dirty.offset, offset, 'a dirty geometry edit preserves the inner scroll');
+    assert.equal(dirty.sameGrid, true, 'a dirty geometry edit keeps the grid owner');
+    await editFormSource(document, view, source);
+    const restored = await read(227);
+    assert.equal(restored.offset, offset);
+    assert.equal(restored.sameGrid, true);
+    return { compact, end, dirty, restored };
+  } finally {
+    await editFormSource(document, view, source);
+    await ui.evaluate(`document.querySelector('.preview-scroll').style.cssText=${JSON.stringify(viewportStyle)};true`);
+  }
+}
+
 exports.run=async function(){
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), form=fixture.formGallery[0], original=await fs.readFile(form.path);
   const explorer=await vscode.extensions.all.find(extension=>extension.packageJSON.name==='eska-explorer').activate();
@@ -272,7 +335,7 @@ exports.run=async function(){
   for(const [width,height] of [[360,240],[640,360],[1000,680]]) {
     await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
     await settled(ui);
-    const sample=await ui.evaluate(`(() => {const label=document.querySelector('.taxi-label'),r=label.getBoundingClientRect(),root=document.querySelector('.taxi-form-frame').getBoundingClientRect(),close=[...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close').getBoundingClientRect();return {text:label.textContent,wrap:getComputedStyle(label).whiteSpace,width:r.width,height:r.height,inside:r.right<=root.right&&r.bottom<=root.bottom,followingControl:close.top>=r.bottom,expanded:document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')==='true'}})()`);
+    const sample=await ui.evaluate(`(() => {const label=document.querySelector('.taxi-label'),r=label.getBoundingClientRect(),frame=document.querySelector('.taxi-form-frame'),root=frame.getBoundingClientRect(),body=frame.querySelector('.taxi-form-content'),bottom=frame.hasAttribute('data-native-form-scroll')?body.getBoundingClientRect().top+body.scrollHeight-body.scrollTop:root.bottom,close=[...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close').getBoundingClientRect();return {text:label.textContent,wrap:getComputedStyle(label).whiteSpace,width:r.width,height:r.height,inside:r.right<=root.right&&r.bottom<=bottom,followingControl:close.top>=r.bottom,expanded:document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')==='true'}})()`);
     assert.ok(sample.text.length>55&&sample.width>0&&sample.height>0);assert.equal(sample.wrap,'pre-wrap');
     assert.equal(sample.inside,true,'expanded long caption stays within the scrollable form');assert.equal(sample.followingControl,true,'caption never overlaps the following button');assert.equal(sample.expanded,true);
     longCaptionResults.push({width,height,...sample});
@@ -295,6 +358,7 @@ exports.run=async function(){
     labelLineBreaks.push({wrap, lines});
   }
   const authoredHeights = [];
+  let compactTable;
   if (process.platform === 'linux') {
     const rootWidth = '<Width>80</Width>\n  <CommandBarLocation>None</CommandBarLocation>';
     let declaration = rootWidth;
@@ -323,8 +387,9 @@ exports.run=async function(){
     await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').hasAttribute('data-authored-height')"), 'automatic form height restored');
     await checkCappedHeader(ui, document);
     await checkTallHeader(ui, document, view);
+    compactTable = await checkCompactTable(ui, document, view);
   }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
   assert.equal(service.views.size,1);main.panel.dispose();await until(()=>service.views.size===0,'responsive session released');await Promise.all([...service.closing]);await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,labelLineBreaks,authoredHeights,results}));
+  await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formResponsive:true,locale:vscode.env.language,sourceWritesDuringViewing:false,canvasResults,longCaptionResults,labelLineBreaks,authoredHeights,compactTable,results}));
 };

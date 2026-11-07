@@ -2,6 +2,7 @@ import { flag, number, scalar, caption, fieldWidth, fontLineHeight, viewStatusAd
 import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
+const nativeRowHeight = 28;
 const bandHeight = value => fontLineHeight(value) + 15;
 
 export function tableFooterFont(table, column) {
@@ -206,16 +207,34 @@ export function tableLayout(table, state = {}, additions) {
   const search = additions?.search || topSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
-  const header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
-  const footer = flag(table, 'Footer', false)
+  let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
+  let footer = flag(table, 'Footer', false)
     ? columns.length ? Math.max(...columns.map(item => bandHeight(tableFooterFont(table, item.node)))) : defaultBandHeight : 0;
   const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
   // Native row-count sizing retains the default allocation for small captions.
   // An enlarged band also adds five eighths of its extra height to the body.
   const extraBands = Math.max(0, header - defaultHeader) + Math.max(0, footer - defaultFooter);
+  const bandGrowth = extraBands + Math.round(extraBands * 5 / 8);
   const rowCount = number(table, 'HeightInTableRows');
-  const height = rowCount > 0 ? defaultHeader + rowCount * 28 + defaultFooter + extraBands + Math.round(extraBands * 5 / 8) + 1
-    : dynamic ? 452 : 227 + (depth === 3 ? 1 : 0);
+  const heightUnits = nativeColumns ? number(table, 'Height') : 0;
+  const deepHeader = depth === 3 ? 1 : 0;
+  let height = dynamic ? 452 : 227 + deepHeader;
+  if (rowCount > 0) {
+    height = defaultHeader + rowCount * nativeRowHeight + defaultFooter + bandGrowth + 1;
+  } else if (heightUnits > 0) {
+    const grid = heightUnits * nativeRowHeight;
+    const bands = header + footer;
+    if (grid > bands) {
+      height = grid + 1 + (header ? 2 + deepHeader : 0) + (footer ? 2 : 0) + bandGrowth;
+    } else if (header && footer) {
+      // The two bands share a short table, with one outer border pixel on each side.
+      height = bands;
+      header -= 1;
+      footer -= 1;
+    } else {
+      height = bands + 6;
+    }
+  }
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);

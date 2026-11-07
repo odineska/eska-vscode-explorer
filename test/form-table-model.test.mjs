@@ -54,6 +54,24 @@ test('table bands size captions independently of the empty rows', () => {
   assert.deepEqual(bands(), [28, 28, 117]);
 });
 
+test('Linux table Height counts whole table units and yields to HeightInTableRows', () => {
+  const linux = { os: 'linux' }, table = fixture();
+  const height = (units, ...properties) => {
+    table.properties = [prop('Height', units), ...properties];
+    return tableLayout(table, linux).height;
+  };
+  assert.equal(height(1), 36);
+  assert.equal(height(2), 59);
+  assert.equal(height(4), 115);
+  assert.equal(height(12), 339);
+  assert.equal(height(20), 563);
+  assert.equal(height(4, prop('Header', false)), 113);
+  assert.equal(height(4, prop('Footer', true)), 117);
+  assert.equal(height(2, prop('Footer', true)), 60);
+  assert.deepEqual([tableLayout(table, linux).header, tableLayout(table, linux).footer], [29, 29]);
+  assert.equal(height(12, prop('HeightInTableRows', 2)), 87);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

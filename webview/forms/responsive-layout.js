@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup, batch } from 'solid-js';
+import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
@@ -18,7 +18,9 @@ export const useFormLayout = () => useContext(FormLayoutContext);
 export function createFormLayout(controller, viewport, preview, frame) {
   const state = controller.state;
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
-  const [minimum, setMinimum] = createSignal({ width: 28, height: 28 });
+  const [geometry, setGeometry] = createSignal({
+    minimum: { width: 28, height: 28 }, minima: new Map(), itemsHeight: 0, chromeHeight: 28, tableFormScroll: false,
+  });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
@@ -27,7 +29,6 @@ export function createFormLayout(controller, viewport, preview, frame) {
   });
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
-  const [minima, setMinima] = createSignal(new Map());
   const [preferredWidths, setPreferredWidths] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
@@ -57,7 +58,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const surface = viewport(), content = preview(), root = frame();
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
-    const scroll = [surface.scrollLeft, surface.scrollTop];
+    const body = root.querySelector(':scope > .taxi-form-content');
+    const scroll = [surface.scrollLeft, surface.scrollTop, body.scrollLeft, body.scrollTop];
     const refresh = needsPreferred;
     if (refresh) {
       needsPreferred = false;
@@ -104,9 +106,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
         minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
         headingWidths: unitedColumns.headingWidths, available,
       });
-      batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
+      setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field[data-native-column-sizing]') });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
+      body.scrollLeft = scroll[2]; body.scrollTop = scroll[3];
     }
     const style = getComputedStyle(surface);
     const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
@@ -127,7 +130,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     }
     rootCommands?.allocate();
     const captions = new Map(), previousCaptions = fieldCaptions();
-    allocateThroughCaptions(captions, minima());
+    allocateThroughCaptions(captions, geometry().minima);
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);
     checkboxes.allocate(captions);
@@ -183,13 +186,16 @@ export function createFormLayout(controller, viewport, preview, frame) {
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
     allocation: () => {
-      const allocated = formAllocation(size(), preferred(), minimum(), state.ui.zoom);
+      const { minimum, chromeHeight, tableFormScroll } = geometry();
+      const frameMinimum = tableFormScroll ? { width: minimum.width, height: chromeHeight } : minimum;
+      const allocated = formAllocation(size(), preferred(), frameMinimum, state.ui.zoom);
       return { width: allocated.width, height: authoredHeight() || allocated.height };
     },
-    authoredHeight,
+    authoredHeight, tableFormScroll: () => geometry().tableFormScroll,
+    itemsMinimumHeight: () => geometry().itemsHeight,
     viewportResized,
     invalidate: () => { needsPreferred = true; schedule(); },
-    preferred, minimumFor: node => minima().get(node.key),
+    preferred, minimumFor: node => geometry().minima.get(node.key),
     preferredWidthFor: node => preferredWidths().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
     wrapped: node => wrapped().has(node.key),

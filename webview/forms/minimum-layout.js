@@ -114,11 +114,12 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
   }
   const content = root.querySelector(':scope > .taxi-form-content'), title = root.querySelector(':scope > .taxi-form-title');
   const value = items(content.querySelector(':scope > .taxi-items')), commands = content.querySelector(':scope > .taxi-root-commands');
+  const itemsHeight = value.height, rootInsets = insets(root), chromeHeight = rootInsets.height + size(title).height;
   if (commands) {
     reserveWidth(value, commandWidth ?? 0);
     value.height += marginBox(commands).height;
   }
-  const minimum = add(add(value, insets(content)), { width: insets(root).width, height: insets(root).height + size(title).height });
+  const minimum = add(add(value, insets(content)), { width: rootInsets.width, height: chromeHeight });
   if (headingFloors.size && minimum.fullWidth <= available + .5) {
     // Preserve a single-line heading while the whole frame can fit at that width.
     minimum.width = minimum.fullWidth;
@@ -127,5 +128,5 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       element.style.setProperty('--taxi-min-width', `${bounds.width}px`);
     }
   }
-  return { minimum, minima };
+  return { minimum, minima, itemsHeight, chromeHeight };
 }

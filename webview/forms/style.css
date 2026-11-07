@@ -386,6 +386,12 @@ button { cursor: default; }
 .taxi-table-search-controls { display: flex; gap: 14px; height: 21px; margin-bottom: 9px; align-items: stretch; }
 .taxi-table-search-controls > span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #d9d0a5; border-radius: 2px; background: #fff2c2; box-shadow: 0 1px #ddd; white-space: nowrap; }
 .taxi-table-search-controls i { font-style: normal; background: #8e8868; color: #fff2c2; border-radius: 50%; width: 12px; height: 12px; line-height: 11px; text-align: center; }
+.taxi-table-field { --taxi-table-min-height: var(--taxi-table-compressed-height); }
+.taxi-table-field[data-native-column-sizing] { --taxi-table-min-height: var(--taxi-table-preferred-height); }
+/* Explicit container heights constrain their stretchable tables before the viewport does. */
+:is(.taxi-form-frame[data-authored-height], .taxi-element[data-authored-group-height][data-stretch-y=false]) .taxi-table-field[data-native-column-sizing] {
+  --taxi-table-min-height: var(--taxi-table-compressed-height);
+}
 .taxi-table-scroll { display: flex; overflow: hidden; border: 1px solid #a0a0a0; max-width: 100%; }
 .taxi-table-content { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow: hidden; }
 .taxi-table-head, .taxi-table-footer { display: grid; flex-shrink: 0; }
@@ -570,7 +576,17 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-frame { display: flex; flex-direction: column; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-title { flex: 0 0 24px; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.taxi-preview[data-form-layout=allocated] .taxi-form-frame[data-authored-height] > .taxi-form-content { overflow: auto; }
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content { overflow: auto; }
+/* Use the existing right inset for the native scrollbar so it cannot change the table width. */
+.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content { padding-right: 4px; scrollbar-gutter: stable; }
+.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar { width: 15px; }
+.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-track { border: 0; background: transparent; }
+.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-thumb {
+  border: solid transparent;
+  border-width: 3px 3px 3px 4px;
+  border-radius: 7px;
+  background: #9a9a9a padding-box;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-root-commands { flex: none; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items { flex: 1; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--vertical { grid-template-rows: var(--taxi-layout-rows); align-items: stretch; }
@@ -644,6 +660,9 @@ button { cursor: default; }
 
 .taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items,
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { min-height: 0; }
+.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content > .taxi-items {
+  min-height: var(--taxi-form-items-min-height);
+}
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { grid-template-rows: minmax(0, 1fr); }
 .taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom],[data-title-location=None]) { grid-template-columns: minmax(0, 1fr); }
 /* Intrinsic minima must include fixed controls, even inside a zero-sized grid track. */
