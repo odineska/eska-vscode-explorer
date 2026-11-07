@@ -86,7 +86,6 @@ button { cursor: default; }
 .taxi-form-frame { border: 2px solid #515151; box-shadow: 2px 2px #929292; margin: 0 4px 4px 0; min-width: 28px; background: #fff; box-sizing: content-box; }
 .taxi-form-shadow { display: none; }
 .taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #555; font-size: 12px; padding-left: 1px; line-height: 20px; }
-.taxi-form-frame.taxi-selected > .taxi-form-title { color: #fff; }
 .taxi-form-content { padding: 12px 19px 10px 11px; }
 .taxi-form-content--commands { padding-top: 4px; }
 .taxi-form-content:not(.taxi-form-content--commands):has(> .taxi-items:empty) { padding-bottom: 12px; }

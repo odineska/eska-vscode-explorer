@@ -5,6 +5,15 @@ const crypto=require('node:crypto');
 const vscode=require('vscode');
 const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 
+function captionContrast(foreground, background) {
+  const luminance = color => color.match(/[\d.]+/g).slice(0,3).reduce((sum,value,index) => {
+    const channel=Number(value)/255;
+    return sum+[0.2126,0.7152,0.0722][index]*(channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4);
+  },0);
+  const a=luminance(foreground),b=luminance(background);
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
+
 /** Observe only the readonly application form while changing this test container's allocation. */
 async function resizeApplication(ui,index) {
   await ui.evaluate(`globalThis.__applicationResize={style:document.querySelector('#root').style.cssText,nodes:[...document.querySelectorAll('.taxi-form-frame,.taxi-element')]};true`);
@@ -48,6 +57,12 @@ exports.run=async function(){
     await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-picture-resource')].every(image=>image.complete&&image.naturalWidth>0)"),'application form images');
     const rendered=await ui.evaluate("(()=>{const visible=selector=>[...document.querySelectorAll(selector)].filter(node=>getComputedStyle(node).visibility!=='hidden').length;return {elements:visible('[data-element]'),retainedElements:document.querySelectorAll('[data-element]').length,unsupported:document.querySelectorAll('.taxi-unsupported').length,pictures:visible('.taxi-picture-resource'),incompleteFields:visible('.taxi-input--incomplete'),commandButtons:visible('.taxi-root-commands button'),scrollWidth:document.querySelector('.taxi-form-frame').scrollWidth,scrollHeight:document.querySelector('.taxi-form-frame').scrollHeight}})()");
     assert.equal(rendered.unsupported,0);
+    let titleContrast;
+    if(process.platform==='win32'){
+      const title=await ui.evaluate("(() => {const css=getComputedStyle(document.querySelector('.taxi-form-title'));return {foreground:css.color,background:css.backgroundColor}})()");
+      titleContrast=captionContrast(title.foreground,title.background);
+      assert.ok(titleContrast>=4.5,'selected form title remains readable on its background');
+    }
     const elapsed=Math.round(performance.now()-started);
     const commandMenus = await ui.evaluate(`(() => {
       const groups = [...document.querySelectorAll('.taxi-root-commands > [data-command-group]')];
@@ -63,7 +78,7 @@ exports.run=async function(){
     await ui.screenshot(`application-form-${index}-${vscode.env.language}.png`);
     const resize=await resizeApplication(ui,index);
     const after=crypto.createHash('sha256').update(await fs.readFile(input)).digest('hex');assert.equal(after,before,'view preserves application XML');
-    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,commandMenus,resize,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
+    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,titleContrast,commandMenus,resize,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
       compositionDiagnostics:view.snapshot.model.diagnostics.composition.length,appearanceDiagnostics:view.snapshot.model.diagnostics.appearance.map(item=>item.code)});
     ui.close();main.panel.dispose();await until(()=>service.views.size===0,'application session released');await Promise.all([...service.closing]);
   }
