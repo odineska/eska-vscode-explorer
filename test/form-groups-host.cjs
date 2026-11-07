@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource } = require('./webview-host.cjs');
 
 // Configurator 8.3.27.2342 Linux: outer frame includes design-time borders.
 const nativeFrames = {
@@ -72,6 +72,27 @@ exports.run = async function () {
       assert.deepEqual(geometry.inputs.map(input=>[input.width,input.height]),[[161,23],[121,23]],form.kind);
       if(form.kind==='GroupBackColor'){assert.equal(geometry.group.background,'rgb(255, 255, 224)');assert.equal(geometry.title.color,'rgb(0, 0, 255)');}
       if(form.kind==='GroupTitleFont')assert.equal(geometry.title.fontWeight,'700');
+    }
+    if (form.kind === 'GroupNone') {
+      const original = document.getText(), start = '<UsualGroup name="Group" id="1">';
+      const placeholder = '<UsualGroup name="Settings" id="80"><Behavior>Usual</Behavior><ShowTitle>false</ShowTitle></UsualGroup>';
+      const inserted = original.replace(start, placeholder + start);
+      assert.notEqual(inserted, original);
+      const first = "document.querySelector('.taxi-input')";
+      const geometryOfFirst = () => ui.evaluate(`(() => {
+        const input = ${first}.getBoundingClientRect(), form = document.querySelector('.taxi-form-frame').getBoundingClientRect();
+        return [form.width, form.height, input.x-form.x, input.y-form.y];
+      })()`);
+      const initial = await geometryOfFirst();
+      await ui.evaluate(`globalThis.__groupInput = ${first}; true`);
+      try {
+        await editFormSource(document, view, inserted);
+        assert.ok([...view.nodes.values()].some(node => node.name === 'Settings'));
+        assert.deepEqual(await geometryOfFirst(), initial);
+        assert.equal(await ui.evaluate(`__groupInput === ${first}`), true);
+      } finally {
+        await editFormSource(document, view, original);
+      }
     }
     if(form.kind==='GroupCollapsible') {
       assert.equal(await ui.evaluate("document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')"),'true');

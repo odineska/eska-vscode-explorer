@@ -34,7 +34,13 @@ export function automaticHorizontalSpacing(node) {
 }
 
 export function displayedInPreview(node) {
-  return node.presentation.displayed && (node.kind !== 'Table' || hasTableSurface(node));
+  if (!node.presentation.displayed) return false;
+  if (node.kind === 'Table') return hasTableSurface(node);
+  if (!ordinaryGroup(node) || node.children.length || flag(node, 'ShowTitle')) return true;
+  // Empty settings containers remain in the tree and enter the preview when they acquire content.
+  const decoration = !['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto')) || !!property(node, 'BackColor');
+  return decoration || number(node, 'Width') > 0 || number(node, 'Height') > 0
+    || explicitYes(scalar(node, 'HorizontalStretch')) || explicitYes(scalar(node, 'VerticalStretch'));
 }
 
 /** Designer's Auto belongs to the widget/type; group Auto inherits its visible descendants. */

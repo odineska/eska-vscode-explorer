@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { displayedInPreview, stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -23,6 +23,17 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
   assert.equal(stretches(node('UsualGroup',{},[table]),'y',{UsualGroup:true}),false);
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
+});
+
+test('an undecorated empty group remains a source node without allocating a preview row', () => {
+  const hiddenTitle = { Behavior: 'Usual', ShowTitle: false };
+  assert.equal(displayedInPreview(node('UsualGroup', hiddenTitle)), false);
+  assert.equal(displayedInPreview(node('UsualGroup', hiddenTitle, [node('InputField')])), true);
+  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, Height: 2 })), true);
+  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, Representation: 'StrongSeparation' })), true);
+  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, BackColor: 'web:LightYellow' })), true);
+  assert.equal(displayedInPreview(node('UsualGroup', { ...hiddenTitle, VerticalStretch: true })), true);
+  assert.equal(displayedInPreview(node('UsualGroup')), true);
 });
 
 test('explicit stretch and weights are independent of preferred size',()=>{
