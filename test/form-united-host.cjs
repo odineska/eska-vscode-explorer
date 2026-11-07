@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
+const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
 const key = node => `${node.identity.source}:current:${node.identity.key.value}`;
 
@@ -183,8 +183,8 @@ exports.run = async () => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(input.path));
     await vscode.window.showTextDocument(document, { preview:false, viewColumn:vscode.ViewColumn.One });
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(() => [...service.views.values()].some(view => view.path === input.path && view.phase === 'ready'), input.kind);
-    const view = [...service.views.values()].find(view => view.path === input.path);
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,input.path) && view.phase === 'ready'), input.kind);
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,input.path));
     const main = view.frames.get('main');
     const root = view.snapshot.model.root;
     const keys = Object.fromEntries(['A1','A2','B1','B2'].map(name => [name,key(named(root,name))]));

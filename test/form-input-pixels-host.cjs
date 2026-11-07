@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.runGallery=async(options)=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture[options.fixtureKey],results=[],failures=[];
@@ -58,8 +58,8 @@ exports.runGallery=async(options)=>{
   }
   for(const form of gallery.forms){
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'input border form');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
+    await until(()=>[...explorer.formPreview.views.values()].some(view=>sameSourcePath(view.path,form.path)&&view.phase==='ready'),'input border form');
+    const view=[...explorer.formPreview.views.values()].find(view=>sameSourcePath(view.path,form.path)),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     results.push(await sample(ui,form.expected,form.kind));
     await options.checkFieldValues?.({ui, view, document, kind:form.kind});
     const dirtyTo=options.dirtyCases?.[form.kind]??(form.kind===options.dirtyFrom?options.dirtyTo:undefined);

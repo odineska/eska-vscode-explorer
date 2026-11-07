@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const {frame, until, allocateFormViewport, editFormSource} = require('./webview-host.cjs');
+const {frame, until, allocateFormViewport, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
 async function pose(ui, keys, expected) {
   await allocateFormViewport(ui, expected.viewport ?? expected.frame);
@@ -134,8 +134,8 @@ exports.run = async () => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(document, {preview:false});
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'column width form opened');
-    const view = [...service.views.values()].find(view => view.path === form.path), main=view.frames.get('main');
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'column width form opened');
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path)), main=view.frames.get('main');
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await ui.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");

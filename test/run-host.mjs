@@ -297,7 +297,7 @@ exports.activate = async function () {
       ...(installedStartupProbe && run !== -1 ? [] : [`--extensionDevelopmentPath=${extensionPath}`]), ...(run === -1 ? [`--extensionDevelopmentPath=${languageWarmup}`] : hostArguments),
       `--user-data-dir=${join(root, "profile")}`, `--extensions-dir=${join(root, "extensions")}`,
       "--disable-workspace-trust", ...(process.env.ESKA_BSL_EXTENSION || process.env.ESKA_HOST_ENABLE_EXTENSIONS || languageWarmup || installedStartupProbe ? [] : ["--disable-extensions"]),
-      ...(process.env.ESKA_BSL_DISABLED || process.env.ESKA_HOST_CONFLICT_RELOAD && run === 1 ? ["--disable-extension=elishevkirill.bsl-analyzer-lsp"] : []), "--disable-gpu", "--new-window", workspace],
+      ...(process.env.ESKA_BSL_DISABLED || process.env.ESKA_HOST_CONFLICT_RELOAD && run === 1 ? ["--disable-extension=elishevkirill.bsl-analyzer-lsp"] : []), ...(process.platform === "win32" && process.env.ESKA_HOST_DEBUG_PORT ? ["--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows", "--disable-features=CalculateNativeWinOcclusion"] : []), "--disable-gpu", "--new-window", workspace],
     { env: { ...process.env, PATH: bin + (process.platform === "win32" ? ";" : ":") + (process.env.PATH ?? ""), ESKA_HOST_RUN: String(run),
       ...(conflictFixture ? { ESKA_HOST_CONFLICT_VSIX: conflictFixture.vsix } : {}),
       ...(fixture.library ? { ESKA_CONFIG_DIR: fixture.library.configDir } : {}),

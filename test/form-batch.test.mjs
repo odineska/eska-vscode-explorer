@@ -6,7 +6,7 @@ import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {selectSuites,caseIds} from './form-batch.mjs';
+import {selectSuites,caseIds,explorerPathEnvironment} from './form-batch.mjs';
 import {verifyRuntime,digest} from './installed-runtime.mjs';
 import {deferCleanup} from './cleanup.mjs';
 
@@ -39,6 +39,12 @@ async function trees(root) {
   return {checkout,installed};
 }
 const entries=()=>Object.fromEntries(Object.entries(runtime).map(([path,bytes])=>['extension/'+path,bytes]));
+
+test('X11 focus is configured only for Linux native hosts',()=>{
+  const suite=catalog.suites.find(row=>row.id==='preview');
+  assert.equal(explorerPathEnvironment(suite,'linux').ESKA_HOST_FOCUS_HELPER,join(repository,'test/focus-native-workbench.py'));
+  for(const platform of ['win32','darwin'])assert.equal(explorerPathEnvironment(suite,platform).ESKA_HOST_FOCUS_HELPER,undefined);
+});
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
   const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,68);assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));assert.ok(ids.includes('command-bars'));

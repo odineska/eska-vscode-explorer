@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 function named(node,name){return node.name===name?node:node.children.map(child=>named(child,name)).find(Boolean);}
 async function replace(document,from,to){
   const text=document.getText();assert.ok(text.includes(from));const edit=new vscode.WorkspaceEdit();
@@ -23,8 +23,8 @@ exports.run=async()=>{
     document=await vscode.workspace.openTextDocument(vscode.Uri.file(file));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'owner XML active');
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...service.views.values()].some(item=>item.path===file&&item.phase==='ready'),'owner form ready');
-    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
+    await until(()=>[...service.views.values()].some(item=>sameSourcePath(item.path,file)&&item.phase==='ready'),'owner form ready');
+    view=[...service.views.values()].find(item=>sameSourcePath(item.path,file));main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
     const expected=row.expected.captions.filter(value=>value!=='Group');
     await until(async()=>JSON.stringify(await rendered())===JSON.stringify(expected),row.id+' captions');
     const dependencies=Object.fromEntries(view.snapshot.dependencies.filter(input=>input.role==='form').map(input=>[input.id,input.member]));

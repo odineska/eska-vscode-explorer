@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), form = fixture.form;
@@ -13,8 +13,8 @@ exports.run = async () => {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document,{preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'native style form');
-  const view = [...explorer.formPreview.views.values()].find(view=>view.path===form.path), panel=view.frames.get('main');
+  await until(()=>[...explorer.formPreview.views.values()].some(view=>sameSourcePath(view.path,form.path)&&view.phase==='ready'),'native style form');
+  const view = [...explorer.formPreview.views.values()].find(view=>sameSourcePath(view.path,form.path)), panel=view.frames.get('main');
   const ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
   async function rendered(points,color,target=ui) {
     return target.evaluate(`(() => {const input=document.querySelector('.taxi-input input');if(!input)return false;

@@ -56,8 +56,9 @@ function check(sample, baseline, label) {
   const memoMinimum = process.platform === 'linux' ? 51 : 40;
   assert.ok(sample.memo.height>=memoMinimum-.1&&sample.memo.height<=160.1,label+' applies vertical bounds');
   assert.ok(Math.abs(sample.close.height-baseline.close.height)<.001,label+' keeps fixed button height');
-  assert.ok(Math.abs(sample.fixedGroup.width-350)<.01 && Math.abs(sample.fixedGroup.height-baseline.fixedGroup.height)<.01,label+' retains explicit non-stretch group dimensions');
-  assert.ok(Math.abs(sample.fixedGroup.height-50)<.01,label+' retains the authored Linux group height');
+  const [groupWidth, groupHeight] = process.platform === 'linux' ? [350, 50] : [280, 60];
+  assert.ok(Math.abs(sample.fixedGroup.width-groupWidth)<.01 && Math.abs(sample.fixedGroup.height-baseline.fixedGroup.height)<.01,label+' retains explicit non-stretch group dimensions');
+  assert.ok(Math.abs(sample.fixedGroup.height-groupHeight)<.01,label+' retains the authored group height in its rendering profile');
 
   assert.ok(sample.table.right <= sample.chart.x + .5, label+' keeps table and chart separate');
   assert.ok(sample.close.bottom <= sample.contentBottom + .5, label+' keeps the last button in the scrollable form');
@@ -284,6 +285,13 @@ exports.run=async function(){
   try { await until(async()=>await ui.evaluate("document.querySelector('.taxi-preview')?.dataset.formLayout==='allocated'&&!!document.querySelector('.taxi-chart')"),'responsive DOM ready'); }
   catch(error){error.message+=' '+JSON.stringify(await ui.evaluate("({mode:document.querySelector('.taxi-preview')?.dataset.formLayout,kinds:[...document.querySelectorAll('[data-kind]')].map(n=>n.dataset.kind),html:document.querySelector('.taxi-form-content')?.innerHTML.slice(-3000)})"));throw error;}
   await ui.evaluate('document.fonts.ready.then(()=>true)');
+  if (process.platform === 'win32') {
+    // Keep the conditional row wider than the Windows table minimum so both arrangements are exercised.
+    const revision = view.snapshot.revision;
+    await replace(document, '<Width>35</Width>\n        </InputField>', '<Width>75</Width>\n        </InputField>', 1);
+    await until(() => view.phase === 'ready' && view.snapshot.revision !== revision && !view.running && !view.timer, 'Windows conditional row fixture ready');
+    await settled(ui);
+  }
   await observeResize(ui);
   await ui.evaluate(`document.querySelector('.taxi-group-title button').click();document.querySelector('.taxi-input input[aria-label=Code]').click();true`);
   await until(()=>view.selected?.key?.value==='5','selected field retained by host');

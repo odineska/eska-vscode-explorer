@@ -1,12 +1,21 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-const {frame}=createRequire(import.meta.url)('./webview-host.cjs');
+const {frame,sameSourcePath}=createRequire(import.meta.url)('./webview-host.cjs');
+
+test('native source identity follows the host path rules',()=>{
+  assert.equal(sameSourcePath('source/forms/../form.xml','source/form.xml'),true);
+  assert.equal(sameSourcePath('source/form.xml','source/other.xml'),false);
+  if(process.platform==='win32') {
+    assert.equal(sameSourcePath('C:\\Fixture\\Form.xml','c:/Fixture/Form.xml'),true);
+    assert.equal(sameSourcePath('C:\\Fixture\\Form.xml','D:\\Fixture\\Form.xml'),false);
+  } else assert.equal(sameSourcePath('source/Form.xml','source/form.xml'),false);
+});
 
 function debuggingEndpoint(t,{active='ready',title='Own preview',orphan=false,mainClone=false,inProcess=false,replacedSession=false}={}){
  const realTimeout=globalThis.setTimeout,commands=[],targets=[{id:'main',targetId:'main',type:'page',url:'vscode-file://own-main',webSocketDebuggerUrl:'ws://own-test'},{targetId:'hidden',type:'iframe'},{targetId:'floating',type:'page',url:'about:blank'},...(mainClone?[{targetId:'old',type:'iframe'}]:[]),...(inProcess?[]:[{targetId:'active',type:'iframe'}])];
  // Exercise real timeout/reply routing, with a short clock only in this test process.
- t.mock.method(globalThis,'setTimeout',(callback,ms,...args)=>realTimeout(callback,ms===5000||ms===50?1:ms,...args));
+ t.mock.method(globalThis,'setTimeout',(callback,ms,...args)=>realTimeout(callback,ms===5000||ms===15000||ms===50?1:ms,...args));
  t.mock.method(globalThis,'fetch',async()=>({json:async()=>targets}));
  let activeSessions=0,activeEnables=0;
  class Socket extends EventTarget{

@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
@@ -10,8 +10,8 @@ exports.run=async()=>{
   async function open(file){
     const before=await fs.readFile(file),document=await vscode.workspace.openTextDocument(vscode.Uri.file(file));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'XML active in the main editor');
-    await vscode.commands.executeCommand('eska.explorer.previewForm');await until(()=>[...service.views.values()].some(view=>view.path===file&&view.phase==='ready'),'independent form ready');
-    const view=[...service.views.values()].find(view=>view.path===file),main=view.frames.get('main');
+    await vscode.commands.executeCommand('eska.explorer.previewForm');await until(()=>[...service.views.values()].some(view=>sameSourcePath(view.path,file)&&view.phase==='ready'),'independent form ready');
+    const view=[...service.views.values()].find(view=>sameSourcePath(view.path,file)),main=view.frames.get('main');
     await until(()=>main.ready,'main form panel ready');const mainUi=await frame({state:{title:main.panel.title}});
     await until(()=>mainUi.evaluate("document.querySelectorAll('.taxi-input').length===1"),'main form controls ready');
     await mainUi.focusWorkbench();mainUi.close();

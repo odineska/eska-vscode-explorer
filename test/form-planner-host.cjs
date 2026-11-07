@@ -2,14 +2,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 async function replace(document,text){const edit=new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),text);assert.equal(await vscode.workspace.applyEdit(edit),true);}
 exports.run=async()=>{
  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),forms=fixture.formGallery,before=await Promise.all(forms.map(f=>fs.readFile(f.path))),results=[],failures=[];
  const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();await vscode.commands.executeCommand('workbench.action.toggleFullScreen');await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');const locale=vscode.env.language.startsWith('ru')?'ru':'en';
  for(const form of forms){
   const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
-  await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'planner surface model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});await until(()=>ui.evaluate("!!document.querySelector('[data-native-field=PlannerField]')"),'planner surface DOM');
+  await until(()=>[...service.views.values()].some(v=>sameSourcePath(v.path,form.path)&&v.phase==='ready'),'planner surface model');const view=[...service.views.values()].find(v=>sameSourcePath(v.path,form.path)),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});await until(()=>ui.evaluate("!!document.querySelector('[data-native-field=PlannerField]')"),'planner surface DOM');
   async function referenceClock(expected=form.expected){
    await ui.evaluate(`(()=>{const Original=globalThis.__plannerOriginalDate??Date;globalThis.__plannerOriginalDate=Original;globalThis.__plannerClockStamp=new Original(${JSON.stringify(expected.locales[locale].referenceLocalTime)}).getTime();globalThis.Date=new Proxy(Original,{construct(target,args,newTarget){return Reflect.construct(target,args.length?args:[globalThis.__plannerClockStamp],newTarget)},apply(){return new Original(globalThis.__plannerClockStamp).toString()},get(target,key){return key==='now'?()=>globalThis.__plannerClockStamp:Reflect.get(target,key)}});const splitter=document.querySelector('[role=separator][aria-orientation=horizontal]');for(let i=0;i<20;i++)splitter?.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));return new Date().toString()})()`);
    const text=document.getText().replace(/<!-- native-planner-clock \d+ -->\s*/g,'');await replace(document,text.replace('</Form>','<!-- native-planner-clock '+document.version+' -->\n</Form>'));

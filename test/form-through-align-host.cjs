@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame, allocateFormViewport, editFormSource } = require('./webview-host.cjs');
+const { until, frame, allocateFormViewport, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
 const fieldNames = ['A1', 'A2', 'B1', 'B2'];
 const nextPaint = 'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))';
@@ -104,8 +104,8 @@ async function verifyWrappedRows(form, service, results) {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'row group opened');
-  const view = [...service.views.values()].find(view => view.path === form.path), main = view.frames.get('main');
+  await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'row group opened');
+  const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path)), main = view.frames.get('main');
   const adaptive = form.cases.some(sample => sample.viewport);
   const tab = {fixedFormArea: !adaptive, state: {title:main.panel.title}};
   const ui = await frame(tab);
@@ -199,8 +199,8 @@ exports.run = async () => {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'form opened');
-  const view = [...service.views.values()].find(view => view.path === form.path);
+  await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'form opened');
+  const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path));
   const main = view.frames.get('main');
   const keys = fieldNames.map(name => {
     const node = [...view.nodes.values()].find(node => node.name === name);
@@ -324,7 +324,7 @@ async function verifyStretchBoundary(form, service, results) {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, {preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  const current = () => [...service.views.values()].find(view => view.path === form.path);
+  const current = () => [...service.views.values()].find(view => sameSourcePath(view.path,form.path));
   await until(() => current()?.phase === 'ready', 'stretch boundary ready');
   const view = current(), main = view.frames.get('main'), ui = await frame({fixedFormArea:true, state:{title:main.panel.title}});
   const nodes = [...view.nodes.values()].filter(node => ['Wide','Option','Tail'].includes(node.name));
@@ -346,7 +346,7 @@ async function verifyStretchBoundary(form, service, results) {
   };
   const verify = async (target, sample) => {
     let actual;
-    await until(()=>target.evaluate('__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current caption scope rendered');
+    await until(()=>target.evaluate('globalThis.__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current caption scope rendered');
     await until(async () => {
       actual = await observe(target);
       return actual.fields[sample.scopeField ?? 'Option'].control !== null;
@@ -428,7 +428,7 @@ async function verifyValueColumns(form, service, results) {
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, {preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  const current = () => [...service.views.values()].find(view => view.path === form.path);
+  const current = () => [...service.views.values()].find(view => sameSourcePath(view.path,form.path));
   await until(() => current()?.phase === 'ready', 'value columns ready');
   const view = current(), main = view.frames.get('main');
   const tab = {fixedFormArea:true,state:{title:main.panel.title}}, ui = await frame(tab);
@@ -462,7 +462,7 @@ async function verifyValueColumns(form, service, results) {
     return xml;
   };
   const verify = async (target, sample, preferred = true) => {
-    await until(()=>target.evaluate('__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current value columns rendered');
+    await until(()=>target.evaluate('globalThis.__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)), 'current value columns rendered');
     const actual = await observe(target);
     if (process.platform === 'linux') {
       // Keep the known caption metric residual separate from all column/control dimensions.

@@ -2,6 +2,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const publications = new WeakMap();
 
+/** Compare native paths with the host OS rules, including Windows drive casing. */
+function sameSourcePath(left, right) {
+  return path.relative(left, right) === '';
+}
+
 /** Wait for a concrete context or DOM condition in the isolated native test window. */
 async function until(condition, label) {
   for (let i = 0; i < 160; i++) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
@@ -42,11 +47,16 @@ async function frame(tab) {
     pending.clear();
   });
   /** Match command replies independently of context notifications. */
-  function send(method, params = {}, sessionId, timeout = 5000) {
+  function send(method, params = {}, sessionId, timeout = process.platform === 'win32' ? 15000 : 5000) {
     return new Promise((resolve, reject) => {
       const id = ++serial;
       // Hidden Windows webviews can suspend evaluation; they must not block discovery of the active frame.
-      const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error(`native debug timeout: ${method}`),{code:'native_debug_timeout',method,sessionId})); }, timeout);
+      const timer = setTimeout(() => {
+        const error = pending.get(id)?.error ?? new Error();
+        pending.delete(id);
+        error.message = `native debug timeout: ${method}`;
+        reject(Object.assign(error,{code:'native_debug_timeout',method,sessionId}));
+      }, timeout);
       pending.set(id, { resolve, reject, timer, method, error: new Error(`native debug failure: ${method}`) }); socket.send(JSON.stringify({ id, method, params, sessionId }));
     });
   }
@@ -105,7 +115,7 @@ async function frame(tab) {
         if(!owner||owner.targetId===workbenchTarget.id)continue;
       }
       try {
-        const result = await send('Runtime.evaluate', { contextId: candidate.id, expression: `document.getElementById('title')?.textContent === ${JSON.stringify(tab.state.title)}`, returnByValue: true }, candidate.sessionId);
+        const result = await send('Runtime.evaluate', { contextId: candidate.id, expression: `document.getElementById('title')?.textContent === ${JSON.stringify(tab.state.title)}`, returnByValue: true }, candidate.sessionId, 500);
         if (result.result?.value) { context = candidate; return true; }
       } catch {}
     }
@@ -245,7 +255,9 @@ async function frame(tab) {
     },
     async resizeWindow(windowId, bounds) {
       const current=await this.windowBounds(windowId);
-      const output=require('node:child_process').execFileSync('python3',[path.join(__dirname,'resize-native-workbench.py'),process.env.VSCODE_PID,JSON.stringify({...current.bounds,xid:nativeWindowIds.get(windowId)}),JSON.stringify(bounds)],{encoding:'utf8'});
+      const python=process.env.ESKA_TEST_PYTHON??(process.platform==='win32'?'python':'python3');
+      const helper=process.platform==='win32'?'resize-native-workbench-windows.py':'resize-native-workbench.py';
+      const output=require('node:child_process').execFileSync(python,['-B',path.join(__dirname,helper),process.env.VSCODE_PID,JSON.stringify({...current.bounds,xid:nativeWindowIds.get(windowId)}),JSON.stringify(bounds)],{encoding:'utf8'});
       nativeWindowIds.set(windowId,JSON.parse(output).window);
     },
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
@@ -307,6 +319,7 @@ async function editFormSource(document, view, xml) {
 }
 
 exports.frame = frame;
+exports.sameSourcePath = sameSourcePath;
 exports.until = until;
 exports.allocateFormViewport = allocateFormViewport;
 exports.editFormSource = editFormSource;

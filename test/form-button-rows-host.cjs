@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 const {matchFormRasterOrigin}=require('./form-raster-origin.cjs');
 const copy=value=>JSON.parse(JSON.stringify(value));
 function buttons(node){return [...(node.kind==='Button'?[node]:[]),...node.children.flatMap(buttons)];}
@@ -25,7 +25,7 @@ exports.run=async()=>{
   const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   for(const form of files.cases){
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});await until(()=>vscode.window.activeTextEditor?.document===document,'button row XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
-    await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'native button row model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});const identities=buttons(view.snapshot.model.root).map(n=>n.identity);
+    await until(()=>[...service.views.values()].some(v=>sameSourcePath(v.path,form.path)&&v.phase==='ready'),'native button row model');const view=[...service.views.values()].find(v=>sameSourcePath(v.path,form.path)),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});const identities=buttons(view.snapshot.model.root).map(n=>n.identity);
     const ready=async(expected)=>{await until(()=>ui.evaluate(`document.querySelectorAll('.taxi-element[data-kind=Button]>.taxi-button').length===${expected.controls.length}&&[...document.querySelectorAll('.taxi-element[data-kind=Button]>.taxi-button')].every(n=>n.style.width)&&!document.querySelector('[data-native-label=pending]')&&!document.querySelector('[data-native-caption=pending]')`),'native button row widths and rasters');await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');};
     await ready(form);const initial=await ui.evaluate(measurement);
     try{compare(initial,form,form.name);}catch(error){mismatches.push({name:form.name,expected:form,actual:initial,message:error.message});}

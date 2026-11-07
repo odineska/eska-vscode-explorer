@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame,editFormSource,allocateFormViewport}=require('./webview-host.cjs');
+const {until,frame,editFormSource,allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
 async function observe(ui,keys) {
   await ui.evaluate('document.fonts.ready.then(()=>true)');
@@ -56,7 +56,7 @@ exports.run=async()=>{
     const disk=await fs.readFile(form.path),source=disk.toString('utf8');
     const doc=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(doc,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
-    const current=()=>[...service.views.values()].find(view=>view.path===form.path);
+    const current=()=>[...service.views.values()].find(view=>sameSourcePath(view.path,form.path));
     await until(()=>current()?.phase==='ready','choice form ready');
     const view=current(),main=view.frames.get('main'),ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
     const keys=[...view.nodes.values()].filter(n=>n.kind==='InputField').map(n=>[n.name,`${n.identity.source}:current:${n.identity.key.value}`]);

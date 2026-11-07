@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), gallery = fixture.formFonts, results = [];
@@ -36,8 +36,8 @@ exports.run = async () => {
   for(const form of gallery.forms){
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),{preview:false});
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'native font form');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
+    await until(()=>[...explorer.formPreview.views.values()].some(view=>sameSourcePath(view.path,form.path)&&view.phase==='ready'),'native font form');
+    const view=[...explorer.formPreview.views.values()].find(view=>sameSourcePath(view.path,form.path)),panel=view.frames.get('main');
     let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     try { await until(()=>matches(ui,form.expected),'three native captions in a mixed font row'); }
     catch(error) {

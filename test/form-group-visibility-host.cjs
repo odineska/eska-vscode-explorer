@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {frame,until,editFormSource,allocateFormViewport}=require('./webview-host.cjs');
+const {frame,until,editFormSource,allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
 async function observe(ui,keys) {
   await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
@@ -49,14 +49,14 @@ exports.run=async()=>{
     const disk=await fs.readFile(form.path),source=disk.toString('utf8');
     const doc=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(doc,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
-    const current=()=>[...service.views.values()].find(v=>v.path===form.path);
+    const current=()=>[...service.views.values()].find(v=>sameSourcePath(v.path,form.path));
     await until(()=>current()?.phase==='ready','visibility model ready');
     const view=current(),main=view.frames.get('main'),ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
     const nodes=[...view.nodes.values()].filter(n=>['Above','Below','Inner','Middle'].includes(n.name));
     const keys=Object.fromEntries(nodes.map(n=>[n.name,`${n.identity.source}:current:${n.identity.key.value}`]));
     async function replace(xml,target=ui) {
       await editFormSource(doc,view,xml);
-      await until(()=>target.evaluate('__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)),'current visibility revision rendered');
+      await until(()=>target.evaluate('globalThis.__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)),'current visibility revision rendered');
     }
     try {
       await ui.evaluate('document.fonts.ready.then(()=>true)');

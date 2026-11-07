@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 async function replace(document, from, to) {
   const text = document.getText(), offset = text.indexOf(from); assert.ok(offset >= 0, from);
@@ -66,8 +66,8 @@ async function run() {
   await until(async () => (await ui.evaluate("document.querySelectorAll('.taxi-input').length")) === 1, 'form DOM ready');
   const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},controlWidth:document.querySelector('.taxi-field-control').getBoundingClientRect().width,script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
   assert.ok(geometry.frame.width > 400);
-  if(process.platform==='linux'){assert.equal(geometry.input.width,geometry.controlWidth);assert.ok(geometry.input.width>211,'automatic string fills the wider column');}
-  else assert.equal(geometry.input.width,164);
+  assert.equal(geometry.input.width,geometry.controlWidth,'automatic string fills its allocated column');
+  assert.ok(geometry.input.width>211,'automatic string grows beyond its preferred width');
   assert.equal(geometry.script,true);
   const shellGeometry = await shellResize(ui, service, view);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
@@ -143,7 +143,7 @@ async function run() {
   await vscode.window.showTextDocument(secondDocument, { preview: false, viewColumn: vscode.ViewColumn.One });
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   await until(() => service.views.size === 2, 'independent second form');
-  const second = [...service.views.values()].find(item => item.path === form.second);
+  const second = [...service.views.values()].find(item => sameSourcePath(item.path,form.second));
   await until(() => second.watchers.length > 0 && !second.client && !second.running, 'initial invalid file is watched');
   await fs.writeFile(form.second, secondText);
   await until(() => second.phase === 'ready', 'initial invalid disk snapshot recovers automatically');

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), form = fixture.form;
@@ -12,8 +12,8 @@ exports.run = async () => {
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),{preview:false});
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'),'native alias form');
-  const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+  await until(() => [...explorer.formPreview.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'),'native alias form');
+  const view = [...explorer.formPreview.views.values()].find(view => sameSourcePath(view.path,form.path)), panel = view.frames.get('main');
   const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
   const rendered = (color,target = ui) => target.evaluate(`(() => {const button=document.querySelector('.taxi-command-bar .taxi-button');return !!button&&getComputedStyle(button).color===${JSON.stringify(color)};})()`);
   await until(() => rendered('rgb(18, 52, 86)'),'TextColor resolved as named StyleItem');
