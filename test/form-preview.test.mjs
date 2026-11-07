@@ -185,10 +185,36 @@ test('automatic metadata commands preserve localized overrides and validate opti
   assert.equal(text(automaticCommands(parseFormSnapshot(snapshot).model.root)[0].caption, 'ru-RU', formStrings('ru-RU')), 'Переопределено');
   const bad = structuredClone(snapshot); bad.model.root.presentation.autoCommandItems[0].origin.range.start = -1;
   assert.throws(() => parseFormSnapshot(bad));
+  const command = root.presentation.autoCommandItems[0];
+  const group = { ...command, key: 'command-group', items: [command] };
+  root.presentation.autoCommandItems = [group];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.autoCommandItems[0].items, [command]);
+  group.items = [{ ...command, items: [command] }];
+  assert.throws(() => parseFormSnapshot(snapshot), 'the projected group contains only leaf commands');
   root.presentation.autoCommandItems = [];
   assert.deepEqual(automaticCommands(root), [], 'an explicit empty bar does not restore legacy commands');
 });
 
+
+test('automatic common commands sort by the displayed caption within each bar and menu', () => {
+  const snapshot = fixture(), root = snapshot.model.root;
+  const command = (key, ru, en) => ({ key, primary: false, origin: root.origin, orderByCaption: true,
+    caption: { kind: 'literal', items: [{ language: 'ru', content: ru }, { language: 'en', content: en }] } });
+  const first = command('common-command:One', 'Абзац', 'Zulu');
+  const second = command('common-command:Two', 'Буква', 'Alpha');
+  const fixed = { ...first, key: 'fixed', orderByCaption: undefined };
+  const group = { ...fixed, key: 'menu', items: [first, second] };
+  root.presentation.autoCommandItems = [first, fixed, second, group];
+  const keys = (items) => items.map(item => item.key);
+  const ru = automaticCommands(parseFormSnapshot(snapshot).model.root, { locale: 'ru-RU' });
+  const en = automaticCommands(parseFormSnapshot(snapshot).model.root, { locale: 'en-US' });
+  assert.deepEqual(keys(ru), [first.key, fixed.key, second.key, group.key]);
+  assert.deepEqual(keys(en), [second.key, fixed.key, first.key, group.key]);
+  assert.deepEqual(keys(en.at(-1).items), [second.key, first.key]);
+  assert.deepEqual(keys(group.items), [first.key, second.key]);
+  first.orderByCaption = 'true';
+  assert.throws(() => parseFormSnapshot(snapshot));
+});
 
 test('Linux profile ships exact unmodified reference fonts and their license offline', async () => {
   const root = new URL('../resources/forms/fonts/', import.meta.url), manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
@@ -282,4 +308,21 @@ test('a projected event must reference a matching field in its real XML wrapper'
   ]) assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,value},declared]},snapshot,node));
   assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,id:'platform:StartChoice'},declared]},snapshot,node));
   assert.throws(() => parsePropertyPalette({...data,rows:[projected]},snapshot,node));
+});
+
+test('list menu transport preserves optional sections, shortcuts and disabled submenu entries', () => {
+  const snapshot=fixture(), root=snapshot.model.root;
+  const item={key:'Table.StandardCommand.SearchHistory',caption:{kind:'standard',key:'command.SearchHistory'},
+    primary:false,origin:null,enabled:false,beginGroup:true,shortcut:'Ctrl+Q'};
+  root.presentation.tableCommandMenu=[[{...item,key:'Table.StandardCommand.SearchControl',items:[item]}]];
+  const model=prepare(parseFormSnapshot(snapshot).model);
+  assert.equal(model.root.presentation.tableCommandMenu[0][0].reconcileKey,'Table.StandardCommand.SearchControl');
+  assert.equal(model.root.presentation.tableCommandMenu[0][0].items[0].enabled,false);
+  for(const [field,value] of [['shortcut',''],['shortcut','x'.repeat(65)],['enabled','false'],['beginGroup',1]]) {
+    const bad=structuredClone(snapshot);
+    bad.model.root.presentation.tableCommandMenu[0][0].items[0][field]=value;
+    assert.throws(()=>parseFormSnapshot(bad),field);
+  }
+  root.presentation.tableCommandMenu=[[]];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.tableCommandMenu,[[]]);
 });

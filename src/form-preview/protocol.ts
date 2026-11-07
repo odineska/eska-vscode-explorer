@@ -21,17 +21,26 @@ interface TableColumnAppearance {
   footerForeground?: Color;
   footerFont?: Font;
 }
+export type FormPicture = { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string };
+export type ButtonRepresentation = "Text" | "Picture" | "PictureAndText";
+interface AutoCommandItem {
+  key: string; caption: FormText; primary: boolean; origin: Origin | null;
+  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; orderByCaption?: boolean; shortcut?: string; enabled?: boolean; beginGroup?: boolean; items?: AutoCommandItem[];
+}
 export interface Presentation {
   united?: boolean | null;
   markIncomplete?: boolean;
   footerText?: FormText | null;
   tabularTotal?: "automatic" | "overridden";
   tableColumnAppearance?: TableColumnAppearance;
-  picture: { kind: "standard"; name: string } | { kind: "common"; source: string } | { kind: "missing"; reference: string } | null;
+  picture: FormPicture | null;
+  buttonRepresentation?: ButtonRepresentation;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
   valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
-  autoCommandItems?: { key: string; caption: FormText; primary: boolean; origin: Origin | null }[];
+  autoCommandItems?: AutoCommandItem[];
+  objectCommandMenu?: AutoCommandItem[][];
+  tableCommandMenu?: AutoCommandItem[][];
 }
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
 type PaletteCaption = { "ru-RU": string; "en-US": string };
@@ -51,7 +60,7 @@ export interface FormDefinition { name: string | null; origin: Origin; propertie
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { importantColor: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -96,8 +105,35 @@ function tableColumnAppearance(value: unknown): boolean {
     && ["headerBackground", "footerBackground", "footerForeground"].every(key => value[key] === undefined || color(value[key]))
     && (value.footerFont === undefined || font(value.footerFont));
 }
-function presentation(value: unknown): boolean {
-  return isRecord(value) && (value.picture === null || isRecord(value.picture) && (value.picture.kind === "standard" && typeof value.picture.name === "string" || value.picture.kind === "common" && hash(value.picture.source) || value.picture.kind === "missing" && typeof value.picture.reference === "string"))
+function formPicture(value: unknown, assets: ReadonlySet<string>): boolean {
+  return isRecord(value) && (
+    value.kind === "standard" && typeof value.name === "string"
+    || value.kind === "common" && typeof value.source === "string" && assets.has(value.source)
+    || value.kind === "missing" && typeof value.reference === "string"
+  );
+}
+function buttonRepresentation(value: unknown): boolean {
+  return value === undefined || value === "Text" || value === "Picture" || value === "PictureAndText";
+}
+function autoCommandItems(items: unknown, assets: ReadonlySet<string>, nested = false): boolean {
+  return Array.isArray(items) && items.length <= 16_384 && items.every(item => autoCommandItem(item, assets, nested));
+}
+function autoCommandItem(item: unknown, assets: ReadonlySet<string>, nested: boolean): boolean {
+  return isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean"
+    && (item.origin === null || origin(item.origin)) && (item.orderByCaption === undefined || typeof item.orderByCaption === "boolean")
+    && (item.picture === undefined || formPicture(item.picture, assets)) && buttonRepresentation(item.buttonRepresentation)
+    && (item.shortcut === undefined || typeof item.shortcut === "string" && item.shortcut.length > 0 && item.shortcut.length <= 64)
+    && ["enabled", "beginGroup"].every(key => item[key] === undefined || typeof item[key] === "boolean")
+    && (item.items === undefined || !nested && Array.isArray(item.items) && item.items.length > 0
+      && autoCommandItems(item.items, assets, true));
+}
+function commandSections(value: unknown, assets: ReadonlySet<string>): boolean {
+  return value === undefined || Array.isArray(value) && value.length <= 8
+    && value.every(group => autoCommandItems(group, assets));
+}
+function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
+  return isRecord(value) && (value.picture === null || formPicture(value.picture, assets))
+    && buttonRepresentation(value.buttonRepresentation)
     && (value.markIncomplete === undefined || typeof value.markIncomplete === "boolean")
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
     && (value.tabularTotal === undefined || value.tabularTotal === "automatic" || value.tabularTotal === "overridden")
@@ -106,7 +142,8 @@ function presentation(value: unknown): boolean {
     && ["foreground", "background", "border", "titleColor"].every(key => color(value[key])) && isRecord(value.valueType) && typeof value.valueType.kind === "string"
     && (value.united === undefined || value.united === null || typeof value.united === "boolean")
     && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string")
-    && (value.autoCommandItems === undefined || Array.isArray(value.autoCommandItems) && value.autoCommandItems.length <= 16_384 && value.autoCommandItems.every(item => isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean" && (item.origin === null || origin(item.origin))));
+    && (value.autoCommandItems === undefined || autoCommandItems(value.autoCommandItems, assets))
+    && commandSections(value.objectCommandMenu, assets) && commandSections(value.tableCommandMenu, assets);
 }
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;
@@ -150,12 +187,11 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
   function node(value: unknown, depth: number): void {
     if (++nodes > 16_384 || depth > 64 || !isRecord(value) || !isIdentity(value.identity) || identities.has(identityKey(value.identity)) || !ids.has(value.identity.source)
       || !origin(value.origin) || !key(value.xmlName) || !(value.kind === null || typeof value.kind === "string") || !(value.name === null || typeof value.name === "string")
-      || !Array.isArray(value.properties) || !value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)) || !presentation(value.presentation)
+      || !Array.isArray(value.properties) || !value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)) || !presentation(value.presentation, assets)
       || !Array.isArray(value.children) || !Array.isArray(value.auxiliary)) invalid();
     identities.add(identityKey(value.identity)); value.children.forEach(value => node(value, depth + 1)); value.auxiliary.forEach(value => node(value, depth + 1));
-    if (isRecord(value.presentation) && isRecord(value.presentation.picture) && value.presentation.picture.kind === "common" && !assets.has(String(value.presentation.picture.source))) invalid();
   }
-  if (!color(value.model.importantColor)) invalid();
+  if (!color(value.model.importantColor) || value.model.activityColor !== undefined && !color(value.model.activityColor)) invalid();
   const scriptVariant = value.model.scriptVariant;
   if (scriptVariant !== undefined && scriptVariant !== "russian" && scriptVariant !== "english") invalid();
   node(value.model.root, 0);

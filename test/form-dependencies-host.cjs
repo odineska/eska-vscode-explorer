@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 async function replace(document, from, to) {
   const text = document.getText(); assert.ok(text.includes(from));
@@ -110,10 +110,10 @@ exports.run = async () => {
   await vscode.window.showTextDocument(second, { preview:false, viewColumn:vscode.ViewColumn.One });
   await until(() => vscode.window.activeTextEditor?.document.uri.fsPath === files.second, 'initial dirty XML editor is active');
   await vscode.commands.executeCommand('eska.explorer.previewForm');
-  try {await until(() => [...service.views.values()].some(item => item.path === files.second && item.phase === 'ready'), 'initial malformed disk form opens from its already-dirty buffer');}
+  try {await until(() => [...service.views.values()].some(item => sameSourcePath(item.path,files.second) && item.phase === 'ready'), 'initial malformed disk form opens from its already-dirty buffer');}
   catch(error) {await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:false,error:String(error),dirtySecond:second.isDirty,active:vscode.window.activeTextEditor?.document.uri.fsPath,views:[...service.views.values()].map(item=>({path:item.path,phase:item.phase,notice:item.notice,roots:item.inputRoots,forms:[...item.formInputs.values()]})),failures}));throw error;}
   explorer.connection.request = request;
-  const secondView = [...service.views.values()].find(item => item.path === files.second);
+  const secondView = [...service.views.values()].find(item => sameSourcePath(item.path,files.second));
   assert.ok(JSON.stringify(secondView.snapshot.model).includes('Dirty first image'));
   assert.equal(await fs.readFile(files.second, 'utf8'), '<broken', 'the initial dirty form is not saved by the viewer');
   secondView.frames.get('main').panel.dispose();

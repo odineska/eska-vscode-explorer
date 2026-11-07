@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
 async function checkSourceBar(ui, view, document, english) {
   const bar = "document.querySelector('.taxi-command-bar')";
@@ -123,8 +123,8 @@ exports.run = async function () {
     await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     const service = explorer.formPreview;
-    await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
-    const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), `open ${form.kind}`);
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path)), panel = view.frames.get('main');
     const ui = await frame({fixedFormArea:true, state: { title: panel.panel.title } });
     if (form.kind === 'SourceBarEmpty') {
       results.push({ kind: form.kind, ...await checkSourceBar(ui, view, document, english) });
@@ -200,7 +200,7 @@ exports.run = async function () {
     }
     if (form.kind === 'TablePopup') {
       assert.deepEqual(geometry.buttons.map(button => button.label), ['Actions▾']);
-      if (process.platform === 'linux') assert.equal(geometry.buttons[0].width, 76);
+      if (process.platform === 'linux') assert.equal(geometry.buttons[0].width, 77);
       assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-search')"), false);
       await ui.evaluate("document.querySelector('.taxi-popup > button').click()");
       assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('.taxi-menu [role=menuitem]')].map(item=>item.textContent)"), ['First command', 'Second command']);
@@ -226,6 +226,10 @@ exports.run = async function () {
       identity = await verifyGeometryIdentity(document, view, ui, form.kind);
     }
     const dynamicSearch = form.kind === 'DynamicList' ? await verifyDynamicSearch(document, view, ui, english) : undefined;
+    if (dynamicSearch && process.platform === 'linux') {
+      dynamicSearch.toolbar = await verifyDynamicToolbar(document, view, ui, english);
+      dynamicSearch.pagination = await verifyDynamicPagination(document, view, ui);
+    }
     assert.deepEqual(await fs.readFile(form.path), before);
     results.push({kind:form.kind,...geometry,...(identity ? {identity} : {}), ...(dynamicSearch ? {dynamicSearch} : {})}); panel.panel.dispose();
     await until(() => service.views.size === 0, 'release gallery form'); await Promise.all([...service.closing]);
@@ -256,11 +260,35 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
     return {headers: __tableIdentity.headers.length, footer: __tableIdentity.footer.length};
   })()`);
   assert.ok(captured.headers >= 3 && captured.footer >= 2);
+  // Exceed the available group width so a fill column cannot absorb the edit.
+  const widthEdit = 72;
   const changed = footer.replace(/<InputField\b[^>]*\bname="Text"[^>]*>/,
-    opening => opening + '<Width>32</Width>');
+    opening => opening + `<Width>${widthEdit}</Width>`);
   assert.notEqual(changed, footer, 'controlled Text column fixture exists');
-  await replace(changed);
+  const fixed = kind === 'Default' && process.platform === 'linux';
+  const wide = fixed ? changed.replace('<Table name="Rows" id="1">',
+    '$&<Width>60</Width><HorizontalStretch>false</HorizontalStretch>') : changed;
+  await replace(wide);
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns !== __tableIdentity.tracks"), 'dirty column width rendered');
+  if (process.platform === 'linux') {
+    const bar = "document.querySelector('.taxi-table-horizontal-scrollbar')";
+    const viewport = "document.querySelector('.taxi-table-content')";
+    await until(() => ui.evaluate(`!!${bar} && ${viewport}.scrollWidth > ${viewport}.clientWidth`), 'horizontal table strip visible');
+    const geometry = await ui.evaluate(`(() => {
+      const content = ${viewport}, strip = ${bar}, table = content.parentElement;
+      return { height: strip.offsetHeight, reserved: table.clientHeight - content.clientHeight,
+        controls: strip.getAttribute('aria-controls') === content.id, tableWidth: table.offsetWidth,
+        frameWidth: table.closest('.taxi-form-frame').offsetWidth };
+    })()`);
+    assert.equal(geometry.height, 14);
+    assert.equal(geometry.reserved, 14);
+    assert.equal(geometry.controls, true);
+    if (fixed) assert.deepEqual([geometry.tableWidth, geometry.frameWidth], [600, 634]);
+    await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key: 'End', bubbles: true, cancelable: true}))`);
+    assert.equal(await ui.evaluate(`${viewport}.scrollLeft === ${viewport}.scrollWidth - ${viewport}.clientWidth`), true);
+    await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key: 'Home', bubbles: true, cancelable: true}))`);
+    assert.equal(await ui.evaluate(`${viewport}.scrollLeft`), 0);
+  }
   const retained = await ui.evaluate(`({
     headers: __tableIdentity.headers.filter(node => node.isConnected).length,
     footer: __tableIdentity.footer.filter(node => node.isConnected).length
@@ -272,11 +300,97 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
   await until(() => view.selected?.key?.value === '4', 'retained header selects its original source column');
   await replace(original);
   await until(async () => await ui.evaluate("document.querySelector('.taxi-table-head').style.gridTemplateColumns === __tableIdentity.tracks"), 'width restored');
+  if (process.platform === 'linux') await until(() => ui.evaluate("!document.querySelector('.taxi-table-horizontal-scrollbar')"), 'restoring Width removes overflow');
   assert.equal(await ui.evaluate('__tableIdentity.headers.every(node => node.isConnected)'), true, 'restoring Width retains headers');
   assert.equal(document.getText(), original);
-  return {headers: retained.headers, footerCells: retained.footer, widthEdit: 32, selection: '4', restored: true};
+  return {headers: retained.headers, footerCells: retained.footer, widthEdit, selection: '4', restored: true};
 }
 
+
+async function verifyDynamicToolbar(document, view, ui, english) {
+  const original = document.getText(), binding = '<DataPath>Rows</DataPath>';
+  assert.ok(original.includes(binding));
+  const steps = english ? [[24, 300, 1, 181], [36, 360, 2, 168], [40, 400, 3, 169], [62, 620, 4, 260]]
+    : [[24, 300, 1, 225], [32, 320, 2, 164], [36, 360, 3, 165], [62, 620, 4, 260]];
+  const grid = '.taxi-table-scroll', bar = '.taxi-table-command-bar', search = '.taxi-table-search';
+  const selectors = [grid, bar, search];
+  await ui.evaluate(`globalThis.__toolbarNodes = ${JSON.stringify(selectors)}.map(selector=>document.querySelector(selector));true`);
+  const measure = () => ui.evaluate(`(() => {
+    const [grid,bar,search] = ${JSON.stringify(selectors)}.map(selector=>document.querySelector(selector));
+    const buttons = [...bar.querySelectorAll('.taxi-button')].filter(button=>button.offsetWidth);
+    const r = node => node.getBoundingClientRect();
+    const body = document.querySelector('.taxi-form-content');
+    return [r(grid).width, r(grid).height, r(bar).width, buttons.length, r(search).width,
+      body.scrollWidth-body.clientWidth, __toolbarNodes[0]===grid && __toolbarNodes[1]===bar && __toolbarNodes[2]===search];
+  })()`);
+  const results = [];
+  try {
+    for (const [width, toolbar, buttons, searchWidth] of steps) {
+      const properties = `<Width>${width}</Width><HorizontalStretch>false</HorizontalStretch>`;
+      await editFormSource(document, view, original.replace(binding, binding + properties));
+      const expected = [width * 10, 452, toolbar, buttons, searchWidth, 0, true];
+      await until(async () => (await measure()).every((value,index)=>value===expected[index]), `dynamic toolbar allocation at Width=${width}`);
+      results.push(await measure());
+      if (buttons === 1) {
+        await ui.evaluate("document.querySelector('[data-table-more] > button').click()");
+        assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].slice(0,2).map(item=>item.getAttribute('aria-label'))"),
+          english ? ['Create','Copy'] : ['Создать','Скопировать']);
+        const menuLabels = await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].map(item=>item.getAttribute('aria-label'))");
+        for (const label of english ? ['Configure list...','Restore default settings','Search management'] : ['Настроить список...','Установить стандартные настройки','Управление поиском'])
+          assert.ok(menuLabels.includes(label), label);
+        await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+        await until(() => ui.evaluate("!document.querySelector('[data-table-more] [role=menu]')"), 'overflow menu closes with Escape');
+      }
+    }
+    const withoutFilters = binding + '<Width>24</Width><HorizontalStretch>false</HorizontalStretch><ViewStatusLocation>None</ViewStatusLocation>';
+    await editFormSource(document, view, original.replace(binding, withoutFilters));
+    const expected = [240, 452, 240, english ? 0 : 1, english ? 234 : 171, 0, true];
+    await until(async () => (await measure()).every((value,index)=>value===expected[index]), 'search fits without the filter row');
+    results.push(await measure());
+    const excluded = '<CommandSet><ExcludedCommand>Create</ExcludedCommand><ExcludedCommand>Copy</ExcludedCommand></CommandSet>';
+    await editFormSource(document, view, original.replace(binding, binding + excluded));
+    await until(() => ui.evaluate("!!document.querySelector('[data-table-more] > button')"), 'More survives excluded inline actions');
+    await ui.evaluate("document.querySelector('[data-table-more] > button').click()");
+    const labels = await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].map(item=>item.getAttribute('aria-label'))");
+    assert.ok(labels.includes(english ? 'Configure list...' : 'Настроить список...'));
+    assert.ok(!labels.includes(english ? 'Create' : 'Создать'));
+    assert.ok(!labels.includes(english ? 'Copy' : 'Скопировать'));
+    await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  } finally {
+    await editFormSource(document, view, original);
+  }
+  return results;
+}
+
+async function verifyDynamicPagination(document, view, ui) {
+  const original = document.getText();
+  const narrow = original.replace('<DataPath>Rows</DataPath>', '<DataPath>Rows</DataPath><Width>24</Width><HorizontalStretch>false</HorizontalStretch><CommandBarLocation>None</CommandBarLocation><SearchStringLocation>None</SearchStringLocation><SearchControlLocation>None</SearchControlLocation><ViewStatusLocation>None</ViewStatusLocation>');
+  assert.notEqual(narrow, original);
+  await ui.evaluate("globalThis.__dynamicGrid=document.querySelector('.taxi-table-content');true");
+  const sizes = () => ui.evaluate(`(() => {
+    const grid = document.querySelector('.taxi-table-scroll'), page = document.querySelector('.taxi-table-pagination');
+    const rail = page?.querySelector('[role=scrollbar]');
+    if (!rail) return;
+    const [g,p,r] = [grid,page,rail].map(node => node.getBoundingClientRect());
+    return [g.width, g.height, p.height, r.left-p.left, r.top-p.top, r.width, Number(rail.getAttribute('aria-valuemax'))];
+  })()`);
+  try {
+    await editFormSource(document, view, narrow);
+    await until(async () => (await sizes())?.[0] === 240, 'narrow list acquires a pagination scrollbar');
+    assert.deepEqual(await sizes(), [240, 452, 21, 1, 2, 123, 71]);
+    const key = name => ui.evaluate(`document.querySelector('.taxi-table-pagination [role=scrollbar]')
+      .dispatchEvent(new KeyboardEvent('keydown', {key:${JSON.stringify(name)}, bubbles:true})); true`);
+    await key('End');
+    assert.equal(await ui.evaluate('__dynamicGrid.scrollLeft'), 71);
+    await key('Home');
+    assert.equal(await ui.evaluate('__dynamicGrid.scrollLeft'), 0);
+  } finally {
+    await editFormSource(document, view, original);
+  }
+  await until(async () => !(await sizes()), 'restored list fits without its pagination scrollbar');
+  assert.equal(await ui.evaluate("__dynamicGrid===document.querySelector('.taxi-table-content')"), true);
+  return { width: 240, railWidth: 123, scrollRange: 71 };
+}
 
 async function verifyDynamicSearch(document, view, ui, english) {
   const original = document.getText();

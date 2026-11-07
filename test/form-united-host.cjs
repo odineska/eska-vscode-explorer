@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
 const key = node => `${node.identity.source}:current:${node.identity.key.value}`;
 
@@ -55,6 +55,24 @@ function verifyColumns(kind, boxes) {
   }
 }
 
+async function verifyMixedRow(ui, view, document, original, keys) {
+  const right = original.match(/<UsualGroup name="Right"[^>]*>[\s\S]+?<\/UsualGroup>/u)?.[0];
+  const field = right?.match(/<InputField name="B1"[^>]*>[\s\S]+?<\/InputField>/u)?.[0];
+  assert.ok(field, 'fixture has a standalone field to reuse beside the left group');
+  const mixed = original.replace(right, field);
+  const selection = { A1: keys.A1, A2: keys.A2, B1: keys.B1 };
+  await editFormSource(document, view, mixed);
+  await until(async () => {
+    const boxes = await measure(ui, selection);
+    return boxes && Math.abs(boxes.A1.y - boxes.B1.y) <= 2 && boxes.B1.y + boxes.B1.height < boxes.A2.y;
+  }, 'a standalone field aligns with the first row of a separated group');
+  await editFormSource(document, view, mixed.replace('<United>false</United>', '<United>true</United>'));
+  await until(async () => {
+    const boxes = await measure(ui, selection);
+    return boxes && boxes.B1.y > boxes.A1.y + 2;
+  }, 'a united group aligns as a single box');
+}
+
 async function editColumns(service, view, main, ui, keys, document) {
   const workbench = await ui.nativeWindow();
   await service.receive(view, main, { type: 'detach' });
@@ -88,6 +106,70 @@ async function editColumns(service, view, main, ui, keys, document) {
   await until(async () => columnsMatch(await measure(ui, keys), true), 'updated columns remain after return');
 }
 
+async function verifyMixedColumns(main, view, document) {
+  const initial = document.getText();
+  const title = value => `<Title><v8:item><v8:lang>en</v8:lang><v8:content>${value}</v8:content></v8:item></Title>`;
+  const row = (id, caption) => `<UsualGroup name="Row${id}" id="${id}"><Group>AlwaysHorizontal</Group>
+    <ShowTitle>false</ShowTitle><United>false</United><ChildItems>
+      <InputField name="Ref${id}" id="${id + 1}"><DataPath>Partner</DataPath>${title(caption)}</InputField>
+      <PictureField name="Status${id}" id="${id + 2}"><DataPath>Partner</DataPath><TitleLocation>None</TitleLocation>
+        <Width>2</Width><Height>1</Height><HorizontalStretch>false</HorizontalStretch><VerticalStretch>false</VerticalStretch></PictureField>
+      <LabelField name="Label${id}" id="${id + 3}"><DataPath>Partner</DataPath><TitleLocation>None</TitleLocation></LabelField>
+    </ChildItems></UsualGroup>`;
+  const xml = `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core"
+    xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
+    <CommandBarLocation>None</CommandBarLocation><ChildItems>
+      <InputField name="Outer" id="1"><DataPath>Partner</DataPath>${title('An unrelated caption in the outer group')}</InputField>
+      <UsualGroup name="Rows" id="2"><Group>Vertical</Group><ShowTitle>false</ShowTitle><ChildItems>
+        ${row(10, 'Outgoing agreement')}${row(20, 'Incoming')}
+      </ChildItems></UsualGroup>
+    </ChildItems><Attributes><Attribute name="Partner" id="1">
+      <Type><v8:Type>cfg:CatalogRef.Goods</v8:Type></Type>
+    </Attribute></Attributes></Form>`;
+  const ui = await frame({state:{title:main.panel.title}});
+  const measure = () => ui.evaluate(`(() => {
+    const box = (id, selector) => {
+      const control = document.querySelector('[data-element$=":current:'+id+'"] '+selector);
+      const rect = control?.getBoundingClientRect();
+      return rect && {x:rect.left,width:rect.width,height:rect.height,right:rect.right};
+    };
+    return {frame:document.querySelector('.taxi-form-frame').getBoundingClientRect().width,
+      outer:box(1,'.taxi-input'),first:box(11,'.taxi-input'),second:box(21,'.taxi-input'),
+      picture:box(12,'.taxi-picture-field'),label:box(13,'.taxi-label-field')};
+  })()`);
+  try {
+    await editFormSource(document, view, xml);
+    await until(() => ui.evaluate("document.querySelectorAll('[data-united-flex-lane]').length === 2"), 'mixed rows rendered');
+    await allocateFormViewport(ui, [480, 420]);
+    let narrow;
+    await until(async () => {
+      narrow = await measure();
+      return narrow.frame === 480 && narrow.first?.x === narrow.second?.x && narrow.outer?.x > narrow.first.x + 40;
+    }, 'mixed rows have an independent shared caption column').catch(error => {
+      throw new Error(JSON.stringify({phase:'mixed-caption-column',actual:narrow}), {cause:error});
+    });
+    assert.deepEqual([narrow.picture.width,narrow.picture.height], [20,18]);
+    assert.ok(Math.abs(narrow.picture.x - narrow.first.right - 10) < .1);
+    await allocateFormViewport(ui, [720, 420]);
+    let wide;
+    await until(async () => {
+      wide = await measure();
+      return wide.frame === 720 && wide.first.width > narrow.first.width + 60 && wide.label.width > narrow.label.width + 40;
+    }, 'the input and label both receive free width');
+    assert.equal(wide.picture.width, narrow.picture.width);
+    assert.equal(wide.first.x, wide.second.x);
+    await editFormSource(document, view, xml.replaceAll('<United>false</United>', '<United>true</United>'));
+    await until(async () => {
+      const boxes = await measure();
+      return boxes.first.x > boxes.second.x + 15 && boxes.outer.x > boxes.first.x + 40;
+    }, 'united mixed rows keep their own caption widths');
+    return {kind:'MixedFields', narrow, wide};
+  } finally {
+    ui.close();
+    await editFormSource(document, view, initial);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -101,8 +183,8 @@ exports.run = async () => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(input.path));
     await vscode.window.showTextDocument(document, { preview:false, viewColumn:vscode.ViewColumn.One });
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(() => [...service.views.values()].some(view => view.path === input.path && view.phase === 'ready'), input.kind);
-    const view = [...service.views.values()].find(view => view.path === input.path);
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,input.path) && view.phase === 'ready'), input.kind);
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,input.path));
     const main = view.frames.get('main');
     const root = view.snapshot.model.root;
     const keys = Object.fromEntries(['A1','A2','B1','B2'].map(name => [name,key(named(root,name))]));
@@ -114,7 +196,10 @@ exports.run = async () => {
     if (input.kind === 'RowsF' || input.kind === 'RowsT') {
       verifyColumns(input.kind, boxes);
       results.push({ kind: input.kind, boxes });
-      if (input.kind === 'RowsF') await editColumns(service, view, main, ui, keys, document);
+      if (input.kind === 'RowsF') {
+        await editColumns(service, view, main, ui, keys, document);
+        if (process.platform === 'linux') results.push(await verifyMixedColumns(main, view, document));
+      }
       assert.deepEqual(await fs.readFile(input.path), before);
       main.panel.dispose();
       await until(() => service.views.size === 0, input.kind + ' released');
@@ -166,6 +251,8 @@ exports.run = async () => {
       assert.equal(await floating.evaluate("__unitedNodes.every(node=>node.isConnected)"),true);
       await floating.screenshot('united-dirty-floating-'+vscode.env.language+'.png');
       preview.panel.dispose();
+      main.panel.reveal();
+      await verifyMixedRow(ui, view, document, before.toString('utf8'), keys);
     }
     assert.deepEqual(await fs.readFile(input.path),before);
     main.panel.dispose();

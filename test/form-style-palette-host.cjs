@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), palette = fixture.formPalette, results = [];
@@ -26,8 +26,8 @@ exports.run = async () => {
     for (const form of palette.forms) {
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)), {preview:false});
       await vscode.commands.executeCommand('eska.explorer.previewForm');
-      await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'palette form ready');
-      const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+      await until(() => [...explorer.formPreview.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'palette form ready');
+      const view = [...explorer.formPreview.views.values()].find(view => sameSourcePath(view.path,form.path)), panel = view.frames.get('main');
       const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       const button = Object.hasOwn(palette.expected.defaultColors, form.kind);
       const selector = button ? '.taxi-command-bar .taxi-button' : form.kind === 'TabAccent' ? '.taxi-tabs [role=tab]' : '.taxi-group-title';

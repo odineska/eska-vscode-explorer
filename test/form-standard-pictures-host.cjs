@@ -2,14 +2,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 async function replace(document,text){const edit=new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),text);assert.equal(await vscode.workspace.applyEdit(edit),true);}
 exports.run=async()=>{
  const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),forms=fixture.formGallery,before=await Promise.all(forms.map(f=>fs.readFile(f.path))),results=[],failures=[];
  const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
  for(const form of forms){
   const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
-  await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'standard pictures model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
+  await until(()=>[...service.views.values()].some(v=>sameSourcePath(v.path,form.path)&&v.phase==='ready'),'standard pictures model');const view=[...service.views.values()].find(v=>sameSourcePath(v.path,form.path)),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
   async function sample(expected,label,detached=false){
    await until(()=>ui.evaluate("document.querySelectorAll('[data-kind=PictureDecoration] [data-native-picture=ready]').length===6"),'six standard picture rasters');await ui.evaluate("document.querySelector('.taxi-form-title').click()");await until(()=>view.selected?.key.kind==='root','picture reference root selected');await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');
    const actual=await ui.evaluate("(()=>{const rect=n=>{const r=n.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height}};return{frame:rect(document.querySelector('.taxi-form-frame')),pictures:[...document.querySelectorAll('[data-kind=PictureDecoration]')].map(n=>({key:n.dataset.key,...rect(n.querySelector('[data-native-picture=ready]'))}))}})()");

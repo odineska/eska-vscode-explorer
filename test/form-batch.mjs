@@ -12,6 +12,11 @@ import { digest,verifyRuntime,harnessFailure } from './installed-runtime.mjs';
 const run = promisify(execFile), repository = fileURLToPath(new URL('../',import.meta.url));
 const sorted = values => values.sort((a,b) => a < b ? -1 : a > b ? 1 : 0);
 const hashFile = async path => digest(await readFile(path));
+export function explorerPathEnvironment(suite, platform=process.platform) {
+  return Object.fromEntries(Object.entries(suite.explorerPathEnv??{})
+    .filter(([key])=>key!=='ESKA_HOST_FOCUS_HELPER'||platform==='linux')
+    .map(([key,path])=>[key,join(repository,path)]));
+}
 async function files(root) {
   const output=[];
   async function visit(folder) { for(const entry of await readdir(folder,{withFileTypes:true})) {
@@ -93,7 +98,7 @@ export async function main(args) {
       if(cli)env.VSCODE_CLI_JS=cli;else delete env.VSCODE_CLI_JS;
       if(locale==='ru')env.ESKA_HOST_LANGUAGE_PACK_DIRECTORY=languageRoot;
       for(const [key,path]of Object.entries(suite.fixtureEnv))env[key]=join(fixtureRoot,path);
-      for(const [key,path]of Object.entries(suite.explorerPathEnv??{}))env[key]=join(repository,path);
+      Object.assign(env,explorerPathEnvironment(suite));
       if(suite.id==='application'){env.ESKA_PERF_PROJECT=resolve(value['application-project']);env.ESKA_FORM_SAMPLE_PATHS=await readFile(resolve(value['application-samples']),'utf8');}
       const begin=performance.now(),log=createWriteStream(output),child=spawn(process.execPath,[join(repository,'test/run-host.mjs'),suite.driver],{cwd:repository,env,stdio:['ignore','pipe','pipe']});
       child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});summary.active={suite:suite.id,locale,pid:child.pid,debugPort:Number(env.ESKA_HOST_DEBUG_PORT)};await save();

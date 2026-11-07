@@ -1,12 +1,18 @@
-import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup, batch } from 'solid-js';
+import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { number } from './model.mjs';
-import { stretches, formAllocation, atPreferredAxis } from './layout-model.mjs';
+import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
+import { inputTitleLayout } from './input-title-layout.js';
+import { checkboxLayout } from './checkbox-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
-import { alignThroughLabels } from './through-align.js';
+import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale } from './layout-box.mjs';
+import { measureRootCommands } from './root-command-layout.mjs';
+import { measureTableCommands } from './table-command-layout.mjs';
+import { authoredGroupRows } from './authored-group-rows.js';
+import { commandBarLayout } from './command-bar-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -15,21 +21,23 @@ export const useFormLayout = () => useContext(FormLayoutContext);
 export function createFormLayout(controller, viewport, preview, frame) {
   const state = controller.state;
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
-  const [minimum, setMinimum] = createSignal({ width: 28, height: 28 });
+  const [geometry, setGeometry] = createSignal({
+    minimum: { width: 28, height: 28 }, minima: new Map(), itemsHeight: 0, chromeHeight: 28, tableFormScroll: false,
+  });
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
     const units = number(state.model.root, 'Height');
-    // Linux Designer adds 16 pixels per authored unit to the form's 52-pixel base.
-    return state.os === 'linux' && units > 0 ? 52 + 16 * units : 0;
+    return state.os === 'linux' && units > 0 ? 52 + linuxContainerHeightUnit * units : 0;
   });
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
-  const [minima, setMinima] = createSignal(new Map());
+  const [preferredWidths, setPreferredWidths] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
+  const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, numericRows, minimumCaptions;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -53,7 +61,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const surface = viewport(), content = preview(), root = frame();
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
-    const scroll = [surface.scrollLeft, surface.scrollTop];
+    const body = root.querySelector(':scope > .taxi-form-content');
+    const scroll = [surface.scrollLeft, surface.scrollTop, body.scrollLeft, body.scrollTop];
     const refresh = needsPreferred;
     if (refresh) {
       needsPreferred = false;
@@ -66,29 +75,48 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'preferred';
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
+      if (aboveTitles().size) setAboveTitles(new Set());
       const scale = boundingScale(root);
+      rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
+      allocateTableCommands = measureTableCommands(root, scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
-      alignThroughLabels(state.model.root, context);
+      unitedColumns = alignUnitedColumns(state.model.root, context);
+      const throughScopes = alignThroughLabels(state.model.root, context);
+      unitedColumns.alignColumns();
       unitedRows = alignUnitedRows(state.model.root, context, wrapped());
-      alignUnitedColumns(state.model.root, context);
       numericRows = alignNumericLabelRows(state.model.root, context);
       minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
+      allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
+      adaptiveTitles = inputTitleLayout(state.model.root, context, minimumCaptions);
+      checkboxes = checkboxLayout(state.model.root, context);
+      minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
+      unitedRows.capturePreferredColumns();
+      allocateGroupRows = authoredGroupRows(root, scale, alignment);
+      allocateCommandBars = commandBarLayout(root, context);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
+      const widths = new Map();
       for (const element of elements) {
         const value = rect(element);
+        widths.set(element.dataset.element, value.width);
         element.style.setProperty('--taxi-preferred-width', `${value.width}px`);
         element.style.setProperty('--taxi-preferred-height', `${value.height}px`);
       }
+      setPreferredWidths(widths);
     }
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const measured = minimumFormLayout(root, boundingScale(root), minimumCaptions);
-      batch(() => { setMinimum(measured.minimum); setMinima(measured.minima); });
+      const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
+      const measured = minimumFormLayout(root, boundingScale(root), {
+        minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
+        headingWidths: unitedColumns.headingWidths, available,
+      });
+      setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
+      body.scrollLeft = scroll[2]; body.scrollTop = scroll[3];
     }
     const style = getComputedStyle(surface);
     const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
@@ -97,23 +125,42 @@ export function createFormLayout(controller, viewport, preview, frame) {
       outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
     const previous = size();
     const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
-    // A scrollbar from the previous wrapped height must not prevent the title from unwrapping.
-    if ((refresh || resized) && minimumCaptions.size) next.width = next.outerWidth;
+    const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
+    // Recheck fit against the resized area before scrollbars from the old arrangement settle.
+    const recheckGroups = resized && conditionalGroups.length > 0;
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0);
+    if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
-    if (Object.keys(next).some(key => previous[key] !== next[key])) { setSize(next); schedule(); }
+    if (Object.keys(next).some(key => previous[key] !== next[key])) {
+      if (unitedColumns.headingWidths.size && next.width !== previous.width) needsMinimum = true;
+      setSize(next); schedule();
+    }
+    rootCommands?.allocate();
+    allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
+    allocateThroughCaptions(captions, geometry().minima);
     unitedRows.allocateWidths(captions);
     numericRows?.allocateWidths(captions);
+    checkboxes.allocate(captions);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    unitedColumns.allocate(above);
+    allocateGroupRows(geometry().minima);
+    allocateCommandBars(geometry().minima);
+    const previousAbove = aboveTitles();
+    const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
+    if (moved) setAboveTitles(above);
+    if (moved || heightChanged) { needsMinimum = true; schedule(); }
     if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
       setFieldCaptions(captions);
       needsMinimum = true;
       schedule();
     }
     const wrap = new Set();
-    for (const items of root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]')) {
+    for (const items of conditionalGroups) {
       const children = [...items.children];
       const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
-      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue('--taxi-preferred-width') || '0'), 0)
+      const dimension = items.hasAttribute('data-native-command-row') ? '--taxi-min-width' : '--taxi-preferred-width';
+      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue(dimension) || '0'), 0)
         + Math.max(0, children.length - 1) * gap;
       if (rect(items).width + .5 < required) wrap.add(items.dataset.layoutOwner);
     }
@@ -150,16 +197,21 @@ export function createFormLayout(controller, viewport, preview, frame) {
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
     allocation: () => {
-      const allocated = formAllocation(size(), preferred(), minimum(), state.ui.zoom);
+      const { minimum, chromeHeight, tableFormScroll } = geometry();
+      const frameMinimum = tableFormScroll ? { width: minimum.width, height: chromeHeight } : minimum;
+      const allocated = formAllocation(size(), preferred(), frameMinimum, state.ui.zoom);
       return { width: allocated.width, height: authoredHeight() || allocated.height };
     },
-    authoredHeight,
+    authoredHeight, tableFormScroll: () => geometry().tableFormScroll,
+    itemsMinimumHeight: () => geometry().itemsHeight,
     viewportResized,
     invalidate: () => { needsPreferred = true; schedule(); },
-    preferred, minimumFor: node => minima().get(node.key),
-    stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
+    preferred, minimumFor: node => geometry().minima.get(node.key),
+    preferredWidthFor: node => preferredWidths().get(node.key),
+    stretch: (node, axis) => stretches(node, axis, state.ui.collapsed, state.model.root),
     wrapped: node => wrapped().has(node.key),
     captionFor: node => fieldCaptions().get(node.key),
+    titleAbove: node => aboveTitles().has(node.key),
     initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
   };
 }

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 async function replace(document, from, to) {
   const text = document.getText(), offset = text.indexOf(from); assert.ok(offset >= 0, from);
@@ -50,6 +50,33 @@ async function shellResize(ui, service, view) {
   assert.equal(view.snapshot,snapshot); assert.equal(view.client.current.formSessionId,session); assert.equal(service.views.size,views);
   assert.deepEqual(messages,[],'resizing publishes no webview action'); return samples;
 }
+async function checkCaptionThemes(ui, service, view, main) {
+  if (process.platform !== 'win32') return [];
+  const config = vscode.workspace.getConfiguration('workbench');
+  const original = config.get('colorTheme'), results = [];
+  const field = [...view.nodes.values()].find(node => node.kind === 'InputField');
+  assert.ok(field);
+  const style = `(() => { const title=document.querySelector('.taxi-form-title'),css=getComputedStyle(title);return {text:title.textContent,color:css.color,background:css.backgroundColor}; })()`;
+  try {
+    for (const [theme, kind] of [['Default Dark Modern','dark'],['Default Light Modern','light']]) {
+      await config.update('colorTheme', theme, vscode.ConfigurationTarget.Global);
+      await until(() => ui.evaluate(`document.body.classList.contains('vscode-${kind}')`), 'native webview theme applied');
+      await service.receive(view, main, {type:'select',identity:field.identity});
+      await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').classList.contains('taxi-selected')"), 'field selected for caption baseline');
+      const normal = await ui.evaluate(style);
+      await service.receive(view, main, {type:'select',identity:view.snapshot.model.root.identity});
+      await until(() => ui.evaluate("document.querySelector('.taxi-form-frame').classList.contains('taxi-selected')"), 'form root selected for caption contrast');
+      const selected = await ui.evaluate(style);
+      assert.ok(normal.text.length > 0);
+      assert.notEqual(normal.color, 'rgb(255, 255, 255)', 'form caption is readable on its light background');
+      assert.deepEqual(selected, normal, 'root selection preserves the readable form caption');
+      results.push({theme,...selected});
+      await ui.screenshot(`form-caption-${kind}-${vscode.env.language}.png`);
+    }
+  } finally { await config.update('colorTheme', original, vscode.ConfigurationTarget.Global); }
+  if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,'caption-themes-'+vscode.env.language+'.json'),JSON.stringify(results,null,2));
+  return results;
+}
 async function run() {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), form = fixture.form;
   assert.ok(form);
@@ -64,10 +91,11 @@ async function run() {
   const view = [...service.views.values()][0], main = view.frames.get('main'); assert.ok(main);
   let ui = await frame({ state: { title: main.panel.title } });
   await until(async () => (await ui.evaluate("document.querySelectorAll('.taxi-input').length")) === 1, 'form DOM ready');
+  await checkCaptionThemes(ui, service, view, main);
   const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},controlWidth:document.querySelector('.taxi-field-control').getBoundingClientRect().width,script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
   assert.ok(geometry.frame.width > 400);
-  if(process.platform==='linux'){assert.equal(geometry.input.width,geometry.controlWidth);assert.ok(geometry.input.width>211,'automatic string fills the wider column');}
-  else assert.equal(geometry.input.width,164);
+  assert.equal(geometry.input.width,geometry.controlWidth,'automatic string fills its allocated column');
+  assert.ok(geometry.input.width>211,'automatic string grows beyond its preferred width');
   assert.equal(geometry.script,true);
   const shellGeometry = await shellResize(ui, service, view);
   const oldRoot = await ui.evaluate("globalThis.__formRoot=document.querySelector('.taxi-form-frame');true"); assert.equal(oldRoot, true);
@@ -143,7 +171,7 @@ async function run() {
   await vscode.window.showTextDocument(secondDocument, { preview: false, viewColumn: vscode.ViewColumn.One });
   await vscode.commands.executeCommand('eska.explorer.previewForm');
   await until(() => service.views.size === 2, 'independent second form');
-  const second = [...service.views.values()].find(item => item.path === form.second);
+  const second = [...service.views.values()].find(item => sameSourcePath(item.path,form.second));
   await until(() => second.watchers.length > 0 && !second.client && !second.running, 'initial invalid file is watched');
   await fs.writeFile(form.second, secondText);
   await until(() => second.phase === 'ready', 'initial invalid disk snapshot recovers automatically');

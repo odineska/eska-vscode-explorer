@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, horizontalLaneWidths, laneInputBounds } from '../webview/forms/layout-model.mjs';
+import { displayedInPreview, stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -14,11 +14,32 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(input,'x'),true);assert.equal(stretches(input,'y'),false);
   input.presentation.valueType.kind='number';assert.equal(stretches(input,'x'),false);
   assert.equal(stretches(node('InputField',{Height:3}),'y'),true);
+  assert.equal(stretches(node('InputField',{MultiLine:true}),'y'),true);
+  assert.equal(stretches(node('InputField',{MultiLine:true,Height:1}),'y'),false);
+  assert.equal(stretches(node('InputField',{MultiLine:true,VerticalStretch:false}),'y'),false);
+  assert.equal(stretches(node('InputField',{MultiLine:true,HorizontalStretch:false}),'y'),false);
   assert.equal(stretches(node('Pages',{},[node('Page',{},[table])]),'y'),true);
   assert.equal(stretches(fixed,'x'),false);assert.equal(stretches(fixed,'y'),false);
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
   assert.equal(stretches(node('UsualGroup',{},[table]),'y',{UsualGroup:true}),false);
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
+});
+
+test('groups without rendered descendants retain their source nodes but allocate no preview space', () => {
+  const hidden = node('InputField');hidden.presentation.displayed = false;
+  const hiddenTable = node('Table');hiddenTable.auxiliary = [node('AutoCommandBar', { Autofill: false })];
+  const nested = node('UsualGroup', {}, [node('UsualGroup', {}, [hidden])]);
+  const properties = [{}, {ShowTitle:true}, {Width:12}, {Height:2}, {Representation:'StrongSeparation'},
+    {BackColor:'web:LightYellow'}, {VerticalStretch:true}, {HorizontalStretch:true}, {Behavior:'Collapsible'}];
+  for (const own of properties) {
+    for (const children of [[], [hidden], [hiddenTable], [nested]]) {
+      const group = node('UsualGroup', own, children);
+      assert.equal(displayedInPreview(group), false, JSON.stringify(own));
+      assert.equal(group.children, children, 'visibility does not remove source children');
+    }
+    assert.equal(displayedInPreview(node('UsualGroup', own, [node('InputField')])), true);
+  }
+  assert.equal(displayedInPreview(node('UsualGroup', {}, [node('LabelDecoration')])), true, 'an empty label is a visible spacer');
 });
 
 test('explicit stretch and weights are independent of preferred size',()=>{
@@ -37,20 +58,39 @@ test('fixed explicit dimensions ignore maximums; zero maximum means unlimited',(
   assert.equal(controlBounds(node('InputField',{Width:4,MaxWidth:1}),'x',200,'linux').maximum,undefined,'explicit stretch dimensions are weights');
 });
 
+test('Linux multiline input keeps its XML height under viewport pressure', () => {
+  const minimum = (properties, points = 10, options) => {
+    const field = node('InputField', { MultiLine: true, ...properties });
+    field.presentation.font = { points };
+    return controlBounds(field, 'y', undefined, 'linux', options).minimum;
+  };
+  assert.equal(minimum({}), 51);
+  assert.equal(minimum({ ReadOnly: true }), 51);
+  assert.equal(minimum({ Enabled: false }), 51);
+  assert.equal(minimum({ Height: 1, VerticalStretch: true }), 23);
+  assert.equal(minimum({ Height: 3 }), 79);
+  assert.equal(minimum({ Height: 4 }), 107);
+  assert.equal(minimum({}, 8), 45);
+  assert.equal(minimum({}, 14), 76);
+  assert.equal(minimum({}, 10, { authoredHeight: true }), 23);
+  const capped = node('InputField', { MultiLine: true, AutoMaxHeight: false, MaxHeight: 1 });
+  assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
+});
+
 test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {
   const left = {reserve:0, preferred:131, minimum:71, maximum:410};
   const right = {...left, preferred:191};
-  assert.deepEqual(horizontalLaneWidths(142, [left, right]), [71,71]);
-  assert.deepEqual(horizontalLaneWidths(190, [left, right]), [87,103]);
-  assert.deepEqual(horizontalLaneWidths(240, [left, right]), [103,137]);
-  assert.deepEqual(horizontalLaneWidths(330, [left, right]), [134,196]);
-  assert.deepEqual(horizontalLaneWidths(430, [left, right]), [175,255]);
-  assert.deepEqual(horizontalLaneWidths(710, [left, right]), [300,410]);
-  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [410,410]);
-  assert.deepEqual(horizontalLaneWidths(710, [left, {...right, minimum:191, maximum:191}]), [410,191]);
-  assert.deepEqual(horizontalLaneWidths(700, [left, right, {...left, preferred:111}]), [212,309,179]);
+  assert.deepEqual(allocateLaneSizes(142, [left, right]), [71,71]);
+  assert.deepEqual(allocateLaneSizes(190, [left, right]), [87,103]);
+  assert.deepEqual(allocateLaneSizes(240, [left, right]), [103,137]);
+  assert.deepEqual(allocateLaneSizes(330, [left, right]), [134,196]);
+  assert.deepEqual(allocateLaneSizes(430, [left, right]), [175,255]);
+  assert.deepEqual(allocateLaneSizes(710, [left, right]), [300,410]);
+  assert.deepEqual(allocateLaneSizes(930, [left, right]), [410,410]);
+  assert.deepEqual(allocateLaneSizes(710, [left, {...right, minimum:191, maximum:191}]), [410,191]);
+  assert.deepEqual(allocateLaneSizes(700, [left, right, {...left, preferred:111}]), [212,309,179]);
   const titled = [left, right].map(lane => Object.fromEntries(Object.entries(lane).map(([key,value]) => [key,value+34])));
-  assert.deepEqual(horizontalLaneWidths(710, titled), [295,415]);
+  assert.deepEqual(allocateLaneSizes(710, titled), [295,415]);
 });
 
 test('standard reference inputs reserve both buttons and cap stretch in the measured lane', () => {
@@ -95,9 +135,23 @@ test('reference-axis detection uses the outer area before native scrollbars and 
 
 test('explicit group sizes are separated from stretch weights and converted through the OS profile',()=>{
   const group=node('UsualGroup',{Width:35,Height:3,HorizontalStretch:false,VerticalStretch:false});
-  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:75});
+  assert.deepEqual(groupPreferredSize(group,'linux'),{width:350,height:50});
   assert.deepEqual(groupPreferredSize(group,'win32'),{width:280,height:60});
   assert.deepEqual(groupPreferredSize(node('InputField',{Width:35}),'linux'),{});
+});
+
+test('picture fields reserve the measured Linux slot and accept a Designer border override', () => {
+  const picture = node('PictureField', {Width:2, Height:1});
+  assert.deepEqual([pictureFieldStyle(picture,'linux').width, pictureFieldStyle(picture,'linux').height], ['20px','18px']);
+  assert.deepEqual([pictureFieldStyle(picture,'win32').width, pictureFieldStyle(picture,'win32').height], ['16px','20px']);
+  picture.properties.push({
+    key: property('Border', '').key,
+    value: {kind:'record',fields:[{
+      key:{namespace:'http://v8.1c.ru/8.1/data/ui',name:'style'},
+      value:{kind:'text',text:'WithoutBorder'},
+    }]},
+  });
+  assert.equal(pictureFieldStyle(picture, 'linux')['border-style'], 'none');
 });
 
 test('native automatic string maximum does not cap explicitly stretched number or date controls',()=>{
@@ -136,10 +190,10 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
   const left = {reserve:82, preferred:285, minimum:195, maximum:492, growthWeight:98};
   const right = {reserve:126, preferred:329, minimum:239, maximum:536, growthWeight:156};
-  assert.deepEqual(horizontalLaneWidths(614, [left, right]), [285,329]);
-  assert.deepEqual(horizontalLaneWidths(930, [left, right]), [407,523]);
-  assert.deepEqual(horizontalLaneWidths(980, [left, right]), [444,536]);
-  assert.deepEqual(horizontalLaneWidths(1090, [left, right]), [492,536]);
+  assert.deepEqual(allocateLaneSizes(614, [left, right]), [285,329]);
+  assert.deepEqual(allocateLaneSizes(930, [left, right]), [407,523]);
+  assert.deepEqual(allocateLaneSizes(980, [left, right]), [444,536]);
+  assert.deepEqual(allocateLaneSizes(1090, [left, right]), [492,536]);
 });
 
 test('manual limits on measured automatic lanes keep their preferred trailing border', () => {
@@ -150,6 +204,31 @@ test('manual limits on measured automatic lanes keep their preferred trailing bo
   const raised = node('InputField', {AutoMaxWidth:false, MaxWidth:30});
   raised.presentation = field.presentation;
   assert.deepEqual(laneInputBounds(raised,'linux'), {preferred:203, minimum:113, narrowMinimum:113, maximum:310, valueWeight:98});
+});
+
+test('an automatic multiline maximum preserves the preferred width of a wide field', () => {
+  for (const [width, maximum] of [[25, 410], [50, 511]]) {
+    const memo = node('InputField', {MultiLine:true, Width:width, HorizontalStretch:true});
+    assert.equal(controlBounds(memo, 'x', undefined, 'linux').maximum, maximum);
+    assert.equal(horizontalInputMaximum(memo, 'linux'), maximum);
+  }
+});
+
+test('a manual maximum on a horizontal text field includes the native control inset', () => {
+  const field = node('InputField', {AutoMaxWidth:false, MaxWidth:14});
+  field.presentation.valueType.length = 13;
+  assert.equal(horizontalInputMaximum(field, 'linux'), 150);
+  assert.equal(horizontalInputMaximum(field, 'win32'), undefined);
+  assert.equal(horizontalInputMaximum(node('InputField', {MaxWidth:14}), 'linux'), undefined);
+  assert.equal(horizontalInputMaximum(node('InputField', {AutoMaxWidth:false, MaxWidth:14, Width:20}), 'linux'), undefined);
+});
+
+test('the cap on a reference beside a date follows the measured Linux widths', () => {
+  for (const [maxWidth, measured] of [[8, 91], [12, 131], [16, 203]]) {
+    const field = node('InputField', {AutoMaxWidth:false, MaxWidth:maxWidth});
+    field.presentation.valueType.kind = 'reference';
+    assert.equal(horizontalInputMaximum(field, 'linux'), measured);
+  }
 });
 
 

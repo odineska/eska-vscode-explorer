@@ -49,8 +49,9 @@ export function alignUnitedRows(model, context, wrapped) {
   function visit(node) {
     const children = mountedChildren(node);
     const items = containers.get(node.key);
-    if (items && horizontalGrouping(node)
-      && children.length > 1 && children.every(ordinaryVerticalGroup)) {
+    const separatedColumn = children.some(child => ordinaryVerticalGroup(child) && child.presentation.united === false);
+    if (items && horizontalGrouping(node) && children.length > 1
+      && (children.every(ordinaryVerticalGroup) || separatedColumn)) {
       owners.add(node.key);
       if (automaticHorizontalSpacing(node)) mark(items, 'data-united-auto-spacing');
       if (!wrapped.has(node.key)) shareRows(items, children, node.presentation.grouping === 'Horizontal');
@@ -75,11 +76,13 @@ export function alignUnitedRows(model, context, wrapped) {
   }
 
   visit(model);
-  for (const owner of owners) {
-    const items = containers.get(owner);
-    if (items.hasAttribute('data-united-columns')) {
-      style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+  function capturePreferredColumns() {
+    for (const owner of owners) {
+      const items = containers.get(owner);
+      if (items.hasAttribute('data-united-columns')) {
+        style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+      }
     }
   }
-  return { owners, minimumCaptions, allocateWidths };
+  return { owners, minimumCaptions, allocateWidths, capturePreferredColumns };
 }

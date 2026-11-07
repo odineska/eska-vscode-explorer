@@ -13,8 +13,8 @@ const bundle = build({
     export { tableLayout } from './webview/forms/table-model.mjs';
     export function observe(initial) {
       return createRoot(dispose => {
-        const [source, set] = createStore({ table: initial, locale: 'ru', phase: 'ready' });
-        const layout = createTableLayout(() => source.table, () => source.locale);
+        const [source, set] = createStore({ table: initial, locale: 'ru', os: 'linux', phase: 'ready' });
+        const layout = createTableLayout(() => source.table, source);
         const counts = { headers: 0, headerDisposals: 0, footers: 0, footerDisposals: 0 };
         const headers = For({ get each() { return layout().children; }, children: item => {
           counts.headers++; onCleanup(() => counts.headerDisposals++); return item;
@@ -25,7 +25,7 @@ const bundle = build({
         createComputed(() => { headers(); footers(); });
         const snapshots = [];
         createEffect(() => snapshots.push({ tracks: layout().tracks,
-          widths: layout().columns.map(column => column.width), minWidth: layout().minWidth }));
+          widths: layout().columns.map(column => column.width), preferredWidth: layout().preferredWidth }));
         return { source, set, layout, counts, snapshots, dispose };
       });
     }` },
@@ -50,7 +50,7 @@ async function observe(t, initial = fixture()) {
   const value = data => runInContext(`(${JSON.stringify(data)})`, context);
   const result = module.exports.observe(value(initial));
   t.after(() => result.dispose());
-  return { ...result, value, pure: () => module.exports.tableLayout(result.source.table, result.source.locale) };
+  return { ...result, value, pure: () => module.exports.tableLayout(result.source.table, result.source) };
 }
 const plain = value => JSON.parse(JSON.stringify(value));
 function geometry(harness) { assert.deepEqual(plain(harness.layout()), plain(harness.pure())); }
@@ -67,7 +67,7 @@ test('a Width edit retains header/column records, lists, source proxies and For 
     assert.equal(column.node, h.source.table.children[index]);
     assert.equal(column.fields[0], h.source.table.children[index]);
   });
-  assert.equal(columns[0].width, 260); assert.equal(h.snapshots.length, snapshots + 1);
+  assert.equal(columns[0].width, 253); assert.equal(h.snapshots.length, snapshots + 1);
   assert.deepEqual(plain(h.counts), { headers: 3, headerDisposals: 0, footers: 3, footerDisposals: 0 });
   geometry(h);
 });

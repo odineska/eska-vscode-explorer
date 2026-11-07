@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
@@ -15,8 +15,8 @@ exports.run = async function () {
     await vscode.window.showTextDocument(document, { preview:false,viewColumn:vscode.ViewColumn.One });
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     const service = explorer.formPreview;
-    await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), `open ${form.kind}`);
-    const view = [...service.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), `open ${form.kind}`);
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path)), panel = view.frames.get('main');
     const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-form-frame')"), `render ${form.kind}`);
     await ui.evaluate('document.fonts.ready.then(()=>true)');

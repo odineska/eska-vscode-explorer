@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 // The search rectangle can be visible even when the bottom of the form is clipped.
 // Find its straight edges and internal separator in the native workbench screenshot.
 async function readSearchField(ui, label, detached) {
@@ -55,7 +55,7 @@ exports.run=async()=>{
  const wideSearch=wideSearchForm&&reference(wideSearchForm).searchReflow;
  for(const form of forms){
   const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});await until(()=>vscode.window.activeTextEditor?.document===document,'table pixel XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
-  await until(()=>[...service.views.values()].some(v=>v.path===form.path&&v.phase==='ready'),'table pixel model');const view=[...service.views.values()].find(v=>v.path===form.path),main=view.frames.get('main');
+  await until(()=>[...service.views.values()].some(v=>sameSourcePath(v.path,form.path)&&v.phase==='ready'),'table pixel model');const view=[...service.views.values()].find(v=>sameSourcePath(v.path,form.path)),main=view.frames.get('main');
   const mainTab={state:{title:main.panel.title}},hasReflowReference=!!reference(form).searchReflow;
   // The live workbench opens in its wide allocation. Compare it with the measured 260px widget.
   const reflow=hasReflowReference?wideSearch:undefined;

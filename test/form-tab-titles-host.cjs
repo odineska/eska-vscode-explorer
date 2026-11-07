@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 const measure=`(() => {
   const rect=node=>{const r=node.getBoundingClientRect();return [r.x,r.y,r.width,r.height]};
@@ -31,8 +31,8 @@ exports.run=async()=>{
   for(const form of fixture.formGallery) {
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...explorer.formPreview.views.values()].some(view=>view.path===form.path&&view.phase==='ready'),'tab form ready');
-    const view=[...explorer.formPreview.views.values()].find(view=>view.path===form.path),panel=view.frames.get('main');
+    await until(()=>[...explorer.formPreview.views.values()].some(view=>sameSourcePath(view.path,form.path)&&view.phase==='ready'),'tab form ready');
+    const view=[...explorer.formPreview.views.values()].find(view=>sameSourcePath(view.path,form.path)),panel=view.frames.get('main');
     const ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     const ready=()=>ui.evaluate("document.querySelectorAll('.taxi-tabs [data-native-label=ready]').length===2&&[...document.querySelectorAll('.taxi-tabs > button')].every(button=>button.style.width)&&!document.querySelector('[data-native-label=pending]')");
     if(process.platform==='linux')await until(ready,'packaged native tab captions');

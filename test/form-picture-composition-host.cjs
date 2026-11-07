@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 function named(node,name){return node.name===name?node:node.children.map(child=>named(child,name)).find(Boolean);}
 async function replace(document,text){
   const original=document.getText(),edit=new vscode.WorkspaceEdit();
@@ -16,7 +16,7 @@ exports.run=async()=>{
   assert.equal(explorer.connection.state.kind,'ready',JSON.stringify(explorer.connection.state));await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');const service=explorer.formPreview;
   let view,main,ui,identity,own=false;
   const rendered=()=>ui.evaluate(`(()=>[...document.querySelectorAll('[data-kind=PictureDecoration]')].map(node=>{const image=node.querySelector('img');if(!image)return null;if(!image.complete||image.naturalWidth!==16||image.naturalHeight!==16)return 'loading';const canvas=document.createElement('canvas');canvas.width=canvas.height=16;const context=canvas.getContext('2d');context.drawImage(image,0,0);return '#'+[...context.getImageData(8,8,1,1).data].slice(0,3).map(value=>value.toString(16).padStart(2,'0')).join('').toUpperCase()}))()`);
-  const dependency=document=>view.snapshot.dependencies.find(input=>input.root.encoding==='utf-8'&&input.path.encoding==='utf-8'&&path.join(input.root.value,input.path.value)===document.uri.fsPath);
+  const dependency=document=>view.snapshot.dependencies.find(input=>input.root.encoding==='utf-8'&&input.path.encoding==='utf-8'&&sameSourcePath(path.join(input.root.value,input.path.value),document.uri.fsPath));
   async function check(color,label,document,previous,ownColor='#FFCC00'){
     const colors=own?[color,ownColor]:[color];
     await until(async()=>view.phase==='ready'&&!view.running&&!view.timer&&(previous===undefined||view.snapshot.revision!==previous)&&(!document||dependency(document)?.version===String(document.version))&&JSON.stringify(await rendered())===JSON.stringify(colors),label);
@@ -28,7 +28,7 @@ exports.run=async()=>{
   async function open(file){
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(file));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'picture XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...service.views.values()].some(item=>item.path===file&&item.phase==='ready'),'picture composition ready');view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Logo').identity;
+    await until(()=>[...service.views.values()].some(item=>sameSourcePath(item.path,file)&&item.phase==='ready'),'picture composition ready');view=[...service.views.values()].find(item=>sameSourcePath(item.path,file));main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Logo').identity;
     await until(()=>ui.evaluate("!!document.querySelector('[data-kind=PictureDecoration] img')"),'picture DOM ready');await ui.evaluate("globalThis.__pictureContainer=document.querySelector('[data-kind=PictureDecoration]');globalThis.__pictureContainer.click()");await until(()=>view.selected?.key.value===identity.key.value,'picture selected');
   }
   await open(files.baseForm);await check('#00AA00','initial-borrowed-image');
@@ -57,6 +57,6 @@ exports.run=async()=>{
   revision=view.snapshot.revision;await fs.rename(ownExt,ownBackup);await check('#2050EE','external-own-empty-definition',undefined,revision,null);
   revision=view.snapshot.revision;await fs.rename(ownBackup,ownExt);await check('#2050EE','external-own-image-restored',undefined,revision);
   assert.ok(descriptor.isDirty&&pictureXml.isDirty);ui.close();main.panel.dispose();await until(()=>service.views.size===0,'own picture session released');await Promise.all([...service.closing]);await explorer.shutdown();
-  await fs.rm(path.dirname(files.secondPictureXml),{recursive:true});assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);
+  await fs.rm(path.dirname(files.secondPictureXml),{recursive:true,maxRetries:process.platform==='win32'?20:0,retryDelay:250});assert.deepEqual(await Promise.all(files.sources.map(file=>fs.readFile(file))),before);
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,pictureComposition:true,locale:vscode.env.language,results,sourceWritesDuringViewing:false,controlledExternalChangesRestored:true,stableIdentity:true,stableDom:true,detachedUpdates:true,nativeEmptyPayload:true}));
 };

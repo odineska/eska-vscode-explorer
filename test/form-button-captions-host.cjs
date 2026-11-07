@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
 
 const measurement = `(() => {
   const rect = node => { const r = node.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; };
@@ -19,8 +19,8 @@ exports.run = async () => {
     const before = await fs.readFile(form.path), document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(document, {preview:false});
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(() => [...explorer.formPreview.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'caption form ready');
-    const view = [...explorer.formPreview.views.values()].find(view => view.path === form.path), panel = view.frames.get('main');
+    await until(() => [...explorer.formPreview.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'caption form ready');
+    const view = [...explorer.formPreview.views.values()].find(view => sameSourcePath(view.path,form.path)), panel = view.frames.get('main');
     const ui = await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     const ready = () => ui.evaluate("document.querySelectorAll('.taxi-command-bar [data-native-caption=ready]').length===3");
     if (process.platform === 'linux') await until(ready, 'Cyrillic and colored WASM captions');

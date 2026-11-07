@@ -1,5 +1,6 @@
-import { number, scalar, flag, fieldWidth, inputHeight, linuxFixedInputWidth, nativeReferenceInput, automaticTextWidth, numericLabelMetrics } from './model.mjs';
-import { hasTableSurface, tableSearchReference } from './table-model.mjs';
+import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { commandBarContent } from './command-bar-model.mjs';
+import { hasTableSurface } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -9,6 +10,9 @@ const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
 const explicitNo = value => ['false', 'No', '0'].includes(value);
 const explicitYes = value => ['true', 'Yes', '1'].includes(value);
 
+// In Linux Designer, authored heights of forms and ordinary groups use a 16 px unit.
+export const linuxContainerHeightUnit = 16;
+
 export function horizontalGrouping(node) {
   return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
 }
@@ -17,28 +21,58 @@ export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }
 
+/** Only an explicitly undecorated group continues automatic caption tracks. */
+export function sharesGroupLabels(node) {
+  if (!ordinaryGroup(node) || !flag(node, 'HorizontalStretch')) return false;
+  const mode = scalar(node, 'ThroughAlign', 'Auto');
+  return mode === 'Use' || mode === 'Auto' && scalar(node, 'Representation') === 'None';
+}
+
+export function hasAuthoredGroupHeight(node, os) {
+  return os === 'linux' && ordinaryGroup(node) && number(node, 'Height') > 0;
+}
+
+/** An automatic group width can contract even if the group receives no extra space. */
+export function groupCanShrink(node, os, root = node) {
+  if (os !== 'linux') return false;
+  const automatic = (ordinaryGroup(node) || node.kind === 'CommandBar') && number(node, 'Width') <= 0;
+  return automatic || compactCommandBarGroup(node, root);
+}
+
 export function automaticHorizontalSpacing(node) {
   return scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto';
 }
 
-export function displayedInPreview(node) {
-  return node.presentation.displayed && (node.kind !== 'Table' || hasTableSurface(node));
+export function displayedInPreview(node, root = node) {
+  if (!node.presentation.displayed) return false;
+  if (node.kind === 'Table') return hasTableSurface(node);
+  if (node.kind === 'CommandBar') return commandBarContent(root, node).visible;
+  // Designer omits a group's own decoration and dimensions when its content is absent.
+  return node.kind !== 'UsualGroup' || node.children.some(child => displayedInPreview(child, root));
+}
+
+/** Fixed command-only groups use the command floor instead of each bar's preferred reserve. */
+export function compactCommandBarGroup(node, root = node) {
+  return ordinaryGroup(node) && !stretches(node, 'x', {}, root)
+    && node.children.length > 0 && node.children.every(child => child.kind === 'CommandBar');
 }
 
 /** Designer's Auto belongs to the widget/type; group Auto inherits its visible descendants. */
-export function stretches(node, axis, collapsed = {}) {
+export function stretches(node, axis, collapsed = {}, root = node) {
+  if (axis === 'x' && node.kind === 'CommandBar' && scalar(node, 'HorizontalLocation') === 'Right') return true;
   const value = scalar(node, axis === 'x' ? 'HorizontalStretch' : 'VerticalStretch', 'Auto');
   if (explicitYes(value)) return true;
   if (explicitNo(value)) return false;
   if (containers.has(node.kind)) {
     if (axis === 'y' && collapsed[node.key]) return false;
-    return node.children.some(child => displayedInPreview(child) && stretches(child, axis, collapsed));
+    return node.children.some(child => displayedInPreview(child, root) && stretches(child, axis, collapsed, root));
   }
   if (surfaces.has(node.kind)) return true;
-  if (axis === 'x' && node.kind === 'CommandBar') return scalar(node, 'CommandSource').startsWith('Item.')
-    || node.children.some(child => !!tableSearchReference(scalar(child, 'CommandName')));
+  if (axis === 'x' && node.kind === 'CommandBar') return true;
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
+  if (node.kind === 'InputField' && inputRows(node) > 1
+    && !explicitNo(scalar(node, 'HorizontalStretch'))) return true;
   return ['InputField', 'LabelField'].includes(node.kind) && number(node, 'Height') > 1;
 }
 
@@ -57,8 +91,24 @@ function automaticInputMaximum(node, os, referenceLane = false) {
   }
 }
 
+function automaticMultilineMaximum(node, os) {
+  const { kind, length } = node.presentation.valueType;
+  if (kind !== 'string' || length || !linuxFixedInputWidth(node, os) || inputRows(node) <= 1
+    || explicitNo(scalar(node, 'AutoMaxWidth'))) return;
+  return Math.max(fieldWidth(node, os), automaticTextWidth(node));
+}
+
+function inputMinimum(node, axis, os, authoredHeight) {
+  if (axis === 'x') return Math.min(80, fieldWidth(node, os));
+  if (os === 'linux') {
+    // An authored container height can compress the input to one line. Viewport overflow keeps its XML height.
+    return authoredHeight ? inputHeight(node, os) : inputControlHeight(node, os);
+  }
+  return flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os);
+}
+
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
-export function controlBounds(node, axis, preferred, os, atPreferred = false) {
+export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false } = {}) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
   const explicit = number(node, dimension), stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
@@ -66,10 +116,9 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
-  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
-    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0);
-  let maximum;
-  if (explicit <= 0 || numericLabel) {
+  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
+  let maximum = axis === 'x' ? automaticMultilineMaximum(node, os) : undefined;
+  if (maximum === undefined && (explicit <= 0 || numericLabel)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
       // Manual bounds apply after leaving the initial Designer size.
@@ -85,6 +134,28 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   return { minimum: minimum || undefined, maximum: maximum ? Math.max(numericLabel?.preferred ?? minimum, maximum) : undefined };
 }
 
+function manualLaneMaximum(node) {
+  if (number(node, 'Width') > 0 || !explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))) return;
+  const limit = positive(number(node, 'MaxWidth'));
+  if (limit) return limit * 10 + 10;
+}
+
+/** A bounded input in a Linux horizontal row reserves only its usable width. */
+export function horizontalInputMaximum(node, os) {
+  if (os !== 'linux' || node.kind !== 'InputField' || !stretches(node, 'x')) return;
+  const maximum = manualLaneMaximum(node);
+  if (maximum === undefined) return automaticMultilineMaximum(node, os);
+  const intrinsic = fieldWidth(node, os);
+  const minimum = controlBounds(node, 'x', intrinsic, os).minimum;
+  if (nativeReferenceInput(node, os)) {
+    // A cap that accommodates the native value area preserves the preferred buttons.
+    // Smaller caps include the buttons and the trailing border in the capped box.
+    return maximum >= intrinsic - referenceButtonWidth
+      ? Math.max(intrinsic, maximum) : Math.max(minimum, maximum + 1);
+  }
+  if (node.presentation.valueType.kind === 'string' && linuxFixedInputWidth(node, os)) return Math.max(maximum, minimum);
+}
+
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */
 export function laneInputBounds(node, os) {
   const type = node.presentation.valueType;
@@ -93,9 +164,7 @@ export function laneInputBounds(node, os) {
   if ((!reference && !plain) || (node.presentation.font?.points ?? 10) !== 10) return;
   const intrinsic = fieldWidth(node, os);
   const bounds = controlBounds(node, 'x', intrinsic, os);
-  const limit = number(node, 'Width') <= 0 && explicitNo(scalar(node, 'AutoMaxWidth', 'Auto'))
-    ? positive(number(node, 'MaxWidth')) : 0;
-  const maximum = limit ? limit * 10 + 10 : automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
+  const maximum = manualLaneMaximum(node) ?? automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
   // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
   const preferred = Math.min(intrinsic, maximum + 1);
   const narrowMinimum = Math.min(reference ? 113 : 71, preferred);
@@ -154,8 +223,8 @@ export function fitCaptionWidths(available, tracks, trailingOnly = false) {
   return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };
 }
 
-/** Allocate column widths in native pixels, including the fixed space reserved for titles. */
-export function horizontalLaneWidths(available, lanes) {
+/** Allocate bounded tracks in native pixels, including space reserved for control chrome. */
+export function allocateLaneSizes(available, lanes) {
   const preferred = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
   let widths;
   let round = Math.round;
@@ -224,6 +293,23 @@ export function atPreferredAxis(outerSize, preferredSize, zoom = 100) {
 /** Explicit group dimensions provide an initial constraint; child natural minima still take precedence. */
 export function groupPreferredSize(node, os) {
   if (!containers.has(node.kind) || node.kind === 'Form') return {};
-  return { width: positive(number(node,'Width')) * (os === 'linux' ? 10 : 8),
-    height: positive(number(node,'Height')) * (os === 'linux' ? 25 : 20) };
+  const linux = os === 'linux', height = positive(number(node, 'Height'));
+  // The authored height of an ordinary group includes its two layout edge pixels.
+  return { width: positive(number(node, 'Width')) * (linux ? 10 : 8),
+    height: height * (linux ? linuxContainerHeightUnit : 20) + (linux && height > 0 && ordinaryGroup(node) ? 2 : 0) };
+}
+
+export function pictureFieldStyle(node, os) {
+  const width = number(node, 'Width'), height = number(node, 'Height');
+  const linux = os === 'linux';
+  const fixedHeight = linux ? height * linuxContainerHeightUnit + 2 : height * 20;
+  const border = property(node, 'Border')?.value;
+  const borderStyle = border?.kind === 'record' && border.fields.find(field =>
+    field.key.namespace === 'http://v8.1c.ru/8.1/data/ui' && field.key.name === 'style')?.value.text;
+  return {
+    width: (width > 0 ? width * (linux ? 10 : 8) : 122) + 'px',
+    height: (height > 0 ? fixedHeight : 120) + 'px',
+    'border-style': borderStyle === 'WithoutBorder' ? 'none' : undefined,
+    'border-color': color(node.presentation.border),
+  };
 }

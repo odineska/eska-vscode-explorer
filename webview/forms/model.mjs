@@ -1,3 +1,6 @@
+import { localizedEntries } from '../../resources/properties/model.mjs';
+import { emptyDateMask } from './date-mask.mjs';
+
 export const FORM_NS = 'http://v8.1c.ru/8.3/xcf/logform';
 export function key(node) { const id = node?.identity; return id ? `${id.source}:${id.part}:${id.key.kind === 'root' ? 'root' : id.key.value}` : ''; }
 function prepareFields(fields) {
@@ -10,8 +13,20 @@ function prepareFields(fields) {
     return { ...field, reconcileKey: `${name}:${index}`, value: field.value.kind === 'record' ? { ...field.value, fields: prepareFields(field.value.fields) } : field.value };
   });
 }
+function prepareCommand(command) {
+  return { ...command, reconcileKey: command.key, ...(command.items ? { items: command.items.map(prepareCommand) } : {}) };
+}
 export function prepare(model) {
-  const visit = node => ({ ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) });
+  const visit = node => {
+    const { autoCommandItems, objectCommandMenu, tableCommandMenu } = node.presentation ?? {};
+    const presentation = autoCommandItems || objectCommandMenu || tableCommandMenu ? { ...node.presentation,
+      ...(autoCommandItems ? { autoCommandItems: autoCommandItems.map(prepareCommand) } : {}),
+      ...(objectCommandMenu ? { objectCommandMenu: objectCommandMenu.map(group => group.map(prepareCommand)) } : {}),
+      ...(tableCommandMenu ? { tableCommandMenu: tableCommandMenu.map(group => group.map(prepareCommand)) } : {}),
+    } : node.presentation;
+    return { ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), presentation,
+      children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) };
+  };
   const result = { ...model, root: visit(model.root) };
   for (const section of ['attributes', 'commands', 'parameters']) if (model[section]) result[section] = model[section].map(definition => ({ ...definition,
     reconcileKey: JSON.stringify([definition.xmlName, definition.name]), properties: prepareFields(definition.properties) }));
@@ -31,6 +46,17 @@ export function text(value, locale, strings) {
   const language = locale.toLowerCase(), base = language.split('-')[0];
   return (value.items.find(item => item.language.toLowerCase() === language) ?? value.items.find(item => item.language.toLowerCase() === base) ?? value.items[0])?.content ?? '';
 }
+export function formatSettings(value, locale) {
+  const items = value && localizedEntries(value);
+  const format = items ? text({ kind: 'literal', items }, locale) : value?.kind === 'text' ? value.text : '';
+  const settings = new Map();
+  // Quoted values can contain a separator or a doubled quote.
+  const parameters = /(?:^|;)\s*(\p{L}+)\s*=\s*(?:"((?:""|[^"])*)"|'((?:''|[^'])*)'|([^;]*))\s*(?=;|$)/gu;
+  for (const [, key, double, single, plain] of format.matchAll(parameters)) {
+    settings.set(key.toUpperCase(), double?.replaceAll('""', '"') ?? single?.replaceAll("''", "'") ?? plain.trim());
+  }
+  return settings;
+}
 export function caption(node, state) {
   const view = node?.presentation;
   const value = text(view?.caption, state.locale, state.strings);
@@ -38,8 +64,25 @@ export function caption(node, state) {
     ? (state.strings?.['attribute.TabularTotal'] ?? '{caption}').replace('{caption}', () => value)
     : value;
 }
-export function automaticCommands(node) {
-  return node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
+export function automaticCommands(node, state) {
+  const items = node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
+  return orderedCommands(items, state);
+}
+export function orderedCommands(items, state) {
+  if (!state) return items;
+  const { locale, strings } = state;
+  const collator = new Intl.Collator(locale);
+  const ordered = group => {
+    const generated = group.filter(item => item.orderByCaption);
+    if (generated.length < 2) return group;
+    generated.sort((left, right) => collator.compare(text(left.caption, locale, strings), text(right.caption, locale, strings)));
+    let index = 0;
+    return group.map(item => item.orderByCaption ? generated[index++] : item);
+  };
+  return ordered(items).map(item => {
+    const children = item.items && ordered(item.items);
+    return children === item.items ? item : { ...item, items: children };
+  });
 }
 export function font(value, os) {
   const aliases = { Arial: 'ESKA Taxi Sans', 'Liberation Sans': 'ESKA Taxi Sans', 'Times New Roman': 'ESKA Taxi Serif', 'Liberation Serif': 'ESKA Taxi Serif', 'Courier New': 'ESKA Taxi Mono', 'Liberation Mono': 'ESKA Taxi Mono' };
@@ -116,6 +159,9 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
+const inputChoiceWidth = 20;
+const referenceOpenWidth = 22;
+export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
 
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
@@ -148,15 +194,17 @@ export function inputHeight(node, os) {
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
   return os === 'linux' ? Math.round(line * 20 / 13) : Math.ceil(line * 1.5);
 }
+export function inputRows(node) {
+  if (!flag(node, 'MultiLine', false)) return 1;
+  const explicit = number(node, 'Height');
+  return explicit > 0 ? Math.max(1, explicit) : 2;
+}
 export function inputControlHeight(node, os) {
   const single = inputHeight(node, os);
-  if (!flag(node, 'MultiLine', false)) return single;
-  if (os !== 'linux') return Math.max(2, number(node, 'Height', 3)) * 20;
-  const explicit = number(node, 'Height');
-  const rows = explicit > 0 ? Math.max(1, explicit) : 2;
+  if (os !== 'linux') return flag(node, 'MultiLine', false) ? Math.max(2, number(node, 'Height', 3)) * 20 : single;
   // Linux Designer height units use the control height plus a gap measured at 8–20pt.
   const step = single + (single < 29 ? 5 : 6);
-  return single + (rows - 1) * step;
+  return single + (inputRows(node) - 1) * step;
 }
 export function inputRowHeight(node, os, captioned = true) {
   const height=inputHeight(node,os)+2;
@@ -171,60 +219,65 @@ export function inputTextBaseline(height, value) {
 export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
-  return flag(node, 'ChoiceButton', automatic && !(os === 'linux' && ['number','date'].includes(type.kind) && flag(node, 'ReadOnly', false)));
+  const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
+  return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
   return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
     && (kind === 'string' || !flag(node, 'MultiLine', false))
-    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false)
-    && !(kind === 'string' && inputChoiceButton(node, os));
+    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
 }
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
 }
-export function nativeReferenceInput(node, os) {
+function linuxReferenceWithOpenButton(node, os) {
   return os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'reference'
-    && !flag(node, 'MultiLine', false) && inputChoiceButton(node, os) && flag(node, 'OpenButton')
+    && !flag(node, 'MultiLine', false) && flag(node, 'OpenButton')
     && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+}
+export function nativeReferenceInput(node, os) {
+  return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
   const unit = inputUnit(node);
-  const reference = nativeReferenceInput(node, os);
+  const reference = linuxReferenceWithOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
     if (!native) return Math.max(20, width * unit + 4);
-    const buttons = reference ? 42 : inputChoiceButton(node, os) ? 20 : 0;
+    const buttons = (reference ? referenceOpenWidth : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth : 0);
     return width * 10 + 11 + buttons;
   }
-  if (reference) return Math.round(20 * unit + 1) + 42;
+  if (reference && inputChoiceButton(node, os)) return Math.round(20 * unit + 1) + referenceButtonWidth;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
   if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
-  if (type.kind === 'date') return Math.round(type.dateParts === 'Time' ? 11 * unit + 3 : type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21);
+  if (type.kind === 'date') {
+    if (type.dateParts === 'Time') return Math.round(11 * unit + 3);
+    const width = type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21;
+    return Math.round(width) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
+  }
   if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
   return Math.round(20 * unit + 1);
 }
-export function fieldValue(node, culture) {
+export function fieldValue(node, culture, locale = culture) {
   const type = node.presentation.valueType;
   if (type.kind === 'number') return '0';
   if (type.kind === 'date') {
-    const sample = new Date(2001, 10, 22, 1, 2, 3);
-    const empty = part => ['month', 'day', 'hour', 'minute', 'second'].includes(part.type) ? '  ' : part.type === 'year' ? '    ' : part.value.replaceAll('\u202f', ' ');
-    const date = new Intl.DateTimeFormat(culture, { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(sample).map(empty).join('');
-    const time = new Intl.DateTimeFormat(culture, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(sample).map(empty).join('');
-    return type.dateParts === 'Time' ? time : type.dateParts === 'Date' ? date : `${date} ${time}`;
+    const format = property(node, 'EditFormat')?.value;
+    return emptyDateMask(type.dateParts, culture, format && formatSettings(format, locale));
   }
   return '';
 }
 export function fieldStyle(node, os) {
   const native = linuxSimpleInput(node, os);
   // Native bounds do not change preferred dimensions in the Configurator preview.
-  const maxWidth = native ? 0 : number(node, 'MaxWidth'), minWidth = native ? 0 : number(node, 'MinWidth');
+  const usesLayoutBounds = native || linuxReferenceWithOpenButton(node, os);
+  const maxWidth = usesLayoutBounds ? 0 : number(node, 'MaxWidth'), minWidth = usesLayoutBounds ? 0 : number(node, 'MinWidth');
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
     && !property(node, 'HorizontalStretch') && (native || number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0);
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
@@ -238,7 +291,8 @@ export function fieldStyle(node, os) {
 export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
   if (value?.kind === 'text') return value.text;
-  if (value?.kind === 'localized') return text({ kind: 'literal', items: value.items }, locale);
+  const items = value && localizedEntries(value);
+  if (items) return text({ kind: 'literal', items }, locale);
   if (value?.kind === 'record') return value.fields.map(field => `${field.caption?.[locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}: ${localizedProperty(field.value, locale)}`).join('; ');
   return value?.issue ?? '';
 }

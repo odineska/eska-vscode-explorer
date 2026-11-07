@@ -1,6 +1,6 @@
 import { isRecord } from "./protocol.js";
 
-export type PicturePreview = { status: "ready"; mimeType: string; data: string; fileName: string }
+export type PicturePreview = { status: "ready"; mimeType: string; data: string; fileName: string; isTemplate?: true }
   | { status: "missing" | "unsupported" | "invalid" | "too_large" | "unavailable" };
 
 const mimeTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/bmp", "image/x-icon", "image/webp", "image/svg+xml"]);
@@ -22,8 +22,10 @@ export function picturePreview(value: unknown): PicturePreview | undefined {
   if (value.status === "ready") {
     if (typeof value.mimeType !== "string" || !mimeTypes.has(value.mimeType)
       || !boundedImageData(value.data)
-      || typeof value.fileName !== "string") return { status: "invalid" };
-    return { status: "ready", mimeType: value.mimeType, data: value.data, fileName: value.fileName };
+      || typeof value.fileName !== "string"
+      || (value.isTemplate !== undefined && value.isTemplate !== true)) return { status: "invalid" };
+    return { status: "ready", mimeType: value.mimeType, data: value.data, fileName: value.fileName,
+      ...(value.isTemplate ? { isTemplate: true } : {}) };
   }
   switch (value.status) {
     case "missing": case "unsupported": case "invalid": case "too_large": case "unavailable":

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { frame, until, allocateFormViewport, editFormSource } = require('./webview-host.cjs');
+const { frame, until, allocateFormViewport, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
 const linux = process.platform === 'linux';
 
@@ -98,7 +98,7 @@ exports.run = async () => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(document, {preview:false});
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    const opened = () => [...service.views.values()].find(view => view.path === form.path && view.phase === 'ready');
+    const opened = () => [...service.views.values()].find(view => sameSourcePath(view.path,form.path) && view.phase === 'ready');
     await until(opened, 'numeric label form opened');
     const view = opened(), main = view.frames.get('main');
     const ui = await frame({state:{title:main.panel.title}});

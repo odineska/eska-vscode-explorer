@@ -3,7 +3,16 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
+
+function captionContrast(foreground, background) {
+  const luminance = color => color.match(/[\d.]+/g).slice(0,3).reduce((sum,value,index) => {
+    const channel=Number(value)/255;
+    return sum+[0.2126,0.7152,0.0722][index]*(channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4);
+  },0);
+  const a=luminance(foreground),b=luminance(background);
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
 
 /** Observe only the readonly application form while changing this test container's allocation. */
 async function resizeApplication(ui,index) {
@@ -31,7 +40,7 @@ async function resizeApplication(ui,index) {
 /** Existing application inputs are read only; all reports and screenshots belong to the runner. */
 exports.run=async function(){
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), inputs=JSON.parse(process.env.ESKA_FORM_SAMPLE_PATHS ?? '[]');
-  assert.ok(Array.isArray(inputs)&&inputs.length>0&&inputs.length<=16&&inputs.every(input=>typeof input==='string'&&path.isAbsolute(input)));
+  assert.ok(Array.isArray(inputs)&&inputs.length>0&&inputs.length<=128&&inputs.every(input=>typeof input==='string'&&path.isAbsolute(input)));
   const explorer=await vscode.extensions.all.find(extension=>extension.packageJSON.name==='eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   const results=[];
@@ -40,21 +49,38 @@ exports.run=async function(){
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(input));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     const started=performance.now();await vscode.commands.executeCommand('eska.explorer.previewForm');
     const service=explorer.formPreview;
-    await until(()=>[...service.views.values()].some(view=>view.path===input&&view.phase==='ready'),`application form ${index} model`);
-    const view=[...service.views.values()].find(view=>view.path===input),main=view.frames.get('main');
+    await until(()=>[...service.views.values()].some(view=>sameSourcePath(view.path,input)&&view.phase==='ready'),`application form ${index} model`);
+    const view=[...service.views.values()].find(view=>sameSourcePath(view.path,input)),main=view.frames.get('main');
     const ui=await frame({state:{title:main.panel.title}});
     await until(async()=>await ui.evaluate("!!document.querySelector('.taxi-form-frame')"),'application form DOM');
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-picture-resource')].every(image=>image.complete&&image.naturalWidth>0)"),'application form images');
     const rendered=await ui.evaluate("(()=>{const visible=selector=>[...document.querySelectorAll(selector)].filter(node=>getComputedStyle(node).visibility!=='hidden').length;return {elements:visible('[data-element]'),retainedElements:document.querySelectorAll('[data-element]').length,unsupported:document.querySelectorAll('.taxi-unsupported').length,pictures:visible('.taxi-picture-resource'),incompleteFields:visible('.taxi-input--incomplete'),commandButtons:visible('.taxi-root-commands button'),scrollWidth:document.querySelector('.taxi-form-frame').scrollWidth,scrollHeight:document.querySelector('.taxi-form-frame').scrollHeight}})()");
     assert.equal(rendered.unsupported,0);
+    let titleContrast;
+    if(process.platform==='win32'){
+      const title=await ui.evaluate("(() => {const css=getComputedStyle(document.querySelector('.taxi-form-title'));return {foreground:css.color,background:css.backgroundColor}})()");
+      titleContrast=captionContrast(title.foreground,title.background);
+      assert.ok(titleContrast>=4.5,'selected form title remains readable on its background');
+    }
     const elapsed=Math.round(performance.now()-started);
+    const commandMenus = await ui.evaluate(`(() => {
+      const groups = [...document.querySelectorAll('.taxi-root-commands > [data-command-group]')];
+      return groups.map(group => {
+        const trigger = group.querySelector(':scope > button');
+        trigger.click();
+        const items = [...group.querySelectorAll('[role=menuitem]')].map(item => item.textContent);
+        trigger.click();
+        return { key: group.dataset.commandGroup, label: trigger.getAttribute('aria-label'), items };
+      });
+    })()`);
+    assert.ok(commandMenus.every(menu => menu.items.length > 0), 'generated menus expose their actions');
     await ui.screenshot(`application-form-${index}-${vscode.env.language}.png`);
     const resize=await resizeApplication(ui,index);
     const after=crypto.createHash('sha256').update(await fs.readFile(input)).digest('hex');assert.equal(after,before,'view preserves application XML');
-    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,resize,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
+    results.push({sample:index,openThroughFirstPaintMs:elapsed,...rendered,titleContrast,commandMenus,resize,dependencies:view.snapshot.dependencies.length,assets:view.snapshot.model.assets.length,
       compositionDiagnostics:view.snapshot.model.diagnostics.composition.length,appearanceDiagnostics:view.snapshot.model.diagnostics.appearance.map(item=>item.code)});
-    main.panel.dispose();await until(()=>service.views.size===0,'application session released');await Promise.all([...service.closing]);
+    ui.close();main.panel.dispose();await until(()=>service.views.size===0,'application session released');await Promise.all([...service.closing]);
   }
   await explorer.shutdown();await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formApplication:true,locale:vscode.env.language,sourceWritesDuringViewing:false,results}));
 };

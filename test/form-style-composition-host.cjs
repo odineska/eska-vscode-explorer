@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame}=require('./webview-host.cjs');
+const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 function named(node,name){return node.name===name?node:node.children.map(child=>named(child,name)).find(Boolean);}
 async function replace(document,from,to){
   const text=document.getText();assert.ok(text.includes(from));const edit=new vscode.WorkspaceEdit();
@@ -16,7 +16,7 @@ exports.run=async()=>{
   assert.equal(explorer.connection.state.kind,'ready',JSON.stringify(explorer.connection.state));await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');const service=explorer.formPreview;
   let view,main,ui,identity;
   const expected=id=>files.cases.find(row=>row.id===id).expected;
-  const dependency=file=>view.snapshot.dependencies.find(input=>input.root.encoding==='utf-8'&&input.path.encoding==='utf-8'&&path.join(input.root.value,input.path.value)===file);
+  const dependency=file=>view.snapshot.dependencies.find(input=>input.root.encoding==='utf-8'&&input.path.encoding==='utf-8'&&sameSourcePath(path.join(input.root.value,input.path.value),file));
   const presentation=()=>named(view.snapshot.model.root,'Caption').presentation;
   const css=color=>color.kind==='web'?'rgb(255, 140, 0)':`rgb(${[1,3,5].map(offset=>parseInt(color.value.slice(offset,offset+2),16)).join(', ')})`;
   const matches=want=>{
@@ -31,8 +31,8 @@ exports.run=async()=>{
   async function open(file){
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(file));await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===file,'style XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(()=>[...service.views.values()].some(item=>item.path===file&&item.phase==='ready'),'style form ready');
-    view=[...service.views.values()].find(item=>item.path===file);main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Caption').identity;
+    await until(()=>[...service.views.values()].some(item=>sameSourcePath(item.path,file)&&item.phase==='ready'),'style form ready');
+    view=[...service.views.values()].find(item=>sameSourcePath(item.path,file));main=view.frames.get('main');ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});identity=named(view.snapshot.model.root,'Caption').identity;
     await until(()=>ui.evaluate("!!document.querySelector('.taxi-label')"),'main style DOM');
     await ui.evaluate("globalThis.__styleCaption=document.querySelector('.taxi-label');document.querySelector('.taxi-label').click()");await until(()=>view.selected?.key.value===identity.key.value,'style caption selected');
   }

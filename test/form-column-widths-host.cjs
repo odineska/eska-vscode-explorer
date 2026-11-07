@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const {frame, until, allocateFormViewport, editFormSource} = require('./webview-host.cjs');
+const {frame, until, allocateFormViewport, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
 async function pose(ui, keys, expected) {
   await allocateFormViewport(ui, expected.viewport ?? expected.frame);
@@ -11,23 +11,31 @@ async function pose(ui, keys, expected) {
     await until(async () => {
       actual = await ui.evaluate(`(() => {
         const root=document.querySelector('.taxi-form-frame'), origin=root.getBoundingClientRect();
-        const fields=new Map([...root.querySelectorAll('[data-kind=InputField]')].map(field=>[field.dataset.element,field]));
-        const controls={}, captions={};
+        const fields=new Map([...root.querySelectorAll('.taxi-element--field')].map(field=>[field.dataset.element,field]));
+        const controls={}, captions={}, locations={};
         for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
-          const field=fields.get(key), input=field?.querySelector('.taxi-input');
-          if (!input) continue;
-          const r=input.getBoundingClientRect();
+          const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox,.taxi-picture-field');
+          if (!control) continue;
+          const r=control.getBoundingClientRect();
           controls[name]=[r.x-origin.x,r.y-origin.y,r.width,r.height];
+          locations[name]=field.querySelector('.taxi-field-row').dataset.titleLocation;
           const label=field.querySelector('.taxi-field-label');
           if (!label) continue;
           const wrapped=[...label.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : [label.textContent]};
         }
-        return {frame:[origin.width,origin.height],controls,captions};
+        return {frame:[origin.width,origin.height],controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
+      actual.browserErrors=ui.scriptErrors();
       const tolerance = expected.tolerancePx ?? 0;
-      return actual.frame.every((v,i) => v === expected.frame[i])
-        && Object.entries(expected.controls).every(([name, rect]) =>
+      const aligned = expected.alignedY?.map(name => actual.controls[name]?.[1]);
+      return actual.layout === 'allocated' && actual.browserErrors.length === 0
+        && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
+        && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
+        && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
+          actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
+        && (!aligned || Math.max(...aligned) - Math.min(...aligned) <= tolerance)
+        && Object.entries(expected.controls ?? {}).every(([name, rect]) =>
           actual.controls[name]?.every((value,i) => Math.abs(value-rect[i]) <= tolerance))
         && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
           const caption = actual.captions[name];
@@ -69,8 +77,24 @@ function sourceVariant(xml, edit) {
   for (const [name, width] of Object.entries(edit.widths ?? {})) {
     changed = editField(changed, name, properties => `<Width>${width}</Width>` + properties.replace(/<Width>.*?<\/Width>/u, ''));
   }
+  for (const [name, location] of Object.entries(edit.titleLocations ?? {})) {
+    changed = editField(changed, name, properties =>
+      '<TitleLocation>' + location + '</TitleLocation>' + properties.replace(/<TitleLocation>[^<]+<\/TitleLocation>/u, ''));
+  }
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
+  }
+  if (edit.united) changed = changed.replaceAll('<United>false</United>', '<United>true</United>');
+  for (const [name, settings] of Object.entries(edit.groups ?? {})) {
+    const group = new RegExp(`(<UsualGroup name="${name}" id="\\d+">)([\\s\\S]*?)(<ChildItems>)`, 'u');
+    assert.match(changed, group);
+    changed = changed.replace(group, (_, open, properties, items) => {
+      for (const [tag, value] of Object.entries(settings)) {
+        properties = properties.replace(new RegExp(`<${tag}>[^<]*</${tag}>`, 'u'), '');
+        if (value !== null) properties = `<${tag}>${value}</${tag}>` + properties;
+      }
+      return open + properties + items;
+    });
   }
   if (edit.maximum) {
     changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
@@ -81,14 +105,15 @@ function sourceVariant(xml, edit) {
 
 async function verifyDetached(service, view, main, ui, identity, run) {
   await service.receive(view, main, {type:'select', identity});
-  await until(() => view.selected?.key.value === identity.key.value, 'right column field selected');
+  await until(() => view.selected?.key.value === identity.key.value, 'column field selected');
   const workbench = await ui.nativeWindow();
   await service.receive(view, main, {type:'detach'});
   await until(() => view.frames.get('preview')?.ready, 'column layout detached');
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true, state:{title:preview.panel.title}});
   assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
-  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input')];true");
+  await floating.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
+  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field')];true");
   await run(floating);
   assert.deepEqual(view.selected, identity);
   assert.equal(await floating.evaluate('__widthInputs.length>0 && __widthInputs.every(input=>input.isConnected)'), true);
@@ -109,14 +134,37 @@ exports.run = async () => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
     await vscode.window.showTextDocument(document, {preview:false});
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    await until(() => [...service.views.values()].some(view => view.path === form.path && view.phase === 'ready'), 'column width form opened');
-    const view = [...service.views.values()].find(view => view.path === form.path), main=view.frames.get('main');
+    await until(() => [...service.views.values()].some(view => sameSourcePath(view.path,form.path) && view.phase === 'ready'), 'column width form opened');
+    const view = [...service.views.values()].find(view => sameSourcePath(view.path,form.path)), main=view.frames.get('main');
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
-    const nodes = [...view.nodes.values()].filter(node => node.kind === 'InputField');
+    await ui.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
+    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField'].includes(node.kind));
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);
-    if (process.platform === 'linux') {
+    const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
+    const placements = form.cases[0]?.locations;
+    if (process.platform === 'linux' && (placements || checkbox)) {
+      const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
+      const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+        const wide = checkbox ? form.cases[0] : {name:'wide captions',frame:[1180,250],
+          locations:Object.fromEntries(Object.keys(placements).map(name => [name, 'Left']))};
+        const initial = await pose(floating, keys, wide);
+        if (checkbox) results.push(initial);
+        for (const expected of form.cases.slice(checkbox ? 1 : 0)) {
+          await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
+          const revision = view.snapshot.revision;
+          results.push(await pose(floating, keys, expected));
+          if (expected.viewport?.[0] < expected.frame[0]) {
+            assert.equal(await floating.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
+          }
+          assert.equal(view.snapshot.revision, revision);
+        }
+        await replace(original);
+        await pose(floating, keys, { ...wide, name: wide.name + ' restored', controls: initial.controls });
+      });
+      results.push({label:'detached-caption-placement-'+form.kind, ...observation});
+    } else if (process.platform === 'linux') {
       const revision = view.snapshot.revision;
       for (const expected of form.cases.filter(sample => !sample.edit)) {
         results.push(await pose(ui,keys,expected));
@@ -140,6 +188,36 @@ exports.run = async () => {
             for (const expected of [wide, narrow, wide]) await pose(floating, keys, expected);
             await replace(sourceVariant(changed, 'fixRight'));
             await pose(floating, keys, form.cases.find(row => row.edit === 'fixRight'));
+            await replace(original);
+            await pose(floating, keys, wide);
+            const group = '<UsualGroup name="Left" id="11">';
+            const noGrowth = original.replace(group, group + '<HorizontalStretch>false</HorizontalStretch>');
+            assert.notEqual(noGrowth, original);
+            await replace(noGrowth);
+            results.push(await pose(floating, keys, { ...narrow, name:'automatic-width group shrinks without growing' }));
+            const conditional = noGrowth.replace('<Group>Horizontal</Group>', '<Group>HorizontalIfPossible</Group>');
+            assert.notEqual(conditional, noGrowth);
+            await replace(conditional);
+            await floating.rendered();
+            await floating.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+            const preferred = await floating.evaluate(`(() => {
+              const css = getComputedStyle(document.querySelector('.taxi-form-frame'));
+              return ['width','height'].map(axis => parseFloat(css.getPropertyValue('--taxi-form-preferred-' + axis)));
+            })()`);
+            const [width, height] = preferred;
+            await allocateFormViewport(floating, [Math.floor(width * .67), height]);
+            await until(() => floating.evaluate(`(() => {
+              const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
+              const area = document.querySelector('.preview-scroll');
+              return row.classList.contains('taxi-items--vertical') && area.clientHeight < area.scrollHeight;
+            })()`), 'a wrapped row makes the form scroll vertically');
+            await allocateFormViewport(floating, preferred);
+            await until(() => floating.evaluate(`(() => {
+              const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
+              const area = document.querySelector('.preview-scroll');
+              return row.classList.contains('taxi-items--horizontal') && area.clientHeight === area.scrollHeight;
+            })()`), 'the row returns to horizontal at its preferred size');
+            results.push({label:'conditional-group-restores-horizontal-at-preferred-width', frame:preferred});
             await replace(original);
             await pose(floating, keys, wide);
           });

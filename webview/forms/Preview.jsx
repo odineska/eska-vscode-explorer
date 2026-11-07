@@ -1,5 +1,5 @@
-import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonBackground, text, automaticCommands } from './model.mjs';
+import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
@@ -20,9 +20,13 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
-import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
-import { NativeStandardPicture } from './NativeStandardPicture.jsx';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
+import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
+import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
+import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
+import { commandBarContent } from './command-bar-model.mjs';
+import { positionCommandMenu } from './command-menu-position.js';
+import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
   const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
@@ -49,11 +53,18 @@ function BrowserIcon(props) {
     <Match when={/Help/.test(props.name)}><text x="8" y="13" text-anchor="middle" font-size="15" fill="#424242">?</text></Match>
   </Switch></svg>;
 }
+function CommonPicture(props) {
+  const source = () => `data:${props.image.mimeType};base64,${props.image.data}`;
+  const image = () => <img class="taxi-picture-resource" src={source()} alt="" draggable="false"/>;
+  return <Show when={props.image.isTemplate} fallback={image()}>
+    <TemplatePicture source={source()}/>
+  </Show>;
+}
 function Picture(props) {
-  const picture = () => props.node.presentation.picture;
+  const picture = () => props.picture ?? props.node?.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
-  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
-    <Match when={picture()?.kind === 'common' && image()}><img class="taxi-picture-resource" src={`data:${image().mimeType};base64,${image().data}`} alt="" draggable="false"/></Match>
+  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
+    <Match when={picture()?.kind === 'common' && image()}>{asset => <CommonPicture image={asset()}/>}</Match>
   </Switch>;
 }
 export function CommandButton(props) {
@@ -64,18 +75,29 @@ export function CommandButton(props) {
   const [borderPaint, setBorderPaint] = createSignal();
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node?.kind === 'Button' && ['Hyperlink', 'CommandBarHyperlink'].includes(scalar(props.node, 'Type'));
-  const representation = () => props.iconOnly ? 'Picture' : props.node ? scalar(props.node, 'Representation', 'Auto') : 'Auto';
-  const cancelSearchPicture = () => representation() === 'Picture' && !props.node?.presentation.picture
+  const sourcePicture = () => props.node?.presentation.picture ?? props.command?.picture;
+  const declaredMode = () => scalar(props.node, 'Representation', 'Auto');
+  const cancelSearchPicture = () => declaredMode() === 'Picture' && !sourcePicture()
     && tableSearchReference(scalar(props.node, 'CommandName'))?.action === 'CancelSearch';
   const pictureName = () => props.picture ?? (cancelSearchPicture() ? 'StdPicture.CancelSearch' : undefined);
-  const picture = () => pictureName() ?? props.node?.presentation.picture;
+  const representation = () => {
+    if (props.iconOnly || cancelSearchPicture()) return 'Picture';
+    return props.node?.presentation.buttonRepresentation ?? props.command?.buttonRepresentation ?? declaredMode();
+  };
+  const iconOnly = () => representation() === 'Picture';
+  const picture = () => representation() === 'Text' ? undefined : pictureName() ?? sourcePicture();
   const linkCalibrated = () => props.node.presentation.font.points === 10 && props.node.presentation.font.weight === 400
     && !picture() && !props.dropdown && !props.menu && flag(props.node, 'Enabled');
   const primary = () => (props.primary || flag(props.node, 'DefaultButton', false))
     && !(props.controller.state.os === 'linux' && property(props.node, 'BackColor'));
-  const nativeIcon = createMemo(() => props.iconOnly && !!standardPicture(props.picture, props.pictureVariant));
-  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!props.iconOnly || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
-    && !link() && (representation() !== 'Picture' || nativeIcon()) && (!picture() || nativeIcon())
+  const nativeIcon = createMemo(() => {
+    if (!iconOnly()) return false;
+    const value = picture();
+    if (typeof value === 'string') return !!standardPicture(value, props.pictureVariant);
+    return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
+  });
+  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
+    && !link() && (!picture() || nativeIcon())
     && (primary() || flag(props.node, 'Enabled'));
   const background = () => props.controller.state.os === 'linux' && primary()
     ? props.controller.state.model.importantColor : props.node?.presentation.background;
@@ -106,14 +128,18 @@ export function CommandButton(props) {
       return { padding: '0 1px' };
     }
     if (props.controller.state.os === 'linux' && nativeIcon()) return { 'background-image': backgroundImage() };
-    if (props.controller.state.os !== 'linux' || props.bar || props.help || props.iconOnly || link() || representation() === 'Picture') return {};
+    if (props.controller.state.os !== 'linux' || props.bar || props.help || iconOnly() || link()) return {};
     if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
     const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px`, 'line-height': `${value.lineHeight}px`,
+    const pictureWithText = props.rootBar && !!picture() && !!label();
+    const leftPadding = pictureWithText ? 5 : value.horizontalPadding;
+    return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px ${value.verticalPadding}px ${leftPadding}px`,
+      'line-height': `${value.lineHeight}px`,
+      'column-gap': pictureWithText ? '8px' : undefined, 'justify-content': pictureWithText ? 'flex-start' : undefined,
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
-    automatic:!props.help && representation() !== 'Picture' && number(props.node,'Width') <= 0,
+    automatic:!props.help && !iconOnly() && number(props.node,'Width') <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   createEffect(() => { measuredWidth(); formLayout?.invalidate(); });
@@ -123,34 +149,47 @@ export function CommandButton(props) {
     report(value ? parseFloat(value) : undefined);
     onCleanup(() => report(undefined));
   });
-  return <button ref={button} type="button" data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
+  return <button ref={button} type="button" data-command-key={props.command?.key}
+    data-table-search-control={props.node?.kind === 'SearchControlAddition' ? '' : undefined} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
-    'taxi-button--icon-only': props.iconOnly || cancelSearchPicture(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': representation() === 'Picture' }}
+    'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
-    <Show when={picture() && representation() !== 'Text'}><Show when={props.node && !pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={!props.node || flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} controller={props.controller}/></Show></Show><Show when={representation() !== 'Picture'}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show><Show when={!iconOnly()}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
     <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
 }
-function hasRootCommands(node) {
-  return (node.presentation.autoCommandItems?.length ?? node.presentation.autoCommands.length) > 0
-    || node.auxiliary.some(node => node.kind === 'AutoCommandBar' && node.children.some(child => child.presentation.displayed));
-}
 function RootCommands(props) {
-  const state = props.controller.state, node = () => props.node;
-  const bar = () => node().auxiliary.find(node => node.kind === 'AutoCommandBar');
-  const commands = () => automaticCommands(node());
-  return <Show when={scalar(node(), 'CommandBarLocation') !== 'None' && hasRootCommands(node())}>
-    <div class="taxi-root-commands"><For each={commands()}>{item => <CommandButton controller={props.controller} label={text(item.caption,state.locale,state.strings)} primary={item.primary}/>}</For>
-      <For each={bar()?.children.filter(node => node.presentation.displayed) ?? []}>{node => <Element node={node} controller={props.controller}/>}</For>
-      <div class="taxi-command-spacer"/><CommandButton controller={props.controller} label={state.strings.more} dropdown/><CommandButton controller={props.controller} label="?" help/>
-    </div>
-  </Show>;
+  const state = props.controller.state, placement = () => props.placement;
+  return <div class="taxi-root-commands" data-root-command-overflow={placement().more ? '' : undefined}>
+    <For each={placement().inline}>{(item, index) =>
+      <div data-root-command="" data-root-command-section={startsRootCommandSection(placement().inline[index() - 1], item) ? '' : undefined}>
+        <Show when={menuNode(item)} fallback={
+          <Show when={item.items?.length} fallback={
+            <CommandButton controller={props.controller} command={item} label={menuCaption(item, state)} primary={item.primary} rootBar/>
+          }>
+            <PopupMenu command={item} label={menuCaption(item, state)} controller={props.controller} nativeDropdown/>
+          </Show>
+        }>
+          {node => <Element node={node()} controller={props.controller} rootBar/>}
+        </Show>
+      </div>
+    }</For>
+    <Show when={placement().more || placement().help}><div class="taxi-command-spacer"/></Show>
+    <Show when={placement().more}>
+      <div data-root-command-tail=""><PopupMenu rootMenu rows={placement().rows()} label={state.strings.more} controller={props.controller}/></div>
+    </Show>
+    <Show when={placement().help}>
+      <div data-root-command-tail=""><CommandButton controller={props.controller} label="?" help/></div>
+    </Show>
+  </div>;
 }
 export function Preview(props) {
   const state = props.controller.state, root = () => state.model.root;
+  const placement = createMemo(() => rootCommandPlacement(root(), state));
+  const hasCommands = () => scalar(root(), 'CommandBarLocation') !== 'None' && (placement().inline.length || placement().more);
   let viewport, preview, frame;
   const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame);
   const frameStyle = () => ({
@@ -161,17 +200,20 @@ export function Preview(props) {
     '--taxi-form-initial-height': layout.authoredHeight() ? `${layout.authoredHeight() - 4}px` : undefined,
     '--taxi-form-preferred-width': `${layout.preferred().width}px`,
     '--taxi-form-preferred-height': `${layout.preferred().height}px`,
+    '--taxi-form-items-min-height': layout.tableFormScroll() ? `${layout.itemsMinimumHeight()}px` : undefined,
     'min-width': '28px',
   });
   return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }}
-        data-authored-height={layout.authoredHeight() ? '' : undefined} style={frameStyle()}
+        data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.tableFormScroll() ? '' : undefined}
+        style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
-        <div class="taxi-form-content" classList={{ "taxi-form-content--commands": scalar(root(), "CommandBarLocation") !== "None" && hasRootCommands(root()) }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
-          <RootCommands node={root()} controller={props.controller}/><Items node={root()} controller={props.controller}/>
+        <div class="taxi-form-content" classList={{ "taxi-form-content--commands": !!hasCommands() }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
+          <Show when={hasCommands()}><RootCommands placement={placement()} controller={props.controller}/></Show>
+          <Items node={root()} controller={props.controller}/>
         </div>
       </div>
     </div>
@@ -180,7 +222,18 @@ export function Preview(props) {
 export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
-  const children = () => props.node.children.filter(displayedInPreview);
+  const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
+  const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
+  const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
+  const alignment = {Top:'start', Center:'center', Bottom:'end'};
+  const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
+  const contentAlignment = createMemo(() => {
+    if (!nativeGroup()) return;
+    const nodes = children();
+    const onlyChild = nodes.length === 1 && alignment[scalar(nodes[0], 'GroupVerticalAlign')];
+    return onlyChild || inheritedAlignment()
+      || (number(props.node, 'Height') > 0 ? 'var(--taxi-inherited-vertical-align, start)' : undefined);
+  });
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
     && children().length > 0 && children().every(node => node.kind === 'Button');
   const uniform = () => buttonRow() && children().every(node => scalar(node, 'Type', 'UsualButton') === 'UsualButton' && number(node, 'Width') <= 0);
@@ -211,12 +264,21 @@ export function Items(props) {
   });
   const tracks = axis => {
     const dimension = axis === 'x' ? 'width' : 'height';
-    return children().map(node => layout?.stretch(node, axis)
-      ? `minmax(${layout.minimumFor(node)?.[dimension] ?? 0}px, ${stretchWeight(node, axis)}fr)` : 'max-content').join(' ');
+    return children().map(node => {
+      const minimum = layout?.minimumFor(node)?.[dimension] ?? 0;
+      if (layout?.stretch(node, axis)) return `minmax(${minimum}px, ${stretchWeight(node, axis)}fr)`;
+      if (axis === 'x' && groupCanShrink(node, props.controller.state.os, props.controller.state.model.root)) {
+        const preferred = layout?.preferredWidthFor(node);
+        const limit = preferred === undefined ? 'max-content' : `${Math.max(minimum, preferred)}px`;
+        return `minmax(${minimum}px, ${limit})`;
+      }
+      return 'max-content';
+    }).join(' ');
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
-    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
-    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)}
+    data-content-vertical-align={contentAlignment() ? '' : undefined}
+    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
   </div>;
@@ -231,7 +293,7 @@ function Pages(props) {
   return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
     <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist" style={{height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined}}><For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()} pageBackground={pages().find(page=>page.key===selected())?.presentation.background} pageHasBackground={!!property(pages().find(page=>page.key===selected()),'BackColor')} pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} active={page.key === selected()}/>}</For></div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
-      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller}/></div>}</For></div>
+      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {
@@ -272,74 +334,200 @@ function Group(props) {
 function CommandBar(props) {
   const state = props.controller.state, node = () => props.node;
   const root = () => state.model.root;
-  const source = createMemo(() => commandSourceTable(root(), node()));
+  const commands = createMemo(() => commandBarContent(root(), node()));
+  const source = () => commands().source;
+  const hasSearch = () => !!tableSearch(source());
   const additions = createMemo(() => {
     const projection = tableAdditionsProjection(root(), source());
     return projection?.bar.key === node().key ? projection : undefined;
   });
-  const hasSearch = () => !!tableSearch(source());
-  const commands = createMemo(() => {
-    const inline = [], trailing = [], additional = [];
-    let hasOverflow = !!source(), tableCommands = !!source(), advancedSearch = false;
-    for (const child of node().children) {
-      if (!child.presentation.displayed) continue;
-      const command = scalar(child, 'CommandName');
-      const searchReference = tableSearchReference(command);
-      if (!availableTableSearchCommand(root(), searchReference)) continue;
-      tableCommands ||= !!searchReference;
-      const customize = command === 'Form.StandardCommand.CustomizeForm';
-      const location = scalar(child, 'LocationInCommandBar', 'Auto');
-      const usesSearch = hasSearch() && searchReference?.table === source()?.name;
-      if (usesSearch && location === 'Auto') continue;
-      if (location === 'InAdditionalSubmenu' || customize && location === 'Auto') {
-        additional.push(child);
-        hasOverflow = true;
-        continue;
-      }
-      if (usesSearch && searchReference.action === 'Find') advancedSearch = true;
-      (customize ? trailing : inline).push(child);
-      if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
-    }
-    return { inline, trailing, more: hasOverflow ? additional : [], tableCommands, advancedSearch };
+  const menu = createMemo(() => {
+    const table = source();
+    if (!table || !node().presentation.tableCommandMenu) return menuItems(commands().more);
+    const declared = [...new Set([...commands().inline, ...commands().more, ...commands().trailing])];
+    return tableCommandRows(table, declared, [], node().presentation.tableCommandMenu);
   });
   const commandLabel = child => {
     const reference = tableSearchReference(scalar(child, 'CommandName'));
     return hasSearch() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
-  return <div class="taxi-command-bar" data-table-commands={commands().tableCommands ? '' : undefined}
+  return <div class="taxi-command-bar" data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
     <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
       spacer={commands().tableCommands && (source() || commands().more.length)}/>
-    <Show when={commands().more.length} fallback={<Show when={source()}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
-      <PopupMenu items={commands().more} label={state.strings.more} controller={props.controller} nativeDropdown/>
+    <Show when={menu().length} fallback={<Show when={source()}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
+      <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
     </Show>
     <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
 }
-function PopupMenu(props) {
-  const [open, setOpen] = createSignal(false), [active, setActive] = createSignal(0);
-  let container;
-  const children = () => props.items ?? props.node.children.filter(node => node.presentation.displayed);
+export function PopupMenu(props) {
+  const [open, setOpen] = createSignal(false);
+  let container, handleMenuKey;
+  const trigger = () => container.querySelector(':scope > button');
+  const close = () => {
+    setOpen(false);
+    trigger()?.focus({ preventScroll: true });
+  };
   createEffect(() => {
     if (!open()) return;
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
     document.addEventListener('pointerdown', outside);
     onCleanup(() => document.removeEventListener('pointerdown', outside));
+    if (props.tableBar) {
+      const observer = new MutationObserver(() => {
+        if (container.hasAttribute('data-table-command-hidden')) setOpen(false);
+      });
+      observer.observe(container, { attributeFilter: ['data-table-command-hidden'] });
+      onCleanup(() => observer.disconnect());
+    }
   });
-  const focus = index => { const items = container.querySelectorAll(':scope > [role=menu] > [role=menuitem]'); if (!items.length) return; const next = (index + items.length) % items.length; setActive(next); items[next]?.focus(); };
-  return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined} ref={container} onKeyDown={event => {
-    if (event.key === 'Escape') { event.stopPropagation(); setOpen(false); container.querySelector(':scope > button')?.focus(); }
-    else if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); const wasOpen = open(); setOpen(true); focus(wasOpen ? active() + (event.key === 'ArrowDown' ? 1 : -1) : 0); }
-  }}>
-    <CommandButton node={props.node} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
-      onClick={() => { setOpen(!open()); if (open()) focus(0); }}/>
-    <Show when={open()}><div role="menu" class="taxi-menu"><For each={children()}>{(child, index) => <button type="button" role="menuitem" classList={{ active: active() === index() }}
-      aria-disabled={!flag(child, 'Enabled')} onMouseEnter={() => setActive(index())} onClick={event => { event.stopPropagation(); props.controller.select(child); setOpen(false); }}>
-      <Show when={child.presentation.picture}><Picture node={child} controller={props.controller}/></Show>{caption(child, props.controller.state)}
-    </button>}</For></div></Show>
+  const children = () => props.rows ?? menuItems(props.command?.items ?? props.items ?? menuChildren(props.node));
+  return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined}
+    data-command-group={props.command?.key} data-root-menu={props.rootMenu ? '' : undefined}
+    data-table-more={props.tableBar ? '' : undefined}
+    ref={container} onKeyDown={event => {
+      if (event.target !== container && event.target !== trigger()) return;
+      if (open()) handleMenuKey?.(event);
+      else if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+        event.preventDefault();
+        setOpen(true);
+      }
+    }}>
+    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
+      onClick={() => setOpen(!open())}/>
+    <Show when={open()}>
+      <MenuLevel rows={children()} anchor={trigger} close={close} dismiss={close} controller={props.controller}
+        rootMenu={props.rootMenu} tableMenu={props.tableMenu} floating={props.tableBar} registerKeyHandler={handler => { handleMenuKey = handler; }} focusOnMount/>
+    </Show>
+  </div>;
+}
+
+const menuFont = { points: 10, weight: 400 };
+
+function MenuLevel(props) {
+  const [active, setActive] = createSignal(0);
+  const [expanded, setExpanded] = createSignal();
+  const [activeInk, setActiveInk] = createSignal();
+  const floating = () => props.rootMenu || props.nested || props.floating;
+  const state = props.controller.state;
+  let menu;
+  const rowSelector = ':scope > [role=menuitem]:not([aria-disabled=true]), :scope > .taxi-submenu > [role=menuitem]:not([aria-disabled=true])';
+  const focus = index => {
+    const items = [...menu.querySelectorAll(rowSelector)];
+    if (!items.length) return;
+    const item = items[(index + items.length) % items.length];
+    setActive(Number(item.dataset.menuIndex));
+    item.focus({ preventScroll: true });
+    item.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+  const handleKey = event => {
+    if (event.key === 'Escape' || props.nested && event.key === 'ArrowLeft') {
+      event.stopPropagation();
+      event.preventDefault();
+      props.close();
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.stopPropagation();
+      event.preventDefault();
+      setExpanded(undefined);
+      const items = [...menu.querySelectorAll(rowSelector)];
+      const index = items.findIndex(item => Number(item.dataset.menuIndex) === active());
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+        : index + (event.key === 'ArrowDown' ? 1 : -1);
+      focus(next);
+    }
+  };
+  onMount(() => {
+    props.registerKeyHandler?.(handleKey);
+    onCleanup(() => props.registerKeyHandler?.(undefined));
+    if (floating()) positionCommandMenu(menu, props.anchor(), props.nested);
+    if (props.focusOnMount) focus(0);
+  });
+  const activity = () => color(state.model.activityColor) || 'var(--taxi-ActivityColor)';
+  const native = () => (props.rootMenu || props.tableMenu) && state.os === 'linux';
+  const menuWidth = createMemo(() => {
+    if (!native()) return;
+    const advances = props.rows.filter(item => item !== menuSeparator)
+      .map(item => designCaptionWidth(menuCaption(item, state, true), menuFont));
+    // Add the icon and shortcut gutters and the two panel borders.
+    if (!advances.every(Number.isFinite)) return;
+    const maximum = Math.max(0, ...advances);
+    if (props.tableMenu && (!props.nested || props.rows.some(item => item !== menuSeparator && menuShortcut(item)))) {
+      return `${Math.max(state.locale.startsWith('ru') ? 377 : 335, maximum + 156)}px`;
+    }
+    return `${106 + maximum}px`;
+  });
+  createEffect(() => {
+    if (!props.rootMenu && !props.tableMenu) return;
+    activity(); active();
+    const selected = menu.querySelector('.active');
+    const background = selected && rgb(getComputedStyle(selected).backgroundColor);
+    const ink = background ? primaryForeground(background) : undefined;
+    setActiveInk(ink === undefined ? undefined : `rgb(${ink}, ${ink}, ${ink})`);
+  });
+  return <div role="menu" class="taxi-menu" data-root-menu-level={props.rootMenu ? '' : undefined} data-table-menu-level={props.tableMenu ? '' : undefined}
+    data-floating-menu={floating() ? '' : undefined}
+    style={{ ...(native() ? linuxControlFont(menuFont) : {}), '--taxi-menu-natural-width': menuWidth() ?? 'max-content',
+      'min-width': native() && menuWidth() ? '0' : undefined,
+      '--taxi-menu-activity': props.rootMenu || props.tableMenu ? activity() : undefined, '--taxi-menu-activity-ink': activeInk() }}
+    ref={menu} onClick={event => event.stopPropagation()} onKeyDown={handleKey}>
+    <For each={props.rows}>{(item, index) => {
+      if (item === menuSeparator) return <div class="taxi-menu-divider" role="separator"/>;
+      const node = menuNode(item), children = createMemo(() => menuChildren(item, state));
+      const submenu = () => children().length > 0, opened = () => expanded() === item.key;
+      const picture = () => menuPicture(item, props.rootMenu);
+      const enabled = () => menuEnabled(item);
+      const label = () => menuCaption(item, state, props.rootMenu);
+      let button;
+      const enter = () => {
+        setExpanded(item.key);
+        queueMicrotask(() => button?.nextElementSibling?.querySelector(rowSelector)?.focus());
+      };
+      const row = <button ref={button} type="button" role="menuitem" tabIndex={-1}
+        data-menu-index={index()} classList={{ active: active() === index() }}
+        aria-label={label()}
+        aria-disabled={!enabled()} aria-haspopup={submenu() ? 'menu' : undefined} aria-expanded={submenu() ? opened() : undefined}
+        onFocus={() => setActive(index())}
+        onMouseEnter={() => {
+          if (!enabled()) return;
+          setActive(index());
+          setExpanded(submenu() ? item.key : undefined);
+        }}
+        onKeyDown={event => {
+          if (event.key === 'ArrowRight' && submenu() && enabled()) { event.preventDefault(); event.stopPropagation(); enter(); }
+        }}
+        onClick={event => {
+          event.stopPropagation();
+          if (!enabled()) return;
+          if (node) props.controller.select(node);
+          if (submenu()) enter();
+          else props.dismiss();
+        }}>
+        <Show when={picture()}><Picture node={node} picture={picture()} pictureVariant={props.tableMenu ? 'tableMenu' : undefined} controller={props.controller}/></Show>
+        <Show when={native()} fallback={label()}>
+          <NativeLabel enabled placement="menuItem" text={label()} font={menuFont} runtime={props.controller.nativeText}/>
+        </Show>
+        <Show when={(props.rootMenu || props.tableMenu) && menuShortcut(item)}>{shortcut =>
+          <span class="taxi-menu-shortcut" style={native() ? { top: '0', height: '30px', width: `${designCaptionWidth(shortcut(), menuFont)}px`, 'text-align': 'left' } : undefined}>
+            <Show when={native()} fallback={shortcut()}>
+              <NativeLabel enabled placement="menuItem" text={shortcut()} font={menuFont} runtime={props.controller.nativeText}/>
+            </Show>
+          </span>
+        }</Show>
+        <Show when={submenu()}><span class="taxi-submenu-arrow" aria-hidden="true"/></Show>
+      </button>;
+      return <Show when={submenu()} fallback={row}>
+        <div role="none" class="taxi-submenu">{row}
+          <Show when={opened()}>
+            <MenuLevel rows={children()} anchor={() => button} nested rootMenu={props.rootMenu} tableMenu={props.tableMenu} controller={props.controller}
+              close={() => { setExpanded(undefined); button.focus({ preventScroll: true }); }} dismiss={props.dismiss}/>
+          </Show>
+        </div>
+      </Show>;
+    }}</For>
   </div>;
 }
 function Input(props) {
@@ -347,6 +535,10 @@ function Input(props) {
   const [paint,setPaint] = createSignal();
   const node = () => props.node, state = props.controller.state;
   const kind = () => node().presentation.valueType.kind;
+  const value = createMemo(() => fieldValue(node(), state.culture, state.locale));
+  const hint = () => localizedProperty(property(node(), 'InputHint')?.value, state.locale);
+  const listChoice = () => flag(node(), 'ListChoiceMode', false);
+  const choiceKind = () => listChoice() ? 'list' : kind() === 'date' ? 'calendar' : kind() === 'number' ? 'calculator' : 'choice';
   const multiline = () => flag(node(), 'MultiLine', false);
   const controlHeight = () => inputControlHeight(node(), state.os);
   const verticalOffset=()=>{
@@ -358,9 +550,9 @@ function Input(props) {
     classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), '--taxi-input-outset': fieldStyle(node(),state.os)['min-width'] === 'calc(100% - 1px)' ? '1px' : '0px', top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>
     <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}/>
-    <Switch><Match when={multiline()}><textarea readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
-      <Match when={true}><input ref={valueInput} readOnly value={fieldValue(node(), state.culture)} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && ['number','date'].includes(kind()) && ((flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)) || !!paint())} placement="input" mask={kind()==='date'} target={()=>valueInput} text={fieldValue(node(),state.culture)} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
-    <Show when={inputChoiceButton(node(),state.os)}><span class="taxi-input-button" classList={{'taxi-input-button--choice':true,'taxi-input-button--number':kind() === 'number'}}>{kind() === 'date' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))} fallback={<Icon name="Calendar"/>}/></Show> : kind() === 'number' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))}/></Show> : '▾'}</span></Show>
+    <Switch><Match when={multiline()}><textarea readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
+      <Match when={true}><input ref={valueInput} readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && ['number','date'].includes(kind()) && ((flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)) || !!paint())} placement="input" mask={kind()==='date'} target={()=>valueInput} text={value()} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
+    <Show when={inputChoiceButton(node(),state.os)}><span class="taxi-input-button" data-choice-kind={choiceKind()} classList={{'taxi-input-button--choice':true,'taxi-input-button--number':choiceKind() === 'calculator'}}>{choiceKind() === 'calendar' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))} fallback={<Icon name="Calendar"/>}/></Show> : choiceKind() === 'calculator' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))}/></Show> : listChoice() ? '▾' : '...'}</span></Show>
     <Show when={flag(node(), 'OpenButton', kind() === 'reference')}><span class="taxi-input-button"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
     <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
     <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
@@ -370,16 +562,22 @@ function Field(props) {
   const node = () => props.node, state = props.controller.state;
   const title = () => caption(node(), state);
   const checkbox = () => node().kind === 'CheckBoxField';
-  const titleLocation = () => checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const tooltip = () => scalar(node(), 'ToolTipRepresentation') === 'Button'
+    ? localizedProperty(property(node(), 'ToolTip')?.value, state.locale)
+      || localizedProperty(property(node().auxiliary.find(item=>item.kind==='ExtendedTooltip'), 'Title')?.value, state.locale)
+    : '';
+  const layout = useFormLayout();
+  const titleLocation = () => layout?.titleAbove(node()) ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
-  const layout = useFormLayout();
   const allocatedCaption = () => layout?.captionFor(node());
   const inputCaption = () => node().kind === 'InputField' ? allocatedCaption() : undefined;
+  const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
-      && ['Left', 'Right'].includes(titleLocation())) && flag(node(), 'Enabled'))}/>;
+      && sideTitle()) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const referenceTitleWidth = createMemo(() => titleLocation() === 'Left' && nativeReferenceInput(node(), state.os)
@@ -396,10 +594,11 @@ function Field(props) {
     const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
     const reference = referenceTitleWidth();
     const titleWidth = numericWidth() ?? (reference === undefined ? undefined : reference + inputCaptionInset);
+    const wrapped = checkboxCaption() || (inputCaption() && sideTitle());
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-field-caption-width, ${titleWidth}px)`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
-      'line-height': numericLabel() ? `${fontLineHeight(labelFont())}px` : undefined,
+      'line-height': numericLabel() || wrapped ? `${fontLineHeight(labelFont())}px` : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
@@ -407,25 +606,28 @@ function Field(props) {
     <Match when={checkbox()}><CheckBoxControl {...props}/></Match>
     <Match when={node().kind === 'RadioButtonField'}><RadioChoices {...props}/></Match>
     <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" data-numeric-label={numericLabel() ? '' : undefined} style={labelValueStyle()}>
-      {node().presentation.valueType.kind === 'number' ? '' : fieldValue(node(), state.culture)}
+      {node().presentation.valueType.kind === 'number' ? '' : fieldValue(node(), state.culture, state.locale)}
     </span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>
-    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={{ width: `${number(node(), 'Width') > 0 ? number(node(), 'Width') * 8 : 122}px`, height: `${number(node(), 'Height') > 0 ? number(node(), 'Height') * 20 : 120}px` }}><Picture node={node()} controller={props.controller}/></span></Match>
+    <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={pictureFieldStyle(node(), state.os)}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
   return <div class="taxi-field-row" data-title-location={titleLocation()}
     data-wrapped-input-caption={inputCaption() ? '' : undefined}
+    data-wrapped-checkbox-caption={checkboxCaption() ? '' : undefined}
     data-numeric-label-title={numericLabel() ? '' : undefined}
-    data-multiline={state.os === 'linux' && node().kind === 'InputField' && flag(node(), 'MultiLine', false) ? '' : undefined} style={{ 'min-height': numericLabel() ? '0' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
+    data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? '0' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}>
       <label class="taxi-field-label" aria-label={label()} style={labelStyle()}>
-        <Show when={inputCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>
+        <Show when={inputCaption() || checkboxCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>
           {text => <For each={text().split('\n')}>{line =>
             <span class="taxi-field-caption-line">{nativeLabel(() => line)}</span>}</For>}
         </Show>
       </label>
     </Show>
-    <div class="taxi-field-control">{control()}</div>
+    <div class="taxi-field-control" data-tooltip-button={tooltip() ? '' : undefined}>{control()}
+      <Show when={tooltip()}>{tip=><span class="taxi-field-tooltip" data-field-tooltip="" title={tip()} aria-label={tip()}>?</span>}</Show>
+    </div>
   </div>;
 }
 function LabelDecoration(props) {
@@ -444,9 +646,13 @@ function LabelDecoration(props) {
 }
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
-  const bounds = axis => controlBounds(node(), axis, undefined, state.os, layout?.atPreferred(axis));
+  const bounds = axis => controlBounds(node(), axis, undefined, state.os, {
+    atPreferred: layout?.atPreferred(axis),
+    authoredHeight: axis === 'y' && (props.heightConstrained || !!layout?.authoredHeight()),
+  });
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
+  const horizontalMaximum = createMemo(() => horizontalInputMaximum(node(), state.os));
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
   const layoutStyle = () => ({
     ...font(node().presentation.font, state.os),
@@ -458,8 +664,9 @@ export function Element(props) {
     '--taxi-control-max-width': x().maximum ? `${x().maximum}px` : undefined,
     '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
+    '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
-  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node(), state.model.root)}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-compact-command-bars={compactCommandBarGroup(node(), state.model.root) ? '' : undefined} data-horizontal-location={node().kind === 'CommandBar' ? scalar(node(), 'HorizontalLocation', 'Left') : undefined} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os, state.model.root) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>
