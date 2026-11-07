@@ -25,7 +25,7 @@ export type FormPicture = { kind: "standard"; name: string } | { kind: "common";
 export type ButtonRepresentation = "Text" | "Picture" | "PictureAndText";
 interface AutoCommandItem {
   key: string; caption: FormText; primary: boolean; origin: Origin | null;
-  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; orderByCaption?: boolean; items?: AutoCommandItem[];
+  picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; orderByCaption?: boolean; shortcut?: string; enabled?: boolean; beginGroup?: boolean; items?: AutoCommandItem[];
 }
 export interface Presentation {
   united?: boolean | null;
@@ -40,6 +40,7 @@ export interface Presentation {
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
   autoCommandItems?: AutoCommandItem[];
   objectCommandMenu?: AutoCommandItem[][];
+  tableCommandMenu?: AutoCommandItem[][];
 }
 export interface FormNode { identity: ElementIdentity; origin: Origin; kind: string | null; name: string | null; xmlName: PropertyKey; properties: FormProperty[]; presentation: Presentation; children: FormNode[]; auxiliary: FormNode[] }
 type PaletteCaption = { "ru-RU": string; "en-US": string };
@@ -121,8 +122,14 @@ function autoCommandItem(item: unknown, assets: ReadonlySet<string>, nested: boo
   return isRecord(item) && typeof item.key === "string" && text(item.caption) && typeof item.primary === "boolean"
     && (item.origin === null || origin(item.origin)) && (item.orderByCaption === undefined || typeof item.orderByCaption === "boolean")
     && (item.picture === undefined || formPicture(item.picture, assets)) && buttonRepresentation(item.buttonRepresentation)
+    && (item.shortcut === undefined || typeof item.shortcut === "string" && item.shortcut.length > 0 && item.shortcut.length <= 64)
+    && ["enabled", "beginGroup"].every(key => item[key] === undefined || typeof item[key] === "boolean")
     && (item.items === undefined || !nested && Array.isArray(item.items) && item.items.length > 0
       && autoCommandItems(item.items, assets, true));
+}
+function commandSections(value: unknown, assets: ReadonlySet<string>): boolean {
+  return value === undefined || Array.isArray(value) && value.length <= 8
+    && value.every(group => autoCommandItems(group, assets));
 }
 function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
   return isRecord(value) && (value.picture === null || formPicture(value.picture, assets))
@@ -136,8 +143,7 @@ function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
     && (value.united === undefined || value.united === null || typeof value.united === "boolean")
     && (value.binding === null || origin(value.binding)) && Array.isArray(value.choices) && value.choices.every(text) && Array.isArray(value.autoCommands) && value.autoCommands.every(value => typeof value === "string")
     && (value.autoCommandItems === undefined || autoCommandItems(value.autoCommandItems, assets))
-    && (value.objectCommandMenu === undefined || Array.isArray(value.objectCommandMenu) && value.objectCommandMenu.length <= 8
-      && value.objectCommandMenu.every(group => autoCommandItems(group, assets)));
+    && commandSections(value.objectCommandMenu, assets) && commandSections(value.tableCommandMenu, assets);
 }
 export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(value) || !isRecord(value.capabilities) || value.capabilities.formPreview === undefined) return undefined;

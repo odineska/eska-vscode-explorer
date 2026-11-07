@@ -335,6 +335,9 @@ async function verifyDynamicToolbar(document, view, ui, english) {
         await ui.evaluate("document.querySelector('[data-table-more] > button').click()");
         assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].slice(0,2).map(item=>item.getAttribute('aria-label'))"),
           english ? ['Create','Copy'] : ['Создать','Скопировать']);
+        const menuLabels = await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].map(item=>item.getAttribute('aria-label'))");
+        for (const label of english ? ['Configure list...','Restore default settings','Search management'] : ['Настроить список...','Установить стандартные настройки','Управление поиском'])
+          assert.ok(menuLabels.includes(label), label);
         await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
         await until(() => ui.evaluate("!document.querySelector('[data-table-more] [role=menu]')"), 'overflow menu closes with Escape');
       }
@@ -344,6 +347,15 @@ async function verifyDynamicToolbar(document, view, ui, english) {
     const expected = [240, 452, 240, english ? 0 : 1, english ? 234 : 171, 0, true];
     await until(async () => (await measure()).every((value,index)=>value===expected[index]), 'search fits without the filter row');
     results.push(await measure());
+    const excluded = '<CommandSet><ExcludedCommand>Create</ExcludedCommand><ExcludedCommand>Copy</ExcludedCommand></CommandSet>';
+    await editFormSource(document, view, original.replace(binding, binding + excluded));
+    await until(() => ui.evaluate("!!document.querySelector('[data-table-more] > button')"), 'More survives excluded inline actions');
+    await ui.evaluate("document.querySelector('[data-table-more] > button').click()");
+    const labels = await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].map(item=>item.getAttribute('aria-label'))");
+    assert.ok(labels.includes(english ? 'Configure list...' : 'Настроить список...'));
+    assert.ok(!labels.includes(english ? 'Create' : 'Создать'));
+    assert.ok(!labels.includes(english ? 'Copy' : 'Скопировать'));
+    await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   } finally {
     await editFormSource(document, view, original);
   }

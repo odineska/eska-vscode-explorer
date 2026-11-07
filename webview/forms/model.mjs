@@ -18,10 +18,11 @@ function prepareCommand(command) {
 }
 export function prepare(model) {
   const visit = node => {
-    const { autoCommandItems, objectCommandMenu } = node.presentation ?? {};
-    const presentation = autoCommandItems || objectCommandMenu ? { ...node.presentation,
+    const { autoCommandItems, objectCommandMenu, tableCommandMenu } = node.presentation ?? {};
+    const presentation = autoCommandItems || objectCommandMenu || tableCommandMenu ? { ...node.presentation,
       ...(autoCommandItems ? { autoCommandItems: autoCommandItems.map(prepareCommand) } : {}),
       ...(objectCommandMenu ? { objectCommandMenu: objectCommandMenu.map(group => group.map(prepareCommand)) } : {}),
+      ...(tableCommandMenu ? { tableCommandMenu: tableCommandMenu.map(group => group.map(prepareCommand)) } : {}),
     } : node.presentation;
     return { ...node, key: key(node), reconcileKey: key(node), properties: prepareFields(node.properties), presentation,
       children: node.children.map(visit), auxiliary: node.auxiliary.map(visit) };
@@ -65,6 +66,9 @@ export function caption(node, state) {
 }
 export function automaticCommands(node, state) {
   const items = node.presentation.autoCommandItems ?? node.presentation.autoCommands.map((name, index) => ({ key: name, caption: { kind: 'standard', key: `command.${name}` }, primary: index === 0 }));
+  return orderedCommands(items, state);
+}
+export function orderedCommands(items, state) {
   if (!state) return items;
   const { locale, strings } = state;
   const collator = new Intl.Collator(locale);

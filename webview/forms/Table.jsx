@@ -5,7 +5,7 @@ import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-
 import { CommandButton, Element, PopupMenu } from './Preview.jsx';
 import { ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
-import { menuItems } from './command-menu-model.mjs';
+import { tableCommandRows } from './command-menu-model.mjs';
 import { TableSearch } from './TableSearch.jsx';
 import { NativeTableMovement } from './NativeTableMovement.jsx';
 import { TableHorizontalScrollbar } from './TableHorizontalScrollbar.jsx';
@@ -121,12 +121,8 @@ export function Table(props) {
   const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
   const menu = createMemo(() => {
-    if (!layout().adaptiveToolbar) return [];
-    const declared = menuItems(layout().bar?.children.filter(item => item.presentation.displayed) ?? []);
-    const source = `Form.Item.${node().name}.StandardCommand.`;
-    const keys = new Set(declared.map(item => scalar(item, 'CommandName')).filter(name => name.startsWith(source))
-      .map(name => 'Table.StandardCommand.' + name.slice(source.length)));
-    return [...layout().commands.filter(item => !keys.has(item.key)), ...declared];
+    if (!layout().adaptiveToolbar && !node().presentation.tableCommandMenu) return [];
+    return tableCommandRows(node(), layout().bar?.children.filter(item => item.presentation.displayed) ?? [], layout().commands);
   });
   const title = () => layout().nativeDynamicList && scalar(node(), 'TitleLocation') === 'Top' && caption(node(), state);
   const compressedHeight = () => layout().nativeDynamicList ? layout().groupMinimumHeight
@@ -159,8 +155,8 @@ export function Table(props) {
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <TableToolbarSearch search={layout().search} control={layout().searchControl} controller={props.controller} spacer/>
       <Show when={layout().more}>
-        <Show when={layout().adaptiveToolbar} fallback={<CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>}>
-          <PopupMenu controller={props.controller} label={state.strings.more} rows={menu()} tableBar nativeDropdown/>
+        <Show when={menu().length} fallback={<CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>}>
+          <PopupMenu controller={props.controller} label={state.strings.more} rows={menu()} tableBar tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
         </Show>
       </Show>
     </div></Show>

@@ -219,9 +219,10 @@ button { cursor: default; }
 .taxi-menu-divider { height: 4px; background: linear-gradient(transparent 2px, #d5d2c2 2px 3px, transparent 3px); }
 .taxi-menu[data-floating-menu] { position: fixed; width: var(--taxi-menu-natural-width, max-content); min-width: min(210px, var(--taxi-menu-max-width, 100vw)); max-width: var(--taxi-menu-max-width, 100vw); overflow: auto; scrollbar-width: thin; }
 .taxi-menu[data-floating-menu] button { overflow: hidden; text-overflow: ellipsis; }
-.taxi-menu[data-root-menu-level] button[role=menuitem] { color: var(--taxi-FormTextColor); padding-right: 60px; }
-.taxi-menu[data-root-menu-level] button[role=menuitem].active { background: var(--taxi-menu-activity); color: var(--taxi-menu-activity-ink, var(--taxi-FormTextColor)); }
-.taxi-menu[data-root-menu-level] button[role=menuitem] > :is(.taxi-icon, .taxi-picture-resource, .taxi-picture-template) { left: 15px; }
+.taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] { color: var(--taxi-FormTextColor); padding-right: 60px; }
+.taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem].active { background: var(--taxi-menu-activity); color: var(--taxi-menu-activity-ink, var(--taxi-FormTextColor)); }
+.taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] > :is(.taxi-icon, .taxi-picture-resource, .taxi-picture-template) { left: 15px; }
+.taxi-menu button[role=menuitem][aria-disabled=true] { color: #aaa; }
 .taxi-menu-shortcut { position: absolute; right: 29px; color: #999; }
 .taxi-popup[data-root-menu] > .taxi-button--dropdown { padding: 3px 8px; }
 .taxi-popup[data-root-menu] > .taxi-button--dropdown .taxi-down { margin-left: 5px; }

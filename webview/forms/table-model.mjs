@@ -215,7 +215,8 @@ export function tableLayout(table, state = {}, additions) {
   const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
   const authoredCommands = bar?.children.some(child => child.presentation.displayed);
-  const toolbar = scalar(table, 'CommandBarLocation') !== 'None' && (commands.length > 0 || authoredCommands);
+  const toolbar = scalar(table, 'CommandBarLocation') !== 'None'
+    && (commands.length > 0 || authoredCommands || (table.presentation.tableCommandMenu?.some(group => group.length) ?? false));
   const more = flag(bar, 'Autofill');
   const searchField = tableSearch(table);
   const topSearch = scalar(table, 'SearchStringLocation') === 'Top' ? searchField : undefined;

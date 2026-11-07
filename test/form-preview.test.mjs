@@ -309,3 +309,20 @@ test('a projected event must reference a matching field in its real XML wrapper'
   assert.throws(() => parsePropertyPalette({...data,rows:[{...projected,id:'platform:StartChoice'},declared]},snapshot,node));
   assert.throws(() => parsePropertyPalette({...data,rows:[projected]},snapshot,node));
 });
+
+test('list menu transport preserves optional sections, shortcuts and disabled submenu entries', () => {
+  const snapshot=fixture(), root=snapshot.model.root;
+  const item={key:'Table.StandardCommand.SearchHistory',caption:{kind:'standard',key:'command.SearchHistory'},
+    primary:false,origin:null,enabled:false,beginGroup:true,shortcut:'Ctrl+Q'};
+  root.presentation.tableCommandMenu=[[{...item,key:'Table.StandardCommand.SearchControl',items:[item]}]];
+  const model=prepare(parseFormSnapshot(snapshot).model);
+  assert.equal(model.root.presentation.tableCommandMenu[0][0].reconcileKey,'Table.StandardCommand.SearchControl');
+  assert.equal(model.root.presentation.tableCommandMenu[0][0].items[0].enabled,false);
+  for(const [field,value] of [['shortcut',''],['shortcut','x'.repeat(65)],['enabled','false'],['beginGroup',1]]) {
+    const bad=structuredClone(snapshot);
+    bad.model.root.presentation.tableCommandMenu[0][0].items[0][field]=value;
+    assert.throws(()=>parseFormSnapshot(bad),field);
+  }
+  root.presentation.tableCommandMenu=[[]];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.tableCommandMenu,[[]]);
+});

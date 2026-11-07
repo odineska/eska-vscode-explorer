@@ -266,3 +266,13 @@ test('Linux columns use the authored stretch mode for base widths and surplus', 
   root.children[0] = amount;
   assert.equal(tableTracks(tableLayout(root, linux), 604), '212px 358px 34px');
 });
+
+test('a dynamic list retains More when all inline actions are excluded', () => {
+  const table=fixture();
+  table.presentation.autoCommandItems=[];
+  table.presentation.tableCommandMenu=[[{key:'Table.StandardCommand.ListSettings'}]];
+  assert.equal(tableLayout(table,{os:'linux'}).toolbar,true);
+  assert.equal(tableLayout(table,{os:'linux'}).more,true);
+  table.properties.push(prop('CommandBarLocation','None'));
+  assert.equal(tableLayout(table,{os:'linux'}).toolbar,false);
+});
