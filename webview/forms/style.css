@@ -223,6 +223,9 @@ button { cursor: default; }
 .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem].active { background: var(--taxi-menu-activity); color: var(--taxi-menu-activity-ink, var(--taxi-FormTextColor)); }
 .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] > :is(.taxi-icon, .taxi-picture-resource, .taxi-picture-template) { left: 15px; }
 .taxi-menu button[role=menuitem][aria-disabled=true] { color: #aaa; }
+.taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) { padding-bottom: 1px; }
+.taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] { padding-left: 44px; }
+.taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem].active { box-shadow: inset 1px 0 #fff, inset -1px 0 #fff, inset 0 1px #fff; }
 .taxi-menu-shortcut { position: absolute; right: 29px; color: #999; }
 .taxi-popup[data-root-menu] > .taxi-button--dropdown { padding: 3px 8px; }
 .taxi-popup[data-root-menu] > .taxi-button--dropdown .taxi-down { margin-left: 5px; }

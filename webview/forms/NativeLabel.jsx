@@ -14,7 +14,7 @@ function labelAdvances(props, text, options) {
   }
   // Date masks allocate character positions without pair kerning.
   if (props.mask) return [...text].map(char => hintedTextWidth(char, options));
-  if (props.placement === 'formTitle') {
+  if (['formTitle', 'menuItem'].includes(props.placement)) {
     const advances = designTextAdvances(text, options);
     if (!advances) throw new Error('font-raster-advances');
     return advances;
@@ -39,6 +39,7 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   // Adjacent captions keep their own baseline when another column enlarges the band.
   if (table) baseline = metrics.ascent + (tableHeader ? 6 : 7);
   if (search || menuItem || placement === 'radioChoice') baseline = Math.floor(baseline);
+  if (menuItem) baseline += 1;
   if (fieldFrame) {
     const scale = parseFloat(getComputedStyle(fieldFrame.closest('.taxi-preview')).zoom) || 1;
     const top = (label.getBoundingClientRect().top - fieldFrame.getBoundingClientRect().top) / scale;

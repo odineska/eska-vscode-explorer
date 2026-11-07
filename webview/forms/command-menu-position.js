@@ -11,10 +11,10 @@ export function positionCommandMenu(menu, anchor, nested) {
     const width = window.innerWidth - 2, height = window.innerHeight - 2;
     menu.style.setProperty('--taxi-menu-max-width', `${width / scale}px`);
     const menuWidth = menu.getBoundingClientRect().width;
-    const preferredLeft = nested ? rect.right - scale : rect.left;
+    const preferredLeft = nested ? rect.right - 2 * scale : rect.left;
     const alternateLeft = nested ? rect.left - menuWidth + scale : width - menuWidth;
     const left = Math.max(0, preferredLeft + menuWidth <= width ? preferredLeft : alternateLeft);
-    const top = Math.max(0, Math.min(nested ? rect.top : rect.bottom, height - 60 * scale));
+    const top = Math.max(0, Math.min(nested ? rect.top + scale : rect.bottom, height - 60 * scale));
     menu.style.left = `${left / scale}px`;
     menu.style.top = `${top / scale}px`;
     menu.style.maxHeight = `${(height - top) / scale}px`;

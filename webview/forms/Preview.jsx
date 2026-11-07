@@ -473,14 +473,14 @@ function MenuLevel(props) {
   const menuWidth = createMemo(() => {
     if (!native()) return;
     const advances = props.rows.filter(item => item !== menuSeparator)
-      .map(item => controlCaptionWidth(menuCaption(item, state, true), menuFont));
+      .map(item => designCaptionWidth(menuCaption(item, state, true), menuFont));
     // Add the icon and shortcut gutters and the two panel borders.
     if (!advances.every(Number.isFinite)) return;
     const maximum = Math.max(0, ...advances);
     if (props.tableMenu && (!props.nested || props.rows.some(item => item !== menuSeparator && menuShortcut(item)))) {
-      return `${Math.max(state.locale.startsWith('ru') ? 377 : 335, maximum + 155)}px`;
+      return `${Math.max(state.locale.startsWith('ru') ? 377 : 335, maximum + 156)}px`;
     }
-    return `${105 + maximum}px`;
+    return `${106 + maximum}px`;
   });
   createEffect(() => {
     if (!props.rootMenu && !props.tableMenu) return;
@@ -493,6 +493,7 @@ function MenuLevel(props) {
   return <div role="menu" class="taxi-menu" data-root-menu-level={props.rootMenu ? '' : undefined} data-table-menu-level={props.tableMenu ? '' : undefined}
     data-floating-menu={floating() ? '' : undefined}
     style={{ ...(native() ? linuxControlFont(menuFont) : {}), '--taxi-menu-natural-width': menuWidth() ?? 'max-content',
+      'min-width': native() && menuWidth() ? '0' : undefined,
       '--taxi-menu-activity': props.rootMenu || props.tableMenu ? activity() : undefined, '--taxi-menu-activity-ink': activeInk() }}
     ref={menu} onClick={event => event.stopPropagation()} onKeyDown={handleKey}>
     <For each={props.rows}>{(item, index) => {
@@ -531,7 +532,13 @@ function MenuLevel(props) {
         <Show when={native()} fallback={label()}>
           <NativeLabel enabled placement="menuItem" text={label()} font={menuFont} runtime={props.controller.nativeText}/>
         </Show>
-        <Show when={(props.rootMenu || props.tableMenu) && menuShortcut(item)}>{shortcut => <span class="taxi-menu-shortcut">{shortcut()}</span>}</Show>
+        <Show when={(props.rootMenu || props.tableMenu) && menuShortcut(item)}>{shortcut =>
+          <span class="taxi-menu-shortcut" style={native() ? { top: '0', height: '30px', width: `${designCaptionWidth(shortcut(), menuFont)}px`, 'text-align': 'left' } : undefined}>
+            <Show when={native()} fallback={shortcut()}>
+              <NativeLabel enabled placement="menuItem" text={shortcut()} font={menuFont} runtime={props.controller.nativeText}/>
+            </Show>
+          </span>
+        }</Show>
         <Show when={submenu()}><span class="taxi-submenu-arrow" aria-hidden="true"/></Show>
       </button>;
       return <Show when={submenu()} fallback={row}>

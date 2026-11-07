@@ -9,7 +9,7 @@ import {inputBorderPixels} from '../webview/forms/input-border.mjs';
 import {searchClearPixels} from '../webview/forms/search-control.mjs';
 import {tableMovementRgba} from '../webview/forms/table-movement.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
-import {segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
+import {controlCaptionOptions,designTextAdvances,segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
 
 test('native table captions preserve fragment boundaries and all 3885 LCD pixels',async()=>{
@@ -93,4 +93,30 @@ test('table movement uses the same border sampler at both native poses', () => {
   const rgb=tableMovementRgba(position).filter((_,index)=>index%4!==3);
   assert.equal(createHash('sha256').update(rgb).digest('hex'),sha256,`${position.x},${position.y}`);
  }
+});
+
+test('native list menus preserve all 8355 caption and shortcut pixels', async () => {
+  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-list-menu/metrics.json',formReferenceRoot)));
+  const resource=name=>new URL(`../resources/forms/${name}`,import.meta.url);
+  const engine=createFontRaster(await readFile(resource('native-text/font-raster.wasm')));
+  try {
+    const face=engine.open(await readFile(resource('fonts/LiberationSans-Regular.ttf')));
+    const options=controlCaptionOptions({points:reference.font.points,weight:reference.font.weight});
+    let pixels=0;
+    for (const row of reference.captions.rows) {
+      const advances=designTextAdvances(row.text,options);
+      const raster=face.raster(row.text,reference.font.pixels,reference.font.ascent,reference.font.descent,'lcd',advances);
+      const rgba=lcdCaptionPixels(raster,row.foreground,row.background);
+      const rgb=Buffer.from([...rgba].filter((_,index)=>index%4!==3));
+      const label=`${row.locale}/${row.text}`;
+      assert.deepEqual([raster.width,raster.height,raster.advance],
+        [row.raster.width,row.raster.height,row.raster.advance],label);
+      assert.equal(createHash('sha256').update(rgb).digest('hex'),row.rgbSha256,label);
+      pixels+=raster.width*raster.height;
+    }
+    assert.equal(pixels,8355);
+    assert.equal(pixels,reference.captions.pixels);
+    assert.equal(reference.pixelTolerance,0);
+    assert.deepEqual(reference.comparisonMasks,[]);
+  } finally { engine.dispose(); }
 });
