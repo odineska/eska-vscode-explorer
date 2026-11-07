@@ -1,5 +1,6 @@
 import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
-import { hasTableSurface, tableSearchReference } from './table-model.mjs';
+import { commandBarContent } from './command-bar-model.mjs';
+import { hasTableSurface } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -32,33 +33,42 @@ export function hasAuthoredGroupHeight(node, os) {
 }
 
 /** An automatic group width can contract even if the group receives no extra space. */
-export function groupCanShrink(node, os) {
-  return os === 'linux' && ordinaryGroup(node) && number(node, 'Width') <= 0;
+export function groupCanShrink(node, os, root = node) {
+  if (os !== 'linux') return false;
+  const automatic = (ordinaryGroup(node) || node.kind === 'CommandBar') && number(node, 'Width') <= 0;
+  return automatic || compactCommandBarGroup(node, root);
 }
 
 export function automaticHorizontalSpacing(node) {
   return scalar(node, 'HorizontalSpacing', 'Auto') === 'Auto';
 }
 
-export function displayedInPreview(node) {
+export function displayedInPreview(node, root = node) {
   if (!node.presentation.displayed) return false;
   if (node.kind === 'Table') return hasTableSurface(node);
+  if (node.kind === 'CommandBar') return commandBarContent(root, node).visible;
   // Designer omits a group's own decoration and dimensions when its content is absent.
-  return node.kind !== 'UsualGroup' || node.children.some(displayedInPreview);
+  return node.kind !== 'UsualGroup' || node.children.some(child => displayedInPreview(child, root));
+}
+
+/** Fixed command-only groups use the command floor instead of each bar's preferred reserve. */
+export function compactCommandBarGroup(node, root = node) {
+  return ordinaryGroup(node) && !stretches(node, 'x', {}, root)
+    && node.children.length > 0 && node.children.every(child => child.kind === 'CommandBar');
 }
 
 /** Designer's Auto belongs to the widget/type; group Auto inherits its visible descendants. */
-export function stretches(node, axis, collapsed = {}) {
+export function stretches(node, axis, collapsed = {}, root = node) {
+  if (axis === 'x' && node.kind === 'CommandBar' && scalar(node, 'HorizontalLocation') === 'Right') return true;
   const value = scalar(node, axis === 'x' ? 'HorizontalStretch' : 'VerticalStretch', 'Auto');
   if (explicitYes(value)) return true;
   if (explicitNo(value)) return false;
   if (containers.has(node.kind)) {
     if (axis === 'y' && collapsed[node.key]) return false;
-    return node.children.some(child => displayedInPreview(child) && stretches(child, axis, collapsed));
+    return node.children.some(child => displayedInPreview(child, root) && stretches(child, axis, collapsed, root));
   }
   if (surfaces.has(node.kind)) return true;
-  if (axis === 'x' && node.kind === 'CommandBar') return scalar(node, 'CommandSource').startsWith('Item.')
-    || node.children.some(child => !!tableSearchReference(scalar(child, 'CommandName')));
+  if (axis === 'x' && node.kind === 'CommandBar') return true;
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
   if (node.kind === 'InputField' && inputRows(node) > 1

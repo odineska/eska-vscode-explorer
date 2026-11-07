@@ -1349,6 +1349,26 @@
       "explorerPathEnv": {
         "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
       }
+    },
+    {
+      "id": "command-bars",
+      "driver": "test/form-command-bars-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-command-bars"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
     }
   ],
   "presets": {

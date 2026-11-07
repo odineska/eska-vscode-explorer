@@ -41,7 +41,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     }
     const minimum = minimumRows.get(element);
     if (minimum !== undefined) value.width = value.fullWidth = minimum;
-    return add(value, padding);
+    return add(add(value, padding), margins(element));
   }
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
@@ -80,6 +80,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
         reserveWidth(value, heading?.minimum ?? textWidth(title, scale), heading?.preferred);
       }
       value = add(value, insets(group));
+      if (element.hasAttribute('data-compact-command-bars')) {
+        reserveWidth(value, pixels(element.style.getPropertyValue('--taxi-group-width')));
+      }
       if (element.hasAttribute('data-authored-group-height')) {
         value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-group-height')));
       }

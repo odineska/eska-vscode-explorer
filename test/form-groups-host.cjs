@@ -10,7 +10,7 @@ const nativeFrames = {
   GroupBackColor:[259,140], GroupTitleFont:[249,134], GroupHidden:[34,52], GroupCollapsible:[259,132],
   PagesTop:[271,152], PagesBottom:[271,152], PagesNone:[249,107], CommandBar:[291,79],
   PagesAuto:[271,152], PagesLeft:[362,127], PagesRight:[362,127], PagesSwipe:[271,152],
-  ButtonGroup:[34,52], Popup:[34,52], BarWithButtonGroup:[291,79], BarWithPopup:[142,79],
+  ButtonGroup:[34,52], Popup:[34,52], BarWithButtonGroup:[291,79], BarWithPopup:[111,79],
   StyleReferences:[291,113], Decorations:[94,118],
 };
 
@@ -171,7 +171,7 @@ exports.run = async function () {
     if(process.platform==='linux'&&['CommandBar','BarWithButtonGroup'].includes(form.kind))assert.deepEqual(geometry.buttons.map(button=>button.width),[115,133]);
     if(form.kind==='BarWithPopup') {
       assert.equal(geometry.buttons.length,1);assert.equal(geometry.menu,false);
-      if(process.platform==='linux')assert.equal(geometry.buttons[0].width,76);
+      if(process.platform==='linux')assert.equal(geometry.buttons[0].width,77);
       await ui.evaluate("document.querySelector('.taxi-popup > button').click()");
       assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('.taxi-menu [role=menuitem]')].map(node=>node.textContent)"),['First command','Second command']);
       assert.deepEqual(await ui.evaluate("(() => {const menu=document.querySelector('.taxi-menu'),item=menu.firstElementChild;return [menu.getBoundingClientRect().width,item.getBoundingClientRect().height,getComputedStyle(item).backgroundColor]})()"),[210,30,'rgb(250, 204, 31)']);

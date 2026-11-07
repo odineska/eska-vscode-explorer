@@ -914,3 +914,16 @@ button { cursor: default; }
   flex: 0 0 var(--taxi-united-title-width);
   margin-bottom: 0;
 }
+
+/* Command-bar paint extends two pixels beyond the row's trailing layout edge. */
+.taxi-preview[data-os=linux] .taxi-command-bar[data-horizontal-location] { min-width: 0; padding-right: 2px; }
+.taxi-command-bar[data-horizontal-location=Right] { justify-content: flex-end; }
+.taxi-preview[data-os=linux] .taxi-items:has(> .taxi-element[data-kind=CommandBar]) { margin-right: -2px; }
+.taxi-preview[data-os=linux]:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-command-bar { min-width: 0; }
+.taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-element[data-compact-command-bars] { width: var(--taxi-min-width); }
+.taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-items--horizontal[data-native-command-row] > .taxi-element[data-kind=CommandBar] {
+  flex: 0 0 var(--taxi-command-allocation, var(--taxi-preferred-width)) !important;
+  width: var(--taxi-command-allocation, var(--taxi-preferred-width));
+}
+/* Authored popup controls include the native trailing arrow edge. */
+.taxi-preview[data-os=linux] .taxi-element[data-kind=Popup] > .taxi-popup > .taxi-button--dropdown { padding-right: 6px; }

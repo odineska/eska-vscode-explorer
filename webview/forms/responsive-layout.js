@@ -12,6 +12,7 @@ import { borderBoxSize, boundingScale } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
 import { authoredGroupRows } from './authored-group-rows.js';
+import { commandBarLayout } from './command-bar-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -36,7 +37,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -91,6 +92,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
       unitedRows.capturePreferredColumns();
       allocateGroupRows = authoredGroupRows(root, scale, alignment);
+      allocateCommandBars = commandBarLayout(root, context);
       const nextPreferred = rect(root);
       setPreferred(nextPreferred);
       needsMinimum = true;
@@ -143,6 +145,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
+    allocateCommandBars(geometry().minima);
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);
@@ -156,7 +159,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     for (const items of conditionalGroups) {
       const children = [...items.children];
       const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
-      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue('--taxi-preferred-width') || '0'), 0)
+      const dimension = items.hasAttribute('data-native-command-row') ? '--taxi-min-width' : '--taxi-preferred-width';
+      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue(dimension) || '0'), 0)
         + Math.max(0, children.length - 1) * gap;
       if (rect(items).width + .5 < required) wrap.add(items.dataset.layoutOwner);
     }
@@ -204,7 +208,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     invalidate: () => { needsPreferred = true; schedule(); },
     preferred, minimumFor: node => geometry().minima.get(node.key),
     preferredWidthFor: node => preferredWidths().get(node.key),
-    stretch: (node, axis) => stretches(node, axis, state.ui.collapsed),
+    stretch: (node, axis) => stretches(node, axis, state.ui.collapsed, state.model.root),
     wrapped: node => wrapped().has(node.key),
     captionFor: node => fieldCaptions().get(node.key),
     titleAbove: node => aboveTitles().has(node.key),

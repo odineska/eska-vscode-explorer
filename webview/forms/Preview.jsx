@@ -20,10 +20,11 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
-import { availableTableSearchCommand, commandSourceTable, tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
+import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
+import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
+import { commandBarContent } from './command-bar-model.mjs';
 import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
@@ -222,7 +223,7 @@ export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
-  const children = () => props.node.children.filter(displayedInPreview);
+  const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
   const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
   const alignment = {Top:'start', Center:'center', Bottom:'end'};
   const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
@@ -266,7 +267,7 @@ export function Items(props) {
     return children().map(node => {
       const minimum = layout?.minimumFor(node)?.[dimension] ?? 0;
       if (layout?.stretch(node, axis)) return `minmax(${minimum}px, ${stretchWeight(node, axis)}fr)`;
-      if (axis === 'x' && groupCanShrink(node, props.controller.state.os)) {
+      if (axis === 'x' && groupCanShrink(node, props.controller.state.os, props.controller.state.model.root)) {
         const preferred = layout?.preferredWidthFor(node);
         const limit = preferred === undefined ? 'max-content' : `${Math.max(minimum, preferred)}px`;
         return `minmax(${minimum}px, ${limit})`;
@@ -333,35 +334,12 @@ function Group(props) {
 function CommandBar(props) {
   const state = props.controller.state, node = () => props.node;
   const root = () => state.model.root;
-  const source = createMemo(() => commandSourceTable(root(), node()));
+  const commands = createMemo(() => commandBarContent(root(), node()));
+  const source = () => commands().source;
+  const hasSearch = () => !!tableSearch(source());
   const additions = createMemo(() => {
     const projection = tableAdditionsProjection(root(), source());
     return projection?.bar.key === node().key ? projection : undefined;
-  });
-  const hasSearch = () => !!tableSearch(source());
-  const commands = createMemo(() => {
-    const inline = [], trailing = [], additional = [];
-    let hasOverflow = !!source(), tableCommands = !!source(), advancedSearch = false;
-    for (const child of node().children) {
-      if (!child.presentation.displayed) continue;
-      const command = scalar(child, 'CommandName');
-      const searchReference = tableSearchReference(command);
-      if (!availableTableSearchCommand(root(), searchReference)) continue;
-      tableCommands ||= !!searchReference;
-      const customize = command === 'Form.StandardCommand.CustomizeForm';
-      const location = scalar(child, 'LocationInCommandBar', 'Auto');
-      const usesSearch = hasSearch() && searchReference?.table === source()?.name;
-      if (usesSearch && location === 'Auto') continue;
-      if (location === 'InAdditionalSubmenu' || customize && location === 'Auto') {
-        additional.push(child);
-        hasOverflow = true;
-        continue;
-      }
-      if (usesSearch && searchReference.action === 'Find') advancedSearch = true;
-      (customize ? trailing : inline).push(child);
-      if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
-    }
-    return { inline, trailing, more: hasOverflow ? additional : [], tableCommands, advancedSearch };
   });
   const menu = createMemo(() => {
     const table = source();
@@ -374,7 +352,7 @@ function CommandBar(props) {
     return hasSearch() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
-  return <div class="taxi-command-bar" data-table-commands={commands().tableCommands ? '' : undefined}
+  return <div class="taxi-command-bar" data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
@@ -688,7 +666,7 @@ export function Element(props) {
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
     '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
-  return <Show when={displayedInPreview(node())}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
+  return <Show when={displayedInPreview(node(), state.model.root)}><div data-element={node().key} data-kind={node().kind} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-compact-command-bars={compactCommandBarGroup(node(), state.model.root) ? '' : undefined} data-horizontal-location={node().kind === 'CommandBar' ? scalar(node(), 'HorizontalLocation', 'Left') : undefined} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os, state.model.root) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
     <Switch fallback={<div class="taxi-unsupported">{state.strings.unsupported}: {node().xmlName.name}</div>}>

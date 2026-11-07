@@ -6,7 +6,9 @@ import { mixedColumnLayout } from './mixed-column-layout.js';
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
 function ordinaryRow(node) {
-  return ordinaryGroup(node) && node.presentation.grouping === 'Horizontal'
+  return ordinaryGroup(node) && (node.presentation.grouping === 'Horizontal'
+      || node.presentation.grouping === 'HorizontalIfPossible' && node.presentation.united === false
+        && node.children.every(child => child.kind === 'CommandBar'))
     && typeof node.presentation.united === 'boolean'
     && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'))
     && automaticHorizontalSpacing(node)
@@ -42,7 +44,7 @@ export function alignUnitedColumns(model, context) {
   const { mark, style } = alignment;
   const scopes = [], mixed = mixedColumnLayout(context);
 
-  function entryFor(node, mixedRow = false) {
+  function entryFor(node, mixedRow = false, commandColumns = false) {
     const element = elements.get(node.key), location = node.presentation.titleLocation;
     const choice = ['RadioButtonField', 'CheckBoxField'].includes(node.kind);
     if ((node.kind === 'InputField' || choice) && (location === 'Left' || mixedRow && location === 'Top')) {
@@ -58,6 +60,14 @@ export function alignUnitedColumns(model, context) {
         controlWidth: (choice ? borderBoxSize(control, scale).width
           : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity)) + accessoryWidth };
     }
+    if (os === 'linux' && commandColumns && node.kind === 'CommandBar') {
+      const bar = element.querySelector(':scope > .taxi-command-bar');
+      if (bar) return { kind: 'command', node, element, width: borderBoxSize(bar, scale).width };
+    }
+    if (os === 'linux' && commandColumns && node.kind === 'InputField' && location === 'None') {
+      const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
+      if (control) return { kind: 'input', node, element, width: borderBoxSize(control, scale).width };
+    }
     if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
       const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
       if (control) return { kind: 'control', node, element, width: borderBoxSize(control, scale).width };
@@ -67,7 +77,7 @@ export function alignUnitedColumns(model, context) {
     if (!items) return;
     const nodes = mountedChildren(node);
     const mixed = os === 'linux' && nodes.some(child => ['LabelField', 'PictureField'].includes(child.kind));
-    const children = nodes.map(child => entryFor(child, mixed));
+    const children = nodes.map(child => entryFor(child, mixed, commandColumns));
     if (!children.length || children.some(child => !child)) return;
     const titleElement = group.querySelector(':scope > .taxi-group-title');
     if (!titleElement) return { kind: 'group', node, element, items, group, children };
@@ -84,16 +94,23 @@ export function alignUnitedColumns(model, context) {
       && !containers.get(node.key)?.parentElement.querySelector(':scope > .taxi-group-title');
   }
 
-  function lanesFor(node, exposed) {
+  function columnNodes(node, exposed) {
     return mountedChildren(node).flatMap(child => {
-      if (!exposedStack(child)) return [entryFor(child)];
+      if (!exposedStack(child)) return [child];
       exposed.push(child.key);
-      return lanesFor(child, exposed);
+      return columnNodes(child, exposed);
     });
   }
 
   function fixedLane(entry) {
     return entry.kind === 'group' ? entry.children.every(fixedLane) : !stretches(entry.node, 'x', collapsed);
+  }
+
+  function lanesFor(node, exposed) {
+    const nodes = columnNodes(node, exposed);
+    const commandColumns = nodes.some(child => ordinaryRow(child) && !child.presentation.united
+      && mountedChildren(child).some(item => item.kind === 'CommandBar'));
+    return nodes.map(child => entryFor(child, false, commandColumns));
   }
 
   const covered = new Set();
@@ -111,7 +128,9 @@ export function alignUnitedColumns(model, context) {
     // Uncombined vertical groups continue the same column scope; united ones own a new scope.
     for (const key of exposed) covered.add(key);
     const firstGroup = lanes.find(lane => lane.kind === 'group');
-    const gap = os === 'linux' ? 11 : pixels(getComputedStyle(firstGroup.items).columnGap);
+    const commandColumns = lanes.some(lane => lane.kind === 'group' && lane.children.some(child => child.kind === 'command'));
+    // Exposed command tracks share the painted edge, without an input caption's extra pixel.
+    const gap = os === 'linux' ? commandColumns ? 10 : 11 : pixels(getComputedStyle(firstGroup.items).columnGap);
     scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly });
   }
   function visit(node) {
@@ -164,7 +183,9 @@ export function alignUnitedColumns(model, context) {
       style(entry.title.element, '--taxi-united-title-width', `${tracks[last++].width}px`);
     }
     for (const child of entry.children) last = placeLane(child, last, tracks, gap);
-    setCell(entry, total(tracks.slice(first, last).map(track => track.width)) + gap * (last - first - 1));
+    const css = getComputedStyle(entry.items);
+    const margins = pixels(css.marginLeft) + pixels(css.marginRight);
+    setCell(entry, total(tracks.slice(first, last).map(track => track.width)) + gap * (last - first - 1) + margins);
     return last;
   }
 

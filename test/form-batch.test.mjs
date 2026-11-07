@@ -41,7 +41,7 @@ async function trees(root) {
 const entries=()=>Object.fromEntries(Object.entries(runtime).map(([path,bytes])=>['extension/'+path,bytes]));
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
-  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,67);assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));
+  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,68);assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));assert.ok(ids.includes('command-bars'));
   const eska=fileURLToPath(formReferenceRoot),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
   for(const suite of catalog.suites){
     await readFile(join(repository,suite.driver));assert.equal(suite.caseSelection,'whole-suite-with-existing-transitions');

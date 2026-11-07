@@ -200,7 +200,7 @@ exports.run = async function () {
     }
     if (form.kind === 'TablePopup') {
       assert.deepEqual(geometry.buttons.map(button => button.label), ['Actions▾']);
-      if (process.platform === 'linux') assert.equal(geometry.buttons[0].width, 76);
+      if (process.platform === 'linux') assert.equal(geometry.buttons[0].width, 77);
       assert.equal(await ui.evaluate("!!document.querySelector('.taxi-table-search')"), false);
       await ui.evaluate("document.querySelector('.taxi-popup > button').click()");
       assert.deepEqual(await ui.evaluate("[...document.querySelectorAll('.taxi-menu [role=menuitem]')].map(item=>item.textContent)"), ['First command', 'Second command']);
