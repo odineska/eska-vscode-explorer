@@ -82,7 +82,6 @@ function sourceVariant(xml, edit) {
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
   }
-  if (edit.width) changed = editField(changed, 'B', properties => properties.replace(/<Width>\d+<\/Width>/, `<Width>${edit.width}</Width>`));
   if (edit.maximum) {
     changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
   }
