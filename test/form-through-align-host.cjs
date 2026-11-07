@@ -290,9 +290,99 @@ exports.run = async () => {
   main.panel.dispose();
   await until(() => service.views.size === 0, 'preview released');
   await Promise.all([...service.closing]);
-  for (const row of wrapped) await verifyWrappedRows(row, service, results);
+  for (const row of wrapped) {
+    if (row.boundaryCases.length) await verifyStretchBoundary(row, service, results);
+    else await verifyWrappedRows(row, service, results);
+  }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, locale: vscode.env.language, results, dirtyDetached: true, sourceWritesDuringViewing: false,
   }));
 };
+
+
+function withOptionTitle(xml, location) {
+  const field = /<(?:RadioButtonField|InputField|CheckBoxField) name="Option"[^>]*>[\s\S]*?(?=<ContextMenu)/u.exec(xml);
+  assert.ok(field);
+  const header = field[0].replace(/\s*<TitleLocation>[^<]+<\/TitleLocation>/u, '');
+  return xml.replace(field[0], header + (location ? `<TitleLocation>${location}</TitleLocation>` : ''));
+}
+
+async function verifyStretchBoundary(form, service, results) {
+  const original = await fs.readFile(form.path), source = original.toString('utf8');
+  const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
+  await vscode.window.showTextDocument(document, {preview:false});
+  await vscode.commands.executeCommand('eska.explorer.previewForm');
+  const current = () => [...service.views.values()].find(view => view.path === form.path);
+  await until(() => current()?.phase === 'ready', 'stretch boundary ready');
+  const view = current(), main = view.frames.get('main'), ui = await frame({fixedFormArea:true, state:{title:main.panel.title}});
+  const nodes = [...view.nodes.values()].filter(node => ['Wide','Option','Tail'].includes(node.name));
+  const identities = nodes.map(node => [node.name, `${node.identity.source}:current:${node.identity.key.value}`]);
+  const observe = async target => {
+    await target.evaluate(nextPaint);
+    return target.evaluate(`(() => {
+      const form=document.querySelector('.taxi-form-frame'),origin=form.getBoundingClientRect();
+      const box=element=>{if(!element)return null;const r=element.getBoundingClientRect();return [r.x-origin.x,r.y-origin.y,r.width,r.height];};
+      const fields=Object.fromEntries(${JSON.stringify(identities)}.map(([name,key])=>{
+        const element=[...form.querySelectorAll('[data-element]')].find(element=>element.dataset.element===key);
+        const row=element.querySelector(':scope > .taxi-field-row');
+        return [name,{captionEnd:box(row.querySelector(':scope > .taxi-field-control'))[0]-parseFloat(getComputedStyle(row).columnGap),
+          control:box(row.querySelector(':scope > .taxi-field-control > :is(.taxi-input,.taxi-checkbox,.taxi-radios)')),
+          marks:[...row.querySelectorAll('.taxi-radio')].map(box)}];
+      }));
+      return {frame:[origin.width,origin.height],fields};
+    })()`);
+  };
+  const verify = async (target, sample) => {
+    let actual;
+    await until(async () => {
+      actual = await observe(target);
+      return actual.fields[sample.scopeField].control !== null;
+    }, 'stretch boundary controls');
+    const field = actual.fields[sample.scopeField];
+    assert.equal(field.captionEnd === actual.fields.Wide.captionEnd, sample.alignedWithParent, sample.case + ' shared caption scope');
+    if (process.platform === 'linux' && sample.ownControlX !== undefined) {
+      assert.equal(field.control[0], sample.ownControlX, sample.case + ' own caption origin');
+      assert.deepEqual(field.marks, sample.ownMarks, sample.case + ' complete mark rectangles');
+      if (sample.ownControl) assert.deepEqual(field.control, sample.ownControl, sample.case + ' own input rectangle');
+    }
+    return actual;
+  };
+  try {
+    for (const sample of form.boundaryCases) {
+      let xml = source;
+      if (sample.row) {
+        for (const [property,value] of [['Group',sample.grouping === 'Absent' ? null : sample.grouping],
+          ['HorizontalStretch',sample.horizontalStretch],['ThroughAlign',sample.throughAlign],['United',sample.united]]) {
+          xml = withGroupProperty(xml, 'Row', property, value);
+        }
+      }
+      await editFormSource(document, view, withOptionTitle(xml, sample.titleLocation));
+      results.push({label:'stretch-scope-'+sample.case,...await verify(ui,sample)});
+    }
+    await editFormSource(document,view,source);
+    if (form.kind === 'StretchRadio') {
+      const identity = nodes.find(node=>node.name==='Option').identity;
+      const shared = form.boundaryCases.find(sample=>sample.case==='Auto');
+      const own = form.boundaryCases.find(sample=>sample.case==='HorizontalFixed');
+      await inDetachedRow(service,view,main,ui,identity,async floating=>{
+        await floating.evaluate("globalThis.__boundaryFields=[...document.querySelectorAll('.taxi-input,.taxi-radios')];true");
+        for (const size of [[600,300],[380,300],[600,300]]) {
+          await allocateFormViewport(floating,size);
+          await editFormSource(document,view,withGroupProperty(source,'Row','HorizontalStretch','false'));
+          await verify(floating,own);
+          await editFormSource(document,view,source);
+          await verify(floating,shared);
+          assert.equal(await floating.evaluate('__boundaryFields.every(field=>field.isConnected)'),true);
+        }
+      });
+      results.push({label:'stretch-scope-detached-resize-dirty',sameDom:true,sameSelection:true});
+    }
+    assert.deepEqual(await fs.readFile(form.path),original);
+  } finally {
+    await editFormSource(document,view,source);
+    ui.close();main.panel.dispose();
+    await until(()=>service.views.size===0,'stretch boundary closed');
+    await Promise.all([...service.closing]);
+  }
+}

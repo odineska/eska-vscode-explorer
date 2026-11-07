@@ -1,4 +1,4 @@
-import { fieldWidth, number, scalar } from './model.mjs';
+import { fieldWidth, flag, number, scalar } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
@@ -7,7 +7,8 @@ import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs'
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
 
 function sharesLabels(node) {
-  if (!ordinaryGroup(node)) return false;
+  // An authored non-stretching group owns its caption tracks, including explicit Use.
+  if (!ordinaryGroup(node) || !flag(node, 'HorizontalStretch')) return false;
   const mode = scalar(node, 'ThroughAlign', 'Auto');
   return mode === 'Use' || mode === 'Auto' && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'));
 }
