@@ -41,6 +41,25 @@ test('fixed explicit dimensions ignore maximums; zero maximum means unlimited',(
   assert.equal(controlBounds(node('InputField',{Width:4,MaxWidth:1}),'x',200,'linux').maximum,undefined,'explicit stretch dimensions are weights');
 });
 
+test('Linux multiline input keeps its XML height under viewport pressure', () => {
+  const minimum = (properties, points = 10, options) => {
+    const field = node('InputField', { MultiLine: true, ...properties });
+    field.presentation.font = { points };
+    return controlBounds(field, 'y', undefined, 'linux', options).minimum;
+  };
+  assert.equal(minimum({}), 51);
+  assert.equal(minimum({ ReadOnly: true }), 51);
+  assert.equal(minimum({ Enabled: false }), 51);
+  assert.equal(minimum({ Height: 1, VerticalStretch: true }), 23);
+  assert.equal(minimum({ Height: 3 }), 79);
+  assert.equal(minimum({ Height: 4 }), 107);
+  assert.equal(minimum({}, 8), 45);
+  assert.equal(minimum({}, 14), 76);
+  assert.equal(minimum({}, 10, { authoredHeight: true }), 23);
+  const capped = node('InputField', { MultiLine: true, AutoMaxHeight: false, MaxHeight: 1 });
+  assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
+});
+
 test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {
   const left = {reserve:0, preferred:131, minimum:71, maximum:410};
   const right = {...left, preferred:191};

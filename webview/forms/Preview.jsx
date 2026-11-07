@@ -622,7 +622,10 @@ function LabelDecoration(props) {
 }
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
-  const bounds = axis => controlBounds(node(), axis, undefined, state.os, layout?.atPreferred(axis));
+  const bounds = axis => controlBounds(node(), axis, undefined, state.os, {
+    atPreferred: layout?.atPreferred(axis),
+    authoredHeight: axis === 'y' && !!layout?.authoredHeight(),
+  });
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
   const horizontalMaximum = createMemo(() => horizontalInputMaximum(node(), state.os));

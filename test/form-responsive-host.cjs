@@ -53,7 +53,8 @@ function check(sample, baseline, label) {
   assert.ok(Math.abs(sample.fixedTable.width-baseline.fixedTable.width)<.01,label+' keeps the non-stretch table width');
   assert.ok(sample.grid.height>0 && sample.chart.height>0);
   assert.ok(sample.limited.width>=79.9&&sample.limited.width<=250.1,label+' applies horizontal bounds');
-  assert.ok(sample.memo.height>=39.9&&sample.memo.height<=160.1,label+' applies vertical bounds');
+  const memoMinimum = process.platform === 'linux' ? 51 : 40;
+  assert.ok(sample.memo.height>=memoMinimum-.1&&sample.memo.height<=160.1,label+' applies vertical bounds');
   assert.ok(Math.abs(sample.close.height-baseline.close.height)<.001,label+' keeps fixed button height');
   assert.ok(Math.abs(sample.fixedGroup.width-350)<.01 && Math.abs(sample.fixedGroup.height-baseline.fixedGroup.height)<.01,label+' retains explicit non-stretch group dimensions');
   assert.ok(Math.abs(sample.fixedGroup.height-50)<.01,label+' retains the authored Linux group height');

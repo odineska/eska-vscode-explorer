@@ -1,4 +1,4 @@
-import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { hasTableSurface, tableSearchReference } from './table-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
@@ -74,8 +74,17 @@ function automaticMultilineMaximum(node, os) {
   return Math.max(fieldWidth(node, os), automaticTextWidth(node));
 }
 
+function inputMinimum(node, axis, os, authoredHeight) {
+  if (axis === 'x') return Math.min(80, fieldWidth(node, os));
+  if (os === 'linux') {
+    // An authored form height can compress the input to one line. Viewport overflow keeps its XML height.
+    return authoredHeight ? inputHeight(node, os) : inputControlHeight(node, os);
+  }
+  return flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os);
+}
+
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
-export function controlBounds(node, axis, preferred, os, atPreferred = false) {
+export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false } = {}) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
   const explicit = number(node, dimension), stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
@@ -83,8 +92,7 @@ export function controlBounds(node, axis, preferred, os, atPreferred = false) {
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
-  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? axis === 'x' ? Math.min(80, fieldWidth(node, os))
-    : flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os) : 0);
+  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
   let maximum = axis === 'x' ? automaticMultilineMaximum(node, os) : undefined;
   if (maximum === undefined && (explicit <= 0 || numericLabel)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
