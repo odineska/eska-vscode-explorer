@@ -97,6 +97,22 @@ test('Linux constrained groups preserve the measured grid floor', () => {
   assert.equal(height(), 146);
 });
 
+test('Linux dynamic lists use native width units and reserve the pagination edge in explicit heights', () => {
+  const table = fixture(), linux = { os: 'linux' };
+  table.presentation.valueType = { types: [{ namespace: 'http://v8.1c.ru/8.1/data/enterprise/current-config', name: 'DynamicList' }] };
+  const measure = (...properties) => {
+    table.properties = properties;
+    const { preferredWidth, height, groupMinimumHeight } = tableLayout(table, linux);
+    return [preferredWidth, height, groupMinimumHeight];
+  };
+  assert.deepEqual(measure(prop('Width', 24)), [240, 452, 118]);
+  assert.deepEqual(measure(prop('Width', 43), prop('Height', 1)), [430, 37, 31]);
+  assert.deepEqual(measure(prop('Width', 43), prop('Height', 4)), [430, 116, 89]);
+  assert.deepEqual(measure(prop('Width', 60), prop('Height', 8), prop('HeightInTableRows', 2)), [600, 88, 60]);
+  assert.deepEqual(measure(prop('Width', 43), prop('Header', false)), [430, 452, 88]);
+  assert.deepEqual(measure(prop('Width', 43), prop('Footer', true)), [430, 452, 147]);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

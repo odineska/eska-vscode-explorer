@@ -108,7 +108,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
         headingWidths: unitedColumns.headingWidths, available,
       });
-      setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field[data-native-column-sizing]') });
+      setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
       body.scrollLeft = scroll[2]; body.scrollTop = scroll[3];

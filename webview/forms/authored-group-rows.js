@@ -3,7 +3,7 @@ import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs'
 
 const allocatedRows = '--taxi-group-allocated-rows';
 const resizableControl = [
-  ':scope > .taxi-table-field[data-native-column-sizing] > .taxi-table-scroll',
+  ':scope > .taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list]) > .taxi-table-scroll',
   ':scope > .taxi-field-row > .taxi-field-control > .taxi-input',
 ].join(', ');
 

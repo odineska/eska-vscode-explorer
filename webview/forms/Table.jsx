@@ -113,8 +113,15 @@ export function Table(props) {
   const inactive = () => horizontal() && !enabled();
   const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
-  const compressedHeight = () => Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25);
-  return <div class="taxi-table-field" data-native-column-sizing={layout().nativeColumns ? '' : undefined} data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': 'var(--taxi-table-preferred-width)', '--taxi-table-preferred-width': `${layout().preferredWidth}px`, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-preferred-height': `${layout().height}px`, '--taxi-table-compressed-height': `${compressedHeight()}px`, '--taxi-table-group-min-height': layout().nativeColumns ? `${layout().groupMinimumHeight}px` : undefined }}>
+  const title = () => layout().nativeDynamicList && scalar(node(), 'TitleLocation') === 'Top' && caption(node(), state);
+  const compressedHeight = () => layout().nativeDynamicList ? layout().groupMinimumHeight
+    : Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25);
+  return <div class="taxi-table-field" data-native-column-sizing={layout().nativeColumns ? '' : undefined} data-native-dynamic-list={layout().nativeDynamicList ? '' : undefined} data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{ 'min-width': 'var(--taxi-table-preferred-width)', '--taxi-table-preferred-width': `${layout().preferredWidth}px`, '--taxi-dynamic-grid-width': layout().fixedGridWidth ? `${layout().fixedGridWidth}px` : undefined, '--taxi-table-control-min-width': `${layout().controlMinWidth}px`, '--taxi-table-content-min-width': `${layout().contentMinWidth}px`, '--taxi-table-preferred-height': `${layout().height}px`, '--taxi-table-compressed-height': `${compressedHeight()}px`, '--taxi-table-group-min-height': layout().nativeColumns ? `${layout().groupMinimumHeight}px` : undefined }}>
+    <Show when={title()}><div class="taxi-table-title" style={{ ...font(node().presentation.titleFont, state.os),
+      'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
+      <NativeLabel placement="fieldTitle" enabled text={title() + ':'} font={node().presentation.titleFont}
+        foreground={node().presentation.titleColor} runtime={props.controller.nativeText}/>
+    </div></Show>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? "" : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>

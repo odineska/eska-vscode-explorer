@@ -186,7 +186,9 @@ export function tableLayout(table, state = {}, additions) {
   const { os, locale = 'ru' } = state;
   const readOnly = flag(table, 'ReadOnly', false);
   const dynamic = isDynamicList(table);
-  const nativeColumns = os === 'linux' && !dynamic;
+  const linux = os === 'linux';
+  const nativeColumns = linux && !dynamic;
+  const nativeDynamicList = linux && dynamic;
   const captions = { locale, strings: state.strings };
   const metrics = node => column(node, readOnly, dynamic, nativeColumns, captions);
   function visit(node) {
@@ -227,41 +229,46 @@ export function tableLayout(table, state = {}, additions) {
   const extraBands = headerExtra + Math.max(0, footer - defaultFooter);
   const bandGrowth = extraBands + Math.round(extraBands * 5 / 8);
   const rowCount = number(table, 'HeightInTableRows');
-  const heightUnits = nativeColumns ? number(table, 'Height') : 0;
+  const heightUnits = linux ? number(table, 'Height') : 0;
+  const paginationEdge = Number(nativeDynamicList);
   const deepHeader = depth === 3 ? 1 : 0;
   let height = dynamic ? 452 : 227 + deepHeader;
   if (rowCount > 0) {
-    height = defaultHeader + rowCount * nativeRowHeight + defaultFooter + bandGrowth + 1;
+    height = defaultHeader + rowCount * nativeRowHeight + defaultFooter + bandGrowth + 1 + paginationEdge;
   } else if (heightUnits > 0) {
     const grid = heightUnits * nativeRowHeight;
     const bands = header + footer;
     if (grid > bands) {
-      height = grid + 1 + (header ? 2 + deepHeader : 0) + (footer ? 2 : 0) + bandGrowth;
+      height = grid + 1 + (header ? 2 + deepHeader : 0) + (footer ? 2 : 0) + bandGrowth + paginationEdge;
     } else if (header && footer) {
       // The two bands share a short table, with one outer border pixel on each side.
-      height = bands;
+      height = bands + paginationEdge;
       header -= 1;
       footer -= 1;
     } else {
-      height = bands + 6;
+      height = bands + 6 + paginationEdge;
     }
   }
-  const groupMinimumHeight = nativeColumns
-    ? groupGridMinimum(height, header ? depth : 0, !!footer, headerExtra, rowCount, heightUnits) : undefined;
+  const groupMinimumHeight = linux
+    ? Math.min(height, groupGridMinimum(height, header ? depth : 0, !!footer, headerExtra, rowCount, heightUnits) + paginationEdge)
+    : undefined;
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);
   const explicit = number(table, 'Width');
   const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth : 0);
-  const controlMinWidth = nativeColumns && explicit > 0 ? Math.min(explicit * 10, toolbarMinimum) : toolbarMinimum;
+  const nativeWidth = linux && explicit > 0 ? explicit * 10 : 0;
+  const controlMinWidth = nativeWidth ? Math.min(nativeWidth, toolbarMinimum) : toolbarMinimum;
   // The native table viewport has its own preferred width, independent of the scrolling grid.
-  const preferredWidth = nativeColumns
-    ? explicit > 0 ? explicit * 10 : Math.max(controlMinWidth, Math.min(880, 40 + columns.length * 120))
+  const automaticWidth = nativeColumns ? Math.max(controlMinWidth, Math.min(880, 40 + columns.length * 120))
     : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
+  const preferredWidth = nativeWidth || automaticWidth;
+  const fixedGridWidth = nativeDynamicList && !nativeWidth && flag(table, 'HorizontalStretch', null) === false
+    ? Math.max(400, contentMinWidth + 2) : undefined;
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns };
+  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, commands, bar, more: flag(bar, 'Autofill'), search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }
