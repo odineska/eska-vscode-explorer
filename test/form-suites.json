@@ -1569,6 +1569,29 @@
         "native-display"
       ],
       "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "body-scroll",
+      "driver": "test/form-body-scroll-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "responsive-layout"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "explorerPathEnv": {
+        "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
+      }
     }
   ],
   "presets": {

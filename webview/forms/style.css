@@ -690,6 +690,10 @@ button { cursor: default; }
   background: #9a9a9a padding-box;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-root-commands { flex: none; }
+/* The native -1px top margin also defines the toolbar's pinned scrollport edge. */
+.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content > .taxi-root-commands {
+  position: sticky; top: -1px; z-index: 1; background: inherit;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items { flex: 1; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--vertical { grid-template-rows: var(--taxi-group-allocated-rows, var(--taxi-layout-rows)); align-items: stretch; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal { align-items: center; flex-wrap: nowrap; }
