@@ -1,4 +1,4 @@
-import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 
@@ -110,7 +110,8 @@ function inputMinimum(node, axis, os, authoredHeight) {
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
 export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false } = {}) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
-  const explicit = number(node, dimension), stretch = stretches(node, axis);
+  const explicit = axis === 'x' && node.kind === 'Button' ? buttonAuthoredWidth(node, os) : number(node, dimension);
+  const stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
   if (explicit > 0 && !stretch) return {};
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;

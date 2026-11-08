@@ -126,6 +126,11 @@ export function fontLineHeight(value) {
   const { ascent, descent } = fontLineMetrics(value);
   return ascent + descent;
 }
+/** Designer retains Width in XML but ignores it for Linux command-bar buttons. */
+export function buttonAuthoredWidth(node, os) {
+  return os === 'linux' && scalar(node, 'Type') === 'CommandBarButton' ? 0 : number(node, 'Width');
+}
+
 /** Native raised-button padding scales from the 13px reference font. */
 export function buttonMetrics(value) {
   const { pixels, ascent, descent } = fontLineMetrics(value);

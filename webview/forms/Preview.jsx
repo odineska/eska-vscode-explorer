@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth } from './text-metrics.js';
@@ -86,6 +86,7 @@ export function CommandButton(props) {
     if (props.iconOnly || cancelSearchPicture()) return 'Picture';
     return props.node?.presentation.buttonRepresentation ?? props.command?.buttonRepresentation ?? declaredMode();
   };
+  const authoredWidth = () => buttonAuthoredWidth(props.node, props.controller.state.os);
   const iconOnly = () => representation() === 'Picture';
   const picture = () => representation() === 'Text' ? undefined : pictureName() ?? sourcePicture();
   const linkCalibrated = () => props.node.presentation.font.points === 10 && props.node.presentation.font.weight === 400
@@ -141,7 +142,7 @@ export function CommandButton(props) {
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
-    automatic:!props.help && !iconOnly() && number(props.node,'Width') <= 0,
+    automatic:!props.help && !iconOnly() && authoredWidth() <= 0,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   createEffect(() => { measuredWidth(); formLayout?.invalidate(); });
@@ -155,7 +156,7 @@ export function CommandButton(props) {
     data-table-search-control={props.node?.kind === 'SearchControlAddition' ? '' : undefined} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
-    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: number(props.node, 'Width') > 0 ? `${props.controller.state.os === 'linux' ? number(props.node, 'Width') * 10 : number(props.node, 'Width') * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
+    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, width: authoredWidth() > 0 ? `${props.controller.state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node); props.onClick?.(event); }}>
     <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show><Show when={!iconOnly()}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>

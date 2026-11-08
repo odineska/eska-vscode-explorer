@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { commandBarContent } from '../webview/forms/command-bar-model.mjs';
 import { compactCommandBarGroup, displayedInPreview, groupCanShrink, stretches } from '../webview/forms/layout-model.mjs';
 import { formReferenceRoot } from './form-references.mjs';
-import { FORM_NS } from '../webview/forms/model.mjs';
+import { FORM_NS, buttonAuthoredWidth } from '../webview/forms/model.mjs';
 
 const node=(kind,properties={},children=[])=>({kind,key:kind,name:kind,children,auxiliary:[],
   properties:Object.entries(properties).map(([name,value])=>({key:{namespace:FORM_NS,name},value:{kind:'text',text:String(value)}})),
@@ -131,4 +131,14 @@ test('native command overflow corpus binds 24 sources and three compatibility pr
   const double = metrics.rows.find(row => row.name === 'PlainInputsDouble');
   assert.deepEqual(plain.locales.ru.fields, single.locales.ru.fields);
   assert.equal(double.locales.ru.fields.Middle[0] - plain.locales.ru.fields.Middle[0], 10);
+});
+
+
+test('Linux ignores stored Width of command-bar buttons while retaining ordinary button sizes', () => {
+  const command = node('Button', { Type: 'CommandBarButton', Width: 8 });
+  const ordinary = node('Button', { Type: 'UsualButton', Width: 8 });
+  assert.equal(buttonAuthoredWidth(command, 'linux'), 0);
+  assert.equal(buttonAuthoredWidth(ordinary, 'linux'), 8);
+  assert.equal(buttonAuthoredWidth(command, 'windows'), 8);
+  assert.equal(command.properties.find(p => p.key.name === 'Width').value.text, '8');
 });
