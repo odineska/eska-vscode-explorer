@@ -144,14 +144,23 @@ async function verifyWrappedRows(form, service, results) {
     }
     await replace(xml);
     await ui.evaluate(nextPaint);
-    const boxes = await rectangles(ui, keys);
-    const origin = await ui.evaluate("(()=>{const r=document.querySelector('.taxi-form-frame').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()");
-    const relative = boxes.map(box => [box.x-origin[0],box.y-origin[1],box.width,box.height]);
     const aligned = sample.throughAlign !== 'DontUse';
+    const tolerance = sample.positionTolerancePx ?? 0;
+    let layout;
+    await until(async () => {
+      const boxes = await rectangles(ui, keys);
+      if (boxes.some(box => !box)) return false;
+      const origin = await ui.evaluate("(()=>{const r=document.querySelector('.taxi-form-frame').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()");
+      const relative = boxes.map(box => [box.x-origin[0],box.y-origin[1],box.width,box.height]);
+      layout = {boxes, origin, relative};
+      return (boxes[0].x === boxes[1].x) === aligned && (process.platform !== 'linux'
+        || origin.slice(2).every((value, axis) => value === sample.frame[axis])
+          && relative.every((box, index) => box.every((value, axis) => Math.abs(value - sample.controls[names[index]][axis]) <= tolerance)));
+    }, 'wrapped layout ' + sample.case);
+    const {boxes, origin, relative} = layout;
     assert.equal(boxes[0].x === boxes[1].x, aligned, sample.case);
     if (process.platform === 'linux') {
       assert.deepEqual(origin.slice(2), sample.frame, sample.case + ' frame');
-      const tolerance = sample.positionTolerancePx ?? 0;
       for (const [index, name] of names.entries()) {
         assert.ok(relative[index].every((value, axis) => Math.abs(value - sample.controls[name][axis]) <= tolerance),
           sample.case + ' ' + name + ' ' + JSON.stringify({actual:relative[index],expected:sample.controls[name]}));
