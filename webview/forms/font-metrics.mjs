@@ -105,18 +105,22 @@ export function fieldCaptionProfile(text, font) {
   return captionProfile(text, font, designTextAdvances);
 }
 
-/** Designer shapes decoration words independently, without kerning across whitespace. */
-export function decorationTextAdvances(text, options) {
+/** Designer shapes words independently, without kerning across whitespace. */
+export function wordTextAdvances(text, options) {
   const runs = text.split(/(\s+)/u).map(run => hintedPairTextAdvances(run, options));
   if (runs.some(run => !run)) return;
   return runs.flat();
+}
+
+export function wordCaptionWidth(text, font) {
+  return wordTextAdvances(text, controlCaptionOptions(font))?.reduce((sum, width) => sum + width, 0);
 }
 
 /** Breakable text closes its terminal separator; unbroken text keeps the final line. */
 export function decorationCaptionProfile(text, font) {
   const terminalSeparator = /(?:\r\n?|\n)$/u.test(text);
   const content = text.includes(' ') ? text.replace(/(?:\r\n?|\n)$/u, '') : text;
-  const profile = captionProfile(content, font, decorationTextAdvances);
+  const profile = captionProfile(content, font, wordTextAdvances);
   return profile && { ...profile, content, terminalSeparator };
 }
 

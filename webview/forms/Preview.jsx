@@ -9,7 +9,7 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionWidth, designCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
+import { controlCaptionWidth, designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { groupSpacingInterval, independentVerticalSection } from './group-spacing.mjs';
@@ -606,7 +606,8 @@ function Field(props) {
   };
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
-    const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation()) ? controlCaptionWidth(label(), labelFont()) : undefined;
+    const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation())
+      ? (radio() ? wordCaptionWidth : controlCaptionWidth)(label(), labelFont()) : undefined;
     const reference = referenceTitleWidth();
     const titleWidth = numericWidth() ?? (reference === undefined ? undefined : reference + inputCaptionInset);
     const wrapped = checkboxCaption() || (inputCaption() && sideTitle());

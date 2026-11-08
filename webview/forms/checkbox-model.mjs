@@ -1,6 +1,6 @@
-import { controlCaptionOptions } from './font-metrics.mjs';
+import { wordCaptionWidth } from './font-metrics.mjs';
 import { buttonMetrics, flag, fontLineMetrics, formatSettings, number, property, scalar } from './model.mjs';
-import { tumblerCaptionLayout, tumblerCaptionWidth } from './tumbler-caption.mjs';
+import { tumblerCaptionLayout } from './tumbler-caption.mjs';
 
 const captions = {
   ru: { logical: ['Истина', 'Ложь'], regional: ['Да', 'Нет'] },
@@ -37,12 +37,11 @@ export function checkboxTumblerLayout(node, labels, os) {
   const equal = flag(node, 'EqualItemsWidth');
   const explicit = equal ? Math.round(Math.max(0, number(node, 'ItemWidth')) * (os === 'linux' ? 10 : 8)) : 0;
   const paragraphs = labels.map(label => label.split(/\r\n?|\n/u));
-  const options = controlCaptionOptions(font);
   const widths = paragraphs.map(lines => {
     if (os !== 'linux') return;
     let width = 0;
     for (const line of lines) {
-      const advance = tumblerCaptionWidth(line, options);
+      const advance = wordCaptionWidth(line, font);
       if (advance === undefined) return;
       width = Math.max(width, advance);
     }

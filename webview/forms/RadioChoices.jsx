@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
-import { controlCaptionWidth, linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
+import { controlCaptionWidth, wordCaptionWidth, linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
 import { radioGlyph } from './choice-glyph.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
@@ -85,7 +85,8 @@ export function RadioChoices(props) {
     role="radiogroup" aria-label={caption(node(), state)} aria-disabled={inactive()} style={style()}>
     <For each={choices()}>{(_choice, index) => {
       const label = () => labels()[index()];
-      const width = createMemo(() => linux ? layout()?.advances[index()] ?? controlCaptionWidth(label(), valueFont()) : undefined);
+      const width = createMemo(() => linux
+        ? layout()?.advances[index()] ?? (segments() ? controlCaptionWidth : wordCaptionWidth)(label(), valueFont()) : undefined);
       const checked = () => !segments() && index() === 0;
       const position = () => positions()[index()];
       const edge = (match) => segments() && match ? '' : undefined;
