@@ -36,7 +36,7 @@ export interface Presentation {
   picture: FormPicture | null;
   buttonRepresentation?: ButtonRepresentation;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
-  valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
+  valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; allowedSign?: "Any" | "Nonnegative"; dateParts: string | null; types: PropertyKey[] };
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
   autoCommandItems?: AutoCommandItem[];
   objectCommandMenu?: AutoCommandItem[][];

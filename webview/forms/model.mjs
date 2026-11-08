@@ -164,6 +164,23 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
+// Measured Taxi 8.3.27 units for default-formatted numeric lengths 1–51.
+// Preserve native quantization before scaling; Chromium text advances are unrelated.
+const numericInputUnits = [
+  2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 11, 11, 12, 13,
+  13, 14, 15, 15, 16, 17, 17, 18, 19, 19, 20, 21, 21, 22, 23,
+  23, 24, 25, 25, 26, 27, 27, 28, 29, 30, 30, 31, 32, 32, 33,
+  34, 34, 35, 36,
+];
+function linuxNumericInputWidth(node) {
+  const { digits, fraction = 0, allowedSign } = node.presentation.valueType;
+  if (!Number.isInteger(digits) || digits < 1 || digits > 38) return Math.round(20 * inputUnit(node) + 1);
+  const decimals = Math.max(0, Math.min(digits, fraction));
+  const groups = Math.floor(Math.max(0, digits - decimals - 1) / 3);
+  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits);
+  const units = numericInputUnits[length - 1] - Number(allowedSign === 'Nonnegative');
+  return Math.round(units * 10 * (fontPixels(node.presentation.font) - 1) / 12) + 11;
+}
 const inputChoiceWidth = 20;
 const referenceOpenWidth = 22;
 export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
@@ -223,7 +240,8 @@ export function inputTextBaseline(height, value) {
 }
 export function inputChoiceButton(node, os) {
   const type = node.presentation.valueType;
-  const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
+  const automatic = ['reference', 'composite'].includes(type.kind) || type.kind === 'number' && (os !== 'linux' || type.fraction > 0)
+    || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
   return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
 }
@@ -231,7 +249,7 @@ export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
   return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
     && (kind === 'string' || !flag(node, 'MultiLine', false))
-    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && (!flag(node, 'SpinButton', false) || kind === 'number');
 }
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
@@ -248,17 +266,20 @@ export function fieldWidth(node, os) {
   const unit = inputUnit(node);
   const reference = linuxReferenceWithOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
+  const spin = native && flag(node, 'SpinButton', false);
+  const buttons = (reference ? referenceOpenWidth : 0) + (spin ? 21 : 0)
+    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) : 0);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
     if (!native) return Math.max(20, width * unit + 4);
-    const buttons = (reference ? referenceOpenWidth : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth : 0);
     return width * 10 + 11 + buttons;
   }
   if (reference && inputChoiceButton(node, os)) return Math.round(20 * unit + 1) + referenceButtonWidth;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
+  if (type.kind === 'number' && native) return linuxNumericInputWidth(node) + buttons;
   if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
   if (type.kind === 'date') {
@@ -288,10 +309,11 @@ export function fieldStyle(node, os) {
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
     ? `min(100%, ${automaticTextWidth(node)}px)` : '100%';
   const stretch = flag(node, 'HorizontalStretch', false);
+  const choiceOutset = inputChoiceButton(node, os) && !flag(node, 'SpinButton', false);
   // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
   return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),
     ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
-    ...(stretch ? native ? { 'min-width': inputChoiceButton(node, os) ? 'calc(100% - 1px)' : '100%' } : { width: '100%' } : {}) };
+    ...(stretch ? native ? { 'min-width': choiceOutset ? 'calc(100% - 1px)' : '100%' } : { width: '100%' } : {}) };
 }
 export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
