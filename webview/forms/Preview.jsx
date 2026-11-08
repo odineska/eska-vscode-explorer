@@ -99,6 +99,7 @@ export function CommandButton(props) {
   const nativeIcon = createMemo(() => {
     if (!iconOnly()) return false;
     const value = picture();
+    if (!value) return true;
     if (typeof value === 'string') return !!standardPicture(value, props.pictureVariant);
     return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
   });
@@ -133,19 +134,29 @@ export function CommandButton(props) {
       }
       return { padding: '0 1px' };
     }
-    if (props.controller.state.os === 'linux' && nativeIcon()) return { 'background-image': backgroundImage() };
+    const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
+    const usual = props.node?.kind === 'Button' && scalar(props.node, 'Type', 'UsualButton') === 'UsualButton'
+      && !props.bar && !props.help;
+    const picturePadding = Math.floor(value.horizontalPadding / 2);
+    if (props.controller.state.os === 'linux' && nativeIcon()) return {
+      'background-image': backgroundImage(),
+      '--taxi-picture-button-width': usual ? `${16 + 2 * picturePadding + 2}px` : undefined,
+      'min-height': usual ? `${buttonControlHeight(props.node, props.controller.state.os)}px` : undefined,
+    };
     if (props.controller.state.os !== 'linux' || props.bar || props.help || iconOnly() || link()) return {};
     if(props.dropdown)return props.nativeDropdown?{'background-image':backgroundImage()}:{};
-    const value = buttonMetrics(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font);
-    const pictureWithText = props.rootBar && !!picture() && !!label();
-    const leftPadding = pictureWithText ? 5 : value.horizontalPadding;
+    const pictureWithText = !!picture() && !!label();
+    const rootPictureWithText = props.rootBar && pictureWithText;
+    const usualPictureWithText = usual && pictureWithText;
+    const leftPadding = rootPictureWithText ? 5 : usualPictureWithText ? picturePadding : value.horizontalPadding;
     return { padding: `${value.verticalPadding}px ${value.horizontalPadding}px ${value.verticalPadding}px ${leftPadding}px`,
       'line-height': `${value.lineHeight}px`,
-      'column-gap': pictureWithText ? '8px' : undefined, 'justify-content': pictureWithText ? 'flex-start' : undefined,
+      'column-gap': rootPictureWithText ? '8px' : usualPictureWithText ? `${value.horizontalPadding - picturePadding}px` : undefined,
+      'justify-content': rootPictureWithText || usualPictureWithText ? 'flex-start' : undefined,
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
-    automatic:!props.help && !iconOnly() && authoredWidth() <= 0,
+    automatic:!props.help && !iconOnly() && authoredWidth() <= 0,wordCaption:true,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   createEffect(() => { measuredWidth(); formLayout?.invalidate(); });

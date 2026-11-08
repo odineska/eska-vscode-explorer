@@ -22,6 +22,17 @@ function geometryExpression(keys, form, locale) {
         ...(Object.hasOwn(spec,'list')?{list:choice?.dataset.choiceKind==='list'}:{})}];
     }));
     const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name),name)])),controls};
+    if(${Object.hasOwn(expected, 'buttonContent')}) {
+      const content={};
+      for(const name of Object.keys(${JSON.stringify(expected.buttonContent ?? {})})) {
+        const button=control(name),image=button?.querySelector('[data-native-picture]');
+        if(!button||image&&(image.dataset.nativePicture!=='ready'
+          ||image.tagName==='IMG'&&(!image.complete||image.naturalWidth!==16)))return null;
+        const imageBox=image&&(image.closest('.taxi-picture-template')??image).getBoundingClientRect();
+        content[name]={text:button.textContent,picture:!!image,pictureInset:imageBox?imageBox.x-button.getBoundingClientRect().x:null};
+      }
+      result.buttonContent=content;
+    }
     if(${Object.hasOwn(expected, 'checkboxPaint')}) {
       const marks=[...root.querySelectorAll('.taxi-checkbox')];
       if(${process.platform === 'linux'}&&marks.some(e=>e.dataset.nativeMark!=='ready'))return null;
@@ -48,7 +59,7 @@ async function stableGeometry(ui, expression) {
 
 function assertGeometry(actual, form, locale, label) {
   if (process.platform !== 'linux') return;
-  const { screenshotSha256, ...expected } = form.expected.locales[locale];
+  const { screenshotSha256, buttonRgbSha256, ...expected } = form.expected.locales[locale];
   const { controls, ...geometry } = actual;
   assert.deepEqual(geometry, expected, label);
   const buttons = Object.fromEntries(Object.entries(form.expected.controls).map(([name, spec]) => [name,
@@ -90,6 +101,7 @@ exports.run = async () => {
         GapPageDefaultCheckbox: { target: 'Value', dirty: ['GapLongPageDefaultLong', 'GapLongPageAlwaysLong', 'GapPageDefaultCheckbox'], detached: ['GapLongPageDefaultLong', 'GapPageDefaultCheckbox'] },
         SpacingRootTitles: { target: 'Field11Left', dirty: ['SpacingRootHiddenTitles', 'SpacingRootTitles'], detached: ['SpacingRootHiddenTitles', 'SpacingRootTitles'] },
         SpacingPageTitles: { target: 'Field11Left', dirty: ['SpacingPageUnitedFalse', 'SpacingPageHiddenTitles', 'SpacingPageUnitedTrue', 'SpacingPageTitles'], detached: ['SpacingPageUnitedFalse', 'SpacingPageHiddenTitles', 'SpacingPageTitles'] },
+        HelpAuto: { target: 'TargetButton', dirty: ['HelpPicture', 'HelpBoth', 'HelpEmpty', 'HelpOverride', 'HelpPicture16', 'HelpBoth16', 'HelpText16', 'LocalBoth16', 'LocalText16', 'LocalNoPicture16', 'LocalClearPicture16', 'HelpAuto'], detached: ['HelpPicture', 'HelpBoth', 'HelpEmpty', 'HelpOverride', 'HelpPicture16', 'HelpBoth16', 'HelpText16', 'LocalBoth16', 'LocalText16', 'LocalNoPicture16', 'LocalClearPicture16', 'HelpText', 'HelpAuto'] },
         Auto10: { target: 'TargetButton', dirty: ['Two10', 'Three10', 'Two16', 'Three16', 'Auto16', 'One10', 'Auto10'], detached: ['Two10', 'Three16', 'Auto10'] },
         Multiline12Plain: { target: 'Reference', dirty: ['Multiline12Choice', 'Multiline61Choice', 'Multiline61Plain', 'Multiline12Plain'], detached: ['Multiline61Choice', 'Multiline12Plain'] },
         EnumNoneEdit: { target: 'Reference', dirty: ['EnumTitleEdit', 'EnumTitleFixed', 'EnumNoneFixed', 'EnumNoneEdit'], detached: ['EnumTitleFixed', 'EnumNoneEdit'] },

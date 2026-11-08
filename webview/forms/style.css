@@ -190,7 +190,7 @@ button { cursor: default; }
 .taxi-button--help { width: 30px; padding: 3px 0; }
 .taxi-button--bar { background: none; border-color: transparent; box-shadow: none; min-height: 24px; padding: 2px 5px; }
 .taxi-button--picture { padding: 3px; min-width: 26px; }
-.taxi-button--icon-only { width: 30px; padding: 3px 0; }
+.taxi-button--icon-only { width: var(--taxi-picture-button-width, 30px); padding: 3px 0; }
 .taxi-button--icon-only.taxi-button--dropdown { width: 42px; }
 .taxi-button--icon-only.taxi-button--dropdown .taxi-down { margin-left: 0; }
 .taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; text-decoration: underline; }

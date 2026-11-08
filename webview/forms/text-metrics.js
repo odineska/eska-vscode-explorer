@@ -1,5 +1,5 @@
 import { createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { firstFontFamily, hintedTextWidth } from './font-metrics.mjs';
+import { firstFontFamily, hintedTextWidth, wordTextAdvances } from './font-metrics.mjs';
 
 /** Share font loading and discrete advances across captions and button footprints. */
 function createNativeWidth(element, request, measure) {
@@ -14,8 +14,11 @@ function createNativeWidth(element, request, measure) {
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
       const context = canvas.getContext('2d'); if (!context) return;
       context.font = descriptor;
-      const textWidth = hintedTextWidth(value.text, { family: firstFontFamily(css.fontFamily),
-        pixels: Math.round(parseFloat(css.fontSize)), weight: css.fontWeight, italic: css.fontStyle === 'italic' })
+      const options = { family: firstFontFamily(css.fontFamily), pixels: Math.round(parseFloat(css.fontSize)),
+        weight: css.fontWeight, italic: css.fontStyle === 'italic' };
+      const words = value.wordCaption && Number(css.fontWeight) <= 500 && !options.italic
+        ? wordTextAdvances(value.text, options) : undefined;
+      const textWidth = words?.reduce((sum, advance) => sum + advance, 0) ?? hintedTextWidth(value.text, options)
         ?? [...value.text].reduce((sum, char) => sum + Math.floor(context.measureText(char).width + .5), 0);
       setWidth(measure(target, css, textWidth, value.text));
     }, () => {});
