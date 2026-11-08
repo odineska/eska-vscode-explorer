@@ -1571,6 +1571,46 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "checkbox-caption-size",
+      "driver": "test/form-text-inputs-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-checkbox-auto-spacing"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "page-group-spacing",
+      "driver": "test/form-text-inputs-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-page-group-spacing"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "button-heights",
       "driver": "test/form-text-inputs-host.cjs",
       "mode": "installed",

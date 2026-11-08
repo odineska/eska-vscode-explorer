@@ -9,7 +9,7 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionWidth, designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
+import { designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { groupSpacingInterval, independentVerticalSection } from './group-spacing.mjs';
@@ -629,7 +629,7 @@ function Field(props) {
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
     const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation())
-      ? (radio() ? wordCaptionWidth : controlCaptionWidth)(label(), labelFont()) : undefined;
+      ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
     const wrapped = checkboxCaption() || (inputCaption() && sideTitle());

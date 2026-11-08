@@ -86,6 +86,10 @@ exports.run = async () => {
       const transitions = {
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+        GapRootDefaultCheckbox: { target: 'Value', dirty: ['GapLongRootDefaultLong', 'GapLongRootAlwaysLong', 'GapRootDefaultCheckbox'], detached: ['GapLongRootAlwaysLong', 'GapRootDefaultCheckbox'] },
+        GapPageDefaultCheckbox: { target: 'Value', dirty: ['GapLongPageDefaultLong', 'GapLongPageAlwaysLong', 'GapPageDefaultCheckbox'], detached: ['GapLongPageDefaultLong', 'GapPageDefaultCheckbox'] },
+        SpacingRootTitles: { target: 'Field11Left', dirty: ['SpacingRootHiddenTitles', 'SpacingRootTitles'], detached: ['SpacingRootHiddenTitles', 'SpacingRootTitles'] },
+        SpacingPageTitles: { target: 'Field11Left', dirty: ['SpacingPageUnitedFalse', 'SpacingPageHiddenTitles', 'SpacingPageUnitedTrue', 'SpacingPageTitles'], detached: ['SpacingPageUnitedFalse', 'SpacingPageHiddenTitles', 'SpacingPageTitles'] },
         Auto10: { target: 'TargetButton', dirty: ['Two10', 'Three10', 'Two16', 'Three16', 'Auto16', 'One10', 'Auto10'], detached: ['Two10', 'Three16', 'Auto10'] },
         Multiline12Plain: { target: 'Reference', dirty: ['Multiline12Choice', 'Multiline61Choice', 'Multiline61Plain', 'Multiline12Plain'], detached: ['Multiline61Choice', 'Multiline12Plain'] },
         EnumNoneEdit: { target: 'Reference', dirty: ['EnumTitleEdit', 'EnumTitleFixed', 'EnumNoneFixed', 'EnumNoneEdit'], detached: ['EnumTitleFixed', 'EnumNoneEdit'] },

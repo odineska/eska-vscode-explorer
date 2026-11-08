@@ -17,7 +17,9 @@ export function setGroupSpacing(element, axis, amount, alignment) {
 export function layoutGroupSpacing(model, { targets, alignment, os }) {
   if (os !== 'linux') return;
   function visit(node) {
-    const children = targets.children(node), edges = children.map(visit);
+    // Pages have an Items container but no ordinary element wrapper.
+    const logicalEdges = new Map(node.children.map(child => [child.key, visit(child)]));
+    const children = targets.children(node), edges = children.map(child => logicalEdges.get(child.key));
     const items = targets.containers.get(node.key);
     const horizontal = items?.classList.contains('taxi-items--horizontal') ?? false;
     const group = items?.parentElement, padding = group && getComputedStyle(group);
