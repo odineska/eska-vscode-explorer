@@ -22,6 +22,12 @@ function geometryExpression(keys, form, locale) {
         ...(Object.hasOwn(spec,'list')?{list:choice?.dataset.choiceKind==='list'}:{})}];
     }));
     const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name),name)])),controls};
+    if(${Object.hasOwn(expected, 'labelColumns')}) {
+      result.labelColumns=Object.fromEntries(Object.keys(${JSON.stringify(expected.labelColumns ?? {})}).map(name=>{
+        const e=nodes.get(keys[name])?.querySelector('.taxi-label,.taxi-label-field'),r=e?.getBoundingClientRect();
+        return [name,r?[r.x-origin.x,r.width,r.height]:null];
+      }));
+    }
     if(${Object.hasOwn(expected, 'buttonContent')}) {
       const content={};
       for(const name of Object.keys(${JSON.stringify(expected.buttonContent ?? {})})) {
@@ -95,6 +101,9 @@ exports.run = async () => {
       await ui.parkPointer();
       await ui.screenshot('text-inputs-' + form.kind + '-' + locale + '.png');
       const transitions = {
+        RootButtonDecor: { target: 'TargetButton', dirty: ['RootNone', 'RootDouble', 'PlainRootButtonDecor', 'RootButtonDecor'], detached: ['RootSingle', 'RootNone', 'RootDouble', 'PlainRootButtonDecor', 'RootButtonDecor'] },
+        PageButtonDecor: { target: 'TargetButton', dirty: ['PlainPageButtonDecor', 'PageButtonDecor'], detached: ['PlainPageButtonDecor', 'PageButtonDecor'] },
+        RootButtonField: { target: 'TargetButton', dirty: ['PlainRootButtonField', 'RootButtonField'], detached: ['PlainRootButtonField', 'RootButtonField'] },
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
         GapRootDefaultCheckbox: { target: 'Value', dirty: ['GapLongRootDefaultLong', 'GapLongRootAlwaysLong', 'GapRootDefaultCheckbox'], detached: ['GapLongRootAlwaysLong', 'GapRootDefaultCheckbox'] },
@@ -113,6 +122,7 @@ exports.run = async () => {
         const identity = [...view.nodes.values()].find(n => n.name === transitions.target).identity;
         await service.receive(view, main, { type: 'select', identity });
         const remember = target => target.evaluate(`globalThis.__textControls=[...document.querySelectorAll('.taxi-input')];
+          ${Object.hasOwn(form.expected.locales[locale], 'labelColumns') ? "__textControls.push(...document.querySelectorAll('.taxi-label,.taxi-label-field'));" : ''}
           ${form.expected.paintedButtons?.length ? "__textControls.push(...document.querySelectorAll('.taxi-items > [data-kind=Button] > .taxi-button'));" : ''}true`);
         async function change(kind, target, allocated = false) {
           const next = fixture.formGallery.find(f => f.kind === kind);

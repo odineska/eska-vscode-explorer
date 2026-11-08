@@ -1792,6 +1792,26 @@
       "explorerPathEnv": {
         "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
       }
+    },
+    {
+      "id": "mixed-row-spacing",
+      "driver": "test/form-text-inputs-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-mixed-row-spacing"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
     }
   ],
   "presets": {

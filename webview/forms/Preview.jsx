@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, stringLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth, createNativeTextWidth } from './text-metrics.js';
@@ -631,11 +631,11 @@ function Field(props) {
     }
   });
   const labelValueStyle = () => {
-    const size = numericLabel();
+    const size = numericLabel() ?? stringLabelMetrics(node(), state.os);
     return size ? {
       width: `${size.preferred}px`, height: `${size.height}px`, 'min-height': '0',
       'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
-    } : fieldStyle(node());
+    } : fieldStyle(node(), state.os);
   };
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
@@ -693,10 +693,12 @@ function LabelDecoration(props) {
       'line-height': allocation() ? `${allocation().lineHeight}px` : undefined,
     } : {}),
     color: color(node().presentation.foreground),
+    'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
     'white-space': metrics() ? 'pre' : flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre',
   });
   return <span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }}
     data-native-decoration={metrics() ? '' : undefined} data-decoration-minimum={metrics()?.minimum}
+    data-painted-label={property(node(), 'BackColor') ? '' : undefined}
     aria-label={value()} style={style()}>
     <Show when={allocation()?.boxes} fallback={allocation()?.text ?? value()}>{boxes =>
       <For each={boxes()}>{(box, index) => <span class="taxi-decoration-line"

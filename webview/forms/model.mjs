@@ -203,6 +203,15 @@ export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
 }
+/** Explicit single-line text labels use fixed Taxi character units. */
+export function stringLabelMetrics(node, os) {
+  const width = Math.trunc(number(node, 'Width'));
+  if (os !== 'linux' || node.kind !== 'LabelField' || node.presentation.valueType?.kind !== 'string'
+      || width <= 0 || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
+  const painted = !!property(node, 'BackColor'), size = fontLineMetrics(node.presentation.font);
+  return { preferred: width * 10 + (painted ? 2 : 0), height: size.ascent + size.descent + (painted ? 4 : 2) };
+}
+
 /** Intrinsic size of a single-line numeric label in Linux Designer. */
 export function numericLabelMetrics(node, os) {
   const type = node.presentation.valueType;
@@ -327,6 +336,8 @@ export function nativeReferenceInput(node, os) {
   return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
+  const label = stringLabelMetrics(node, os);
+  if (label) return label.preferred;
   const text = textInputWidthBounds(node, os);
   if (text) return text.preferred;
   const unit = inputUnit(node);
