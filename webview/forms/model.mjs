@@ -304,7 +304,7 @@ function linuxSimpleInput(node, os) {
 export function inputPaintedOutset(node, os) {
   return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
 }
-function linuxReferenceInput(node, os) {
+export function linuxReferenceInput(node, os) {
   return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind)
     && !flag(node, 'MultiLine', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
 }

@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { formReferenceRoot } from './form-references.mjs';
-import { FORM_NS, fieldWidth, inputPaintedOutset } from '../webview/forms/model.mjs';
+import { designCaptionWidth } from '../webview/forms/font-metrics.mjs';
+import { inputCaptionInset } from '../webview/forms/field-caption-layout.js';
+import { FORM_NS, fieldWidth, inputPaintedOutset, linuxReferenceInput, nativeReferenceInput } from '../webview/forms/model.mjs';
 
 const root = new URL('tests/fixtures/forms/native-input-choice-size/', formReferenceRoot);
 const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
@@ -35,5 +37,18 @@ test('multiline choice allocation matches the complete native width', () => {
   for (const row of metrics.rows.filter(row => row.name.startsWith('Multiline'))) {
     const node = nodeFor(row);
     assert.equal(fieldWidth(node, 'linux') + inputPaintedOutset(node, 'linux'), row.locales.en.fields.Reference[2], row.name);
+  }
+});
+
+test('no-open enumeration captions use the common native reference profile and inset', () => {
+  for (const row of metrics.rows.filter(row => row.type.kind === 'reference')) {
+    const node = nodeFor(row);
+    assert.equal(linuxReferenceInput(node, 'linux'), true, row.name);
+    assert.equal(nativeReferenceInput(node, 'linux'), false, row.name + '/open-button bounds unchanged');
+    assert.equal(linuxReferenceInput(node, 'win32'), false);
+    if (row.label) {
+      const titleAndGap = row.locales.en.fields.Reference[0] - row.locales.en.fields.Above[0];
+      assert.equal(designCaptionWidth(row.label, row.font) + inputCaptionInset + 4, titleAndGap, row.name);
+    }
   }
 });

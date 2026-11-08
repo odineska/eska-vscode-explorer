@@ -85,6 +85,8 @@ exports.run = async () => {
       const transitions = {
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+        Multiline12Plain: { target: 'Reference', dirty: ['Multiline12Choice', 'Multiline61Choice', 'Multiline61Plain', 'Multiline12Plain'], detached: ['Multiline61Choice', 'Multiline12Plain'] },
+        EnumNoneEdit: { target: 'Reference', dirty: ['EnumTitleEdit', 'EnumTitleFixed', 'EnumNoneFixed', 'EnumNoneEdit'], detached: ['EnumTitleFixed', 'EnumNoneEdit'] },
         RowsSeparate: { target: 'Minimum', dirty: ['RowsCombined', 'RowsDontUse', 'TitleFont16', 'RowsSeparate'], detached: ['RowsCombined', 'TitleFont16', 'RowsSeparate'] },
         PagedSeparate: { target: 'Minimum', dirty: ['PagedCombined', 'PagedSeparate'], detached: ['PagedCombined', 'PagedSeparate'] },
         EnumComposite43: { target: 'Reference', dirty: ['CatalogNoOpen43', 'CatalogOpen43', 'EnumOnly12', 'EnumDefault12', 'EnumCompositeFont16', 'EnumComposite43'], detached: ['EnumDefault12', 'CatalogOpen43', 'EnumComposite43'] },
