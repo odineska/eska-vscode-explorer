@@ -158,10 +158,15 @@ exports.run = async function () {
     assert.equal(geometry.paging, form.kind === 'DynamicList' ? 4 : 0);
     assert.equal(geometry.fabricatedRows, 0);
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
-    if (form.kind !== 'DynamicList') {
-      const height = explicitCommands ? process.platform === 'linux' ? 314 : 312
-        : form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? process.platform === 'linux' ? 227 : 225
-        : form.kind === 'NoAutoFill' ? process.platform === 'linux' ? 309 : 307 : form.kind === 'Vertical' ? 343 : 342;
+    if (process.platform === 'linux' && form.nativeFrame) {
+      const expected = form.nativeFrame[english ? 'en' : 'ru'];
+      assert.deepEqual([geometry.frame.width, geometry.frame.height], expected.frame, form.kind + ' native outer frame');
+      assert.deepEqual([geometry.control.x - geometry.frame.x, geometry.control.y - geometry.frame.y,
+        geometry.control.width, geometry.control.height], expected.grid, form.kind + ' native grid rectangle');
+    } else if (form.kind !== 'DynamicList') {
+      const linux = process.platform === 'linux';
+      const height = explicitCommands || form.kind === 'NoViewStatus' ? linux ? 314 : 312
+        : { GridFooter: 225, NoAutoFill: 307, Vertical: 343 }[form.kind] ?? (linux ? 344 : 342);
       assert.equal(geometry.frame.height, height, `${form.kind} native frame height`);
     }
     if (explicitCommands && process.platform === 'linux') {

@@ -310,7 +310,9 @@ export async function createTableHeightGallery(fixture) {
 }
 
 export async function createTableGallery(fixture) {
-  const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
+  const frames = JSON.parse(await readFile(join(process.env.ESKA_FORM_FIXTURES, 'frame-metrics.json'), 'utf8'));
+  const result = (await createGallery(fixture, frames.rows.map(row => row.name)))
+    .map(form => ({ ...form, nativeFrame: frames.rows.find(row => row.name === form.kind).locales }));
   if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {
     const input = process.env.ESKA_FORM_CONTEXT_FIXTURES;
     if (!isAbsolute(input)) throw new Error('ESKA_FORM_CONTEXT_FIXTURES must be absolute.');

@@ -1631,6 +1631,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "table-toolbar-insets",
+      "driver": "test/form-table-height-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-table-toolbar-insets"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "unbound-buttons",
       "driver": "test/form-unbound-buttons-host.cjs",
       "mode": "installed",

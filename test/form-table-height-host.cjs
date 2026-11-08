@@ -88,7 +88,7 @@ exports.run = async () => {
       results.push({ name: form.kind, ...actual, nativeGeometryCompared: process.platform === 'linux' });
       await ui.parkPointer();
       await ui.screenshot('table-height-' + form.kind + '-' + locale + '.png');
-      if (['StaticDefault', 'DynamicDefault', 'StatusOnly'].includes(form.kind)) {
+      if (['StaticDefault', 'DynamicDefault', 'StatusOnly', 'SearchAuto'].includes(form.kind)) {
         const identity = [...view.nodes.values()].find(node => node.name === 'Rows').identity;
         await service.receive(view, main, { type: 'select', identity });
         const remember = target => target.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll');true");
@@ -108,8 +108,11 @@ exports.run = async () => {
         }
         const dynamic = form.kind === 'DynamicDefault';
         const status = form.kind === 'StatusOnly';
+        const toolbar = form.kind === 'SearchAuto';
         await remember(ui);
-        const changes = status
+        const changes = toolbar
+          ? ['NoViewStatus', 'SearchFixed', 'SearchNone', 'SearchTop', 'NoInlineBar', 'SearchAuto']
+          : status
           ? ['StatusNone', 'StatusSearch', 'StatusCommands', 'StatusFixed', 'StatusOnly']
           : dynamic
           ? ['DynamicManual7', 'DynamicManual1', 'DynamicHeight4Max7', 'DynamicFont16Max7', 'DynamicDefault']
@@ -123,7 +126,8 @@ exports.run = async () => {
           assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
           await prepareCaptureWindow(floating, true);
           await remember(floating);
-          const floatingChanges = status ? ['StatusSearch', 'StatusFixed', 'StatusOnly']
+          const floatingChanges = toolbar ? ['SearchFixed', 'SearchTop', 'SearchAuto']
+            : status ? ['StatusSearch', 'StatusFixed', 'StatusOnly']
             : dynamic ? ['DynamicFont16Max7', 'DynamicDefault'] : ['StaticManual7', 'StaticRows9Max7'];
           for (const kind of floatingChanges) await change(kind, floating, true);
         } finally {
