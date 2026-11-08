@@ -245,12 +245,23 @@ export function inputTextBaseline(height, value) {
   // Preserve the native four-pixel top inset before centering the text line.
   return Math.max(ascent+3,Math.floor((height+ascent-descent)/2));
 }
+function enumerationInput(node) {
+  const type = node.presentation.valueType, types = type.types ?? [];
+  return type.kind === 'reference' && types.length > 0 && types.every(value =>
+    value.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && value.name.startsWith('EnumRef.'));
+}
+export function inputListChoice(node, os) {
+  return flag(node, 'ListChoiceMode', os === 'linux' && enumerationInput(node));
+}
+export function inputOpenButton(node, os) {
+  return flag(node, 'OpenButton', node.presentation.valueType.kind === 'reference' && !(os === 'linux' && enumerationInput(node)));
+}
 function requestedInputChoice(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite'].includes(type.kind) || type.kind === 'number' && (os !== 'linux' || type.fraction > 0)
     || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
-  return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
+  return inputListChoice(node, os) || flag(node, 'ChoiceButton', automatic && !readOnly);
 }
 export function inputChoiceButton(node, os) {
   return textInputWidthBounds(node, os)?.choice ?? requestedInputChoice(node, os);
@@ -293,10 +304,12 @@ function linuxSimpleInput(node, os) {
 export function inputPaintedOutset(node, os) {
   return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
 }
+function linuxReferenceInput(node, os) {
+  return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind)
+    && !flag(node, 'MultiLine', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+}
 function linuxReferenceWithOpenButton(node, os) {
-  return os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'reference'
-    && !flag(node, 'MultiLine', false) && flag(node, 'OpenButton')
-    && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+  return linuxReferenceInput(node, os) && inputOpenButton(node, os);
 }
 export function nativeReferenceInput(node, os) {
   return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
@@ -305,18 +318,18 @@ export function fieldWidth(node, os) {
   const text = textInputWidthBounds(node, os);
   if (text) return text.preferred;
   const unit = inputUnit(node);
-  const reference = linuxReferenceWithOpenButton(node, os);
+  const reference = linuxReferenceInput(node, os), open = reference && inputOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
   const spin = native && flag(node, 'SpinButton', false);
-  const buttons = (reference ? referenceOpenWidth : 0) + (spin ? 21 : 0)
-    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) : 0);
+  const buttons = (open ? referenceOpenWidth : 0) + (spin ? 21 : 0)
+    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + Number(reference && !open) : 0);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
     if (!native) return Math.max(20, width * unit + 4);
     return width * 10 + 11 + buttons;
   }
-  if (reference && inputChoiceButton(node, os)) return Math.round(20 * unit + 1) + referenceButtonWidth;
+  if (reference) return Math.round(20 * unit + 1) + buttons;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;

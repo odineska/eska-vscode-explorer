@@ -291,6 +291,17 @@ async function addNativeGoods(fixture, catalog) {
   await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
 }
 
+export async function createReferenceWidthGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native reference directory.');
+  await addNativeGoods(fixture, join(input, 'Catalog.xml'));
+  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
+  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(join(input, 'Enum.xml')));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+  return createMeasuredFormGallery(fixture, input);
+}
+
 export async function createTableHeightGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native table height directory.');

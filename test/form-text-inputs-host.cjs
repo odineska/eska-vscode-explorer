@@ -11,9 +11,14 @@ function geometryExpression(keys, form, locale) {
     const origin=root.getBoundingClientRect(),nodes=new Map([...root.querySelectorAll('[data-element]')].map(e=>[e.dataset.element,e]));
     const keys=${JSON.stringify(keys)},control=name=>nodes.get(keys[name])?.querySelector('.taxi-input');
     const box=e=>{if(!e)return null;const r=e.getBoundingClientRect();return[r.x-origin.x,r.y-origin.y,r.width+Number(e.dataset.nativeOutset||0),r.height]};
-    if(${process.platform === 'linux'}&&[...root.querySelectorAll('.taxi-input:not([data-native-spin])')].some(e=>e.dataset.nativeBorder!=='ready'))return null;
-    const specs=${JSON.stringify(form.expected.controls)},controls=Object.fromEntries(Object.keys(specs).map(name=>{
-      const e=control(name);return[name,{choice:!!e?.querySelector('.taxi-input-button--choice')}];
+    const specs=${JSON.stringify(form.expected.controls)};
+    if(${process.platform === 'linux'}&&Object.entries(specs).some(([name,spec])=>{
+      const e=control(name);return spec.nativeBorder!==false&&!e?.hasAttribute('data-native-spin')&&e?.dataset.nativeBorder!=='ready';
+    }))return null;
+    const controls=Object.fromEntries(Object.entries(specs).map(([name,spec])=>{
+      const e=control(name),choice=e?.querySelector('.taxi-input-button--choice');
+      return[name,{choice:!!choice,...(Object.hasOwn(spec,'open')?{open:!!e?.querySelector('.taxi-input-button--open')} :{}),
+        ...(Object.hasOwn(spec,'list')?{list:choice?.dataset.choiceKind==='list'}:{})}];
     }));
     const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name))])),controls};
     if(${Object.hasOwn(expected, 'dividerColumns')}){
@@ -40,7 +45,9 @@ function assertGeometry(actual, form, locale, label) {
   const { screenshotSha256, ...expected } = form.expected.locales[locale];
   const { controls, ...geometry } = actual;
   assert.deepEqual(geometry, expected, label);
-  assert.deepEqual(controls, Object.fromEntries(Object.entries(form.expected.controls).map(([name, control]) => [name, {choice:control.choice}])), label + '/buttons');
+  const buttons = Object.fromEntries(Object.entries(form.expected.controls).map(([name, spec]) => [name,
+    Object.fromEntries(['choice', 'open', 'list'].filter(key => Object.hasOwn(spec, key)).map(key => [key, spec[key]]))]));
+  assert.deepEqual(controls, buttons, label + '/buttons');
 }
 
 exports.run = async () => {
@@ -73,6 +80,7 @@ exports.run = async () => {
       const transitions = {
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+        EnumComposite43: { target: 'Reference', dirty: ['CatalogNoOpen43', 'CatalogOpen43', 'EnumOnly12', 'EnumDefault12', 'EnumCompositeFont16', 'EnumComposite43'], detached: ['EnumDefault12', 'CatalogOpen43', 'EnumComposite43'] },
       }[form.kind];
       if (transitions) {
         const identity = [...view.nodes.values()].find(n => n.name === transitions.target).identity;
