@@ -27,6 +27,13 @@ test('painted normal groups include their own padding in the boundary requiremen
     'an outer painted wrapper preserves separation inherited from the nested group');
 });
 
+test('independent vertical sections reserve their title gap inside the group', () => {
+  const section = node({ Representation: 'NormalSeparation', Group: 'Vertical', United: 'false' });
+  assert.deepEqual(groupSeparationEdges(section, [none], false), { x: [10, 10], y: [0, 0] });
+  assert.deepEqual(groupSeparationEdges(section, [normal], false), normal,
+    'the independent owner retains separation requested by a nested child');
+});
+
 test('explicit group intervals use the native horizontal and vertical units', () => {
   for (const [mode, x, y] of [['None', 0, 0], ['Half', 5, 5], ['Single', 10, 9], ['Double', 20, 18]]) {
     const group = node({ HorizontalSpacing: mode, VerticalSpacing: mode });

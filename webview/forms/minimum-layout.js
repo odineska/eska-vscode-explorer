@@ -102,6 +102,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     } else {
       const child = element.firstElementChild;
       value = child ? marginBox(child) : { width: 0, height: 0 };
+      if (child?.hasAttribute('data-native-decoration')) value.width = Number(child.dataset.decorationMinimum) + insets(child).width;
     }
     const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-min-width')
       || element.style.getPropertyValue('--taxi-united-cell-width'));

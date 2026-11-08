@@ -1,4 +1,9 @@
-import { scalar } from './model.mjs';
+import { flag, scalar } from './model.mjs';
+
+export function independentVerticalSection(node) {
+  return node.kind === 'UsualGroup' && scalar(node, 'Representation') === 'NormalSeparation'
+    && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United');
+}
 
 /** Native separation is a boundary requirement, shared by both adjacent items. */
 export function groupSeparationEdges(node, children, horizontal, padding = {}) {
@@ -11,7 +16,8 @@ export function groupSeparationEdges(node, children, horizontal, padding = {}) {
       ? [edges[0][0], edges.at(-1)[1]]
       : [Math.max(...edges.map(edge => edge[0])), Math.max(...edges.map(edge => edge[1]))];
     const unit = axis === 'x' ? 10 : 8;
-    return [axis, inherited.map((value, side) => Math.max(value, normal ? unit - (padding[axis]?.[side] ?? 0) : 0))];
+    const separated = normal && !(axis === 'y' && independentVerticalSection(node));
+    return [axis, inherited.map((value, side) => Math.max(value, separated ? unit - (padding[axis]?.[side] ?? 0) : 0))];
   }));
 }
 

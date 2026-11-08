@@ -126,7 +126,7 @@ export function mixedColumnLayout(context) {
   function allocate(above) {
     for (const heading of headingWidths.values()) {
       heading.wraps = availableTrackWidth(heading.items, 1, scale) < heading.preferred;
-      updateStyle(heading.title, '--taxi-group-heading-space', heading.wraps ? 'normal' : 'nowrap');
+      updateStyle(heading.title, '--taxi-group-heading-space', os === 'linux' ? heading.wraps ? 'pre-wrap' : 'pre' : heading.wraps ? 'normal' : 'nowrap');
     }
     for (const {lanes, plans, united, heading, widest} of allocations) {
       const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, widest.length, scale)));

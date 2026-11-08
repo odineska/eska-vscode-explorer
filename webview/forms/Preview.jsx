@@ -9,8 +9,10 @@ import { NativeButtonArrow } from './NativeButtonArrow.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { RadioChoices } from './RadioChoices.jsx';
 import { CheckBoxControl } from './CheckBoxControl.jsx';
-import { controlCaptionWidth, designCaptionWidth, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
+import { controlCaptionWidth, designCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
+import { labelDecorationProfile } from './decoration-metrics.mjs';
+import { groupSpacingInterval, independentVerticalSection } from './group-spacing.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
@@ -318,6 +320,7 @@ function Group(props) {
   const collapsible = () => scalar(node(), 'Behavior') === 'Collapsible';
   const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page');
   const painted = () => !!property(node(), 'BackColor');
+  const heading = createMemo(() => state.os === 'linux' ? decorationCaptionProfile(caption(node(), state), node().presentation.titleFont) : undefined);
   let container;
   const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.sequence}));
   return <Switch>
@@ -327,7 +330,11 @@ function Group(props) {
     <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
     <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible() && title(), 'taxi-group--painted': painted() }}
       style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
-      <Show when={title()}><div class="taxi-group-title" style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
+      <Show when={title()}><div class="taxi-group-title" data-native-text-width={heading()?.preferred} style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor),
+        width: heading() ? `${heading().preferred}px` : undefined, 'max-width': state.os === 'linux' ? '100%' : undefined,
+        'font-size': state.os === 'linux' ? `${fontPixels(node().presentation.titleFont)}px` : undefined,
+        'white-space': state.os === 'linux' ? 'var(--taxi-group-heading-space, pre)' : undefined,
+        'margin-bottom': state.os === 'linux' && independentVerticalSection(node()) ? `${groupSpacingInterval(node(), 'y') ?? 9}px` : undefined }}>
         <Show when={collapsible()} fallback={caption(node(), state)}><button type="button" aria-expanded={!collapsed()} onClick={event => { event.stopPropagation(); props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() }); }}>{caption(node(), state)}</button></Show>
       </div></Show><Show when={!collapsed()}><Items {...props}/></Show>
     </div></Match>
@@ -633,19 +640,26 @@ function Field(props) {
   </div>;
 }
 function LabelDecoration(props) {
-  const node = () => props.node, state = props.controller.state;
+  const node = () => props.node, state = props.controller.state, layout = useFormLayout();
   const value = () => caption(node(), state);
+  const metrics = createMemo(() => state.os === 'linux' ? labelDecorationProfile(node(), value()) : undefined);
+  const allocation = () => layout?.decorationFor(node()) ?? metrics()?.preferred;
   const style = () => ({
     ...font(node().presentation.font, state.os),
     ...(state.os === 'linux' ? {
       'font-size': `${fontPixels(node().presentation.font)}px`,
-      width: value() === '' ? `${Math.max(0, number(node(), 'Width')) * 10}px` : undefined,
+      width: metrics() ? `${metrics().width}px` : value() === '' ? `${Math.max(0, number(node(), 'Width')) * 10}px` : undefined,
+      height: allocation() ? `${allocation().height}px` : undefined,
+      'line-height': allocation() ? `${allocation().lineHeight}px` : undefined,
     } : {}),
     color: color(node().presentation.foreground),
-    'white-space': flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre',
+    'white-space': metrics() ? 'pre' : flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre',
   });
-  return <span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }} style={style()}>{value()}</span>;
+  return <span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }}
+    data-native-decoration={metrics() ? '' : undefined} data-decoration-minimum={metrics()?.minimum}
+    aria-label={value()} style={style()}>{allocation()?.text ?? value()}</span>;
 }
+
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
   const bounds = axis => controlBounds(node(), axis, undefined, state.os, {

@@ -74,9 +74,9 @@ export function designCaptionWidth(text, font) {
   return designTextAdvances(text, controlCaptionOptions(font))?.reduce((sum, width) => sum + width, 0);
 }
 
-function captionParagraph(text, options) {
+function captionParagraph(text, options, advancesFor) {
   const characters = [...text];
-  const advances = designTextAdvances(text, options);
+  const advances = advancesFor(text, options);
   if (!advances) return;
   const edges = [0];
   for (const advance of advances) edges.push(edges.at(-1) + advance);
@@ -92,13 +92,29 @@ function captionParagraph(text, options) {
   return { characters, edges, minimum, compact, preferred };
 }
 
-/** The minimum keeps each word intact. The compact width fits a paragraph on two lines. */
-export function fieldCaptionProfile(text, font) {
+function captionProfile(text, font, advancesFor) {
   const options = controlCaptionOptions(font);
-  const paragraphs = text.split(/\r\n?|\n/u).map(line => captionParagraph(line, options));
+  const paragraphs = text.split(/\r\n?|\n/u).map(line => captionParagraph(line, options, advancesFor));
   if (paragraphs.some(paragraph => !paragraph)) return;
   const width = kind => paragraphs.reduce((size, paragraph) => Math.max(size, paragraph[kind]), 0);
   return { paragraphs, minimum: width('minimum'), compact: width('compact'), preferred: width('preferred') };
+}
+
+/** The minimum keeps each word intact. The compact width fits a paragraph on two lines. */
+export function fieldCaptionProfile(text, font) {
+  return captionProfile(text, font, designTextAdvances);
+}
+
+/** Designer shapes decoration words independently, without kerning across whitespace. */
+export function decorationTextAdvances(text, options) {
+  const runs = text.split(/(\s+)/u).map(run => hintedPairTextAdvances(run, options));
+  if (runs.some(run => !run)) return;
+  return runs.flat();
+}
+
+/** A terminal line separator closes the last decoration line without adding another. */
+export function decorationCaptionProfile(text, font) {
+  return captionProfile(text.replace(/(?:\r\n?|\n)$/u, ''), font, decorationTextAdvances);
 }
 
 /** A parenthesized suffix keeps the break space in its width but starts at the left edge. */

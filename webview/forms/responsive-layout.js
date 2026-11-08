@@ -14,6 +14,7 @@ import { measureTableCommands } from './table-command-layout.mjs';
 import { authoredGroupRows } from './authored-group-rows.js';
 import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
+import { measureDecorations } from './decoration-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -37,8 +38,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
+  const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -77,10 +79,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
       if (aboveTitles().size) setAboveTitles(new Set());
+      if (decorations().size) setDecorations(new Map());
       const scale = boundingScale(root);
       rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
       allocateTableCommands = measureTableCommands(root, scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      decorationsLayout = measureDecorations(state.model.root, context, state);
       layoutGroupSpacing(state.model.root, context);
       unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
@@ -130,7 +134,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
     // Recheck fit against the resized area before scrollbars from the old arrangement settle.
     const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0);
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) {
@@ -148,6 +152,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
+    const nextDecorations = decorationsLayout.allocate();
+    const previousDecorations = decorations();
+    if (nextDecorations.size !== previousDecorations.size || [...nextDecorations].some(([key, value]) => {
+      const previous = previousDecorations.get(key);
+      return !previous || previous.text !== value.text || previous.height !== value.height || previous.lineHeight !== value.lineHeight;
+    })) {
+      setDecorations(nextDecorations); needsMinimum = true; schedule();
+    }
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);
@@ -214,6 +226,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     wrapped: node => wrapped().has(node.key),
     captionFor: node => fieldCaptions().get(node.key),
     titleAbove: node => aboveTitles().has(node.key),
-    initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
+    decorationFor: node => decorations().get(node.key),
+    initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * (state.os === 'linux' ? 10 : 10.5) + (state.os === 'linux' ? 30 : 0)}px` : 'max-content',
   };
 }

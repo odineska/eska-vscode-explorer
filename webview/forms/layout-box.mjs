@@ -8,6 +8,8 @@ export function boxInsets(style) {
 }
 
 export function textWidth(element, scale) {
+  const native = element.dataset.nativeTextWidth;
+  if (native !== undefined) return Number(native);
   const range = document.createRange();
   range.selectNodeContents(element);
   return range.getBoundingClientRect().width / scale;
