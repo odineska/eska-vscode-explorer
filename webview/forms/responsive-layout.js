@@ -15,6 +15,7 @@ import { authoredGroupRows } from './authored-group-rows.js';
 import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
+import { sameDecorationLines } from './decoration-metrics.mjs';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -154,10 +155,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateCommandBars(geometry().minima);
     const nextDecorations = decorationsLayout.allocate();
     const previousDecorations = decorations();
-    if (nextDecorations.size !== previousDecorations.size || [...nextDecorations].some(([key, value]) => {
-      const previous = previousDecorations.get(key);
-      return !previous || previous.text !== value.text || previous.height !== value.height || previous.lineHeight !== value.lineHeight;
-    })) {
+    if (nextDecorations.size !== previousDecorations.size
+        || [...nextDecorations].some(([key, value]) => !sameDecorationLines(previousDecorations.get(key), value))) {
       setDecorations(nextDecorations); needsMinimum = true; schedule();
     }
     const previousAbove = aboveTitles();

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { formReferenceRoot } from './form-references.mjs';
 import { FORM_NS } from '../webview/forms/model.mjs';
 import { decorationCaptionProfile, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
-import { labelDecorationProfile, labelDecorationLines } from '../webview/forms/decoration-metrics.mjs';
+import { labelDecorationProfile, labelDecorationLines, sameDecorationLines } from '../webview/forms/decoration-metrics.mjs';
 
 const sample = 'AV To Юрий: Подробное пояснение.';
 function node(properties = {}, font = { points: 10, weight: 400 }) {
@@ -65,4 +65,37 @@ test('native decoration corpus retains 95 XML sources and both locale captures',
   assert.equal(rows.HyperlinkLines1.frame[0] - rows.LinkControl.frame[0], 2);
   assert.equal(rows.HyperlinkLines1.frame[1] - rows.LinkControl.frame[1], 2);
   assert.equal(rows.NativeDecorations.frame[1], 118);
+});
+
+test('unbroken and blank decorations retain their terminal lines', () => {
+  for (const [text, height] of [['M\n', 30], ['M\n\n', 45], ['\n', 30], ['\n\n', 45], [' \n', 15]]) {
+    assert.equal(labelDecorationProfile(node(), text).preferred.height, height, JSON.stringify(text));
+  }
+});
+
+test('Mono keeps hard-separator positions when total height and wrapped text are equal', () => {
+  const font = { points: 10, face: 'Liberation Mono' };
+  const first = labelDecorationLines(labelDecorationProfile(node({}, font), 'M\nM M'), 8);
+  const second = labelDecorationLines(labelDecorationProfile(node({}, font), 'M M\nM'), 8);
+  assert.equal(first.text, second.text);
+  assert.equal(first.height, second.height);
+  assert.deepEqual(first.boxes.map(box => box.top), [3, 0, 0]);
+  assert.deepEqual(second.boxes.map(box => box.top), [0, 3, 0]);
+  assert.equal(sameDecorationLines(first, second), false);
+  assert.equal(sameDecorationLines(first, structuredClone(first)), true);
+});
+
+test('66 native line-height cases retain their sources and reproduce Linux allocation', async () => {
+  const root = new URL('tests/fixtures/forms/native-label-lines/', formReferenceRoot);
+  const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(metrics.rows.length, 66);
+  assert.equal(new Set(metrics.rows.map(row => row.name)).size, 66);
+  for (const row of metrics.rows) {
+    const source = await readFile(new URL(row.name + '.xml', root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.xmlSha256, row.name);
+    for (const locale of ['ru', 'en']) assert.match(row.nativeScreenshots[locale], /^[a-f0-9]{64}$/u);
+    const profile = labelDecorationProfile(node({ AutoMaxWidth: false, Width: row.width }, row.font), row.text);
+    assert.equal(profile.preferred.height, row.fields.Below[1] - 80, row.name);
+    assert.equal(Math.max(131, profile.width) + 34, row.frame[0], row.name + ' width');
+  }
 });

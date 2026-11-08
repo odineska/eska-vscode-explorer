@@ -354,6 +354,7 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration]:has(> .taxi-label:not([data-native-decoration]):empty),
 .taxi-preview[data-os=linux] .taxi-label:not([data-native-decoration]):empty { min-height: 17px; }
 .taxi-preview[data-os=linux] .taxi-label[data-native-decoration] { box-sizing: content-box; padding-block: 1px; }
+.taxi-preview[data-os=linux] .taxi-decoration-line { display: block; box-sizing: border-box; }
 .taxi-preview[data-os=linux] .taxi-label[data-native-decoration].taxi-hyperlink { border: 1px solid transparent; }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-label[data-native-decoration] { max-width: 100%; }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-label[data-native-decoration].taxi-hyperlink { max-width: calc(100% - 2px); }

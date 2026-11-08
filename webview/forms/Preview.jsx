@@ -657,7 +657,13 @@ function LabelDecoration(props) {
   });
   return <span classList={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }}
     data-native-decoration={metrics() ? '' : undefined} data-decoration-minimum={metrics()?.minimum}
-    aria-label={value()} style={style()}>{allocation()?.text ?? value()}</span>;
+    aria-label={value()} style={style()}>
+    <Show when={allocation()?.boxes} fallback={allocation()?.text ?? value()}>{boxes =>
+      <For each={boxes()}>{(box, index) => <span class="taxi-decoration-line"
+        style={{ height: `${box.height}px`, 'padding-top': `${box.top}px`, 'line-height': `${allocation().lineHeight}px` }}
+      >{box.text + (index() < boxes().length - 1 ? '\n' : '')}</span>}</For>
+    }</Show>
+  </span>;
 }
 
 export function Element(props) {

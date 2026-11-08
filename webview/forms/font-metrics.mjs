@@ -112,9 +112,12 @@ export function decorationTextAdvances(text, options) {
   return runs.flat();
 }
 
-/** A terminal line separator closes the last decoration line without adding another. */
+/** Breakable text closes its terminal separator; unbroken text keeps the final line. */
 export function decorationCaptionProfile(text, font) {
-  return captionProfile(text.replace(/(?:\r\n?|\n)$/u, ''), font, decorationTextAdvances);
+  const terminalSeparator = /(?:\r\n?|\n)$/u.test(text);
+  const content = text.includes(' ') ? text.replace(/(?:\r\n?|\n)$/u, '') : text;
+  const profile = captionProfile(content, font, decorationTextAdvances);
+  return profile && { ...profile, content, terminalSeparator };
 }
 
 /** A parenthesized suffix keeps the break space in its width but starts at the left edge. */

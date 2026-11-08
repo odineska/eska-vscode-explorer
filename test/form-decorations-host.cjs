@@ -54,17 +54,17 @@ exports.run = async () => {
       const expression=geometryExpression(keys,Object.keys(form.expected.fields));
       await ui.evaluate('document.fonts.ready.then(()=>true)');
       const actual=await stableGeometry(ui,expression);
-      // Named Mono vertical metrics remain an explicit open part of the native corpus.
-      const mono=[...view.nodes.values()].some(n=>n.kind==='LabelDecoration'&&/mono/iu.test(n.presentation.font.face??''));
-      assertGeometry(actual,form.expected,!mono,form.kind);
+      assertGeometry(actual,form.expected,true,form.kind);
       assert.deepEqual(ui.scriptErrors(),[]);
       assert.deepEqual(view.snapshot.model.diagnostics.appearance,[]);
       assert.deepEqual(view.snapshot.model.diagnostics.composition,[]);
-      results.push({name:form.kind,...actual,heightAccepted:process.platform==='linux'&&!mono,
+      results.push({name:form.kind,...actual,heightAccepted:process.platform==='linux',
         nativeGeometryMatches:process.platform==='linux'?JSON.stringify(actual)===JSON.stringify({frame:form.expected.frame,fields:form.expected.fields}):undefined});
       await ui.parkPointer(); await ui.screenshot('decoration-'+form.kind+'-'+vscode.env.language+'.png');
       const variants=form.kind==='AutoMax'?['AutoNoMax','Width20','AutoMax']
-        :form.kind==='BspControl'?['BspUnitedTrue','BspControl']:[];
+        :form.kind==='BspControl'?['BspUnitedTrue','BspControl']
+        :form.kind==='MonoAsciiLines1'?['MonoAsciiLines2','MonoAsciiLines3','MonoAsciiLines1']
+        :form.kind==='MonoSoftFont10Width20'?['MonoSoftHard','MonoSoftEmptyHard','MonoSoftFont10Width20']:[];
       if(variants.length) {
         const identity=[...view.nodes.values()].find(n=>n.name==='Below').identity;
         await service.receive(view,main,{type:'select',identity});
