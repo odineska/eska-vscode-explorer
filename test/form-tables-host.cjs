@@ -284,6 +284,7 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
     const bar = "document.querySelector('.taxi-table-horizontal-scrollbar')";
     const viewport = "document.querySelector('.taxi-table-content')";
     await until(() => ui.evaluate(`!!${bar} && ${viewport}.scrollWidth > ${viewport}.clientWidth`), 'horizontal table strip visible');
+    if (fixed) await until(() => ui.evaluate(`${viewport}.closest('.taxi-form-frame').offsetWidth === 634`), 'fixed table frame follows the dirty preferred width');
     const geometry = await ui.evaluate(`(() => {
       const content = ${viewport}, strip = ${bar}, table = content.parentElement;
       return { height: strip.offsetHeight, reserved: table.clientHeight - content.clientHeight,
