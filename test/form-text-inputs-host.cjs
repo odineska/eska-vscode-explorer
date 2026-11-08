@@ -21,6 +21,11 @@ function geometryExpression(keys, form, locale) {
         ...(Object.hasOwn(spec,'list')?{list:choice?.dataset.choiceKind==='list'}:{})}];
     }));
     const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name))])),controls};
+    if(${Object.hasOwn(expected, 'checkboxPaint')}) {
+      const marks=[...root.querySelectorAll('.taxi-checkbox')];
+      if(${process.platform === 'linux'}&&marks.some(e=>e.dataset.nativeMark!=='ready'))return null;
+      result.checkboxPaint=marks.map(box);
+    }
     if(${Object.hasOwn(expected, 'dividerColumns')}){
       result.dividerColumns=Object.fromEntries(Object.keys(specs).map(name=>[name,[...control(name).querySelectorAll('.taxi-input-button')].map(e=>e.getBoundingClientRect().x-origin.x)]));
     }
@@ -80,6 +85,8 @@ exports.run = async () => {
       const transitions = {
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+        RowsSeparate: { target: 'Minimum', dirty: ['RowsCombined', 'RowsDontUse', 'TitleFont16', 'RowsSeparate'], detached: ['RowsCombined', 'TitleFont16', 'RowsSeparate'] },
+        PagedSeparate: { target: 'Minimum', dirty: ['PagedCombined', 'PagedSeparate'], detached: ['PagedCombined', 'PagedSeparate'] },
         EnumComposite43: { target: 'Reference', dirty: ['CatalogNoOpen43', 'CatalogOpen43', 'EnumOnly12', 'EnumDefault12', 'EnumCompositeFont16', 'EnumComposite43'], detached: ['EnumDefault12', 'CatalogOpen43', 'EnumComposite43'] },
       }[form.kind];
       if (transitions) {

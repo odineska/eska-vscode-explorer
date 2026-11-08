@@ -1531,6 +1531,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "unlabeled-checkbox-columns",
+      "driver": "test/form-text-inputs-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-unlabeled-checkbox-columns"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "reference-widths",
       "driver": "test/form-reference-widths-host.cjs",
       "mode": "installed",

@@ -21,6 +21,11 @@ function leadingField(entry) {
   return leadingField(entry.children[0]);
 }
 
+function hasUnlabeledCheckbox(entry) {
+  return entry.node.kind === 'CheckBoxField' && entry.node.presentation.titleLocation === 'None'
+    || (entry.children ?? []).some(hasUnlabeledCheckbox);
+}
+
 function cells(entry) {
   if (entry.kind !== 'group' || entry.node.presentation.united) return [entry];
   return [...(entry.title ? [entry.title] : []), ...entry.children.flatMap(cells)];
@@ -64,8 +69,9 @@ export function alignUnitedColumns(model, context) {
       const bar = element.querySelector(':scope > .taxi-command-bar');
       if (bar) return { kind: 'command', node, element, width: borderBoxSize(bar, scale).width };
     }
-    if (os === 'linux' && commandColumns && node.kind === 'InputField' && location === 'None') {
-      const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
+    if (os === 'linux' && location === 'None' && (node.kind === 'CheckBoxField' || commandColumns && node.kind === 'InputField')) {
+      const surface = element.querySelector(':scope > .taxi-field-row > .taxi-field-control');
+      const control = node.kind === 'CheckBoxField' ? surface : surface?.firstElementChild;
       if (control) return { kind: 'input', node, element, width: borderBoxSize(control, scale).width };
     }
     if (os === 'linux' && node.presentation.titleLocation === 'None' && ['LabelField', 'PictureField'].includes(node.kind)) {
@@ -130,11 +136,12 @@ export function alignUnitedColumns(model, context) {
     const firstGroup = lanes.find(lane => lane.kind === 'group');
     // Input tracks already include their painted border; spacing starts at that edge.
     const gap = os === 'linux' ? 10 : pixels(getComputedStyle(firstGroup.items).columnGap);
-    scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly });
+    scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly || lanes.some(hasUnlabeledCheckbox) });
   }
   function visit(node) {
     registerColumns(node);
-    for (const child of mountedChildren(node)) visit(child);
+    // Page panels own an Items container without an element wrapper.
+    for (const child of node.children) visit(child);
   }
   visit(model);
 
