@@ -47,7 +47,7 @@ test('X11 focus is configured only for Linux native hosts',()=>{
 });
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
-  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,75);assert.ok(ids.includes('radio-layout'));assert.ok(ids.includes('command-frame'));assert.ok(ids.includes('command-overflow'));assert.ok(ids.includes('decorations'));assert.ok(ids.includes('decoration-lines'));assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));assert.ok(ids.includes('group-spacing'));assert.ok(ids.includes('command-bars'));
+  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,76);assert.ok(ids.includes('radio-layout'));assert.ok(ids.includes('command-frame'));assert.ok(ids.includes('command-overflow'));assert.ok(ids.includes('decorations'));assert.ok(ids.includes('decoration-lines'));assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));assert.ok(ids.includes('group-spacing'));assert.ok(ids.includes('command-bars'));
   const eska=fileURLToPath(formReferenceRoot),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
   for(const suite of catalog.suites){
     await readFile(join(repository,suite.driver));assert.equal(suite.caseSelection,'whole-suite-with-existing-transitions');

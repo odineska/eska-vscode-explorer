@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, linuxFixedInputWidth, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, textInputWidthBounds, linuxFixedInputWidth, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth, createNativeTextWidth } from './text-metrics.js';
@@ -555,19 +555,34 @@ function Input(props) {
   const listChoice = () => flag(node(), 'ListChoiceMode', false);
   const choiceKind = () => listChoice() ? 'list' : kind() === 'date' ? 'calendar' : kind() === 'number' ? 'calculator' : 'choice';
   const multiline = () => flag(node(), 'MultiLine', false);
+  const textSizing = createMemo(() => textInputWidthBounds(node(), state.os));
+  const [observedPaintWidth, setObservedPaintWidth] = createSignal();
+  const choice = () => textSizing() ? textSizing().requestedChoice && (observedPaintWidth() ?? textSizing().preferredPaint) >= 24
+    : inputChoiceButton(node(), state.os);
+  const sizing = createMemo(() => fieldStyle(node(), state.os, choice()));
+  createEffect(on(textSizing, metrics => {
+    setObservedPaintWidth(undefined);
+    if (!metrics?.requestedChoice) return;
+    // Adjust the logical border after visibility changes without changing painted width.
+    const measure = () => setObservedPaintWidth(surface.offsetWidth + Number(choice()));
+    const observer = new ResizeObserver(measure);
+    observer.observe(surface);
+    const frame = requestAnimationFrame(measure);
+    onCleanup(() => { observer.disconnect(); cancelAnimationFrame(frame); });
+  }));
   const controlHeight = () => inputControlHeight(node(), state.os);
   const verticalOffset=()=>{
     if(state.os!=='linux'||multiline())return 0;
     const offset=(inputRowHeight(node(),state.os,!!caption(node(),state))-inputHeight(node(),state.os))/2;
     return Math.round(offset)-offset;
   };
-  return <div ref={surface} class="taxi-input" data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={paint()?Number(paint().choice):undefined}
-    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...fieldStyle(node(),state.os), '--taxi-input-outset': fieldStyle(node(),state.os)['min-width'] === 'calc(100% - 1px)' ? '1px' : '0px', top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
+  return <div ref={surface} class="taxi-input" data-native-text-width={textSizing()?'':undefined} data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={paint()?Number(paint().choice):undefined}
+    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': flag(node(), 'ReadOnly', false) }} style={{ ...sizing(), '--taxi-input-outset': textSizing() ? `${Number(choice())}px` : sizing()['min-width'] === 'calc(100% - 1px)' ? '1px' : '0px', top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>
-    <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}/>
+    <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint} choice={choice()}/>
     <Switch><Match when={multiline()}><textarea readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
       <Match when={true}><input ref={valueInput} readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && ['number','date'].includes(kind()) && ((flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)) || !!paint())} placement="input" mask={kind()==='date'} target={()=>valueInput} text={value()} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
-    <Show when={inputChoiceButton(node(),state.os)}><span class="taxi-input-button" data-choice-kind={choiceKind()} classList={{'taxi-input-button--choice':true,'taxi-input-button--number':choiceKind() === 'calculator'}}>{choiceKind() === 'calendar' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))} fallback={<Icon name="Calendar"/>}/></Show> : choiceKind() === 'calculator' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))}/></Show> : listChoice() ? '▾' : '...'}</span></Show>
+    <Show when={choice()}><span class="taxi-input-button" data-choice-kind={choiceKind()} classList={{'taxi-input-button--choice':true,'taxi-input-button--number':choiceKind() === 'calculator'}}>{choiceKind() === 'calendar' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))} fallback={<Icon name="Calendar"/>}/></Show> : choiceKind() === 'calculator' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (flag(node(),'ReadOnly',false)||!flag(node(),'Enabled'))}/></Show> : listChoice() ? '▾' : '...'}</span></Show>
     <Show when={flag(node(), 'OpenButton', kind() === 'reference')}><span class="taxi-input-button"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
     <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
     <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
@@ -595,9 +610,13 @@ function Field(props) {
       && sideTitle()) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
-  const inputTitleWidth = createMemo(() => titleLocation() === 'Left'
-    && (nativeReferenceInput(node(), state.os) || node().presentation.valueType.kind === 'number' && linuxFixedInputWidth(node(), state.os))
-    ? designCaptionWidth(label(), labelFont()) : undefined);
+  const inputTitleWidth = createMemo(() => {
+    if (titleLocation() !== 'Left') return;
+    if (textInputWidthBounds(node(), state.os)) return wordCaptionWidth(label(), labelFont());
+    if (nativeReferenceInput(node(), state.os) || node().presentation.valueType.kind === 'number' && linuxFixedInputWidth(node(), state.os)) {
+      return designCaptionWidth(label(), labelFont());
+    }
+  });
   const labelValueStyle = () => {
     const size = numericLabel();
     return size ? {

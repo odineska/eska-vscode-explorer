@@ -19,7 +19,7 @@ export function NativeInputBorder(props) {
   let source, lastKey;
   const node=()=>props.node, state=props.controller.state;
   // A parent's background can change while reconciliation retains the child node.
-  createEffect(on(()=>[state.sequence,state.os,JSON.stringify(node().presentation.border),JSON.stringify(node().presentation.background)],()=>{
+  createEffect(on(()=>[state.sequence,state.os,props.choice,JSON.stringify(node().presentation.border),JSON.stringify(node().presentation.background)],()=>{
     const frame=requestAnimationFrame(()=>{
       const surface=props.surface(), kind=node().presentation.valueType.kind, buttons=[...surface.querySelectorAll('.taxi-input-button')];
       const disabled=!!surface.closest('.taxi-disabled'),inactive=flag(node(),'ReadOnly',false)||disabled;

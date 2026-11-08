@@ -131,6 +131,7 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=CheckBoxField] > .taxi-field-row:is([data-title-location=Top], [data-title-location=Bottom]) { row-gap: 3px; }
 .taxi-preview[data-os=linux] .taxi-field-row--check { grid-template-columns: max-content minmax(0, 1fr); }
 .taxi-items--horizontal > .taxi-element--field > .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
+.taxi-items--horizontal > .taxi-element--field > .taxi-field-row[data-title-location=None] { grid-template-columns: minmax(0, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-label { position: relative; }
 .taxi-native-label { position: absolute; pointer-events: none; }
@@ -150,6 +151,8 @@ button { cursor: default; }
 .taxi-field-control[data-tooltip-button] { display: flex; column-gap: 5px; align-items: center; }
 .taxi-field-tooltip { flex: 0 0 10px; color: #0071bc; font: 13.3333px/16px 'ESKA Taxi Sans', Arial, sans-serif; text-align: center; }
 .taxi-input > :is(input,textarea)::placeholder { color: #ccc; opacity: 1; }
+.taxi-input[data-native-text-width] { container-type: inline-size; }
+.taxi-input[data-native-text-width]:has(> .taxi-input-button--choice) > input { padding-inline: clamp(0px, calc((100cqi - 20px) / 2), 4px); }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .taxi-field-row[data-title-location=Top] > *, .taxi-field-row[data-title-location=Bottom] > * { grid-column: 1; }

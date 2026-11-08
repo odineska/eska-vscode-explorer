@@ -1,4 +1,4 @@
-import { fieldWidth, number, property, scalar } from './model.mjs';
+import { fieldWidth, inputPaintedOutset, number, property, scalar } from './model.mjs';
 import { stretches, stretchWeight, ordinaryGroup, automaticHorizontalSpacing, horizontalInputMaximum, sharesGroupLabels } from './layout-model.mjs';
 import { borderBoxSize, pixels, textWidth } from './layout-box.mjs';
 import { mixedColumnLayout } from './mixed-column-layout.js';
@@ -58,7 +58,7 @@ export function alignUnitedColumns(model, context) {
       return { kind: 'field', node, element, row, location, labelWidth,
         labelGap: pixels(getComputedStyle(row).columnGap),
         controlWidth: (choice ? borderBoxSize(control, scale).width
-          : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity)) + accessoryWidth };
+          : Math.min(fieldWidth(node, os), horizontalInputMaximum(node, os) ?? Infinity) + inputPaintedOutset(node, os)) + accessoryWidth };
     }
     if (os === 'linux' && commandColumns && node.kind === 'CommandBar') {
       const bar = element.querySelector(':scope > .taxi-command-bar');
@@ -128,9 +128,8 @@ export function alignUnitedColumns(model, context) {
     // Uncombined vertical groups continue the same column scope; united ones own a new scope.
     for (const key of exposed) covered.add(key);
     const firstGroup = lanes.find(lane => lane.kind === 'group');
-    const commandColumns = lanes.some(lane => lane.kind === 'group' && lane.children.some(child => child.kind === 'command'));
-    // Exposed command tracks share the painted edge, without an input caption's extra pixel.
-    const gap = os === 'linux' ? commandColumns ? 10 : 11 : pixels(getComputedStyle(firstGroup.items).columnGap);
+    // Input tracks already include their painted border; spacing starts at that edge.
+    const gap = os === 'linux' ? 10 : pixels(getComputedStyle(firstGroup.items).columnGap);
     scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly });
   }
   function visit(node) {

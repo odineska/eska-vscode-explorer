@@ -172,6 +172,9 @@ const numericInputUnits = [
   23, 24, 25, 25, 26, 27, 27, 28, 29, 30, 30, 31, 32, 32, 33,
   34, 34, 35, 36,
 ];
+function scaledAutomaticInputWidth(node, units) {
+  return Math.round(units * 10 * (fontPixels(node.presentation.font) - 1) / 12) + 11;
+}
 function linuxNumericInputWidth(node) {
   const { digits, fraction = 0, allowedSign } = node.presentation.valueType;
   if (!Number.isInteger(digits) || digits < 1 || digits > 38) return Math.round(20 * inputUnit(node) + 1);
@@ -179,7 +182,7 @@ function linuxNumericInputWidth(node) {
   const groups = Math.floor(Math.max(0, digits - decimals - 1) / 3);
   const length = digits + groups + Number(decimals > 0) + Number(decimals === digits);
   const units = numericInputUnits[length - 1] - Number(allowedSign === 'Nonnegative');
-  return Math.round(units * 10 * (fontPixels(node.presentation.font) - 1) / 12) + 11;
+  return scaledAutomaticInputWidth(node, units);
 }
 const inputChoiceWidth = 20;
 const referenceOpenWidth = 22;
@@ -238,12 +241,40 @@ export function inputTextBaseline(height, value) {
   // Preserve the native four-pixel top inset before centering the text line.
   return Math.max(ascent+3,Math.floor((height+ascent-descent)/2));
 }
-export function inputChoiceButton(node, os) {
+function requestedInputChoice(node, os) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite'].includes(type.kind) || type.kind === 'number' && (os !== 'linux' || type.fraction > 0)
     || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
   return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
+}
+export function inputChoiceButton(node, os) {
+  return textInputWidthBounds(node, os)?.choice ?? requestedInputChoice(node, os);
+}
+export function textInputStretchesByDefault(node) {
+  if (flag(node, 'MultiLine', false)) return true;
+  const length = node.presentation.valueType.length;
+  return !length || length > 10;
+}
+/** Keep preference, growth and the painted choice outset in one native profile. */
+export function textInputWidthBounds(node, os, choiceVisible) {
+  if (node.presentation.valueType.kind !== 'string' || !linuxFixedInputWidth(node, os) || flag(node, 'MultiLine', false)) return;
+  const authored = Math.trunc(number(node, 'Width')), limit = Math.max(0, number(node, 'MaxWidth'));
+  const length = node.presentation.valueType.length;
+  const manual = !flag(node, 'AutoMaxWidth');
+  const requestedChoice = requestedInputChoice(node, os);
+  const cap = manual ? Math.min(50, limit || 50) : 40;
+  const preferredPaint = authored > 0 ? authored * 10 + 11 + Number(requestedChoice) * 21
+    : Math.min(scaledAutomaticInputWidth(node, length || 15) + Number(requestedChoice) * 21, scaledAutomaticInputWidth(node, cap));
+  // The native value box needs one pixel beside the borders and choice button.
+  const choice = requestedChoice && (choiceVisible ?? preferredPaint >= 24);
+  const stretch = flag(node, 'HorizontalStretch', textInputStretchesByDefault(node));
+  const bound = manual ? limit ? limit * 10 + 10 : undefined
+    : scaledAutomaticInputWidth(node, Math.min(length || 40, 40)) - 1;
+  const maximumPaint = stretch && bound !== undefined ? Math.max(preferredPaint, bound) : undefined;
+  const outset = Number(choice);
+  return { preferred: preferredPaint - outset, maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
+    preferredPaint, maximumPaint, requestedChoice, choice, outset, stretch };
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
@@ -254,6 +285,10 @@ export function linuxFixedInputWidth(node, os) {
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
 }
+/** Painted choice borders extend past the logical box; spin controls own their whole border. */
+export function inputPaintedOutset(node, os) {
+  return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
+}
 function linuxReferenceWithOpenButton(node, os) {
   return os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'reference'
     && !flag(node, 'MultiLine', false) && flag(node, 'OpenButton')
@@ -263,6 +298,8 @@ export function nativeReferenceInput(node, os) {
   return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.preferred;
   const unit = inputUnit(node);
   const reference = linuxReferenceWithOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
@@ -299,7 +336,15 @@ export function fieldValue(node, culture, locale = culture) {
   }
   return '';
 }
-export function fieldStyle(node, os) {
+export function fieldStyle(node, os, choiceVisible) {
+  const text = textInputWidthBounds(node, os, choiceVisible);
+  if (text) {
+    const available = text.outset ? 'calc(100% - 1px)' : '100%';
+    return { width: `${text.preferred}px`,
+      ...(text.stretch ? { 'min-width': text.maximum === undefined ? available : `min(${available}, ${text.maximum}px)` }
+        : text.preferred < 20 ? { 'min-width': `${text.preferred}px` } : {}),
+      ...(text.maximum === undefined ? {} : { 'max-width': `min(100%, ${text.maximum}px)` }) };
+  }
   const native = linuxSimpleInput(node, os);
   // Native bounds do not change preferred dimensions in the Configurator preview.
   const usesLayoutBounds = native || linuxReferenceWithOpenButton(node, os);
@@ -309,7 +354,7 @@ export function fieldStyle(node, os) {
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
     ? `min(100%, ${automaticTextWidth(node)}px)` : '100%';
   const stretch = flag(node, 'HorizontalStretch', false);
-  const choiceOutset = inputChoiceButton(node, os) && !flag(node, 'SpinButton', false);
+  const choiceOutset = inputPaintedOutset(node, os);
   // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
   return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),
     ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),

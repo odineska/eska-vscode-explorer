@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { formReferenceRoot } from './form-references.mjs';
-import { FORM_NS, fieldWidth, inputHeight, inputChoiceButton } from '../webview/forms/model.mjs';
+import { FORM_NS, fieldWidth, inputHeight, inputChoiceButton, inputPaintedOutset } from '../webview/forms/model.mjs';
 
 const root = new URL('tests/fixtures/forms/native-number-inputs/', formReferenceRoot);
 const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
@@ -37,6 +37,7 @@ test('numeric width, sign, value buttons and fonts match 270 native controls', (
     })), presentation: { valueType: field.type, font: field.font } };
     const label = row.name + '/' + name;
     assert.equal(inputChoiceButton(node, 'linux'), field.choice, label + '/choice');
+    assert.equal(inputPaintedOutset(node, 'linux'), row.locales.ru.fields[name][2] - field.logicalWidth, label + '/paint outset');
     assert.equal(fieldWidth(node, 'linux'), field.logicalWidth, label + '/width');
     assert.equal(inputHeight(node, 'linux'), field.height, label + '/height');
   }

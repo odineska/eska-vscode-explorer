@@ -1,4 +1,4 @@
-import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 
@@ -69,6 +69,7 @@ export function stretches(node, axis, collapsed = {}, root = node) {
   }
   if (surfaces.has(node.kind)) return true;
   if (axis === 'x' && node.kind === 'CommandBar') return true;
+  if (axis === 'x' && node.kind === 'InputField' && node.presentation.valueType?.kind === 'string') return textInputStretchesByDefault(node);
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
   if (node.kind === 'InputField' && inputRows(node) > 1
@@ -80,6 +81,8 @@ export function stretches(node, axis, collapsed = {}, root = node) {
 export function stretchWeight(node, axis) { return positive(number(node, axis === 'x' ? 'Width' : 'Height')) || 1; }
 
 function automaticInputMaximum(node, os, referenceLane = false) {
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.maximum;
   const auto = scalar(node, 'AutoMaxWidth', 'Auto');
   if (explicitNo(auto)) return;
   const { kind, length } = node.presentation.valueType;
@@ -114,6 +117,8 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   const stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
   if (explicit > 0 && !stretch) return {};
+  const text = axis === 'x' ? textInputWidthBounds(node, os) : undefined;
+  if (text) return { minimum: Math.min(80, text.preferred), maximum: text.maximum };
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
@@ -144,6 +149,8 @@ function manualLaneMaximum(node) {
 /** A bounded input in a Linux horizontal row reserves only its usable width. */
 export function horizontalInputMaximum(node, os) {
   if (os !== 'linux' || node.kind !== 'InputField' || !stretches(node, 'x')) return;
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.maximum;
   const maximum = manualLaneMaximum(node);
   if (maximum === undefined) return automaticMultilineMaximum(node, os);
   const intrinsic = fieldWidth(node, os);
