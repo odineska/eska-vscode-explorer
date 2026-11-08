@@ -1571,6 +1571,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "button-heights",
+      "driver": "test/form-text-inputs-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-button-heights"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "input-choice-size",
       "driver": "test/form-reference-widths-host.cjs",
       "mode": "installed",

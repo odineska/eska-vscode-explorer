@@ -136,6 +136,18 @@ export function buttonMetrics(value) {
   const { pixels, ascent, descent } = fontLineMetrics(value);
   return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: ascent + descent };
 }
+// Designer's line unit differs from the browser line box at some hinted sizes.
+// Measured regular DefaultGUIFont pairs are bound by native-button-heights.
+const linuxButtonLineUnits = Object.freeze({8:13,9:14,10:16,11:17,12:18,14:22,16:24,18:28,20:31});
+export function buttonControlHeight(node, os) {
+  const value = node?.presentation.font, metrics = buttonMetrics(value);
+  const usual = os === 'linux' && node?.kind === 'Button' && scalar(node, 'Type', 'UsualButton') === 'UsualButton';
+  const rows = usual ? Math.max(1, Math.floor(number(node, 'Height', 1))) : 1;
+  const calibrated = !value?.italic && (value?.weight ?? 400) === 400
+    && (!value?.face || ['Arial', 'Liberation Sans', 'ESKA Taxi Sans'].includes(value.face));
+  const unit = (calibrated ? linuxButtonLineUnits[value?.points ?? 10] : undefined) ?? fontLineHeight(value);
+  return Math.max(26, metrics.lineHeight + 2 * metrics.verticalPadding + 2 + (rows - 1) * unit);
+}
 /** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
 export function buttonBackground(height, background = [255, 255, 255]) {
   if (!Number.isInteger(height) || height < 1 || height > 4096 || !Array.isArray(background) || background.length !== 3

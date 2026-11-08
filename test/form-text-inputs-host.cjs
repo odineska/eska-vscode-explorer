@@ -9,8 +9,9 @@ function geometryExpression(keys, form, locale) {
   return `(() => {
     const root=document.querySelector('.taxi-form-frame');if(!root)return null;
     const origin=root.getBoundingClientRect(),nodes=new Map([...root.querySelectorAll('[data-element]')].map(e=>[e.dataset.element,e]));
-    const keys=${JSON.stringify(keys)},control=name=>nodes.get(keys[name])?.querySelector('.taxi-input');
-    const box=e=>{if(!e)return null;const r=e.getBoundingClientRect();return[r.x-origin.x,r.y-origin.y,r.width+Number(e.dataset.nativeOutset||0),r.height]};
+    const keys=${JSON.stringify(keys)},control=name=>nodes.get(keys[name])?.querySelector('.taxi-input,button.taxi-button');
+    const paintedButtons=${JSON.stringify(form.expected.paintedButtons ?? [])};
+    const box=(e,name)=>{if(!e)return null;const r=e.getBoundingClientRect();return[r.x-origin.x,r.y-origin.y,r.width+Number(e.dataset.nativeOutset||0),r.height+Number(paintedButtons.includes(name))]};
     const specs=${JSON.stringify(form.expected.controls)};
     if(${process.platform === 'linux'}&&Object.entries(specs).some(([name,spec])=>{
       const e=control(name);return spec.nativeBorder!==false&&!e?.hasAttribute('data-native-spin')&&e?.dataset.nativeBorder!=='ready';
@@ -20,7 +21,7 @@ function geometryExpression(keys, form, locale) {
       return[name,{choice:!!choice,...(Object.hasOwn(spec,'open')?{open:!!e?.querySelector('.taxi-input-button--open')} :{}),
         ...(Object.hasOwn(spec,'list')?{list:choice?.dataset.choiceKind==='list'}:{})}];
     }));
-    const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name))])),controls};
+    const result={frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(expected.fields))}.map(name=>[name,box(control(name),name)])),controls};
     if(${Object.hasOwn(expected, 'checkboxPaint')}) {
       const marks=[...root.querySelectorAll('.taxi-checkbox')];
       if(${process.platform === 'linux'}&&marks.some(e=>e.dataset.nativeMark!=='ready'))return null;
@@ -85,6 +86,7 @@ exports.run = async () => {
       const transitions = {
         StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
         RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+        Auto10: { target: 'TargetButton', dirty: ['Two10', 'Three10', 'Two16', 'Three16', 'Auto16', 'One10', 'Auto10'], detached: ['Two10', 'Three16', 'Auto10'] },
         Multiline12Plain: { target: 'Reference', dirty: ['Multiline12Choice', 'Multiline61Choice', 'Multiline61Plain', 'Multiline12Plain'], detached: ['Multiline61Choice', 'Multiline12Plain'] },
         EnumNoneEdit: { target: 'Reference', dirty: ['EnumTitleEdit', 'EnumTitleFixed', 'EnumNoneFixed', 'EnumNoneEdit'], detached: ['EnumTitleFixed', 'EnumNoneEdit'] },
         RowsSeparate: { target: 'Minimum', dirty: ['RowsCombined', 'RowsDontUse', 'TitleFont16', 'RowsSeparate'], detached: ['RowsCombined', 'TitleFont16', 'RowsSeparate'] },
@@ -94,7 +96,8 @@ exports.run = async () => {
       if (transitions) {
         const identity = [...view.nodes.values()].find(n => n.name === transitions.target).identity;
         await service.receive(view, main, { type: 'select', identity });
-        const remember = target => target.evaluate("globalThis.__textControls=[...document.querySelectorAll('.taxi-input')];true");
+        const remember = target => target.evaluate(`globalThis.__textControls=[...document.querySelectorAll('.taxi-input')];
+          ${form.expected.paintedButtons?.length ? "__textControls.push(...document.querySelectorAll('.taxi-items > [data-kind=Button] > .taxi-button'));" : ''}true`);
         async function change(kind, target, allocated = false) {
           const next = fixture.formGallery.find(f => f.kind === kind);
           assert.ok(next);
