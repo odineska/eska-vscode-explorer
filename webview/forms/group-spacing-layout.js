@@ -26,7 +26,7 @@ export function layoutGroupSpacing(model, { targets, alignment, os }) {
     if (items) {
       const axis = horizontal ? 'x' : 'y', interval = groupSpacingInterval(node, axis);
       if (horizontal) {
-        if (interval !== undefined || children.some(child => child.kind === 'UsualGroup')) {
+        if (interval !== undefined || children.some(child => child.kind === 'UsualGroup' || child.kind === 'InputField')) {
           alignment.style(items, '--taxi-horizontal-gap', `${interval ?? 10}px`);
         }
       } else if (interval !== undefined) {

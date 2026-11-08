@@ -402,13 +402,14 @@ button { cursor: default; }
 .taxi-table-move .taxi-button:last-of-type:not(:only-of-type) { border-radius: 0 2px 2px 0; border-left: none; }
 .taxi-command-bar[data-table-commands] { --taxi-projected-search-width: 172px; }
 .taxi-command-bar[data-advanced-search] { --taxi-projected-search-width: 161px; }
-.taxi-command-bar[data-table-commands] > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
+.taxi-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-command-spacer--wide { min-width: 11px; }
 .taxi-table-command-bar[data-adaptive-table-toolbar]:has(> [data-table-search-control][data-table-command-hidden]) > .taxi-command-spacer--wide { min-width: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-element { flex-shrink: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-table-move + .taxi-element { margin-left: 11px; }
 .taxi-command-bar[data-table-commands] > .taxi-table-search { min-width: var(--taxi-projected-search-width); }
 .taxi-preview[data-form-layout=preferred] .taxi-command-bar[data-table-commands] > .taxi-table-search { flex-basis: var(--taxi-projected-search-width); }
+.taxi-preview[data-os=linux] .taxi-command-bar > .taxi-popup > .taxi-button--dropdown,
 .taxi-preview[data-os=linux] .taxi-popup[data-command-overflow] > .taxi-button--dropdown { padding-right: 6px; }
 .taxi-preview[data-os=linux] .taxi-element[data-joined-table] { margin-block: 1px; }
 .taxi-table-search { display: flex; height: 23px; border: 1px solid #a0a0a0; border-radius: 2px; flex: 0 1 260px; min-width: 80px; }
@@ -570,7 +571,8 @@ button { cursor: default; }
 
 /* Horizontal button rows reserve space for their raised-button shadows. */
 .taxi-preview[data-os=linux] .taxi-items--buttons { gap: 10px; }
-.taxi-preview[data-os=linux] .taxi-items--buttons > .taxi-element { display: flex; padding: 1px 0 2px; }
+.taxi-preview[data-os=linux] .taxi-items--buttons > .taxi-element,
+.taxi-preview[data-os=linux] .taxi-items--horizontal > .taxi-element:has(> .taxi-button[data-button-type=UsualButton]) { display: flex; padding: 1px 0 2px; }
 
 /* Native corners cover only the edge pixels; they never change text allocation. */
 .taxi-preview[data-os=linux] .taxi-button--native-border { border-color: var(--taxi-button-native-border); border-bottom-color: var(--taxi-button-native-bottom); border-radius: 0; box-shadow: 0 1px var(--taxi-button-native-shadow); }

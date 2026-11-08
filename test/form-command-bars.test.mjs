@@ -78,3 +78,57 @@ test('the native geometry matrix binds every case to its measured XML and distin
     assert.equal(new Set(identities).size,identities.length,row.name+' visual IDs');
   }
 });
+
+
+test('additional menus reserve trailing space without introducing an empty table surface', () => {
+  const table = node('Table'); table.name = 'Rows';
+  const find = node('Button', { CommandName: 'Form.Item.Rows.StandardCommand.Find' });
+  const additional = node('Button', { CommandName: 'Form.Command.Second', LocationInCommandBar: 'InAdditionalSubmenu' });
+  const customize = node('Button', { CommandName: 'Form.StandardCommand.CustomizeForm' });
+  const bar = node('CommandBar', { CommandSource: 'Item.Rows' }, [find, additional, customize]);
+  const root = node('Form', {}, [table, bar]), content = commandBarContent(root, bar);
+  assert.equal(content.source, undefined);
+  assert.equal(content.tableCommands, false);
+  assert.deepEqual(content.inline, []);
+  assert.deepEqual(content.more, [additional, customize]);
+  assert.equal(content.spaceBeforeMore, true);
+  assert.equal(content.visible, true);
+  assert.deepEqual(bar.children, [find, additional, customize]);
+  const plain = node('CommandBar', {}, [additional]);
+  assert.equal(commandBarContent(plain, plain).spaceBeforeMore, true);
+  const direct = node('CommandBar', {}, [node('Button', { CommandName: 'Form.Command.Run' })]);
+  assert.equal(commandBarContent(direct, direct).spaceBeforeMore, false);
+});
+
+test('native command overflow corpus binds 24 sources and three compatibility probes', async () => {
+  const root = new URL('tests/fixtures/forms/native-command-overflow/', formReferenceRoot);
+  const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(metrics.rows.length, 24);
+  assert.equal(new Set(metrics.rows.map(row => row.name)).size, 24);
+  assert.equal(metrics.rows.filter(row => row.compatibility24).length, 3);
+  for (const row of metrics.rows) {
+    const source = await readFile(new URL(row.name + '.xml', root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.xmlSha256, row.name);
+    for (const locale of ['ru', 'en']) {
+      const native = row.locales[locale];
+      assert.match(native.screenshotSha256, /^[a-f0-9]{64}$/u);
+      if (native.commandsPaint.More && row.stretch !== false) {
+        assert.equal(native.commandsPaint.More[0] + native.commandsPaint.More[2] + 21, native.frame[0], row.name);
+      }
+      if (row.compatibility24) {
+        const { screenshotSha256: currentHash, ...current } = native;
+        const { screenshotSha256: previousHash, ...previous } = row.compatibility24.locales[locale];
+        assert.match(currentHash, /^[a-f0-9]{64}$/u); assert.match(previousHash, /^[a-f0-9]{64}$/u);
+        assert.deepEqual(current, previous, row.name + '/' + locale);
+      }
+    }
+  }
+  const natural = metrics.rows.find(row => row.name === 'NaturalEmptySource');
+  assert.deepEqual(natural.locales.ru.frame, [456, 143]);
+  assert.deepEqual(natural.locales.en.frame, [504, 143]);
+  const plain = metrics.rows.find(row => row.name === 'PlainInputs');
+  const single = metrics.rows.find(row => row.name === 'PlainInputsSingle');
+  const double = metrics.rows.find(row => row.name === 'PlainInputsDouble');
+  assert.deepEqual(plain.locales.ru.fields, single.locales.ru.fields);
+  assert.equal(double.locales.ru.fields.Middle[0] - plain.locales.ru.fields.Middle[0], 10);
+});

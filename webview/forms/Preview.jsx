@@ -366,7 +366,7 @@ function CommandBar(props) {
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
     <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
-      spacer={commands().tableCommands && (source() || commands().more.length)}/>
+      spacer={commands().spaceBeforeMore}/>
     <Show when={menu().length} fallback={<Show when={source()}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
       <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
     </Show>

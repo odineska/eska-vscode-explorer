@@ -23,6 +23,7 @@ export function commandBarContent(root, node) {
     if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
   }
   const more = hasOverflow ? additional : [];
-  return { source, inline, trailing, more, tableCommands, advancedSearch,
-    visible: !!source || !!(inline.length || trailing.length || more.length) };
+  const spaceBeforeMore = !!source || more.length > 0;
+  return { source, inline, trailing, more, tableCommands, advancedSearch, spaceBeforeMore,
+    visible: spaceBeforeMore || !!(inline.length || trailing.length) };
 }
