@@ -1,4 +1,4 @@
-import { flag, number, scalar, caption, fieldWidth, fontLineHeight, viewStatusAddition } from './model.mjs';
+import { flag, number, scalar, caption, fieldWidth, fontLineHeight, inputHeightUnit, viewStatusAddition } from './model.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
@@ -6,14 +6,52 @@ const nativeRowHeight = 28;
 const dynamicToolbarMinimum = 300;
 const bandHeight = value => fontLineHeight(value) + 15;
 
-function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, heightUnits) {
+function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, heightUnits, rowHeight = nativeRowHeight) {
   // A constrained grid keeps at most three body rows. Multiple header levels leave two.
   const bodyRows = rowCount > 0 ? rowCount - 1
     : heightUnits > 0 ? heightUnits - headerDepth - Number(footer) - 1 : Infinity;
   const visibleRows = Math.max(0, Math.min(headerDepth > 1 ? 2 : 3, bodyRows));
   const bands = headerDepth + Number(footer) + visibleRows;
   const headerGrowth = headerDepth ? 1 + headerExtra + Math.round(headerExtra * 5 / 8) : 0;
-  return Math.min(height, Math.max(2, bands * (nativeRowHeight + 1) + headerGrowth));
+  return Math.min(height, Math.max(2, bands * (rowHeight + 1) + headerGrowth));
+}
+
+function linuxTableHeight(table, header, footer, depth, dynamic) {
+  const unit = inputHeightUnit(table, 'linux'), baseBand = bandHeight(table.presentation.font);
+  const rowCount = number(table, 'HeightInTableRows'), authored = number(table, 'Height');
+  const edge = Number(dynamic), deep = depth === 3 ? 1 : 0;
+  const headerBase = header ? depth * baseBand : 0, footerBase = footer ? baseBand : 0;
+  const headerExtra = Math.max(0, header - headerBase), footerExtra = Math.max(0, footer - footerBase);
+  const growth = extra => extra + Math.round(extra * 5 / 8);
+  const headerGrowth = growth(headerExtra), footerGrowth = growth(footerExtra);
+  const allocateBand = (height, base, reference) => {
+    const preferred = Math.max(height, base);
+    return preferred + Math.round((preferred - reference) * 5 / 8);
+  };
+  const allocatedHeader = allocateBand(header, headerBase, header ? depth * defaultBandHeight : 0);
+  const allocatedFooter = allocateBand(footer, footerBase, footer ? defaultBandHeight : 0);
+  const bands = allocatedHeader + allocatedFooter;
+  const dimensions = (units, maximum = false) => {
+    const grid = units * unit;
+    // A one-line maximum may clip the footer; an authored height preserves both bands.
+    if (maximum && grid <= allocatedHeader) return { height: unit + 8 + headerGrowth + edge, header, footer };
+    if (grid > bands) return { height: grid + 1 + (header ? 2 + deep : 0) + (footer ? 2 : 0)
+      + headerGrowth + footerGrowth + edge, header, footer };
+    if (header && footer) return { height: bands + edge, header: header - 1, footer: footer - 1 };
+    return { height: unit + 8 + headerGrowth + footerGrowth + edge, header, footer };
+  };
+  let result;
+  if (rowCount > 0) result = { height: bands + rowCount * unit + 1 + edge, header, footer };
+  else if (authored > 0) result = dimensions(authored);
+  else result = { height: (dynamic ? 16 : 8) * unit + 3 + deep + (footer && !dynamic ? 2 : 0)
+    + headerGrowth + footerGrowth + edge, header, footer };
+  const maximum = !flag(table, 'AutoMaxHeight') && number(table, 'MaxHeight');
+  if (rowCount <= 0 && maximum > 0) {
+    const capped = dimensions(maximum, true);
+    if (capped.height < result.height) result = capped;
+  }
+  return { ...result, minimum: Math.min(result.height, groupGridMinimum(result.height,
+    header ? depth : 0, !!footer, headerExtra, rowCount, authored, unit) + edge) };
 }
 
 export function tableFooterFont(table, column) {
@@ -226,36 +264,18 @@ export function tableLayout(table, state = {}, additions) {
   let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
   let footer = flag(table, 'Footer', false)
     ? columns.length ? Math.max(...columns.map(item => bandHeight(tableFooterFont(table, item.node)))) : defaultBandHeight : 0;
-  const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
-  // Native row-count sizing retains the default allocation for small captions.
-  // An enlarged band also adds five eighths of its extra height to the body.
-  const headerExtra = Math.max(0, header - defaultHeader);
-  const extraBands = headerExtra + Math.max(0, footer - defaultFooter);
-  const bandGrowth = extraBands + Math.round(extraBands * 5 / 8);
   const rowCount = number(table, 'HeightInTableRows');
-  const heightUnits = linux ? number(table, 'Height') : 0;
-  const paginationEdge = Number(nativeDynamicList);
-  const deepHeader = depth === 3 ? 1 : 0;
-  let height = dynamic ? 452 : 227 + deepHeader;
-  if (rowCount > 0) {
-    height = defaultHeader + rowCount * nativeRowHeight + defaultFooter + bandGrowth + 1 + paginationEdge;
-  } else if (heightUnits > 0) {
-    const grid = heightUnits * nativeRowHeight;
-    const bands = header + footer;
-    if (grid > bands) {
-      height = grid + 1 + (header ? 2 + deepHeader : 0) + (footer ? 2 : 0) + bandGrowth + paginationEdge;
-    } else if (header && footer) {
-      // The two bands share a short table, with one outer border pixel on each side.
-      height = bands + paginationEdge;
-      header -= 1;
-      footer -= 1;
-    } else {
-      height = bands + 6 + paginationEdge;
-    }
+  let height = dynamic ? 452 : 227 + Number(depth === 3), groupMinimumHeight;
+  if (linux) {
+    const geometry = linuxTableHeight(table, header, footer, depth, dynamic);
+    ({ height, header, footer } = geometry);
+    groupMinimumHeight = geometry.minimum;
+  } else if (rowCount > 0) {
+    const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
+    const extraBands = Math.max(0, header - defaultHeader) + Math.max(0, footer - defaultFooter);
+    height = defaultHeader + rowCount * nativeRowHeight + defaultFooter
+      + extraBands + Math.round(extraBands * 5 / 8) + 1;
   }
-  const groupMinimumHeight = linux
-    ? Math.min(height, groupGridMinimum(height, header ? depth : 0, !!footer, headerExtra, rowCount, heightUnits) + paginationEdge)
-    : undefined;
   const english = !locale.toLowerCase().startsWith('ru');
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);

@@ -291,6 +291,13 @@ async function addNativeGoods(fixture, catalog) {
   await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
 }
 
+export async function createTableHeightGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native table height directory.');
+  await addNativeGoods(fixture, join(input, 'Catalog.xml'));
+  return createMeasuredFormGallery(fixture, input);
+}
+
 export async function createTableGallery(fixture) {
   const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
   if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {

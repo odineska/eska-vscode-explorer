@@ -1529,6 +1529,26 @@
         "native-display"
       ],
       "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "table-height",
+      "driver": "test/form-table-height-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-table-height"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
     }
   ],
   "presets": {
