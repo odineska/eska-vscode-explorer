@@ -929,7 +929,10 @@ button { cursor: default; }
 /* Command-bar paint extends two pixels beyond the row's trailing layout edge. */
 .taxi-preview[data-os=linux] .taxi-command-bar[data-horizontal-location] { min-width: 0; padding-right: 2px; }
 .taxi-command-bar[data-horizontal-location=Right] { justify-content: flex-end; }
-.taxi-preview[data-os=linux] .taxi-items:has(> .taxi-element[data-kind=CommandBar]) { margin-right: -2px; }
+.taxi-preview[data-os=linux] .taxi-items--horizontal:has(> .taxi-element[data-kind=CommandBar]) { margin-right: -2px; }
+.taxi-preview[data-os=linux] .taxi-items--vertical > .taxi-element > .taxi-command-bar[data-horizontal-location] { padding-right: 0; }
+.taxi-preview[data-os=linux][data-form-layout=preferred] .taxi-command-bar[data-horizontal-location] { min-width: calc(var(--taxi-command-minimum-width, 0px) + 2px); }
+.taxi-preview[data-os=linux][data-form-layout=preferred] .taxi-items--vertical > .taxi-element > .taxi-command-bar[data-horizontal-location] { min-width: var(--taxi-command-minimum-width, 0px); }
 .taxi-preview[data-os=linux]:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-command-bar { min-width: 0; }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-element[data-compact-command-bars] { width: var(--taxi-min-width); }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-items--horizontal[data-native-command-row] > .taxi-element[data-kind=CommandBar] {

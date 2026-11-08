@@ -142,3 +142,33 @@ test('Linux ignores stored Width of command-bar buttons while retaining ordinary
   assert.equal(buttonAuthoredWidth(command, 'windows'), 8);
   assert.equal(command.properties.find(p => p.key.name === 'Width').value.text, '8');
 });
+
+
+test('command frame references retain locale minima and ignored XML widths', async () => {
+  const root = new URL('tests/fixtures/forms/native-command-frame/', formReferenceRoot);
+  const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(metrics.rows.length, 8);
+  for (const row of metrics.rows) {
+    const source = await readFile(new URL(row.name + '.xml', root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.xmlSha256, row.name);
+  }
+  const rows = new Map(metrics.rows.map(row => [row.name, row]));
+  assert.deepEqual(rows.get('SingleInlineRoot').locales.ru.frame, [94, 143]);
+  assert.deepEqual(rows.get('SingleInlineRoot').locales.en.frame, [142, 143]);
+  for (const locale of ['ru', 'en']) {
+    assert.deepEqual(rows.get('DoubleShortInlineRoot').locales[locale].commandsPaint,
+      rows.get('DoubleLongInlineRoot').locales[locale].commandsPaint);
+  }
+  const source = await readFile(new URL('DoubleLongInlineRoot.xml', root), 'utf8');
+  assert.equal((source.match(/<Width>8<\/Width>/gu) ?? []).length, 2);
+  const recorded = JSON.parse(await readFile(new URL('../native-button-rows/metrics.json', root), 'utf8'));
+  const probe = recorded.cases.find(row => row.name === 'ProbeButtons');
+  assert.deepEqual(probe.locales.ru.nativeFrame, [139, 187]);
+  assert.deepEqual(probe.locales.en.nativeFrame, [142, 187]);
+  const groups = new URL('../native-groups/', root);
+  const popup = JSON.parse(await readFile(new URL('frame-locales.json', groups), 'utf8')).rows[0];
+  const popupSource = await readFile(new URL(popup.name + '.xml', groups));
+  assert.equal(createHash('sha256').update(popupSource).digest('hex'), popup.xmlSha256);
+  assert.deepEqual(popup.locales.ru.frame, [111, 79]);
+  assert.deepEqual(popup.locales.en.frame, [142, 79]);
+});

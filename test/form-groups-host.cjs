@@ -10,7 +10,7 @@ const nativeFrames = {
   GroupBackColor:[259,140], GroupTitleFont:[249,134], GroupHidden:[34,52], GroupCollapsible:[259,132],
   PagesTop:[271,152], PagesBottom:[271,152], PagesNone:[249,107], CommandBar:[291,79],
   PagesAuto:[271,152], PagesLeft:[362,127], PagesRight:[362,127], PagesSwipe:[271,152],
-  ButtonGroup:[34,52], Popup:[34,52], BarWithButtonGroup:[291,79], BarWithPopup:[111,79],
+  ButtonGroup:[34,52], Popup:[34,52], BarWithButtonGroup:[291,79],
   StyleReferences:[291,113], Decorations:[94,118],
 };
 
@@ -39,7 +39,7 @@ exports.run = async function () {
     if(process.platform==='linux')await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-form-content .taxi-button,.taxi-tabs > button')].every(button=>button.style.width||button.classList.contains('taxi-button--help')||button.classList.contains('taxi-button--picture'))"),'native captions allocated');
     if(process.platform==='linux')await until(async()=>await ui.evaluate("!document.querySelector('[data-native-label=pending]')"),'native field captions settled');
     await ui.evaluate("globalThis.__formTestErrors=[];window.addEventListener('error',event=>globalThis.__formTestErrors.push(event.message));window.addEventListener('unhandledrejection',event=>globalThis.__formTestErrors.push(String(event.reason)))");
-    const geometry = await ui.evaluate(`(() => {
+    const measureGeometry = `(() => {
       const rect=node=>{if(!node)return null;const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
       const style=node=>{if(!node)return null;const s=getComputedStyle(node);return {fontSize:s.fontSize,fontWeight:s.fontWeight,fontStyle:s.fontStyle,color:s.color,background:s.backgroundColor}};
       return {frame:rect(document.querySelector('.taxi-form-frame')),elements:document.querySelectorAll('.taxi-element').length,
@@ -49,13 +49,21 @@ exports.run = async function () {
         buttons:[...document.querySelectorAll('.taxi-form-content .taxi-button')].map(node=>({label:node.textContent,...rect(node)})),
         tabs:document.querySelectorAll('.taxi-tabs [role=tab]').length,
         tabButtons:[...document.querySelectorAll('.taxi-tabs [role=tab]')].map(node=>({label:node.textContent,overflow:(node.querySelector('[data-native-label]')?.getClientRects().length??1)>1,...rect(node)})),menu:!!document.querySelector('.taxi-menu')};
-    })()`);
+    })()`;
+    let geometry, previousGeometry, stableFrames=0;
+    await until(async()=>{
+      geometry=await ui.evaluate(measureGeometry);const value=JSON.stringify(geometry);
+      stableFrames=value===previousGeometry?stableFrames+1:0;previousGeometry=value;
+      return stableFrames>=3;
+    },'stable native group geometry');
     if (['GroupDefault','GroupHidden'].includes(form.kind) && process.env.ESKA_SCREENSHOT_DIR) {
       const chrome=await ui.evaluate(`(() => {const v=document.querySelector('.preview-scroll'),r=document.querySelector('.taxi-form-frame');return {viewport:{width:v.clientWidth,height:v.clientHeight,scrollWidth:v.scrollWidth,scrollHeight:v.scrollHeight,style:v.style.cssText},elements:[...r.querySelectorAll('.taxi-element')].map(e=>({kind:e.dataset.kind,style:e.style.cssText,box:e.getBoundingClientRect().toJSON()})),root:r.style.cssText,mode:r.closest('.taxi-preview').dataset.formLayout,content:document.querySelector('.taxi-form-content').getBoundingClientRect().toJSON()}})()`);
       await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`group-allocation-${form.kind}.json`),JSON.stringify({geometry,chrome}));
     }
     if (process.platform === 'linux') {
-      const expected = nativeFrames[form.kind];
+      const locale=vscode.env.language.startsWith('ru')?'ru':'en';
+      const expected = form.nativeFrameLocales?.[locale]?.frame ?? nativeFrames[form.kind];
+      if(form.nativeFrameLocales)assert.deepEqual([geometry.frame.width,geometry.frame.height],expected,form.kind+' exact locale frame');
       // Text advances can land between CSS pixels; retain the exact measured result.
       for (const [index, dimension] of ['width','height'].entries()) if (Math.abs(geometry.frame[dimension]-expected[index])>1)
         mismatches.push(`${form.kind} ${dimension}: ${geometry.frame[dimension]} vs ${expected[index]}`);

@@ -4,14 +4,14 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
 
-function geometryExpression(keys, fields) {
+function geometryExpression(keys, fields, commandNames) {
   return `(() => {
     const root=document.querySelector('.taxi-form-frame');if(!root)return null;
     const origin=root.getBoundingClientRect(),nodes=new Map([...root.querySelectorAll('[data-element]')].map(e=>[e.dataset.element,e]));
     const keys=${JSON.stringify(keys)},node=name=>nodes.get(keys[name]);
     const box=e=>{if(!e)return null;const r=e.getBoundingClientRect();return[r.x-origin.x,r.y-origin.y,r.width,r.height]};
     const bar=node('Bar')?.querySelector(':scope>.taxi-command-bar');
-    const commands={More:bar?.querySelector(':scope>.taxi-popup>button'),Inline:node('Inline')?.querySelector(':scope>button'),Fix:node('Fix')?.querySelector(':scope>button')};
+    const commands={More:bar?.querySelector(':scope>.taxi-popup>button'),...Object.fromEntries(${JSON.stringify(commandNames)}.filter(name=>name!=='More').map(name=>[name,node(name)?.querySelector(':scope>button')]))};
     return {frame:[origin.width,origin.height],fields:Object.fromEntries(${JSON.stringify(fields)}.map(name=>[name,box(node(name)?.querySelector('.taxi-input'))])),
       commands:Object.fromEntries(Object.entries(commands).filter(([,element])=>element).map(([name,element])=>[name,box(element)]))};
   })()`;
@@ -53,7 +53,7 @@ exports.run=async()=>{
     const ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
     try{
       const keys=Object.fromEntries([...view.nodes.values()].map(n=>[n.name,`${n.identity.source}:current:${n.identity.key.value}`]));
-      const expression=geometryExpression(keys,Object.keys(expected(form).fields));
+      const expression=geometryExpression(keys,Object.keys(expected(form).fields),Object.keys(expected(form).commandsPaint));
       await ui.evaluate('document.fonts.ready.then(()=>true)');
       const actual=await stableGeometry(ui,expression);assertGeometry(actual,expected(form),form.kind);
       assert.deepEqual(ui.scriptErrors(),[]);assert.deepEqual(view.snapshot.model.diagnostics.appearance,[]);
@@ -108,6 +108,32 @@ exports.run=async()=>{
           assert.deepEqual(poses[0],poses[2]);
         }finally{
           try{await service.receive(view,preview,{type:'dock'});await until(()=>!view.frames.has('preview'),'command overflow docked');}
+          finally{floating.close();}
+        }
+      }
+      if(form.kind==='DoubleShortInlineRoot'){
+        const identity=[...view.nodes.values()].find(n=>n.name==='Inline1').identity;
+        await service.receive(view,main,{type:'select',identity});
+        const remember=target=>target.evaluate("globalThis.__widthControls=[...document.querySelectorAll('.taxi-input,.taxi-command-bar>.taxi-element>button')];true");
+        async function change(kind,target,allocated=false){
+          const next=fixture.formGallery.find(f=>f.kind===kind);assert.ok(next);
+          await editFormSource(doc,view,await fs.readFile(next.path,'utf8'));
+          await until(()=>target.evaluate('globalThis.__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)),'current command width revision');
+          if(allocated)await allocateFormViewport(target,expected(next).frame);
+          const geometry=await stableGeometry(target,expression);assertGeometry(geometry,expected(next),'dirty '+kind);
+          assert.equal(await target.evaluate('__widthControls.every(e=>e.isConnected)'),true);
+          assert.deepEqual(view.selected,identity);assert.deepEqual(target.scriptErrors(),[]);
+          results.push({name:(allocated?'detached-width-':'dirty-width-')+kind,...geometry});
+        }
+        await remember(ui);await change('DoubleLongInlineRoot',ui);await change('DoubleShortInlineRoot',ui);
+        const workbench=await ui.nativeWindow();await service.receive(view,main,{type:'detach'});
+        await until(()=>view.frames.get('preview')?.ready,'command width detached');
+        const preview=view.frames.get('preview'),floating=await frame({detached:true,state:{title:preview.panel.title}});
+        try{
+          assert.notEqual((await floating.nativeWindow({detached:true})).targetId,workbench.targetId);
+          await remember(floating);await change('DoubleLongInlineRoot',floating,true);await change('DoubleShortInlineRoot',floating,true);
+        }finally{
+          try{await service.receive(view,preview,{type:'dock'});await until(()=>!view.frames.has('preview'),'command width docked');}
           finally{floating.close();}
         }
       }

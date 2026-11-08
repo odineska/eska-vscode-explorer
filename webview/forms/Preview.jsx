@@ -2,7 +2,7 @@ import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, o
 import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, nativeReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { SpecialField } from './SpecialField.jsx';
-import { createNativeButtonWidth } from './text-metrics.js';
+import { createNativeButtonWidth, createNativeTextWidth } from './text-metrics.js';
 import { primaryForeground } from './primary-foreground.mjs';
 import { NativeCaption } from './NativeCaption.jsx';
 import { NativeButtonArrow } from './NativeButtonArrow.jsx';
@@ -343,6 +343,11 @@ function Group(props) {
 }
 function CommandBar(props) {
   const state = props.controller.state, node = () => props.node;
+  let bar;
+  const layout = useFormLayout();
+  const minimum = createNativeTextWidth(() => bar, () => ({ text: state.strings.more, os: state.os, automatic: true,
+    font: font(node().presentation.font, state.os) }));
+  createEffect(() => { minimum(); layout?.invalidate(); });
   const root = () => state.model.root;
   const commands = createMemo(() => commandBarContent(root(), node()));
   const source = () => commands().source;
@@ -362,7 +367,7 @@ function CommandBar(props) {
     return hasSearch() && reference?.action === 'Find' && reference.table === source()?.name && !property(child, 'Title')
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
-  return <div class="taxi-command-bar" data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
+  return <div ref={bar} class="taxi-command-bar" style={{ '--taxi-command-minimum-width': minimum() === undefined ? undefined : `${minimum() + 33}px` }} data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>

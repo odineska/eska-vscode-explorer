@@ -23,7 +23,9 @@ async function inspect(ui,png,payload){return ui.evaluate(`(async()=>{
 exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),files=fixture.buttonRows,before=await Promise.all(files.sources.map(file=>fs.readFile(file))),results=[],mismatches=[];
   const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-  for(const form of files.cases){
+  for(const sourceForm of files.cases){
+    const locale=vscode.env.language.startsWith('ru')?'ru':'en';
+    const form={...sourceForm,...sourceForm.locales?.[locale]};
     const document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path)),original=document.getText();await vscode.window.showTextDocument(document,{preview:false,viewColumn:vscode.ViewColumn.One});await until(()=>vscode.window.activeTextEditor?.document===document,'button row XML active');await vscode.commands.executeCommand('eska.explorer.previewForm');const service=explorer.formPreview;
     await until(()=>[...service.views.values()].some(v=>sameSourcePath(v.path,form.path)&&v.phase==='ready'),'native button row model');const view=[...service.views.values()].find(v=>sameSourcePath(v.path,form.path)),main=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});const identities=buttons(view.snapshot.model.root).map(n=>n.identity);
     const ready=async(expected)=>{await until(()=>ui.evaluate(`document.querySelectorAll('.taxi-element[data-kind=Button]>.taxi-button').length===${expected.controls.length}&&[...document.querySelectorAll('.taxi-element[data-kind=Button]>.taxi-button')].every(n=>n.style.width)&&!document.querySelector('[data-native-label=pending]')&&!document.querySelector('[data-native-caption=pending]')`),'native button row widths and rasters');await ui.evaluate('document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))');};
