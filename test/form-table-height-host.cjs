@@ -88,7 +88,7 @@ exports.run = async () => {
       results.push({ name: form.kind, ...actual, nativeGeometryCompared: process.platform === 'linux' });
       await ui.parkPointer();
       await ui.screenshot('table-height-' + form.kind + '-' + locale + '.png');
-      if (['StaticDefault', 'DynamicDefault'].includes(form.kind)) {
+      if (['StaticDefault', 'DynamicDefault', 'StatusOnly'].includes(form.kind)) {
         const identity = [...view.nodes.values()].find(node => node.name === 'Rows').identity;
         await service.receive(view, main, { type: 'select', identity });
         const remember = target => target.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll');true");
@@ -107,8 +107,11 @@ exports.run = async () => {
           results.push({ name: (allocated ? 'detached-' : 'dirty-') + kind, ...geometry });
         }
         const dynamic = form.kind === 'DynamicDefault';
+        const status = form.kind === 'StatusOnly';
         await remember(ui);
-        const changes = dynamic
+        const changes = status
+          ? ['StatusNone', 'StatusSearch', 'StatusCommands', 'StatusFixed', 'StatusOnly']
+          : dynamic
           ? ['DynamicManual7', 'DynamicManual1', 'DynamicHeight4Max7', 'DynamicFont16Max7', 'DynamicDefault']
           : ['StaticManual7', 'StaticAuto1', 'StaticHeight9Max7', 'StaticRows9Max7', 'StaticTallHeader7', 'StaticFont16Max7', 'StaticDefault'];
         for (const kind of changes) await change(kind, ui);
@@ -120,7 +123,9 @@ exports.run = async () => {
           assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
           await prepareCaptureWindow(floating, true);
           await remember(floating);
-          for (const kind of dynamic ? ['DynamicFont16Max7', 'DynamicDefault'] : ['StaticManual7', 'StaticRows9Max7']) await change(kind, floating, true);
+          const floatingChanges = status ? ['StatusSearch', 'StatusFixed', 'StatusOnly']
+            : dynamic ? ['DynamicFont16Max7', 'DynamicDefault'] : ['StaticManual7', 'StaticRows9Max7'];
+          for (const kind of floatingChanges) await change(kind, floating, true);
         } finally {
           try {
             await service.receive(view, preview, { type: 'dock' });

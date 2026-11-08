@@ -160,8 +160,8 @@ exports.run = async function () {
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
     if (form.kind !== 'DynamicList') {
       const height = explicitCommands ? process.platform === 'linux' ? 314 : 312
-        : form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225
-        : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342;
+        : form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? process.platform === 'linux' ? 227 : 225
+        : form.kind === 'NoAutoFill' ? process.platform === 'linux' ? 309 : 307 : form.kind === 'Vertical' ? 343 : 342;
       assert.equal(geometry.frame.height, height, `${form.kind} native frame height`);
     }
     if (explicitCommands && process.platform === 'linux') {

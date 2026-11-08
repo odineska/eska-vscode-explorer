@@ -621,6 +621,8 @@ button { cursor: default; }
 .taxi-table-search--top { width: 100%; align-self: stretch; flex: 0 0 auto; margin: 0 0 8px; }
 .taxi-preview[data-os=linux] .taxi-table-search--top { align-self: stretch; margin-top: 0; }
 .taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field:has(> .taxi-table-search--top) { padding-top: 1px; }
+/* Standalone tables retain both widget insets when commands are absent. */
+.taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field:not(:has(> .taxi-table-command-bar)) { padding-block: 1px; }
 /* Visible inline toolbars reserve the same outer inset for authored and automatic commands. */
 /* Fixed tables keep both widget insets; flexible search toolbars share the outer tracks. */
 .taxi-preview[data-os=linux] .taxi-element:not([data-joined-table])[data-stretch-x=false] > .taxi-table-field:has(> .taxi-table-command-bar),
