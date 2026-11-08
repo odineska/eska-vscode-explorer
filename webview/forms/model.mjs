@@ -321,8 +321,10 @@ export function fieldWidth(node, os) {
   const reference = linuxReferenceInput(node, os), open = reference && inputOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
   const spin = native && flag(node, 'SpinButton', false);
+  // Multiline controls include the choice button's trailing edge in their own box.
+  const choiceInset = Number(reference && !open || native && flag(node, 'MultiLine', false));
   const buttons = (open ? referenceOpenWidth : 0) + (spin ? 21 : 0)
-    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + Number(reference && !open) : 0);
+    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + choiceInset : 0);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
