@@ -70,8 +70,12 @@ exports.run = async () => {
       results.push({ name: form.kind, ...actual, nativeGeometryCompared: process.platform === 'linux' });
       await ui.parkPointer();
       await ui.screenshot('text-inputs-' + form.kind + '-' + locale + '.png');
-      if (form.kind === 'StringAutoWide') {
-        const identity = [...view.nodes.values()].find(n => n.name === 'Value').identity;
+      const transitions = {
+        StringAutoWide: { target: 'Value', dirty: ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide'], detached: ['ChoiceMax1', 'ChoiceMax2'] },
+        RootOnlyMenu: { target: 'Above', dirty: ['RootNone', 'RootOnlyMenu'], detached: ['RootNone', 'RootOnlyMenu'] },
+      }[form.kind];
+      if (transitions) {
+        const identity = [...view.nodes.values()].find(n => n.name === transitions.target).identity;
         await service.receive(view, main, { type: 'select', identity });
         const remember = target => target.evaluate("globalThis.__textControls=[...document.querySelectorAll('.taxi-input')];true");
         async function change(kind, target, allocated = false) {
@@ -88,7 +92,7 @@ exports.run = async () => {
           results.push({ name: (allocated ? 'detached-' : 'dirty-') + kind, ...geometry });
         }
         await remember(ui);
-        for (const kind of ['StringMax12Wide', 'SmallMax12', 'ChoiceWidth3Max12', 'ChoiceMax1Font11', 'ChoiceMax1Font16', 'ChoiceMax1', 'StringAutoWide']) await change(kind, ui);
+        for (const kind of transitions.dirty) await change(kind, ui);
         const workbench = await ui.nativeWindow();
         await service.receive(view, main, { type: 'detach' });
         await until(() => view.frames.get('preview')?.ready, 'text detached');
@@ -96,8 +100,7 @@ exports.run = async () => {
         try {
           assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
           await remember(floating);
-          await change('ChoiceMax1', floating, true);
-          await change('ChoiceMax2', floating, true);
+          for (const kind of transitions.detached) await change(kind, floating, true);
         } finally {
           try {
             await service.receive(view, preview, { type: 'dock' });

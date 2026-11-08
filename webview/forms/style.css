@@ -201,7 +201,7 @@ button { cursor: default; }
 .taxi-root-commands { display: flex; align-items: center; --taxi-root-command-gap: 8px; gap: var(--taxi-root-command-gap); margin-bottom: 10px; min-height: 26px; }
 .taxi-preview[data-os=linux] .taxi-root-commands {
   --taxi-root-command-gap: 9px;
-  margin-block: -1px 11px;
+  margin-block: -1px 10px;
   margin-inline-end: -1px;
 }
 .taxi-root-commands > :is([data-root-command], [data-root-command-tail]) { display: flex; flex: none; }
