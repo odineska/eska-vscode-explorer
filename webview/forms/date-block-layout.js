@@ -16,7 +16,8 @@ function fixedDateField(node, { targets, os, scale }) {
   const caption = fieldCaptionProfile(label.getAttribute('aria-label') ?? '', node.presentation.titleFont);
   if (!caption?.preferred) return;
   const value = borderBoxSize(control, scale).width + inputPaintedOutset(node, os);
-  return { element, key: node.key, caption, value, lineHeight: pixels(getComputedStyle(label).lineHeight), gap: pixels(getComputedStyle(row).columnGap),
+  return { element, key: node.key, caption, value, input: node.kind === 'InputField',
+    lineHeight: pixels(getComputedStyle(label).lineHeight), gap: pixels(getComputedStyle(row).columnGap),
     automatic: scalar(node, 'TitleLocation', 'Auto') === 'Auto' };
 }
 
@@ -34,7 +35,7 @@ function captionWidths(space, date, checkbox) {
 /** A non-united row exposes its leading date to the vertical block's shared caption column. */
 export function dateBlockLayout(model, context) {
   const { targets, alignment, os, scale } = context;
-  const minimumRows = new Map(), minimumCaptions = new Map(), blocks = [];
+  const minimumRows = new Map(), minimumCaptions = new Map(), titleFloors = new Map(), blocks = [];
 
   function visit(node) {
     const items = targets.containers.get(node.key);
@@ -79,6 +80,18 @@ export function dateBlockLayout(model, context) {
     const preferred = fixed + sideValue + date.preferred + checkbox.caption.preferred;
     const topMinimum = fixed + topValue + checkbox.caption.minimum;
     minimumRows.set(row, spacing + (canMove ? topMinimum : sideMinimum));
+    // The block keeps a stable minimum while its fields change caption positions.
+    const aboveWidth = Math.max(topMinimum + spacing, ...fields.map(field => Math.max(field.value, field.caption.minimum)));
+    const sideTrackWidth = field => field.value + field.gap + date.minimum;
+    const sideWidth = Math.max(sideMinimum + spacing, ...fields.map(field => sideTrackWidth(field) + inputCaptionInset));
+    minimumRows.set(items, canMove ? aboveWidth : sideWidth);
+    const mixedInset = canMove && fields.some(field => field !== leading && field.input) ? inputCaptionInset : 0;
+    const mixedWidth = mixedInset
+      ? Math.max(sideMinimum + spacing - mixedInset, ...fields.filter(field => !field.input).map(sideTrackWidth))
+      : sideWidth;
+    if (canMove) titleFloors.set(node.key, {
+      mixed: Math.max(0, mixedWidth - aboveWidth), side: Math.max(0, sideWidth - aboveWidth),
+    });
 
     for (const [container, mode] of [[items, 'all'], [row, 'leading']]) {
       alignment.mark(container, 'data-through-labels', mode);
@@ -104,39 +117,44 @@ export function dateBlockLayout(model, context) {
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
     blocks.push({ items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, canMove, sideMinimum, preferred,
-      slots, outer });
+      slots, outer, mixedInset, mixedWidth, sideWidth, spacing });
   }
 
   if (os === 'linux') visit(model);
   return {
-    minimumRows, minimumCaptions,
+    minimumRows, minimumCaptions, titleFloors,
     allocate(captions, above, columnFraction) {
       for (const block of blocks) {
         const { items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue,
-          canMove, sideMinimum, preferred, slots, outer } = block;
+          canMove, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing } = block;
         const width = sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
         updateStyle(owner, '--taxi-fixed-date-width', `${Math.round(width + outer)}px`);
         const available = availableTrackWidth(row, slots.length, scale);
-        const move = canMove && available < sideMinimum;
-        const space = available - fixed - sideValue;
-        const [title, check] = move
+        const moveRow = canMove && available + spacing < Math.round(mixedWidth);
+        // A standalone date joins the aligned caption track once its extra inset fits.
+        const moveStandalone = canMove && available + spacing < Math.round(sideWidth);
+        const inset = moveStandalone ? inputCaptionInset - mixedInset : inputCaptionInset;
+        const sideTrack = sideValue - inputCaptionInset + inset;
+        const space = available - fixed - sideTrack;
+        const [title, check] = moveRow
           ? [0, Math.min(checkbox.caption.preferred, Math.max(checkbox.caption.minimum, available - fixed - topValue))]
           : captionWidths(Math.max(space, date.minimum + checkbox.caption.minimum), date, checkbox.caption);
-        const track = move ? topValue : sideValue + title;
-        const shared = move ? '' : `${title + inputCaptionInset}px`;
+        const track = moveRow ? topValue : sideTrack + title;
+        const shared = moveRow ? '' : `${title + inset}px`;
         for (const container of [items, row]) updateStyle(container, '--taxi-through-allocated-label-width', shared);
         updateStyle(leading.element, '--taxi-field-track', `${track}px`);
         updateStyle(checkbox.element, '--taxi-field-track', `${checkbox.reserve + check}px`);
         allocateFieldCaption(captions, checkbox, check);
         for (const field of fields) {
+          const move = moveRow || (field !== leading && field.input && moveStandalone);
           if (move) above.add(field.key);
-          allocateFieldCaption(captions, field, move ? (field === leading ? track : available) : title, move ? 0 : inputCaptionInset);
+          allocateFieldCaption(captions, field, move ? (field === leading ? track : available) : title, move ? 0 : inset);
         }
         const titleLines = captions.get(leading.key)?.split('\n').length ?? leading.caption.paragraphs.length;
-        const raisedTitle = move ? titleLines * leading.lineHeight : 0;
+        const raisedTitle = moveRow ? titleLines * leading.lineHeight : 0;
         // Keep the preferred baselines as the row grows, allowing room for a title above the date.
         for (const { element, offset } of slots) {
-          const top = move && element === leading.element ? 0 : offset + raisedTitle;
+          const top = moveRow && element === leading.element ? 0 : offset + raisedTitle;
           updateStyle(element, '--taxi-fixed-date-top', top ? `${top}px` : '');
         }
       }

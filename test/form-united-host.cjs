@@ -286,21 +286,27 @@ async function verifyColumnSurplus(service, main, view, document) {
       const rect = element?.getBoundingClientRect();
       return rect ? [rect.x - frame.x, rect.width] : null;
     };
+    const dateFields = [41, 42].map(id => {
+      const row = find(id)?.querySelector('.taxi-field-row');
+      const rect = row?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return rect ? [row.dataset.titleLocation, rect.x - frame.x, rect.y - frame.y] : null;
+    });
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
-      dateBlock: box(find(40)), divider: !!form.querySelector('.taxi-column-divider') };
+      dateBlock: box(find(40)), dateFields, divider: !!form.querySelector('.taxi-column-divider') };
   })()`);
-  async function observe(surface, file, { width, columns, inputs, dateBlock = null, divider }) {
+  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, divider }) {
     const revision = view.snapshot.revision;
-    await allocateFormViewport(surface, [width, 420]);
+    await allocateFormViewport(surface, [viewportWidth, 420]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
+    if (dateFields) expected.dateFields = dateFields;
+    const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
     await until(async () => {
       actual = await measure(surface);
-      const geometry = columns ? actual : actual && { width: actual.width, divider: actual.divider };
-      stable = isDeepStrictEqual(geometry, expected) ? stable + 1 : 0;
+      stable = keys.every(key => isDeepStrictEqual(actual?.[key], expected[key])) ? stable + 1 : 0;
       return stable >= 2;
     }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
     assert.equal(view.snapshot.revision, revision);
@@ -308,7 +314,7 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
   const results = [];
   try {
-    for (const { file, sourceSha256, cases } of fixtures) {
+    for (const { file, sourceSha256, cases, leftTitles } of fixtures) {
       const source = await fs.readFile(path.join(directory, file), 'utf8');
       assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
       await editFormSource(document, view, source);
@@ -326,6 +332,18 @@ async function verifyColumnSurplus(service, main, view, document) {
       try {
         assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
         const wide = cases.at(-1);
+        if (leftTitles) {
+          const mixed = cases.find(entry => entry.dateFields?.[0][0] === 'Top' && entry.dateFields[1][0] === 'Left');
+          assert.ok(mixed);
+          const forced = source.replace(/(<(?:InputField|LabelField) name="(?:Stamp|Settlement|Limit)" id="\d+">)/gu,
+            '$1<TitleLocation>Left</TitleLocation>');
+          assert.notEqual(forced, source);
+          await observe(floating, file, mixed);
+          await editFormSource(document, view, forced);
+          await observe(floating, file, leftTitles);
+          await editFormSource(document, view, source);
+          await observe(floating, file, mixed);
+        }
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
         await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));

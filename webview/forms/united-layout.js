@@ -1,10 +1,14 @@
-import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing, allocateLaneSizes, stretchWeight } from './layout-model.mjs';
+import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing, allocateLaneSizes, roundTrackWidths, stretchWeight } from './layout-model.mjs';
 import { inputLaneLayout } from './input-lane-layout.js';
 import { shareUnitedGroupSpacing } from './group-spacing-layout.js';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 function ordinaryVerticalGroup(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
+}
+
+function groupWidthInsets(items) {
+  return items ? boxInsets(getComputedStyle(items)).width + boxInsets(getComputedStyle(items.parentElement)).width : 0;
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
@@ -91,7 +95,7 @@ export function alignUnitedRows(model, context, wrapped) {
   }
 
   visit(model);
-  function capturePreferredColumns() {
+  function capturePreferredColumns(titleFloors) {
     for (const owner of owners) {
       const items = containers.get(owner);
       if (items.hasAttribute('data-united-columns')) {
@@ -101,7 +105,18 @@ export function alignUnitedRows(model, context, wrapped) {
         if (pair) {
           pair.natural = columns.split(' ').map(pixels);
           pair.preferred = pair.natural.reduce((sum, width) => sum + width, 0);
-          if (pair.groups) pair.available = availableTrackWidth(items, pair.natural.length, scale);
+          if (pair.groups) {
+            pair.available = availableTrackWidth(items, pair.natural.length, scale);
+            if (!titleFloors.size) continue;
+            const blocks = pair.groups.map(node => mountedChildren(node).filter(child => titleFloors.has(child.key)));
+            if (blocks.some(children => children.length)) {
+              pair.captionColumns = pair.groups.map((node, index) => ({
+                insets: groupWidthInsets(containers.get(node.key))
+                  + pixels(elements.get(node.key).style.getPropertyValue('--taxi-group-spacing-x')),
+                blocks: blocks[index].map(child => ({ key: child.key, ...titleFloors.get(child.key) })),
+              }));
+            }
+          }
         }
       }
     }
@@ -115,8 +130,31 @@ export function alignUnitedRows(model, context, wrapped) {
     if (!items || !ordinaryVerticalGroup(node)) return width;
     const child = Math.max(0, ...mountedChildren(node).map(node => stretchWidth(node, minima)));
     if (!child) return width;
-    return Math.min(width, child + boxInsets(getComputedStyle(items)).width
-      + boxInsets(getComputedStyle(items.parentElement)).width);
+    return Math.min(width, child + groupWidthInsets(items));
+  }
+  function captionFloors(pair, tracks, minima, available) {
+    if (!pair.captionColumns || available >= pair.preferred) return;
+    const candidates = pair.captionColumns.map(({ insets, blocks }, index) => {
+      const { minimum } = tracks[index];
+      const dates = blocks.flatMap(block => {
+        const bounds = minima.get(block.key);
+        return bounds ? [{ ...block, width: bounds.width + insets }] : [];
+      });
+      return { minimum, insets, mixed: Math.max(minimum, ...dates.map(date => date.width + date.mixed)),
+        side: Math.max(minimum, ...dates.map(date => date.width + date.side)) };
+    });
+    if (candidates.every(candidate => candidate.side <= candidate.minimum)) return;
+    for (const level of ['side', 'mixed']) {
+      const widths = candidates.map(candidate => candidate[level]);
+      if (widths.reduce((sum, width) => sum + width, 0) <= available) return { widths };
+    }
+    // Before the side captions fit, share extra space in proportion to the minimum content widths.
+    const widths = candidates.map(candidate => candidate.minimum);
+    const weights = candidates.map(candidate => Math.max(0, candidate.minimum - candidate.insets));
+    const remainder = Math.max(0, available - widths.reduce((sum, width) => sum + width, 0));
+    const weight = weights.reduce((sum, width) => sum + width, 0) || 1;
+    const allocated = roundTrackWidths(widths.map((width, index) => width + remainder * weights[index] / weight), Math.floor);
+    return { widths, allocated };
   }
   function allocateWidths(captions, minima) {
     allocateInputs(captions);
@@ -135,9 +173,12 @@ export function alignUnitedRows(model, context, wrapped) {
       const preferred = allocateLaneSizes(Math.max(natural, pair.available), lanes);
       pair.preferred = preferred.reduce((sum, width) => sum + width, 0);
       const available = availableTrackWidth(pair.items, lanes.length, scale);
-      const tracks = lanes.map((lane, index) => ({ ...lane, preferred: preferred[index] }));
+      let tracks = lanes.map((lane, index) => ({ ...lane, preferred: preferred[index] }));
+      const floors = captionFloors(pair, tracks, minima, available);
+      pair.minimumWidths = floors?.widths;
+      if (floors) tracks = tracks.map((track, index) => ({ ...track, minimum: floors.widths[index] }));
       for (const [index, node] of pair.groups.entries()) columnBounds.set(elements.get(node.key), tracks[index]);
-      let widths = allocateLaneSizes(available, tracks);
+      let widths = floors?.allocated ?? allocateLaneSizes(available, tracks);
       if (widths.reduce((sum, width) => sum + width, 0) < available) {
         // The group tracks still fill the row when all controls have reached their caps.
         // A wide fixed descendant contributes to the preferred size, but does not attract surplus.

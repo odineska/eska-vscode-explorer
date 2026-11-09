@@ -14,12 +14,12 @@ export function createColumnDividers(schedule) {
     const scale = pairs.size ? boundingScale(root) : 1;
     const next = new Map();
     let changed = false;
-    for (const [key, { items, left, right, preferred }] of pairs) {
+    for (const [key, { items, left, right, preferred, minimumWidths }] of pairs) {
       const width = availableTrackWidth(items, 2, scale);
       // The native outline and rounded CSS track widths can differ by one pixel.
       if (width + 1 >= preferred || width <= 0) continue;
-      const minimum = Math.ceil(minima.get(left)?.width ?? 0);
-      const maximum = Math.floor(width - (minima.get(right)?.width ?? 0));
+      const minimum = Math.ceil(minimumWidths?.[0] ?? minima.get(left)?.width ?? 0);
+      const maximum = Math.floor(width - (minimumWidths?.[1] ?? minima.get(right)?.width ?? 0));
       if (maximum <= minimum) continue;
       const saved = positions.get(items);
       const manual = saved?.left === left && saved.right === right;
