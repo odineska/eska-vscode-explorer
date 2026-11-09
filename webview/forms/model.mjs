@@ -176,10 +176,10 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
-// Measured Taxi 8.3.27 units for default-formatted numeric lengths 1–51.
+// Measured Taxi 8.3.27 units for default-formatted numeric lengths 0–51.
 // Preserve native quantization before scaling; Chromium text advances are unrelated.
 const numericInputUnits = [
-  2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 11, 11, 12, 13,
+  1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 11, 11, 12, 13,
   13, 14, 15, 15, 16, 17, 17, 18, 19, 19, 20, 21, 21, 22, 23,
   23, 24, 25, 25, 26, 27, 27, 28, 29, 30, 30, 31, 32, 32, 33,
   34, 34, 35, 36,
@@ -192,9 +192,10 @@ function linuxNumericInputWidth(node) {
   if (!Number.isInteger(digits) || digits < 1 || digits > 38) return Math.round(20 * inputUnit(node) + 1);
   const decimals = Math.max(0, Math.min(digits, fraction));
   const groups = Math.floor(Math.max(0, digits - decimals - 1) / 3);
-  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits);
-  const units = numericInputUnits[length - 1] - Number(allowedSign === 'Nonnegative');
-  return scaledAutomaticInputWidth(node, units);
+  // A missing sign reduces the text length before Designer quantizes it to width units.
+  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits)
+    - Number(allowedSign === 'Nonnegative');
+  return scaledAutomaticInputWidth(node, numericInputUnits[length]);
 }
 const inputChoiceWidth = 20;
 const referenceOpenWidth = 22;

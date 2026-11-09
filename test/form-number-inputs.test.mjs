@@ -8,9 +8,9 @@ import { FORM_NS, fieldWidth, inputHeight, inputChoiceButton, inputPaintedOutset
 const root = new URL('tests/fixtures/forms/native-number-inputs/', formReferenceRoot);
 const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
 
-test('numeric geometry corpus binds fifty-three forms to both native locales and a repeated capture', async () => {
-  assert.equal(metrics.rows.length, 53);
-  assert.equal(new Set(metrics.rows.map(row => row.name)).size, 53);
+test('numeric geometry corpus binds fifty-nine forms to both native locales and a repeated capture', async () => {
+  assert.equal(metrics.rows.length, 59);
+  assert.equal(new Set(metrics.rows.map(row => row.name)).size, 59);
   let controls = 0;
   for (const row of metrics.rows) {
     const xml = await readFile(new URL(row.name + '.xml', root));
@@ -27,10 +27,10 @@ test('numeric geometry corpus binds fifty-three forms to both native locales and
     }
     controls += Object.keys(row.controls).length;
   }
-  assert.equal(controls, 270);
+  assert.equal(controls, 326);
 });
 
-test('numeric width, sign, value buttons and fonts match 270 native controls', () => {
+test('numeric width, sign, value buttons and fonts match 326 native controls', () => {
   for (const row of metrics.rows) for (const [name, field] of Object.entries(row.controls)) {
     const node = { kind: 'InputField', properties: Object.entries(field.properties).map(([name, text]) => ({
       key: { namespace: FORM_NS, name }, value: { kind: 'text', text },
