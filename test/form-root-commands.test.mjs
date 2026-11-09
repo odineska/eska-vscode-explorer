@@ -56,6 +56,32 @@ test('manual placement can expose More without adding automatic commands or Help
     [standard('CustomizeForm').key, standard('Help').key]);
 });
 
+test('bottom command bar keeps authored Help in the tail only when available or forced', () => {
+  const ok = button('confirm', standard('OK').key);
+  const help = button('help', standard('Help').key);
+  const node = form({ authored: [help, ok], autofill: false });
+  node.properties = [property('CommandBarLocation', 'Bottom')];
+  node.auxiliary[0].properties.push(property('HorizontalAlign', 'Right'));
+  const state = formHelpAvailable => ({ model: { formHelpAvailable } });
+
+  const available = rootCommandPlacement(node, state(true));
+  assert.deepEqual(available.inline, [ok]);
+  assert.equal(available.position, 'Bottom');
+  assert.equal(available.alignment, 'Right');
+  assert.equal(available.helpNode, help);
+  assert.equal(available.more, false);
+
+  const missing = rootCommandPlacement(node, state(false));
+  assert.deepEqual(missing.inline, [ok]);
+  assert.deepEqual(missing.rows(), [help]);
+  assert.equal(missing.help, false);
+  assert.equal(missing.more, true);
+
+  help.properties.push(property('LocationInCommandBar', 'InCommandBar'));
+  assert.equal(rootCommandPlacement(node, state(false)).helpNode, help);
+  assert.deepEqual(rootCommandPlacement(node).inline, [help, ok]);
+});
+
 test('command bar widths reserve More and Help without squeezing a command or skipping ahead', () => {
   const widths = [158, 84, 96, 128, 70, 91, 109, 30];
   for (const [width, visible] of [[192, 0], [302, 1], [412, 2], [532, 3], [652, 4], [882, 6], [972, 8]]) {

@@ -185,33 +185,38 @@ export function CommandButton(props) {
 }
 function RootCommands(props) {
   const state = props.controller.state, placement = () => props.placement;
-  return <div class="taxi-root-commands" data-root-command-overflow={placement().more ? '' : undefined}>
+  return <div class="taxi-root-commands" data-root-command-alignment={placement().alignment}
+    data-root-command-overflow={placement().more ? '' : undefined}>
     <For each={placement().inline}>{(item, index) =>
       <div data-root-command="" data-root-command-section={startsRootCommandSection(placement().inline[index() - 1], item) ? '' : undefined}>
         <Show when={menuNode(item)} fallback={
           <Show when={item.items?.length} fallback={
             <CommandButton controller={props.controller} command={item} label={menuCaption(item, state)} primary={item.primary} rootBar/>
           }>
-            <PopupMenu command={item} label={menuCaption(item, state)} controller={props.controller} nativeDropdown/>
+            <PopupMenu command={item} label={menuCaption(item, state)} controller={props.controller} nativeDropdown rootBar/>
           </Show>
         }>
           {node => <Element node={node()} controller={props.controller} rootBar/>}
         </Show>
       </div>
     }</For>
-    <Show when={placement().more || placement().help}><div class="taxi-command-spacer"/></Show>
+    <Show when={placement().alignment === 'Left' && (placement().more || placement().help)}><div class="taxi-command-spacer"/></Show>
     <Show when={placement().more}>
       <div data-root-command-tail=""><PopupMenu rootMenu rows={placement().rows()} label={state.strings.more} controller={props.controller}/></div>
     </Show>
     <Show when={placement().help}>
-      <div data-root-command-tail=""><CommandButton controller={props.controller} label="?" help/></div>
+      <div data-root-command-tail="">
+        <Show when={placement().helpNode} fallback={<CommandButton controller={props.controller} label="?" help/>}>
+          {node => <Element node={node()} controller={props.controller} rootBar/>}
+        </Show>
+      </div>
     </Show>
   </div>;
 }
 export function Preview(props) {
   const state = props.controller.state, root = () => state.model.root;
   const placement = createMemo(() => rootCommandPlacement(root(), state));
-  const hasCommands = () => scalar(root(), 'CommandBarLocation') !== 'None' && (placement().inline.length || placement().more);
+  const hasCommands = () => placement().position !== 'None' && (placement().inline.length > 0 || placement().more || placement().help);
   let viewport, preview, frame;
   const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame);
   const frameStyle = () => ({
@@ -233,7 +238,8 @@ export function Preview(props) {
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
-        <div class="taxi-form-content" classList={{ "taxi-form-content--commands": !!hasCommands() }} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
+        <div class="taxi-form-content" classList={{ 'taxi-form-content--commands': hasCommands() }}
+          data-root-command-position={hasCommands() ? placement().position : undefined} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <Show when={hasCommands()}><RootCommands placement={placement()} controller={props.controller}/></Show>
           <Items node={root()} controller={props.controller}/>
         </div>
@@ -429,6 +435,7 @@ export function PopupMenu(props) {
     }
   });
   const children = () => props.rows ?? menuItems(props.command?.items ?? props.items ?? menuChildren(props.node));
+  const floating = () => props.tableBar || props.rootBar && scalar(props.controller.state.model.root, 'CommandBarLocation') === 'Bottom';
   return <div class="taxi-popup" data-command-overflow={props.items ? '' : undefined}
     data-command-group={props.command?.key} data-root-menu={props.rootMenu ? '' : undefined}
     data-table-more={props.tableBar ? '' : undefined}
@@ -444,7 +451,7 @@ export function PopupMenu(props) {
       onClick={() => setOpen(!open())}/>
     <Show when={open()}>
       <MenuLevel rows={children()} anchor={trigger} close={close} dismiss={close} controller={props.controller}
-        rootMenu={props.rootMenu} tableMenu={props.tableMenu} floating={props.tableBar} registerKeyHandler={handler => { handleMenuKey = handler; }} focusOnMount/>
+        rootMenu={props.rootMenu} tableMenu={props.tableMenu} floating={floating()} registerKeyHandler={handler => { handleMenuKey = handler; }} focusOnMount/>
     </Show>
   </div>;
 }

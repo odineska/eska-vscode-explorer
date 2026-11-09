@@ -88,6 +88,11 @@ button { cursor: default; }
 .taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #555; font-size: 12px; padding-left: 1px; line-height: 20px; }
 .taxi-form-content { padding: 12px 19px 10px 11px; }
 .taxi-form-content--commands { padding-top: 4px; }
+.taxi-form-content[data-root-command-position=Bottom] {
+  display: flex;
+  flex-direction: column;
+  padding-block: 12px;
+}
 .taxi-form-content:not(.taxi-form-content--commands):has(> .taxi-items:empty) { padding-bottom: 12px; }
 .taxi-items { min-width: 0; --taxi-horizontal-gap: 8px; --taxi-group-allocated-rows: initial; }
 .taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 4px; align-items: start; }
@@ -203,6 +208,22 @@ button { cursor: default; }
   --taxi-root-command-gap: 9px;
   margin-block: -1px 10px;
   margin-inline-end: -1px;
+}
+.taxi-root-commands[data-root-command-alignment=Right] { justify-content: flex-end; }
+.taxi-preview[data-os=linux] .taxi-root-commands:not([data-root-command-alignment=Left]) {
+  margin-block: 0 9px;
+  margin-inline-end: 0;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-root-commands[data-root-command-alignment=Center] {
+  padding-inline-start: var(--taxi-root-command-inset, 0px);
+}
+.taxi-preview .taxi-form-content[data-root-command-position=Bottom] > .taxi-root-commands {
+  order: 1;
+  margin-block: 8px 0;
+  margin-inline-end: 0;
+}
+.taxi-preview .taxi-form-content[data-root-command-position=Bottom]:has(> .taxi-items:empty) > .taxi-root-commands {
+  margin-top: 10px;
 }
 .taxi-root-commands > :is([data-root-command], [data-root-command-tail]) { display: flex; flex: none; }
 .taxi-preview[data-os=linux] .taxi-root-commands > [data-root-command-section] { margin-inline-start: 11px; }
@@ -694,9 +715,20 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content { overflow: auto; }
 /* Use the existing right inset for the native scrollbar so it cannot change the table width. */
 .taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content { padding-right: 4px; scrollbar-gutter: stable; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar { width: 15px; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-track { border: 0; background: transparent; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-thumb {
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content[data-root-command-position=Bottom] {
+  overflow: hidden;
+  padding-right: 19px;
+  scrollbar-gutter: auto;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content[data-root-command-position=Bottom] > .taxi-items {
+  overflow: auto;
+  min-height: 0;
+  margin-inline-end: -15px;
+  scrollbar-gutter: stable;
+}
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar { width: 15px; }
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar-track { border: 0; background: transparent; }
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar-thumb {
   border: solid transparent;
   border-width: 3px 3px 3px 4px;
   border-radius: 7px;
@@ -704,7 +736,7 @@ button { cursor: default; }
 }
 .taxi-preview[data-form-layout=allocated] .taxi-root-commands { flex: none; }
 /* The native -1px top margin also defines the toolbar's pinned scrollport edge. */
-.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content > .taxi-root-commands {
+.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content:not([data-root-command-position=Bottom]) > .taxi-root-commands {
   position: sticky; top: -1px; z-index: 1; background: inherit;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items { flex: 1; }

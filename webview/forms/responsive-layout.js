@@ -84,7 +84,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
     const body = root.querySelector(':scope > .taxi-form-content');
-    const scroll = [surface.scrollLeft, surface.scrollTop, body.scrollLeft, body.scrollTop];
+    const bodyScroll = body.dataset.rootCommandPosition === 'Bottom' ? body.querySelector(':scope > .taxi-items') : body;
+    const scroll = [surface.scrollLeft, surface.scrollTop, bodyScroll.scrollLeft, bodyScroll.scrollTop];
     const refresh = needsPreferred;
     if (refresh) {
       needsPreferred = false;
@@ -163,7 +164,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
-      body.scrollLeft = scroll[2]; body.scrollTop = scroll[3];
+      bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
     }
     const style = getComputedStyle(surface);
     const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
