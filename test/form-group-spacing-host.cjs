@@ -106,37 +106,51 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
   return results;
 }
 
-async function verifyReflow({ service, view, main, ui, keys, expected, gallery }) {
-  const profiles = ['ConditionalWidth29', 'ConditionalWidth24', 'ConditionalWidth35', 'ConditionalPaint']
-    .map(name => gallery.find(sample => sample.kind === name).expected);
+async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
+  const profiles = plan.cases.map(name => gallery.find(sample => sample.kind === name).expected);
   const identity = [...view.nodes.values()].find(node => node.name === 'B').identity;
+  const changed = plan.edit && original.replace(plan.edit.from, plan.edit.to);
+  if (plan.edit) assert.notEqual(changed, original);
   await service.receive(view, main, { type: 'select', identity });
   const results = [];
+  async function observe(target, profile, name) {
+    let actual, preferredWidth;
+    try {
+      await until(async () => {
+        actual = await geometry(target, keys, profile);
+        preferredWidth = await target.evaluate(
+          "parseFloat(document.querySelector('.taxi-form-frame').style.getPropertyValue('--taxi-form-preferred-width'))");
+        return matches(actual, profile) && preferredWidth === expected.frame[0];
+      }, name);
+    } catch (error) {
+      throw new Error(name + ' ' + JSON.stringify({ actual, preferredWidth }), { cause: error });
+    }
+    assert.equal(await target.evaluate('__paintedRowInputs.every(element => element.isConnected)'), true);
+    assert.deepEqual(view.selected, identity);
+    assert.deepEqual(target.scriptErrors(), []);
+    results.push({ name, ...actual });
+  }
   async function resize(target, mode) {
     await target.evaluate('globalThis.__paintedRowInputs = [...document.querySelectorAll(".taxi-input")]; true');
-    for (const profile of profiles) {
-      await allocateFormViewport(target, profile.frame);
-      const width = await target.evaluate(`(() => {
-        const area = document.querySelector('.preview-scroll'), style = getComputedStyle(area);
-        return area.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 8;
-      })()`);
-      assert.equal(width, profile.frame[0]);
-      let actual, preferredWidth;
-      const name = mode + '-resize-' + width;
-      try {
-        await until(async () => {
-          actual = await geometry(target, keys, profile);
-          preferredWidth = await target.evaluate(
-            "parseFloat(document.querySelector('.taxi-form-frame').style.getPropertyValue('--taxi-form-preferred-width'))");
-          return matches(actual, profile) && preferredWidth === expected.frame[0];
-        }, name);
-      } catch (error) {
-        throw new Error(name + ' ' + JSON.stringify({ actual, preferredWidth }), { cause: error });
+    try {
+      for (const [index, profile] of profiles.entries()) {
+        await allocateFormViewport(target, profile.frame);
+        const width = await target.evaluate(`(() => {
+          const area = document.querySelector('.preview-scroll'), style = getComputedStyle(area);
+          return area.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 8;
+        })()`);
+        assert.equal(width, profile.frame[0]);
+        await observe(target, profile, mode + '-resize-' + width);
+        if (changed && index === 0) {
+          await editFormSource(document, view, changed);
+          await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
+            'painted row received the folded edit');
+          await target.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+          await observe(target, profile, mode + '-folded-dirty-' + width);
+        }
       }
-      assert.equal(await target.evaluate('__paintedRowInputs.every(element => element.isConnected)'), true);
-      assert.deepEqual(view.selected, identity);
-      assert.deepEqual(target.scriptErrors(), []);
-      results.push({ name, ...actual });
+    } finally {
+      if (changed) await editFormSource(document, view, original);
     }
   }
   await resize(ui, 'main');
@@ -158,7 +172,7 @@ exports.run = async () => {
     const current = () => [...service.views.values()].find(view => sameSourcePath(view.path, form.path));
     await until(() => current()?.phase === 'ready', 'separation model ready');
     const view = current(), main = view.frames.get('main');
-    const manualViewport = form.kind.startsWith('ConditionalWidth');
+    const manualViewport = process.env.ESKA_FORM_MANUAL_VIEWPORT === '1' || form.kind.startsWith('ConditionalWidth');
     const frameOptions = { fixedFormArea: !manualViewport, state: { title: main.panel.title } };
     const ui = await frame(frameOptions);
     try {
@@ -184,9 +198,12 @@ exports.run = async () => {
         const control = fixture.formGallery.find(sample => sample.kind === change.control).expected;
         results.push(...await verifyUpdates({ document, service, view, main, ui, keys, original, expected, control, change }));
       }
-      if (form.kind === 'ConditionalPaint' && process.platform === 'linux') {
+      const reflow = expected.reflow ?? (form.kind === 'ConditionalPaint'
+        ? { cases: ['ConditionalWidth29', 'ConditionalWidth24', 'ConditionalWidth35', 'ConditionalPaint'] } : undefined);
+      if (reflow && process.platform === 'linux') {
         frameOptions.fixedFormArea = false;
-        results.push(...await verifyReflow({ service, view, main, ui, keys, expected, gallery: fixture.formGallery }));
+        results.push(...await verifyReflow({ service, view, main, ui, keys, expected, plan: reflow,
+          gallery: fixture.formGallery, document, original }));
       }
       assert.deepEqual(await fs.readFile(form.path), disk);
     } finally {

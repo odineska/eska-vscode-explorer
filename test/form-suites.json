@@ -422,6 +422,28 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "nested-reflow",
+      "driver": "test/form-group-spacing-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-nested-reflow"
+      },
+      "environment": {
+        "ESKA_FORM_MANUAL_VIEWPORT": "1"
+      },
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "decorations",
       "driver": "test/form-decorations-host.cjs",
       "mode": "installed",

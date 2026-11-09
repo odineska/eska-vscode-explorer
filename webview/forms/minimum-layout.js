@@ -9,7 +9,7 @@ function reserveWidth(value, width, fullWidth = width) {
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingWidths, available }) {
+export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingWidths, available, conditionalWidth }) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -25,22 +25,27 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing), height: value.height + spacing.height });
   function items(element) {
     if (!element) return { width: 0, height: 0 };
-    const children = [...element.children].filter(child => child.classList.contains('taxi-element')).map(item);
+    const elements = [...element.children].filter(child => child.classList.contains('taxi-element'));
+    const children = elements.map(item);
+    const reflows = conditionalWidth && element.dataset.grouping === 'HorizontalIfPossible';
     const horizontal = element.hasAttribute('data-united-columns') || getComputedStyle(element).display === 'flex';
     const css = getComputedStyle(element), gap = pixels(horizontal ? css.columnGap : css.rowGap) * Math.max(0, children.length - 1);
-    const width = sizeOf => horizontal
-      ? children.reduce((sum, child) => sum + sizeOf(child), gap) : Math.max(0, ...children.map(sizeOf));
+    // A conditional row can use the widest child's minimum when stacked.
+    const width = sizeOf => horizontal && !reflows
+      ? children.reduce((sum, child) => sum + sizeOf(child), gap)
+      : Math.max(0, ...children.map((child, index) => sizeOf(child) - (reflows && horizontal
+        ? pixels(elements[index].style.getPropertyValue('--taxi-group-spacing-x')) : 0)));
     const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings), height: horizontal
       ? Math.max(0, ...children.map(value => value.height)) : children.reduce((sum, value) => sum + value.height, gap) };
     const padding = insets(element);
     if (element.hasAttribute('data-united-columns')) {
       // Use the allocator's lower bound for this row, including independent captions.
       const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
-      if (laneMinimum) value.width = value.fullWidth = laneMinimum + gap;
+      if (laneMinimum && !reflows) value.width = value.fullWidth = laneMinimum + gap;
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     const minimum = minimumRows.get(element);
-    if (minimum !== undefined) value.width = value.fullWidth = minimum;
+    if (minimum !== undefined && !reflows) value.width = value.fullWidth = minimum;
     return add(add(value, padding), margins(element));
   }
   function item(element) {

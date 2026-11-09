@@ -103,3 +103,23 @@ test('painted group references bind the canonical XML and both Linux captures', 
   assert.deepEqual(cases.get('ConditionalWidth29').fields, cases.get('ConditionalVerticalControl').fields);
   assert.equal(cases.get('ConditionalWidth35').fields.B[0], 174);
 });
+
+test('nested reflow binds both captures and all referenced viewport profiles to canonical XML', async () => {
+  const root = new URL('tests/fixtures/forms/native-nested-reflow/', formReferenceRoot);
+  const { rows } = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(rows.length, 29);
+  const cases = new Map(rows.map(row => [row.name, row]));
+  assert.equal(cases.size, rows.length);
+  assert.equal(rows.filter(row => row.reflow).length, 4);
+  for (const row of rows) {
+    const source = await readFile(new URL(row.file, root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.fixtureSha256, row.name);
+    assert.match(row.canonicalSha256, /^[a-f0-9]{64}$/u);
+    for (const locale of ['en','ru']) assert.match(row.captures[locale], /^[a-f0-9]{64}$/u);
+    for (const sample of row.reflow?.cases ?? []) assert.ok(cases.has(sample), sample);
+  }
+  assert.deepEqual(cases.get('Vertical24').frame, [274,194]);
+  assert.equal(cases.get('Right40').fields.Side[0], 169);
+  assert.deepEqual(cases.get('Twin41').fields.D.slice(0,2), [134,71]);
+  assert.equal(cases.get('Parallel31').fills.WrapperA[2], 151);
+});

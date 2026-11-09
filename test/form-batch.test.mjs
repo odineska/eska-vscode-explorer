@@ -47,7 +47,21 @@ test('X11 focus is configured only for Linux native hosts',()=>{
 });
 
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
-  const ids=catalog.suites.map(row=>row.id);assert.equal(new Set(ids).size,ids.length);assert.equal(ids.length,95);assert.ok(ids.includes('painted-group-spacing'));assert.ok(ids.includes('standalone-additions'));assert.ok(ids.includes('command-palette'));assert.ok(ids.includes('table-palette'));assert.ok(ids.includes('table-row-depth'));assert.ok(ids.includes('mixed-row-spacing'));assert.ok(ids.includes('help-command'));assert.ok(ids.includes('checkbox-caption-size'));assert.ok(ids.includes('page-group-spacing'));assert.ok(ids.includes('button-heights'));assert.ok(ids.includes('input-choice-size'));assert.ok(ids.includes('table-toolbar-insets'));assert.ok(ids.includes('table-insets'));assert.ok(ids.includes('unlabeled-checkbox-columns'));assert.ok(ids.includes('reference-widths'));assert.ok(ids.includes('root-command-spacing'));assert.ok(ids.includes('radio-layout'));assert.ok(ids.includes('command-frame'));assert.ok(ids.includes('command-overflow'));assert.ok(ids.includes('decorations'));assert.ok(ids.includes('decoration-lines'));assert.ok(ids.includes('input-choice'));assert.ok(ids.includes('group-visibility'));assert.ok(ids.includes('group-spacing'));assert.ok(ids.includes('command-bars'));
+  const ids = catalog.suites.map(row => row.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(ids.length, 96);
+  const required = [
+    'nested-reflow', 'painted-group-spacing', 'standalone-additions',
+    'command-palette', 'table-palette', 'table-row-depth',
+    'mixed-row-spacing', 'help-command', 'checkbox-caption-size',
+    'page-group-spacing', 'button-heights', 'input-choice-size',
+    'table-toolbar-insets', 'table-insets', 'unlabeled-checkbox-columns',
+    'reference-widths', 'root-command-spacing', 'radio-layout',
+    'command-frame', 'command-overflow', 'decorations',
+    'decoration-lines', 'input-choice', 'group-visibility',
+    'group-spacing', 'command-bars',
+  ];
+  for (const id of required) assert.ok(ids.includes(id), id);
   const eska=fileURLToPath(formReferenceRoot),ledger=JSON.parse(await readFile(join(eska,'tests/fixtures/forms/coverage.json'),'utf8'));
   for(const suite of catalog.suites){
     await readFile(join(repository,suite.driver));assert.equal(suite.caseSelection,'whole-suite-with-existing-transitions');

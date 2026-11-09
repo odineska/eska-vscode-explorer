@@ -33,11 +33,18 @@ export function hasAuthoredGroupHeight(node, os) {
   return os === 'linux' && ordinaryGroup(node) && number(node, 'Height') > 0;
 }
 
-/** An automatic group width can contract even if the group receives no extra space. */
+function containsConditionalGroup(node) {
+  return node.presentation.displayed && (node.presentation.grouping === 'HorizontalIfPossible'
+    || node.children.some(containsConditionalGroup));
+}
+
+/** Automatic widths and conditional groups can contract to their children's minima. */
 export function groupCanShrink(node, os, root = node) {
   if (os !== 'linux') return false;
   const automatic = (ordinaryGroup(node) || node.kind === 'CommandBar') && number(node, 'Width') <= 0;
-  return automatic || compactCommandBarGroup(node, root);
+  const conditional = ordinaryGroup(node) && node.presentation.grouping === 'HorizontalIfPossible';
+  const pages = node.kind === 'Pages' && number(node, 'Width') <= 0 && node.children.some(containsConditionalGroup);
+  return automatic || conditional || pages || compactCommandBarGroup(node, root);
 }
 
 export function automaticHorizontalSpacing(node) {

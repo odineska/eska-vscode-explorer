@@ -54,21 +54,9 @@ function alignPaintedRow(children, targets, alignment, scale) {
   for (const child of children) alignment.style(targets.elements.get(child.key), 'align-self', 'center');
 }
 
-function boundary(previous, next, axis) {
-  const before = previous[axis][1], after = next[axis][0];
-  // The earlier section owns the shared outside interval when it requests one.
-  return { distance: before.distance || after.distance, before: before.insets,
-    after: before.distance ? [] : after.insets };
-}
-
-function insetTotal(insets) {
-  return insets.reduce((total, inset) => total + inset.distance, 0);
-}
-
 /** Project separation through nested groups before measuring preferred and minimum sizes. */
 export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
-  const conditional = new Map();
-  if (os !== 'linux') return conditional;
+  if (os !== 'linux') return;
   function visit(node) {
     // Pages have an Items container but no ordinary element wrapper.
     const logicalEdges = new Map(node.children.map(child => [child.key, visit(child)]));
@@ -80,30 +68,19 @@ export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
       y: [pixels(padding.paddingTop), pixels(padding.paddingBottom)] } : {};
     if (items) {
       const axis = horizontal ? 'x' : 'y';
-      const verticalInterval = groupSpacingInterval(node, 'y');
-      const interval = horizontal ? undefined : verticalInterval;
-      const reflows = node.presentation?.grouping === 'HorizontalIfPossible';
-      let horizontalReserve = 0, directional = reflows && verticalInterval !== undefined;
+      const interval = horizontal ? undefined : groupSpacingInterval(node, 'y');
       if (interval !== undefined) {
         alignment.style(items, 'row-gap', `${Math.max(0, interval - 2)}px`);
       }
       for (let index = 1; index < children.length; index++) {
-        const previous = edges[index - 1], next = edges[index];
-        const placement = boundary(previous, next, axis);
-        reservePaintedInsets(placement.before, axis, true, targets, alignment);
-        reservePaintedInsets(placement.after, axis, false, targets, alignment);
+        const previous = edges[index - 1][axis][1], next = edges[index][axis][0];
+        reservePaintedInsets(previous.insets, axis, true, targets, alignment);
+        if (!previous.distance) reservePaintedInsets(next.insets, axis, false, targets, alignment);
+        // The earlier section owns the shared outside interval when it requests one.
+        const separation = previous.distance || next.distance;
         const adjustment = axis === 'y' && interval === 0 ? -2 : 0;
-        setGroupSpacing(targets.elements.get(children[index].key), axis, placement.distance + adjustment, alignment);
-        if (reflows) {
-          const row = horizontal ? placement : boundary(previous, next, 'x');
-          const column = horizontal ? boundary(previous, next, 'y') : placement;
-          const rowInsets = insetTotal(row.before) + insetTotal(row.after);
-          // Insets in the current row are already part of the measured child widths.
-          horizontalReserve += row.distance + (horizontal ? 0 : rowInsets);
-          directional ||= !!(row.distance || rowInsets || column.distance || column.before.length || column.after.length);
-        }
+        setGroupSpacing(targets.elements.get(children[index].key), axis, separation + adjustment, alignment);
       }
-      if (directional) conditional.set(node.key, horizontalReserve);
       if (horizontal) alignPaintedRow(children, targets, alignment, scale);
       else shareSectionInset(children, targets, alignment);
     }
@@ -111,7 +88,6 @@ export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
     return groupSeparationEdges(node, edges, horizontal, insets, painted);
   }
   visit(model);
-  return conditional;
 }
 
 /** Exposed United rows use the largest boundary in any participating column. */
