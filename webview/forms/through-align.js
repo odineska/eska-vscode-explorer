@@ -13,7 +13,7 @@ function labelScope(node) {
 /** Share the leading title track across ordinary vertical groups without changing their owners. */
 export function alignThroughLabels(model, { targets: { containers, children }, alignment, scale, os }) {
   const scopes = [];
-  function visit(node, parentScope) {
+  function visit(node, parentScope, inheritedUse = false) {
     const items = containers.get(node.key);
     const horizontal = ordinaryGroup(node) && horizontalGrouping(node);
     const scope = items && !items.hasAttribute('data-united-flex-lane')
@@ -26,9 +26,10 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     }
     // A horizontal group continues the parent's column through its leading branch.
     // Other branches can still align within their own vertical scopes.
+    const use = inheritedUse || scalar(node, 'ThroughAlign') === 'Use';
     for (const child of node.children) {
-      const shared = scope && sharesGroupLabels(child) && (!horizontal || child.key === leading?.dataset.element);
-      visit(child, shared ? scope : undefined);
+      const shared = scope && sharesGroupLabels(child, use) && (!horizontal || child.key === leading?.dataset.element);
+      visit(child, shared ? scope : undefined, Boolean(shared && use));
     }
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {

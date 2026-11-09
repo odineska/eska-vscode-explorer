@@ -273,7 +273,7 @@ function enumerationInput(node) {
     value.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && value.name.startsWith('EnumRef.'));
 }
 export function inputListChoice(node, os) {
-  return flag(node, 'ListChoiceMode', os === 'linux' && enumerationInput(node));
+  return flag(node, 'ListChoiceMode', os === 'linux' && enumerationInput(node) && !flag(node, 'ReadOnly', false));
 }
 export function inputOpenButton(node, os) {
   return flag(node, 'OpenButton', node.presentation.valueType.kind === 'reference' && !(os === 'linux' && enumerationInput(node)));
@@ -390,7 +390,7 @@ export function fieldStyle(node, os, choiceVisible) {
   }
   const native = linuxSimpleInput(node, os);
   // Native bounds do not change preferred dimensions in the Configurator preview.
-  const usesLayoutBounds = native || linuxReferenceWithOpenButton(node, os);
+  const usesLayoutBounds = linuxFixedInputWidth(node, os) || linuxReferenceWithOpenButton(node, os);
   const maxWidth = usesLayoutBounds ? 0 : number(node, 'MaxWidth'), minWidth = usesLayoutBounds ? 0 : number(node, 'MinWidth');
   const automaticStretch = os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'string'
     && !property(node, 'HorizontalStretch') && (native || number(node, 'Width') <= 0 && maxWidth <= 0 && minWidth <= 0);

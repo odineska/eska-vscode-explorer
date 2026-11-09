@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { groupSeparationEdges, groupSpacingInterval } from '../webview/forms/group-spacing.mjs';
+import { groupSeparationEdges, groupSpacingInterval, independentVerticalSection } from '../webview/forms/group-spacing.mjs';
 import { FORM_NS } from '../webview/forms/model.mjs';
 import { formReferenceRoot } from './form-references.mjs';
 
@@ -40,6 +40,8 @@ test('a painted wrapper without separation reserves nested spacing on the inside
 
 test('independent vertical sections reserve their title gap inside the group', () => {
   const section = node({ Representation: 'NormalSeparation', Group: 'Vertical', United: 'false' });
+  assert.equal(independentVerticalSection(node({ Group: 'Vertical', United: 'false' })), true);
+  assert.equal(independentVerticalSection(node({ Representation: 'None', Group: 'Vertical', United: 'false' })), false);
   assert.deepEqual(groupSeparationEdges(section, [none], false), { x: normal.x, y: none.y });
   assert.deepEqual(groupSeparationEdges(section, [normal], false), normal,
     'the independent owner retains separation requested by a nested child');

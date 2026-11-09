@@ -11,7 +11,7 @@ import { alignNumericLabelRows } from './numeric-label-layout.js';
 import { borderBoxSize, boundingScale, boxInsets, pixels } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
-import { authoredGroupRows } from './authored-group-rows.js';
+import { boundedGroupRows } from './authored-group-rows.js';
 import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
@@ -124,7 +124,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         checkboxes = checkboxLayout(model, context);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
         unitedRows.capturePreferredColumns();
-        allocateGroupRows = authoredGroupRows(root, scale, alignment);
+        allocateGroupRows = boundedGroupRows(root, scale, alignment);
         allocateCommandBars = commandBarLayout(root, context);
       }
       const stacked = rows.filter(items => activeWrap.has(items.dataset.layoutOwner));
@@ -147,7 +147,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
         natural = naturalFormSize(root, rows, widths);
         needsNatural = false;
       }
-      setPreferred(natural.frame);
+      // Conditional rows can form an intrinsic line wider than the whole screen.
+      // Keep that footprint for reflow, and report the size of the stacked form.
+      const oversized = state.os === 'linux' && natural.frame.width > window.screen.availWidth && activeWrap.size > 0;
+      setPreferred(oversized ? rect(root) : natural.frame);
       needsMinimum = true;
       for (const [element, size] of measured) {
         element.style.setProperty('--taxi-preferred-width', `${size.width}px`);

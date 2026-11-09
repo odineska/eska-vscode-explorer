@@ -264,13 +264,17 @@ export function Items(props) {
   const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
   const alignment = {Top:'start', Center:'center', Bottom:'end'};
   const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
+  const horizontalAlignment = () => nativeGroup() && horizontal()
+    ? {Center:'center', Right:'end'}[scalar(props.node, 'HorizontalAlign')] : undefined;
+  const columns = () => nativeGroup() && horizontal() && children().length > 1 && children().every(child =>
+    ordinaryGroup(child) && (child.presentation.grouping === 'Vertical' || layout?.wrapped(child)));
   const contentAlignment = createMemo(() => {
     if (props.controller.state.os === 'linux' && props.node.kind === 'Form'
         && children().some(child => child.kind === 'UsualGroup')) return 'start';
     if (!nativeGroup()) return;
     const nodes = children();
     const onlyChild = nodes.length === 1 && alignment[scalar(nodes[0], 'GroupVerticalAlign')];
-    return onlyChild || inheritedAlignment()
+    return onlyChild || inheritedAlignment() || (columns() ? 'start' : undefined)
       || (number(props.node, 'Height') > 0 ? 'var(--taxi-inherited-vertical-align, start)' : undefined);
   });
   const buttonRow = () => props.controller.state.os === 'linux' && props.node.presentation.grouping === 'Horizontal'
@@ -303,8 +307,12 @@ export function Items(props) {
   const tracks = axis => {
     const dimension = axis === 'x' ? 'width' : 'height';
     return children().map(node => {
-      const minimum = layout?.minimumFor(node)?.[dimension] ?? 0;
-      if (layout?.stretch(node, axis)) return `minmax(${minimum}px, ${stretchWeight(node, axis)}fr)`;
+      const bounds = layout?.minimumFor(node), minimum = bounds?.[dimension] ?? 0;
+      if (layout?.stretch(node, axis)) {
+        const limit = axis === 'x' && columns() ? bounds?.maximumWidth : undefined;
+        const maximum = Number.isFinite(limit) ? `${limit}px` : `${stretchWeight(node, axis)}fr`;
+        return `minmax(${minimum}px, ${maximum})`;
+      }
       if (axis === 'x' && groupCanShrink(node, props.controller.state.os, props.controller.state.model.root)) {
         const preferred = layout?.preferredWidthFor(node);
         const limit = preferred === undefined ? 'max-content' : `${Math.max(minimum, preferred)}px`;
@@ -315,7 +323,9 @@ export function Items(props) {
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
-    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
+    data-content-horizontal-align={horizontalAlignment() ? '' : undefined}
+    data-native-stacked-columns={columns() ? '' : undefined}
+    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
       '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
@@ -756,8 +766,12 @@ export function Element(props) {
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
   const addition = createMemo(() => additionKinds.has(node().kind) ?
     additionWidth(node(), state.os, props.inlineAddition, layout?.stretch(node(), 'x')) : undefined);
+  const maximumWidth = () => layout?.minimumFor(node())?.maximumWidth;
+  const cappedInputHeight = () => state.os === 'linux' && node().kind === 'InputField'
+    && !flag(node(), 'AutoMaxHeight') && number(node(), 'MaxHeight') > 0;
   const layoutStyle = () => ({
     ...font(node().presentation.font, state.os),
+    '--taxi-content-maximum-width': Number.isFinite(maximumWidth()) ? `${maximumWidth()}px` : undefined,
     '--taxi-addition-width': addition() ? `${addition().preferred}px` : undefined,
     '--taxi-addition-minimum': addition() ? `${addition().minimum}px` : undefined,
     '--taxi-addition-maximum': addition()?.maximum ? `${addition().maximum}px` : undefined,
@@ -772,6 +786,7 @@ export function Element(props) {
     '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
   return <Show when={displayedInPreview(node(), state.model.root)}><div data-element={node().key} data-kind={node().kind}
+    data-capped-input-height={cappedInputHeight() ? '' : undefined}
     data-standalone-addition={addition() ? '' : undefined} data-group-horizontal-align={addition() ? scalar(node(), 'GroupHorizontalAlign') || undefined : undefined} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-compact-command-bars={compactCommandBarGroup(node(), state.model.root) ? '' : undefined} data-horizontal-location={node().kind === 'CommandBar' ? scalar(node(), 'HorizontalLocation', 'Left') : undefined} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os, state.model.root) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>

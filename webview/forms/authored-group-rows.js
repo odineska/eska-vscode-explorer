@@ -7,13 +7,14 @@ const resizableControl = [
   ':scope > .taxi-field-row > .taxi-field-control > .taxi-input',
 ].join(', ');
 
-/** Share the available height of a bounded group between its resizable controls. */
-export function authoredGroupRows(root, scale, alignment) {
+/** Share the allocated height without reserving spare space past a control's limit. */
+export function boundedGroupRows(root, scale, alignment) {
   const groups = [];
-  for (const items of root.querySelectorAll('.taxi-items:not([data-united-items]):has(> .taxi-element[data-height-constrained])')) {
+  for (const items of root.querySelectorAll('.taxi-items:not([data-united-items]):has(> .taxi-element:is([data-height-constrained], [data-capped-input-height]))')) {
     const elements = [...items.children].filter(element => element.classList.contains('taxi-element'));
     const stretched = elements.filter(element => element.dataset.stretchY === 'true');
-    if (stretched.length < 2) continue;
+    const constrained = stretched.length > 1 && stretched.some(element => element.hasAttribute('data-height-constrained'));
+    if (!constrained && !stretched.some(element => element.hasAttribute('data-capped-input-height'))) continue;
     const controls = stretched.map(element => element.querySelector(resizableControl));
     if (controls.some(control => !control)) continue;
     const tracks = stretched.map((element, index) => ({ element, control: controls[index] }));

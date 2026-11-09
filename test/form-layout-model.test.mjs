@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { displayedInPreview, stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -23,6 +23,29 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
   assert.equal(stretches(node('UsualGroup',{},[table]),'y',{UsualGroup:true}),false);
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
+});
+
+test('a picture with manual limits at its authored dimensions does not stretch by default', () => {
+  const dimensions = { Width:2, Height:1, AutoMaxWidth:false, MaxWidth:2, AutoMaxHeight:false, MaxHeight:1 };
+  const field = node('PictureField', dimensions);
+  assert.equal(stretches(field,'x'), false);
+  assert.equal(stretches(field,'y'), false);
+  assert.equal(stretches(node('PictureField', { ...dimensions, MaxHeight:3 }),'y'), true);
+  assert.equal(stretches(node('PictureField', { ...dimensions, VerticalStretch:true }),'y'), true);
+});
+
+test('an exposed child can continue an explicit through-aligned column', () => {
+  const group = (properties, united) => {
+    const child = node('UsualGroup',properties);
+    child.presentation.united = united;
+    return child;
+  };
+  assert.equal(sharesGroupLabels(group({},false),true), true);
+  assert.equal(sharesGroupLabels(group({},false)), false);
+  assert.equal(sharesGroupLabels(group({},true),true), false);
+  assert.equal(sharesGroupLabels(group({ThroughAlign:'DontUse'},false),true), false);
+  assert.equal(sharesGroupLabels(group({HorizontalStretch:false},false),true), false);
+  assert.equal(sharesGroupLabels(group({Representation:'NormalSeparation'},false),true), false);
 });
 
 test('groups without rendered descendants retain their source nodes but allocate no preview space', () => {
@@ -75,6 +98,20 @@ test('Linux multiline input keeps its XML height under viewport pressure', () =>
   assert.equal(minimum({}, 10, { authoredHeight: true }), 23);
   const capped = node('InputField', { MultiLine: true, AutoMaxHeight: false, MaxHeight: 1 });
   assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
+});
+
+test('manual Linux memo width uses the Taxi unit at the preferred size', () => {
+  const memo = node('InputField',{MultiLine:true, HorizontalStretch:true, AutoMaxWidth:false, MaxWidth:80});
+  assert.equal(controlBounds(memo,'x',undefined,'linux',{atPreferred:true}).maximum,810);
+  const reference = node('InputField',{ReadOnly:true});
+  reference.presentation.valueType.kind = 'reference';
+  assert.equal(controlBounds(reference,'x',undefined,'linux').maximum,410);
+  reference.presentation.valueType = { kind:'composite', types: ['DocumentRef.First','DocumentRef.Second'].map(name =>
+    ({ name, namespace:'http://v8.1c.ru/8.1/data/enterprise/current-config' })) };
+  assert.equal(stretches(reference,'x'),true);
+  assert.equal(controlBounds(reference,'x',undefined,'linux').maximum,410);
+  reference.presentation.valueType.types.push({ name:'string', namespace:'http://www.w3.org/2001/XMLSchema' });
+  assert.equal(stretches(reference,'x'),false);
 });
 
 test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {

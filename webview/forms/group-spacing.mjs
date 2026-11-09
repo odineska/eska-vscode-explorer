@@ -1,8 +1,9 @@
-import { flag, scalar } from './model.mjs';
+import { flag, property, scalar } from './model.mjs';
 
 export function independentVerticalSection(node) {
-  return node.kind === 'UsualGroup' && scalar(node, 'Representation') === 'NormalSeparation'
-    && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United');
+  const representation = scalar(node, 'Representation', 'Auto');
+  return node.kind === 'UsualGroup' && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United')
+    && (representation === 'NormalSeparation' || representation === 'Auto' && !property(node, 'BackColor'));
 }
 
 const empty = { distance: 0, insets: [] };

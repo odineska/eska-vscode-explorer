@@ -2,10 +2,12 @@ import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
 import { throughCaptionWidth } from './field-caption-layout.js';
 
 const widthWithHeadings = value => value.fullWidth ?? value.width;
+const maximumWidth = value => value.maximumWidth ?? Infinity;
 
 function reserveWidth(value, width, fullWidth = width) {
   value.fullWidth = Math.max(widthWithHeadings(value), fullWidth);
   value.width = Math.max(value.width, width);
+  value.maximumWidth = Math.max(maximumWidth(value), fullWidth);
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
@@ -22,9 +24,10 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
   };
   const insets = element => boxInsets(getComputedStyle(element));
   const add = (value, spacing) => ({ width: value.width + spacing.width,
-    fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing), height: value.height + spacing.height });
+    fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing),
+    maximumWidth: maximumWidth(value) + spacing.width, height: value.height + spacing.height });
   function items(element) {
-    if (!element) return { width: 0, height: 0 };
+    if (!element) return { width: 0, maximumWidth: 0, height: 0 };
     const elements = [...element.children].filter(child => child.classList.contains('taxi-element'));
     const children = elements.map(item);
     const reflows = conditionalWidth && element.dataset.grouping === 'HorizontalIfPossible';
@@ -37,6 +40,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
         ? pixels(elements[index].style.getPropertyValue('--taxi-group-spacing-x')) : 0)));
     const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings), height: horizontal
       ? Math.max(0, ...children.map(value => value.height)) : children.reduce((sum, value) => sum + value.height, gap) };
+    value.maximumWidth = horizontal ? children.reduce((sum, child) => sum + maximumWidth(child), gap)
+      : Math.max(0, ...children.map(maximumWidth));
     const padding = insets(element);
     if (element.hasAttribute('data-united-columns')) {
       // Use the allocator's lower bound for this row, including independent captions.
@@ -57,19 +62,28 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       content.height += pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
-      if (label && location === 'Left') {
-        title.width = minimumCaptions.get(element.dataset.element) ?? Math.max(title.width, throughCaptionWidth(element));
+      if (label && location === 'Left') title.width = Math.max(title.width, throughCaptionWidth(element));
+      const fullTitleWidth = title.width;
+      if (label && location === 'Left') title.width = minimumCaptions.get(element.dataset.element) ?? fullTitleWidth;
+      const vertical = ['Top', 'Bottom'].includes(location), css = getComputedStyle(field);
+      const gap = label ? pixels(css[vertical ? 'rowGap' : 'columnGap']) : 0;
+      const padding = boxInsets(css);
+      const rowHeight = height => (vertical ? title.height + gap + height : Math.max(title.height, height)) + padding.height;
+      value = {
+        width: (vertical ? Math.max(title.width, content.width) : title.width + gap + content.width) + padding.width,
+        height: Math.max(rowHeight(content.height), pixels(css.minHeight)),
+      };
+      const widthLimit = pixels(element.style.getPropertyValue('--taxi-control-max-width'));
+      if (widthLimit && child?.classList.contains('taxi-input')) {
+        const controlWidth = widthLimit + margins(child).width;
+        value.maximumWidth = (vertical ? Math.max(fullTitleWidth, controlWidth)
+          : fullTitleWidth + gap + controlWidth) + padding.width;
       }
-      const vertical = ['Top', 'Bottom'].includes(location), gap = label ? pixels(getComputedStyle(field)[vertical ? 'rowGap' : 'columnGap']) : 0;
-      value = vertical ? { width: Math.max(title.width, content.width), height: title.height + gap + content.height }
-        : { width: title.width + gap + content.width, height: Math.max(title.height, content.height) };
-      value = add(value, insets(field));
       if (element.hasAttribute('data-horizontal-input-limit')) {
         // Keep the caption outside the control limit when allocating the entire field.
         const reserve = vertical ? 0 : value.width - content.width;
         element.style.setProperty('--taxi-horizontal-input-reserve', `${reserve}px`);
       }
-      value.height = Math.max(value.height, pixels(getComputedStyle(field).minHeight));
     } else if (table) {
       const children = [...table.children].map(marginBox), spacing = insets(table);
       value = { width: Math.max(pixels(getComputedStyle(table).minWidth), ...children.map(value => value.width + spacing.width)),
@@ -120,7 +134,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     }
     const spacing = { width: pixels(element.style.getPropertyValue('--taxi-group-spacing-x')),
       height: pixels(element.style.getPropertyValue('--taxi-group-spacing-y')) };
+    if (element.dataset.stretchX === 'false') value.maximumWidth = widthWithHeadings(value);
     value = add(value, spacing);
+    value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value));
     minima.set(element.dataset.element, value);
     if (value.fullWidth > value.width) headingFloors.set(element, value);
     element.style.setProperty('--taxi-min-width', `${value.width - spacing.width}px`);

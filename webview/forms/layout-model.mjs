@@ -1,4 +1,4 @@
-import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 import { additionKinds, additionStretches } from './addition-model.mjs';
@@ -22,11 +22,12 @@ export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }
 
-/** Only an explicitly undecorated group continues automatic caption tracks. */
-export function sharesGroupLabels(node) {
+/** Preserve caption boundaries unless a group opts in or exposes its items to a through-aligned ancestor. */
+export function sharesGroupLabels(node, inheritedUse = false) {
   if (!ordinaryGroup(node) || !flag(node, 'HorizontalStretch')) return false;
-  const mode = scalar(node, 'ThroughAlign', 'Auto');
-  return mode === 'Use' || mode === 'Auto' && scalar(node, 'Representation') === 'None';
+  const mode = scalar(node, 'ThroughAlign', 'Auto'), representation = scalar(node, 'Representation', 'Auto');
+  return mode === 'Use' || mode === 'Auto' && (representation === 'None'
+    || inheritedUse && node.presentation.united === false && representation === 'Auto' && !property(node, 'BackColor'));
 }
 
 export function hasAuthoredGroupHeight(node, os) {
@@ -75,14 +76,25 @@ export function stretches(node, axis, collapsed = {}, root = node) {
     if (axis === 'y' && collapsed[node.key]) return false;
     return node.children.some(child => displayedInPreview(child, root) && stretches(child, axis, collapsed, root));
   }
+  if (node.kind === 'PictureField') {
+    const dimension = axis === 'x' ? 'Width' : 'Height';
+    const maximum = number(node, `Max${dimension}`);
+    if (explicitNo(scalar(node, `AutoMax${dimension}`)) && maximum > 0 && maximum <= number(node, dimension)) return false;
+  }
   if (surfaces.has(node.kind)) return true;
   if (axis === 'x' && (node.kind === 'CommandBar' || additionStretches(node))) return true;
   if (axis === 'x' && node.kind === 'InputField' && node.presentation.valueType?.kind === 'string') return textInputStretchesByDefault(node);
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
-    && ['string', 'reference'].includes(node.presentation.valueType?.kind);
+    && (['string', 'reference'].includes(node.presentation.valueType?.kind)
+      || node.kind === 'InputField' && referenceAlternatives(node.presentation.valueType));
   if (node.kind === 'InputField' && inputRows(node) > 1
     && !explicitNo(scalar(node, 'HorizontalStretch'))) return true;
   return ['InputField', 'LabelField'].includes(node.kind) && number(node, 'Height') > 1;
+}
+
+function referenceAlternatives(type) {
+  return type?.kind === 'composite' && type.types?.length > 0 && type.types.every(part =>
+    part.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && /Ref\./u.test(part.name));
 }
 
 /** An explicit dimension of a stretchable item is its proportional allocation weight. */
@@ -94,9 +106,9 @@ function automaticInputMaximum(node, os, referenceLane = false) {
   const auto = scalar(node, 'AutoMaxWidth', 'Auto');
   if (explicitNo(auto)) return;
   const { kind, length } = node.presentation.valueType;
-  const reference = nativeReferenceInput(node, os);
+  const reference = linuxReferenceInput(node, os);
   const stretchesByDefault = !explicitYes(scalar(node, 'HorizontalStretch', 'Auto'))
-    && ['string', 'reference'].includes(kind);
+    && (['string', 'reference'].includes(kind) || referenceAlternatives(node.presentation.valueType));
   if (explicitYes(auto) || stretchesByDefault || referenceLane && reference) {
     return kind === 'string' && !length || reference ? automaticTextWidth(node) : fieldWidth(node, os);
   }
@@ -131,7 +143,8 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
   const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
-  let maximum = axis === 'x' ? automaticMultilineMaximum(node, os) : undefined;
+  const nativeMultiline = axis === 'x' && linuxFixedInputWidth(node, os) && inputRows(node) > 1;
+  let maximum = nativeMultiline ? automaticMultilineMaximum(node, os) ?? manualLaneMaximum(node) : undefined;
   if (maximum === undefined && (explicit <= 0 || numericLabel)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {

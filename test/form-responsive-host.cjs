@@ -200,6 +200,40 @@ async function checkTallHeader(ui, document, view) {
   }
 }
 
+async function checkCappedVerticalTrack(ui, document, view) {
+  const source = document.getText();
+  const group = '<Group>HorizontalIfPossible</Group>', field = '<InputField name="Name" id="2">';
+  const changed = source.replace(group, '<Group>Vertical</Group><Height>10</Height><VerticalStretch>false</VerticalStretch>')
+    .replace(field, field + '<MultiLine>true</MultiLine><AutoMaxHeight>false</AutoMaxHeight><MaxHeight>4</MaxHeight>');
+  assert.ok(source.includes(group) && source.includes(field));
+  const viewport = "document.querySelector('.preview-scroll')";
+  const originalStyle = await ui.evaluate(viewport + '.style.cssText');
+  try {
+    await editFormSource(document, view, changed);
+    await ui.rendered();
+    for (const height of [950, 1100]) {
+      await allocateFormViewport(ui, [860, height]);
+      let sample;
+      await until(async () => {
+        sample = await ui.evaluate(`(() => {
+          const input = document.querySelector('textarea[aria-label=Name]')?.closest('.taxi-input');
+          const owner = input?.closest('.taxi-element');
+          const next = document.querySelector('input[aria-label=Amount]')?.closest('.taxi-element');
+          if (!owner?.parentElement.classList.contains('taxi-items--vertical') || !next) return null;
+          const control = input.getBoundingClientRect(), row = owner.getBoundingClientRect();
+          return { controlHeight: control.height, spare: row.bottom - control.bottom,
+            nextGap: next.getBoundingClientRect().top - control.bottom };
+        })()`);
+        return sample?.controlHeight === 80;
+      }, 'capped multiline input is allocated');
+      assert.ok(sample.spare <= 2 && sample.nextGap <= 10, JSON.stringify(sample));
+    }
+  } finally {
+    await editFormSource(document, view, source);
+    await ui.evaluate(viewport + '.style.cssText=' + JSON.stringify(originalStyle));
+  }
+}
+
 async function checkCompactTable(ui, document, view) {
   const source = document.getText(), table = '<Table name="FixedRows" id="28">';
   assert.ok(source.includes(table));
@@ -430,6 +464,7 @@ exports.run=async function(){
     await until(() => ui.evaluate("!document.querySelector('.taxi-form-frame').hasAttribute('data-authored-height')"), 'automatic form height restored');
     await checkCappedHeader(ui, document);
     await checkTallHeader(ui, document, view);
+    await checkCappedVerticalTrack(ui, document, view);
     compactTable = await checkCompactTable(ui, document, view);
   }
   assert.deepEqual(await fs.readFile(form.path),original,'resizing, zoom, navigation and dirty XML write no files');
