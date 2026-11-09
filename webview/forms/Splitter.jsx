@@ -25,9 +25,10 @@ export function Splitter(props) {
     onKeyDown={event => {
       if (disabled()) return;
       const delta = { ArrowLeft: -10, ArrowUp: -10, ArrowRight: 10, ArrowDown: 10 }[event.key];
-      const bound = event.key === 'Home' ? range()?.minimum : event.key === 'End' ? range()?.maximum : undefined;
+      const edge = { Home: 'minimum', End: 'maximum' }[event.key];
+      const bound = range()?.[edge];
       if (bound === undefined && delta === undefined) return;
       event.preventDefault();
-      props.change(bound ?? props.value() + delta);
+      props.change(bound ?? props.value() + delta, edge);
     }}/>
 }

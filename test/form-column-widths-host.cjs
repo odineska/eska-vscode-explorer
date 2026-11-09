@@ -147,7 +147,12 @@ async function verifyColumnDivider(ui, original, replace) {
   const dragged = await observe(result => result.range?.[1] === current + delta, 'pointer drag moves the divider');
   assert.ok(Math.abs(dragged.x - automatic.x - delta) < 1);
 
-  const right = await press('End', 2), left = await press('Home', 0);
+  const right = await press('End', 2);
+  await allocateFormViewport(ui, [narrow[0] + 20, narrow[1]]);
+  await observe(result => result.range?.[2] > right.range[2] && result.range[1] === result.range[2], 'End follows the resized maximum');
+  await allocateFormViewport(ui, narrow);
+  await observe(result => result.range?.[2] === right.range[2] && result.range[1] === result.range[2], 'End follows the original maximum');
+  const left = await press('Home', 0);
   assert.ok(right.x - left.x > 10);
   assert.ok(right.tracks[0] > left.tracks[0] && right.tracks[1] < left.tracks[1]);
   assert.ok(Math.abs(right.tracks[0] + right.tracks[1] - left.tracks[0] - left.tracks[1]) < .1);

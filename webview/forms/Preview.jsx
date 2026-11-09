@@ -336,7 +336,7 @@ export function Items(props) {
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
     <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
       label={props.controller.state.strings.resizeFormColumns} value={() => split().value}
-      factor={() => 100 / props.controller.state.ui.zoom} change={value => layout.moveColumnDivider(props.node.key, value)}/>}</Show>
+      factor={() => 100 / props.controller.state.ui.zoom} change={(value, edge) => layout.moveColumnDivider(props.node.key, value, edge)}/>}</Show>
   </div>;
 }
 
