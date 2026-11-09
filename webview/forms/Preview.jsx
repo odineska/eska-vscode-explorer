@@ -265,10 +265,11 @@ export function Items(props) {
   const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
   const alignment = {Top:'start', Center:'center', Bottom:'end'};
   const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
-  const horizontalAlignment = () => nativeGroup() && horizontal()
+  const horizontalAlignment = () => nativeGroup()
     ? {Center:'center', Right:'end'}[scalar(props.node, 'HorizontalAlign')] : undefined;
-  const columns = () => nativeGroup() && horizontal() && children().length > 1 && children().every(child =>
-    ordinaryGroup(child) && (child.presentation.grouping === 'Vertical' || layout?.wrapped(child)));
+  const groupRow = () => nativeGroup() && horizontal() && children().length > 1 && children().every(ordinaryGroup);
+  const columns = () => groupRow() && children().every(child =>
+    child.presentation.grouping === 'Vertical' || layout?.wrapped(child));
   const contentAlignment = createMemo(() => {
     if (props.controller.state.os === 'linux' && props.node.kind === 'Form'
         && children().some(child => child.kind === 'UsualGroup')) return 'start';
@@ -325,8 +326,8 @@ export function Items(props) {
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
-    data-content-horizontal-align={horizontalAlignment() ? '' : undefined}
-    data-native-stacked-columns={columns() ? '' : undefined}
+    data-content-horizontal-align={horizontalAlignment()}
+    data-native-group-row={groupRow() ? '' : undefined}
     data-column-divider={divider()?.tracks ? 'manual' : divider() ? 'auto' : undefined}
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
       '--taxi-resized-columns': divider()?.tracks, '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>

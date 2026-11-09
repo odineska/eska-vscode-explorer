@@ -14,7 +14,7 @@ async function pose(ui, keys, expected) {
         const fields=new Map([...root.querySelectorAll('.taxi-element--field')].map(field=>[field.dataset.element,field]));
         const controls={}, captions={}, locations={};
         for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
-          const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox,.taxi-picture-field');
+          const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox,.taxi-picture-field,.taxi-label-field');
           if (!control) continue;
           const r=control.getBoundingClientRect();
           controls[name]=[r.x-origin.x,r.y-origin.y,r.width,r.height];
@@ -36,7 +36,7 @@ async function pose(ui, keys, expected) {
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
         && (!aligned || Math.max(...aligned) - Math.min(...aligned) <= tolerance)
         && Object.entries(expected.controls ?? {}).every(([name, rect]) =>
-          actual.controls[name]?.every((value,i) => Math.abs(value-rect[i]) <= tolerance))
+          rect === null ? !actual.controls[name] : actual.controls[name]?.every((value,i) => rect[i] === null || Math.abs(value-rect[i]) <= tolerance))
         && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
           const caption = actual.captions[name];
           return caption?.accessible === lines.join(' ') && caption.lines.length === lines.length
@@ -50,7 +50,7 @@ async function pose(ui, keys, expected) {
 }
 
 function editField(xml, name, transform) {
-  const field = new RegExp(`(<InputField name="${name}" id="\\d+">)([\\s\\S]*?)(</InputField>)`);
+  const field = new RegExp(`(<(?:InputField|LabelField) name="${name}" id="\\d+">)([\\s\\S]*?)(</(?:InputField|LabelField)>)`);
   assert.match(xml, field);
   return xml.replace(field, (_, open, properties, close) => open + transform(properties) + close);
 }
@@ -83,6 +83,9 @@ function sourceVariant(xml, edit) {
   }
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
+  }
+  for (const name of edit.hiddenFields ?? []) {
+    changed = editField(changed, name, properties => '<Visible>false</Visible>' + properties);
   }
   if (edit.united) changed = changed.replaceAll('<United>false</United>', '<United>true</United>');
   for (const [name, settings] of Object.entries(edit.groups ?? {})) {
@@ -194,7 +197,7 @@ exports.run = async () => {
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await ui.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
-    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField'].includes(node.kind));
+    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField', 'LabelField'].includes(node.kind));
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
@@ -228,6 +231,10 @@ exports.run = async () => {
       for (const expected of form.cases.filter(sample => sample.edit)) {
         await replace(sourceVariant(original,expected.edit));
         results.push(await pose(ui,keys,expected));
+      }
+      if (form.kind === 'FooterAllocation') {
+        await replace(original);
+        results.push(await pose(ui, keys, { ...form.cases[0], name:'footer allocation restored' }));
       }
       if (['Columns', 'AutoReference', 'AutoFixedSiblings'].includes(form.kind)) {
         await replace(original);

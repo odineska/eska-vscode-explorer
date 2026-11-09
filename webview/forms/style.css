@@ -761,8 +761,14 @@ button { cursor: default; }
 }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-numeric-label-row-owner]:not(:has(> .taxi-group > .taxi-items[data-content-horizontal-align])) { max-width: var(--taxi-numeric-label-row-max); }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-content-horizontal-align] { justify-content: var(--taxi-content-horizontal-align); }
-.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-stacked-columns]:not([data-united-columns]) > .taxi-element[data-stretch-x=true] {
-  max-width: min(100%, var(--taxi-content-maximum-width, 100%));
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-group-row]:not([data-united-columns]) > .taxi-element[data-stretch-x=true] {
+  max-width: min(100%, max(var(--taxi-group-width), var(--taxi-content-maximum-width, 100%)));
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-group-row]:not([data-united-columns]) > .taxi-element:last-of-type:has(> .taxi-group > .taxi-items[data-content-horizontal-align=end]) {
+  margin-inline-start: auto;
+}
+.taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns], [data-united-horizontal-lane], [data-numeric-label-row]) > .taxi-element[data-kind=LabelField][data-stretch-x=false] {
+  min-width: var(--taxi-min-width);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-numeric-label-row] {
   align-items: var(--taxi-numeric-label-align, center);
