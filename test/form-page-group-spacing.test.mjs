@@ -55,8 +55,7 @@ test('separation traverses logical pages and applies boundaries to mounted sibli
     const tree = pageTree();
     assert.equal(tree.elements.has('page'), false, 'Page has a container without an element wrapper');
     layoutGroupSpacing(tree.model, tree.context);
-    assert.deepEqual({ separation: tree.elements.get('second').style.get('margin-top'),
-      horizontal: tree.containers.get('row').style.get('--taxi-horizontal-gap') }, { separation: '8px', horizontal: '10px' });
+    assert.equal(tree.elements.get('second').style.get('margin-top'), '8px');
     const windows = pageTree();
     layoutGroupSpacing(windows.model, { ...windows.context, os: 'win32' });
     assert.equal(windows.elements.get('second').style.size, 0);

@@ -26,12 +26,8 @@ export function layoutGroupSpacing(model, { targets, alignment, os }) {
     const insets = padding ? { x: [pixels(padding.paddingLeft), pixels(padding.paddingRight)],
       y: [pixels(padding.paddingTop), pixels(padding.paddingBottom)] } : {};
     if (items) {
-      const axis = horizontal ? 'x' : 'y', interval = groupSpacingInterval(node, axis);
-      if (horizontal) {
-        if (interval !== undefined || children.some(child => ['UsualGroup', 'InputField', 'RadioButtonField', 'LabelDecoration', 'LabelField'].includes(child.kind))) {
-          alignment.style(items, '--taxi-horizontal-gap', `${interval ?? 10}px`);
-        }
-      } else if (interval !== undefined) {
+      const axis = horizontal ? 'x' : 'y', interval = horizontal ? undefined : groupSpacingInterval(node, 'y');
+      if (interval !== undefined) {
         alignment.style(items, 'row-gap', `${Math.max(0, interval - 2)}px`);
       }
       for (let index = 1; index < children.length; index++) {

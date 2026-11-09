@@ -12,7 +12,7 @@ import { CheckBoxControl } from './CheckBoxControl.jsx';
 import { designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
-import { groupSpacingInterval, independentVerticalSection } from './group-spacing.mjs';
+import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
 import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
@@ -241,6 +241,11 @@ export function Items(props) {
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
+  const horizontalGap = createMemo(() => {
+    if (props.controller.state.os !== 'linux' || !horizontalGrouping(props.node)) return;
+    const gap = horizontalGroupGap(props.node, children());
+    return gap === undefined ? undefined : `${gap}px`;
+  });
   const nativeGroup = () => props.controller.state.os === 'linux' && ordinaryGroup(props.node);
   const alignment = {Top:'start', Center:'center', Bottom:'end'};
   const inheritedAlignment = () => nativeGroup() ? alignment[scalar(props.node, 'VerticalAlign')] : undefined;
@@ -295,7 +300,8 @@ export function Items(props) {
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
-    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+    data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
+      '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>

@@ -7,7 +7,7 @@ const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = r
 function geometryExpression(keys, form, locale) {
   const expected = form.expected.locales[locale];
   return `(() => {
-    const root=document.querySelector('.taxi-form-frame');if(!root)return null;
+    const root=document.querySelector('.taxi-form-frame');if(root?.closest('.taxi-preview').dataset.formLayout!=='allocated')return null;
     const origin=root.getBoundingClientRect(),nodes=new Map([...root.querySelectorAll('[data-element]')].map(e=>[e.dataset.element,e]));
     const keys=${JSON.stringify(keys)},control=name=>nodes.get(keys[name])?.querySelector('.taxi-input,button.taxi-button');
     const paintedButtons=${JSON.stringify(form.expected.paintedButtons ?? [])};
@@ -87,10 +87,12 @@ exports.run = async () => {
     await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(() => [...service.views.values()].find(v => sameSourcePath(v.path, form.path))?.phase === 'ready', 'text model ready');
     const view = [...service.views.values()].find(v => sameSourcePath(v.path, form.path)), main = view.frames.get('main');
-    const ui = await frame({ fixedFormArea: true, state: { title: main.panel.title } });
+    const resizeMixedRow = process.platform === 'linux' && form.kind === 'RootBspCaption';
+    const ui = await frame({ fixedFormArea: !resizeMixedRow, state: { title: main.panel.title } });
     const expression = current => geometryExpression(Object.fromEntries([...view.nodes.values()].map(n => [n.name, `${n.identity.source}:current:${n.identity.key.value}`])), current, locale);
     try {
       await ui.evaluate('document.fonts.ready.then(()=>true)');
+      if (resizeMixedRow) await allocateFormViewport(ui, form.expected.locales[locale].frame);
       const actual = await stableGeometry(ui, expression(form));
       await fs.writeFile(path.join(fixture.root, 'text-input-current.json'), JSON.stringify({name:form.kind,actual,expected:form.expected.locales[locale]}));
       assertGeometry(actual, form, locale, form.kind);
@@ -100,6 +102,24 @@ exports.run = async () => {
       results.push({ name: form.kind, ...actual, nativeGeometryCompared: process.platform === 'linux' });
       await ui.parkPointer();
       await ui.screenshot('text-inputs-' + form.kind + '-' + locale + '.png');
+      if (resizeMixedRow) {
+        const wide = form.expected.locales[locale].frame;
+        await allocateFormViewport(ui, [720, 300]);
+        await until(() => ui.evaluate(`document.querySelector('.taxi-items--vertical[data-grouping=HorizontalIfPossible]') !== null`), 'conditional row stacked');
+        const recolored = source.replace('<TextColor>#807A59</TextColor>', '<TextColor>#807A58</TextColor>');
+        assert.notEqual(recolored, source);
+        await editFormSource(doc, view, recolored);
+        await until(() => ui.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'wrapped row dirty revision');
+        const preferredWidth = await ui.evaluate(`(async()=>{
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          return parseFloat(getComputedStyle(document.querySelector('.taxi-form-frame')).getPropertyValue('--taxi-form-preferred-width'));
+        })()`);
+        assert.equal(preferredWidth, wide[0], 'wrapped row preserves preferred width after dirty XML');
+        await allocateFormViewport(ui, wide);
+        const reallocated = await stableGeometry(ui, expression(form));
+        assertGeometry(reallocated, form, locale, 'conditional row restored after resizing and dirty XML');
+        results.push({ name: form.kind + '-reallocated', ...reallocated });
+      }
       const transitions = {
         RootButtonDecor: { target: 'TargetButton', dirty: ['RootNone', 'RootDouble', 'PlainRootButtonDecor', 'RootButtonDecor'], detached: ['RootSingle', 'RootNone', 'RootDouble', 'PlainRootButtonDecor', 'RootButtonDecor'] },
         PageButtonDecor: { target: 'TargetButton', dirty: ['PlainPageButtonDecor', 'PageButtonDecor'], detached: ['PlainPageButtonDecor', 'PageButtonDecor'] },

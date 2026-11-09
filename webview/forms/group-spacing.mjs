@@ -27,3 +27,9 @@ export function groupSpacingInterval(node, axis) {
   const unit = axis === 'x' ? 10 : 9;
   return { None: 0, Half: Math.ceil(unit / 2), Single: unit, Double: 2 * unit }[mode];
 }
+
+/** A conditional row keeps its native horizontal gap while stacked. */
+export function horizontalGroupGap(node, children) {
+  return groupSpacingInterval(node, 'x') ?? (children.some(child =>
+    ['UsualGroup', 'InputField', 'RadioButtonField', 'LabelDecoration', 'LabelField'].includes(child.kind)) ? 10 : undefined);
+}
