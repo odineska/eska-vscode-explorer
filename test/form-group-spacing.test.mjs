@@ -45,6 +45,13 @@ test('independent vertical sections reserve their title gap inside the group', (
     'the independent owner retains separation requested by a nested child');
 });
 
+test('the form exposes its last group boundary to the bottom command bar', () => {
+  const form = node({}, 'Form');
+  assert.deepEqual(groupSeparationEdges(form, [none, normal], false).y, [edge(0), edge(8)]);
+  assert.deepEqual(groupSeparationEdges(form, [normal, none], false).y, [edge(8), edge(0)]);
+  assert.deepEqual(groupSeparationEdges(form, [normal, none], true).y, [edge(8), edge(8)]);
+});
+
 test('explicit group intervals use the native horizontal and vertical units', () => {
   for (const [mode, x, y] of [['None', 0, 0], ['Half', 5, 5], ['Single', 10, 9], ['Double', 20, 18]]) {
     const group = node({ HorizontalSpacing: mode, VerticalSpacing: mode });

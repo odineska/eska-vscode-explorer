@@ -55,7 +55,7 @@ function alignPaintedRow(children, targets, alignment, scale) {
 }
 
 /** Project separation through nested groups before measuring preferred and minimum sizes. */
-export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
+export function layoutGroupSpacing(model, { targets, alignment, os, scale }, bottomCommands) {
   if (os !== 'linux') return;
   function visit(node) {
     // Pages have an Items container but no ordinary element wrapper.
@@ -87,7 +87,13 @@ export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
     const painted = group?.classList.contains('taxi-group--painted') ?? false;
     return groupSeparationEdges(node, edges, horizontal, insets, painted);
   }
-  visit(model);
+  const edges = visit(model);
+  if (bottomCommands) {
+    // The bottom command bar consumes the trailing boundary of the form body.
+    const { distance, insets } = edges.y[1];
+    reservePaintedInsets(insets, 'y', true, targets, alignment);
+    setGroupSpacing(bottomCommands, 'y', distance, alignment);
+  }
 }
 
 /** Exposed United rows use the largest boundary in any participating column. */

@@ -104,13 +104,15 @@ export function createFormLayout(controller, viewport, preview, frame) {
       if (decorations().size) setDecorations(new Map());
       const scale = boundingScale(root);
       const model = state.model.root, context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      const commands = body.querySelector(':scope > .taxi-root-commands');
+      const bottomCommands = body.dataset.rootCommandPosition === 'Bottom' ? commands : null;
       const rows = [...containers.values()].filter(items => items.dataset.grouping === 'HorizontalIfPossible');
       const activeWrap = wrapped();
       function prepare(wrap) {
-        rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
+        rootCommands = measureRootCommands(commands, scale);
         allocateTableCommands = measureTableCommands(root, scale);
         decorationsLayout = measureDecorations(model, context, state);
-        layoutGroupSpacing(model, context);
+        layoutGroupSpacing(model, context, bottomCommands);
         unitedColumns = alignUnitedColumns(model, context);
         const throughScopes = alignThroughLabels(model, context);
         unitedColumns.alignColumns();
