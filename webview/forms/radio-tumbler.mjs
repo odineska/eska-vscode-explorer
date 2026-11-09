@@ -1,12 +1,11 @@
-import { controlCaptionOptions } from './font-metrics.mjs';
+import { wordCaptionWidth } from './font-metrics.mjs';
 import { buttonMetrics, fontLineMetrics } from './model.mjs';
-import { paintTumblerCaptions, tumblerCaptionWidth } from './tumbler-caption.mjs';
+import { paintTumblerCaptions } from './tumbler-caption.mjs';
 import { tumblerPaint } from './tumbler-paint.mjs';
 
 export function radioTumblerLayout(labels, columns, font) {
   if (!labels.length || !columns) return;
-  const options = controlCaptionOptions(font);
-  const advances = labels.map(label => tumblerCaptionWidth(label, options));
+  const advances = labels.map(label => wordCaptionWidth(label, font));
   if (advances.some(advance => advance === undefined)) return;
 
   const { lineHeight, verticalPadding } = buttonMetrics(font);

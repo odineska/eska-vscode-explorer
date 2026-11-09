@@ -108,6 +108,9 @@ function declaredCommands(items, output) {
 
 export function rootCommandPlacement(node, state) {
   const bar = rootCommandBar(node);
+  const position = scalar(node, 'CommandBarLocation', 'Auto');
+  const authoredAlignment = scalar(bar, 'HorizontalAlign');
+  const alignment = ['Center', 'Right'].includes(authoredAlignment) ? authoredAlignment : 'Left';
   const declared = bar?.children ?? [];
   const authoredCommands = declaredCommands(declared, new Set());
   const automatic = automaticCommands(node, state).filter(item => !authoredCommands.has(item.key));
@@ -115,15 +118,20 @@ export function rootCommandPlacement(node, state) {
   const autofill = flag(bar, 'Autofill');
   const objectSections = node.presentation.objectCommandMenu ?? [];
   const standard = new Set(objectSections.flat().map(item => item.key));
-  const inline = [...automatic, ...authored.filter(item => !additionalOnly(item))];
+  const helpAvailable = state?.model?.formHelpAvailable;
+  const authoredHelp = item => scalar(item, 'CommandName') === help.key;
+  const missingHelpPage = item => helpAvailable === false && authoredHelp(item) && location(item) === 'Auto';
+  const additional = item => additionalOnly(item) || missingHelpPage(item);
+  const helpNode = helpAvailable === undefined ? undefined : authored.find(item => authoredHelp(item) && !additional(item));
+  const inline = [...automatic, ...authored.filter(item => item !== helpNode && !additional(item))];
   const automaticTail = autofill && !!(bar || automatic.length);
   const more = automaticTail || authored.some(item =>
-    additionalOnly(item) || location(item) === 'InCommandBarAndInAdditionalSubmenu');
+    additional(item) || location(item) === 'InCommandBarAndInAdditionalSubmenu');
   const rows = () => {
     const sections = objectSections.map(group => group.filter(item => !authoredCommands.has(item.key)));
     const extra = automatic.filter(item => !standard.has(item.key));
     extra.push(...menuItems(authored.filter(item =>
-      additionalOnly(item) || location(item) === 'InCommandBarAndInAdditionalSubmenu' || autofill && location(item) === 'Auto')));
+      additional(item) || location(item) === 'InCommandBarAndInAdditionalSubmenu' || autofill && location(item) === 'Auto')));
     if (autofill) {
       if (!authoredCommands.has(customize.key)) extra.push(customize);
       if (!authoredCommands.has(help.key)) extra.push(help);
@@ -133,7 +141,8 @@ export function rootCommandPlacement(node, state) {
     else sections.push(extra);
     return sectionItems(sections);
   };
-  return { inline, more, help: automaticTail && !authoredCommands.has(help.key), rows };
+  const showHelp = !!helpNode || automaticTail && helpAvailable !== false && !authoredCommands.has(help.key);
+  return { inline, more, help: showHelp, helpNode, position, alignment, rows };
 }
 
 export function startsRootCommandSection(previous, item) {

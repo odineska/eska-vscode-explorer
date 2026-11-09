@@ -71,10 +71,11 @@ function coverage(x,y,width,height,mask) {
 }
 
 /** Raised text-button border, rounded corners and the one-pixel native shadow. */
-export function buttonBorderPaint({height,background,outside,primary,position}) {
+export function buttonBorderPaint({height,background,outside,primary,position,stroke,inactive}) {
   if (!rgb(background) || !rgb(outside)) throw new Error('button-border-color');
-  const top = primary ? background.map(c => Math.floor(c * 170 / 255)) : [178,178,178];
-  const tail = buttonBorderTail(height,top,position), width = 7;
+  const top = stroke ?? (primary ? background.map(c => Math.floor(c * 170 / 255)) : [178,178,178]);
+  const tail = inactive ? [top, top, top] : buttonBorderTail(height,top,position);
+  const width = 7;
   const pixel = (x,y) => {
     const shadow = coverage(x,y - 1,width,height,OUTER), border = coverage(x,y,width,height,OUTER), fill = coverage(x,y,width,height,INNER);
     const edge = y < height - 3 ? top : tail[Math.min(2,y - height + 3)];

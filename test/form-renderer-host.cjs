@@ -90,7 +90,7 @@ exports.run = async function () {
       const change = async value => { const edit = new vscode.WorkspaceEdit();edit.replace(document.uri,new vscode.Range(document.positionAt(0),document.positionAt(document.getText().length)),value);assert.equal(await vscode.workspace.applyEdit(edit),true); };
       await change(original.replace(/(<ViewStatusAddition\b[^>]*>)/,'$1<Visible>false</Visible>'));
       await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-table-search-controls').length") === 0,'PDF view-status hidden from dirty XML');
-      assert.equal(await ui.evaluate("document.querySelector('.taxi-form-frame').getBoundingClientRect().height"),314);
+      await until(async () => await ui.evaluate("document.querySelector('.taxi-form-frame').getBoundingClientRect().height") === 314,'PDF layout after hiding view-status');
       await change(original);
       await until(async () => await ui.evaluate("document.querySelectorAll('.taxi-table-search-controls').length") === 1,'PDF view-status restored from dirty XML');
     }

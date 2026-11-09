@@ -1,21 +1,6 @@
-import { controlCaptionOptions, hintedPairTextAdvances } from './font-metrics.mjs';
+import { controlCaptionOptions, wordCaptionWidth, wordTextAdvances } from './font-metrics.mjs';
 import { paintLcdGlyphs } from './lcd-caption.mjs';
 import { fontLineMetrics } from './model.mjs';
-
-function lineAdvances(text, options) {
-  const advances = [];
-  // Taxi shapes the words independently and uses the space's own advance.
-  for (const part of text.match(/\S+|\s+/gu) ?? []) {
-    const run = hintedPairTextAdvances(part, options);
-    if (!run) return;
-    advances.push(...run);
-  }
-  return advances;
-}
-
-export function tumblerCaptionWidth(text, options) {
-  return lineAdvances(text, options)?.reduce((sum, advance) => sum + advance, 0);
-}
 
 function fitPrefix(text, limit, measure, suffix = '') {
   let end = 0;
@@ -53,8 +38,7 @@ function wrap(text, limit, rows, measure) {
 }
 
 export function tumblerCaptionLayout(paragraphs, { width, first, side }, font, titleRows) {
-  const options = controlCaptionOptions(font);
-  const measure = text => tumblerCaptionWidth(text, options);
+  const measure = text => wordCaptionWidth(text, font);
   if (measure('…') === undefined || paragraphs.some(parts => parts.length > 4096
       || parts.some(text => text.length > 4096 || measure(text) === undefined))) return;
   const padding = Math.max(0, side - 2);
@@ -75,7 +59,7 @@ export function tumblerCaptionLayout(paragraphs, { width, first, side }, font, t
 export function paintTumblerCaptions(image, captions, font, face, foreground) {
   const { pixels, ascent, descent } = fontLineMetrics(font);
   const lineHeight = ascent + descent, options = controlCaptionOptions(font);
-  const rasterOf = text => face.raster(text, pixels, ascent, descent, 'lcd', lineAdvances(text, options));
+  const rasterOf = text => face.raster(text, pixels, ascent, descent, 'lcd', wordTextAdvances(text, options));
   for (const { left, right, limit, padding, lines, explicitBreaks } of captions) {
     const baseline = Math.max(ascent, Math.floor((image.height + ascent - descent - (lines.length - 1) * lineHeight) / 2));
     const center = advance => Math.floor((left + right - advance) / 2);

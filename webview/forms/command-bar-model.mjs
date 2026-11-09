@@ -4,8 +4,9 @@ import { availableTableSearchCommand, commandSourceTable, tableSearch, tableSear
 /** Use the same projected commands for rendering and for the bar's layout footprint. */
 export function commandBarContent(root, node) {
   const source = commandSourceTable(root, node), search = !!tableSearch(source);
+  const formSource = scalar(node, 'CommandSource') === 'Form';
   const inline = [], trailing = [], additional = [];
-  let hasOverflow = !!source, tableCommands = !!source, advancedSearch = false;
+  let hasOverflow = !!source || formSource, tableCommands = !!source, advancedSearch = false;
   for (const child of node.children) {
     if (!child.presentation.displayed) continue;
     const command = scalar(child, 'CommandName'), reference = tableSearchReference(command);
@@ -23,6 +24,7 @@ export function commandBarContent(root, node) {
     if (location === 'InCommandBarAndInAdditionalSubmenu') additional.push(child);
   }
   const more = hasOverflow ? additional : [];
-  return { source, inline, trailing, more, tableCommands, advancedSearch,
-    visible: !!source || !!(inline.length || trailing.length || more.length) };
+  const spaceBeforeMore = !!source || formSource || more.length > 0;
+  return { source, formSource, inline, trailing, more, tableCommands, advancedSearch, spaceBeforeMore,
+    visible: spaceBeforeMore || !!(inline.length || trailing.length) };
 }

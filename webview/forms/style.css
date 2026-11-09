@@ -88,6 +88,11 @@ button { cursor: default; }
 .taxi-form-title { min-width: 100%; max-width: 0; overflow: hidden; white-space: nowrap; height: 24px; background: #f4f4f4; color: #555; font-size: 12px; padding-left: 1px; line-height: 20px; }
 .taxi-form-content { padding: 12px 19px 10px 11px; }
 .taxi-form-content--commands { padding-top: 4px; }
+.taxi-form-content[data-root-command-position=Bottom] {
+  display: flex;
+  flex-direction: column;
+  padding-block: 12px;
+}
 .taxi-form-content:not(.taxi-form-content--commands):has(> .taxi-items:empty) { padding-bottom: 12px; }
 .taxi-items { min-width: 0; --taxi-horizontal-gap: 8px; --taxi-group-allocated-rows: initial; }
 .taxi-items--vertical { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 4px; align-items: start; }
@@ -131,6 +136,7 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=CheckBoxField] > .taxi-field-row:is([data-title-location=Top], [data-title-location=Bottom]) { row-gap: 3px; }
 .taxi-preview[data-os=linux] .taxi-field-row--check { grid-template-columns: max-content minmax(0, 1fr); }
 .taxi-items--horizontal > .taxi-element--field > .taxi-field-row { grid-template-columns: max-content minmax(20px, 1fr); }
+.taxi-items--horizontal > .taxi-element--field > .taxi-field-row[data-title-location=None] { grid-template-columns: minmax(0, 1fr); }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-label { position: relative; }
 .taxi-native-label { position: absolute; pointer-events: none; }
@@ -150,9 +156,12 @@ button { cursor: default; }
 .taxi-field-control[data-tooltip-button] { display: flex; column-gap: 5px; align-items: center; }
 .taxi-field-tooltip { flex: 0 0 10px; color: #0071bc; font: 13.3333px/16px 'ESKA Taxi Sans', Arial, sans-serif; text-align: center; }
 .taxi-input > :is(input,textarea)::placeholder { color: #ccc; opacity: 1; }
+.taxi-input[data-native-text-width] { container-type: inline-size; }
+.taxi-input[data-native-text-width]:has(> .taxi-input-button--choice) > input { padding-inline: clamp(0px, calc((100cqi - 20px) / 2), 4px); }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .taxi-field-row[data-title-location=Top] > *, .taxi-field-row[data-title-location=Bottom] > * { grid-column: 1; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom]) { row-gap: 3px; padding-block: 1px; }
 .taxi-field-row[data-title-location=Bottom] .taxi-field-label { order: 1; }
 .taxi-field-row--check { grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
 .taxi-field-row--check[data-title-location=Right] .taxi-field-label { grid-column: 2; grid-row: 1; }
@@ -175,6 +184,8 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] > .taxi-input-button:last-of-type::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
 .taxi-input-calculator { display: block; flex: none; width: 9px; height: 11px; transform: translateY(-1px); }
 .taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-spin] > .taxi-input-button--number { width: 21px; flex-basis: 21px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-spin] > .taxi-input-button--number::after { content: none; }
 .taxi-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 26px; padding: 3px 13px; margin: 0; border: 1px solid #b2b2b2; border-bottom-color: #9b9b9b; border-radius: 2px; box-shadow: 0 1px #d2d2d2; color: #555; background: linear-gradient(#fff 50%, #ebebeb); white-space: nowrap; line-height: 18px; }
 .taxi-button { position: relative; }
 .taxi-preview[data-os=linux] .taxi-button--native-fill { background-color: var(--taxi-ButtonBackColor); }
@@ -184,7 +195,7 @@ button { cursor: default; }
 .taxi-button--help { width: 30px; padding: 3px 0; }
 .taxi-button--bar { background: none; border-color: transparent; box-shadow: none; min-height: 24px; padding: 2px 5px; }
 .taxi-button--picture { padding: 3px; min-width: 26px; }
-.taxi-button--icon-only { width: 30px; padding: 3px 0; }
+.taxi-button--icon-only { width: var(--taxi-picture-button-width, 30px); padding: 3px 0; }
 .taxi-button--icon-only.taxi-button--dropdown { width: 42px; }
 .taxi-button--icon-only.taxi-button--dropdown .taxi-down { margin-left: 0; }
 .taxi-button--link { background: none !important; border-color: transparent; box-shadow: none; padding: 0; text-decoration: underline; }
@@ -195,8 +206,24 @@ button { cursor: default; }
 .taxi-root-commands { display: flex; align-items: center; --taxi-root-command-gap: 8px; gap: var(--taxi-root-command-gap); margin-bottom: 10px; min-height: 26px; }
 .taxi-preview[data-os=linux] .taxi-root-commands {
   --taxi-root-command-gap: 9px;
-  margin-block: -1px 11px;
+  margin-block: -1px 10px;
   margin-inline-end: -1px;
+}
+.taxi-root-commands[data-root-command-alignment=Right] { justify-content: flex-end; }
+.taxi-preview[data-os=linux] .taxi-root-commands:not([data-root-command-alignment=Left]) {
+  margin-block: 0 9px;
+  margin-inline-end: 0;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-root-commands[data-root-command-alignment=Center] {
+  padding-inline-start: var(--taxi-root-command-inset, 0px);
+}
+.taxi-preview .taxi-form-content[data-root-command-position=Bottom] > .taxi-root-commands {
+  order: 1;
+  margin-block: 8px 0;
+  margin-inline-end: 0;
+}
+.taxi-preview .taxi-form-content[data-root-command-position=Bottom]:has(> .taxi-items:empty) > .taxi-root-commands {
+  margin-top: 10px;
 }
 .taxi-root-commands > :is([data-root-command], [data-root-command-tail]) { display: flex; flex: none; }
 .taxi-preview[data-os=linux] .taxi-root-commands > [data-root-command-section] { margin-inline-start: 11px; }
@@ -348,12 +375,20 @@ button { cursor: default; }
 .taxi-period-next { right: 34px; transform: rotate(180deg); }
 .taxi-picture-field { display: block; border: 1px solid #aaa; background: #fff; max-width: 100%; }
 .taxi-picture-decoration { display: inline-block; min-width: 16px; min-height: 16px; }
+.taxi-preview[data-os=linux] .taxi-picture-decoration { padding: 1px; }
 .taxi-element[data-kind=LabelDecoration] { display: flex; align-items: center; min-height: 19px; }
-.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration]:has(> .taxi-label:empty),
-.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration] > .taxi-label:empty { min-height: 17px; }
-.taxi-preview[data-os=linux] .taxi-items[data-auto-spacing]:is([data-grouping=Horizontal],[data-grouping=HorizontalIfPossible]):has(> .taxi-element[data-kind=LabelDecoration] > .taxi-label:empty) {
-  --taxi-horizontal-gap: 10px;
-}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration]:has(> [data-native-decoration]) { min-height: 0; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=LabelDecoration]:has(> .taxi-label:not([data-native-decoration]):empty),
+.taxi-preview[data-os=linux] .taxi-label:not([data-native-decoration]):empty { min-height: 17px; }
+.taxi-preview[data-os=linux] .taxi-label[data-native-decoration] { box-sizing: content-box; padding-block: 1px; --taxi-decoration-inline-inset: 0px; }
+.taxi-preview[data-os=linux] .taxi-label[data-native-decoration][data-painted-label] { padding-inline: 1px; --taxi-decoration-inline-inset: 2px; }
+.taxi-preview[data-os=linux] .taxi-element:has(> .taxi-label[data-native-decoration][data-painted-label]) { padding-block: 1px; }
+.taxi-preview[data-os=linux] .taxi-decoration-line { display: block; box-sizing: border-box; }
+.taxi-preview[data-os=linux] .taxi-label[data-native-decoration].taxi-hyperlink { border: 1px solid transparent; --taxi-decoration-inline-inset: 2px; }
+.taxi-preview[data-os=linux] .taxi-label[data-native-decoration][data-painted-label].taxi-hyperlink { --taxi-decoration-inline-inset: 4px; }
+.taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-label[data-native-decoration] { max-width: calc(100% - var(--taxi-decoration-inline-inset)); }
+.taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-element[data-kind=LabelDecoration][data-stretch-x=true] > [data-native-decoration] { width: calc(100% - var(--taxi-decoration-inline-inset)) !important; }
+.taxi-preview[data-os=linux] .taxi-group-title button { white-space: inherit; }
 .taxi-element[data-kind=PictureDecoration] { line-height: 0; }
 .taxi-picture-resource { display: inline-block; max-width: 100%; vertical-align: middle; }
 .taxi-button .taxi-picture-resource { width: 16px; height: 16px; object-fit: contain; }
@@ -393,13 +428,14 @@ button { cursor: default; }
 .taxi-table-move .taxi-button:last-of-type:not(:only-of-type) { border-radius: 0 2px 2px 0; border-left: none; }
 .taxi-command-bar[data-table-commands] { --taxi-projected-search-width: 172px; }
 .taxi-command-bar[data-advanced-search] { --taxi-projected-search-width: 161px; }
-.taxi-command-bar[data-table-commands] > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
+.taxi-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-command-spacer--wide { min-width: 11px; }
 .taxi-table-command-bar[data-adaptive-table-toolbar]:has(> [data-table-search-control][data-table-command-hidden]) > .taxi-command-spacer--wide { min-width: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-element { flex-shrink: 0; }
 .taxi-command-bar[data-table-commands] > .taxi-table-move + .taxi-element { margin-left: 11px; }
 .taxi-command-bar[data-table-commands] > .taxi-table-search { min-width: var(--taxi-projected-search-width); }
 .taxi-preview[data-form-layout=preferred] .taxi-command-bar[data-table-commands] > .taxi-table-search { flex-basis: var(--taxi-projected-search-width); }
+.taxi-preview[data-os=linux] .taxi-command-bar > .taxi-popup > .taxi-button--dropdown,
 .taxi-preview[data-os=linux] .taxi-popup[data-command-overflow] > .taxi-button--dropdown { padding-right: 6px; }
 .taxi-preview[data-os=linux] .taxi-element[data-joined-table] { margin-block: 1px; }
 .taxi-table-search { display: flex; height: 23px; border: 1px solid #a0a0a0; border-radius: 2px; flex: 0 1 260px; min-width: 80px; }
@@ -407,8 +443,20 @@ button { cursor: default; }
 .taxi-table-search input::placeholder { color: #ccc; opacity: 1; }
 .taxi-table-search > span { width: 21px; text-align: center; border-left: 1px solid; border-left-color: inherit; line-height: 21px; font-size: 11px; }
 .taxi-table-search-controls { display: flex; gap: 14px; height: 21px; margin-bottom: 9px; align-items: stretch; }
-.taxi-table-search-controls > span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #d9d0a5; border-radius: 2px; background: #fff2c2; box-shadow: 0 1px #ddd; white-space: nowrap; }
-.taxi-table-search-controls i { font-style: normal; background: #8e8868; color: #fff2c2; border-radius: 50%; width: 12px; height: 12px; line-height: 11px; text-align: center; }
+.taxi-view-status-chip { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #cbc19f; border-block-color: #e4d9b2; border-radius: 3px; background: #fef2c7; box-shadow: 0 1px #dedcd3; white-space: nowrap; }
+/* The native chip paint includes its one-pixel shadow and preserves the text in the DOM. */
+.taxi-view-status-chip { position: relative; }
+.taxi-view-status-chip > .taxi-view-status-paint { display: none; position: absolute; left: -1px; top: -1px; pointer-events: none; }
+.taxi-view-status-chip[data-native-view-status=ready] { background: transparent; border-color: transparent; box-shadow: none; }
+.taxi-view-status-chip[data-native-view-status=ready] > :not(canvas) { visibility: hidden; }
+.taxi-view-status-chip[data-native-view-status=ready] > .taxi-view-status-paint { display: block; }
+.taxi-view-status-label { display: flex; flex: 1; min-width: 0; }
+.taxi-view-status-label > :is(.taxi-view-status-name, .taxi-view-status-value) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.taxi-view-status-label > :is(.taxi-view-status-name, .taxi-view-status-separator) { opacity: .75; }
+.taxi-view-status-separator { flex: none; white-space: pre; }
+.taxi-view-status--standalone { height: 22px; margin: 0; overflow: hidden; }
+.taxi-view-status--standalone > .taxi-view-status-chip { height: 21px; }
+.taxi-view-status-chip i { flex: 0 0 12px; font-style: normal; background: #847e68; color: #fef2c7; border-radius: 50%; height: 12px; line-height: 11px; text-align: center; }
 .taxi-table-field { --taxi-table-min-height: var(--taxi-table-compressed-height); }
 .taxi-table-field[data-native-column-sizing] { --taxi-table-min-height: var(--taxi-table-preferred-height); }
 .taxi-form-frame[data-authored-height] .taxi-table-field[data-native-column-sizing] {
@@ -427,8 +475,8 @@ button { cursor: default; }
 .taxi-table-content { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow: hidden; }
 .taxi-table-head, .taxi-table-footer { display: grid; flex-shrink: 0; }
 .taxi-table-head { background: var(--taxi-HeaderBackColor); }
-.taxi-table-header-cell, .taxi-table-footer > div { min-width: 0; overflow: hidden; white-space: nowrap; padding: 3px 8px 7px; border: 1px solid #fff; border-right-color: #ccc; border-bottom-color: #ccc; box-shadow: inset -1px -1px #fff; line-height: 18px; font-weight: 400; }
-.taxi-table-head > .taxi-table-header-cell:last-child, .taxi-table-footer > div:last-child { border-right-color: #fff; box-shadow: inset 0 -1px #fff; }
+.taxi-table-header-cell, .taxi-table-footer-cell { min-width: 0; overflow: hidden; white-space: nowrap; padding: 3px 8px 7px; border: 1px solid #fff; border-right-color: #ccc; border-bottom-color: #ccc; box-shadow: inset -1px -1px #fff; line-height: 18px; font-weight: 400; }
+.taxi-table-head > .taxi-table-header-cell:last-child, .taxi-table-footer-cell[data-last-column] { border-right-color: #fff; box-shadow: inset 0 -1px #fff; }
 .taxi-table-header-cell.selected { outline: 1px solid #1695f3; outline-offset: -1px; }
 .taxi-table-header-horizontal { display: grid; grid-template-columns: subgrid; min-width: 0; }
 .taxi-table-header-title, .taxi-table-header-children { grid-column: 1 / -1; }
@@ -437,7 +485,11 @@ button { cursor: default; }
 .taxi-table-empty { flex: 1; min-height: 0; position: relative; }
 .taxi-table-incomplete { position: absolute; top: 27px; left: 3px; right: 3px; border-bottom: 1px dotted #f00; }
 .taxi-table-footer { background: var(--taxi-TableFooterBackColor); }
-.taxi-table-footer > div { border-top-color: #ccc; border-bottom-color: #fff; }
+.taxi-table-footer-horizontal { display: grid; grid-template-columns: subgrid; min-width: 0; }
+.taxi-table-footer-vertical { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.taxi-table-footer-vertical > * { flex-shrink: 0; }
+.taxi-table-content[data-clip-header] > .taxi-table-head { flex-shrink: 1; min-height: 0; overflow: hidden; }
+.taxi-table-footer-cell { border-top-color: #ccc; border-bottom-color: #fff; }
 .taxi-table-scrollbar { display: flex; flex-direction: column; justify-content: space-between; align-items: center; width: 14px; flex: 0 0 14px; background: #fff; padding: 9px 0; }
 .taxi-table-scrollbar > span { width: 6px; height: 4px; background: #c2c2c2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 .taxi-table-scrollbar > span:last-child { transform: rotate(180deg); }
@@ -544,7 +596,7 @@ button { cursor: default; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar { width: 12px; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar-track { border: none; background: #fff; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar-thumb { border: none; border-radius: 6px; background: #ccc; }
-.taxi-addition input { height: 22px; border: 1px solid #aaa; border-radius: 2px; width: 180px; padding: 2px 5px; background: #fff; }
+
 .taxi-unsupported { padding: 8px; border: 1px dashed #d49342; color: #8b5b1d; }
 .taxi-preview ::-webkit-scrollbar { width: 17px; height: 17px; }
 .taxi-preview ::-webkit-scrollbar-track { border: 1px solid #ccc; background: #f5f5f5; }
@@ -559,9 +611,11 @@ button { cursor: default; }
 /* The help gap already includes the choice input's border outset. */
 .taxi-preview[data-os=linux] .taxi-field-control[data-tooltip-button] > .taxi-input[data-native-border=ready] { margin-right: 0; }
 
-/* Horizontal button rows reserve space for their raised-button shadows. */
+/* Raised buttons reserve their shadow and vertical spacing in every content column. */
+.taxi-preview[data-os=linux] .taxi-button[data-button-type=UsualButton] { height: var(--taxi-button-height, auto); }
 .taxi-preview[data-os=linux] .taxi-items--buttons { gap: 10px; }
-.taxi-preview[data-os=linux] .taxi-items--buttons > .taxi-element { display: flex; padding: 1px 0 2px; }
+.taxi-preview[data-os=linux] .taxi-items--buttons > .taxi-element,
+.taxi-preview[data-os=linux] .taxi-items > .taxi-element:has(> .taxi-button[data-button-type=UsualButton]) { display: flex; padding: 1px 0 2px; }
 
 /* Native corners cover only the edge pixels; they never change text allocation. */
 .taxi-preview[data-os=linux] .taxi-button--native-border { border-color: var(--taxi-button-native-border); border-bottom-color: var(--taxi-button-native-bottom); border-radius: 0; box-shadow: 0 1px var(--taxi-button-native-shadow); }
@@ -575,19 +629,19 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=Button].taxi-selected > .taxi-button[data-button-type=Hyperlink]::after { bottom: -4px; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=Button].taxi-selected > .taxi-button[data-button-type^=CommandBar]::after { top: -3px; bottom: -2px; }
 
-.taxi-table-header-cell, .taxi-table-footer > div { position: relative; }
-.taxi-preview[data-os=linux] .taxi-table-header-cell, .taxi-preview[data-os=linux] .taxi-table-footer > div { padding-left: 7px; }
+.taxi-table-header-cell, .taxi-table-footer-cell { position: relative; }
+.taxi-preview[data-os=linux] .taxi-table-header-cell, .taxi-preview[data-os=linux] .taxi-table-footer-cell { padding-left: 7px; }
 .taxi-preview[data-os=linux] .taxi-table-scrollbar > span { background: transparent; clip-path: none; }
 .taxi-table-scrollbar svg { display: block; }
-.taxi-preview[data-os=linux] .taxi-table-footer > div { box-shadow: inset -1px 0 #fff; }
-.taxi-preview[data-os=linux] .taxi-table-footer > div:last-child { box-shadow: none; }
+.taxi-preview[data-os=linux] .taxi-table-footer-cell { box-shadow: inset -1px 0 #fff; }
+.taxi-preview[data-os=linux] .taxi-table-footer-cell[data-last-column] { box-shadow: none; }
 .taxi-preview[data-os=linux] .taxi-table-incomplete { top: 28px; left: 0; right: 0; }
 
 /* Native table border images keep different edge colors from blending at joins. */
 .taxi-preview[data-os=linux] .taxi-table-header-cell { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
 .taxi-preview[data-os=linux] .taxi-table-head > .taxi-table-header-cell:last-child { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
-.taxi-preview[data-os=linux] .taxi-table-footer > div { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
-.taxi-preview[data-os=linux] .taxi-table-footer > div:last-child { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
+.taxi-preview[data-os=linux] .taxi-table-footer-cell { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
+.taxi-preview[data-os=linux] .taxi-table-footer-cell[data-last-column] { border-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%223%22%20height%3D%223%22%20shape-rendering%3D%22crispEdges%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28204%2C204%2C204%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%220%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28210%2C210%2C210%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%221%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%220%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%221%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%221%22%20height%3D%221%22%20fill%3D%22rgb%28255%2C255%2C255%29%22%2F%3E%3C%2Fsvg%3E") 1 stretch; }
 
 /* A browser dotted border changes phase with width; native dots always start at the left. */
 .taxi-preview[data-os=linux] .taxi-table-incomplete { border: 0; height: 1px; background: repeating-linear-gradient(to right, #f00 0 1px, transparent 1px 2px); }
@@ -603,8 +657,8 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-table-search--compact { border-color: #b3ac86; font-size: 11px; }
 .taxi-table-search--top { width: 100%; align-self: stretch; flex: 0 0 auto; margin: 0 0 8px; }
 .taxi-preview[data-os=linux] .taxi-table-search--top { align-self: stretch; margin-top: 0; }
-.taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field:has(> .taxi-table-search--top) { padding-top: 1px; }
-.taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field[data-search-location=None]:has(> .taxi-table-command-bar[data-autofill]) { padding-block: 1px; }
+/* Standalone tables retain their native vertical widget insets in every toolbar mode. */
+.taxi-preview[data-os=linux] .taxi-element:not([data-joined-table]) > .taxi-table-field { padding-block: 1px; }
 .taxi-preview[data-os=linux] .taxi-table-search:has(> [data-native-label=ready]) input::placeholder { color: transparent; }
 
 .taxi-preview[data-os=linux] .taxi-table-search[data-native-search-field=ready] { border-radius: 0; }
@@ -635,9 +689,9 @@ button { cursor: default; }
   flex: 0 0 auto !important;
 }
 .taxi-preview[data-form-layout=minimum] .taxi-form-frame { width: min-content !important; height: auto !important; }
-.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--taxi-horizontal-gap); }
-.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] > .taxi-element { flex-shrink: 0; }
-.taxi-preview[data-form-layout=preferred] .taxi-items[data-grouping=HorizontalIfPossible] > .taxi-element--field { display: block; }
+.taxi-preview[data-form-layout=preferred] .taxi-items--horizontal[data-grouping=HorizontalIfPossible] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--taxi-horizontal-gap); }
+.taxi-preview[data-form-layout=preferred] .taxi-items--horizontal[data-grouping=HorizontalIfPossible] > .taxi-element { flex-shrink: 0; }
+.taxi-preview[data-form-layout=preferred] .taxi-items--horizontal[data-grouping=HorizontalIfPossible] > .taxi-element--field { display: block; }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-x=false]:not([data-group-shrink-x]) { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-layout-container=true][data-stretch-y=false] { min-height: var(--taxi-preferred-height); }
 .taxi-preview[data-form-layout=minimum] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field) { width: var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 80px)) !important; min-width: 0 !important; }
@@ -661,15 +715,30 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content { overflow: auto; }
 /* Use the existing right inset for the native scrollbar so it cannot change the table width. */
 .taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content { padding-right: 4px; scrollbar-gutter: stable; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar { width: 15px; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-track { border: 0; background: transparent; }
-.taxi-form-frame[data-native-form-scroll] > .taxi-form-content::-webkit-scrollbar-thumb {
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content[data-root-command-position=Bottom] {
+  overflow: hidden;
+  padding-right: 19px;
+  scrollbar-gutter: auto;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-form-frame:is([data-authored-height], [data-native-form-scroll]) > .taxi-form-content[data-root-command-position=Bottom] > .taxi-items {
+  overflow: auto;
+  min-height: 0;
+  margin-inline-end: -15px;
+  scrollbar-gutter: stable;
+}
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar { width: 15px; }
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar-track { border: 0; background: transparent; }
+:is(.taxi-form-frame[data-native-form-scroll] > .taxi-form-content, .taxi-form-content[data-root-command-position=Bottom] > .taxi-items)::-webkit-scrollbar-thumb {
   border: solid transparent;
   border-width: 3px 3px 3px 4px;
   border-radius: 7px;
   background: #9a9a9a padding-box;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-root-commands { flex: none; }
+/* The native -1px top margin also defines the toolbar's pinned scrollport edge. */
+.taxi-preview[data-form-layout=allocated] [data-native-form-scroll] > .taxi-form-content:not([data-root-command-position=Bottom]) > .taxi-root-commands {
+  position: sticky; top: -1px; z-index: 1; background: inherit;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-form-content > .taxi-items { flex: 1; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--vertical { grid-template-rows: var(--taxi-group-allocated-rows, var(--taxi-layout-rows)); align-items: stretch; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal { align-items: center; flex-wrap: nowrap; }
@@ -710,6 +779,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-group { display: flex; flex-direction: column; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > :is(.taxi-group,.taxi-pages) { height: 100%; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; white-space: var(--taxi-group-heading-space, normal); }
+.taxi-preview[data-form-layout=allocated] .taxi-group-title[data-native-heading-minimum][data-native-heading-wrapped] { --taxi-group-heading-space: pre-wrap; }
 .taxi-preview[data-form-layout=allocated] .taxi-group > .taxi-items { flex: 1; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages { display: flex; flex-direction: column; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnBottom] { flex-direction: column-reverse; }
@@ -917,7 +987,10 @@ button { cursor: default; }
 /* Command-bar paint extends two pixels beyond the row's trailing layout edge. */
 .taxi-preview[data-os=linux] .taxi-command-bar[data-horizontal-location] { min-width: 0; padding-right: 2px; }
 .taxi-command-bar[data-horizontal-location=Right] { justify-content: flex-end; }
-.taxi-preview[data-os=linux] .taxi-items:has(> .taxi-element[data-kind=CommandBar]) { margin-right: -2px; }
+.taxi-preview[data-os=linux] .taxi-items--horizontal:has(> .taxi-element[data-kind=CommandBar]) { margin-right: -2px; }
+.taxi-preview[data-os=linux] .taxi-items--vertical > .taxi-element > .taxi-command-bar[data-horizontal-location] { padding-right: 0; }
+.taxi-preview[data-os=linux][data-form-layout=preferred] .taxi-command-bar[data-horizontal-location] { min-width: calc(var(--taxi-command-minimum-width, 0px) + 2px); }
+.taxi-preview[data-os=linux][data-form-layout=preferred] .taxi-items--vertical > .taxi-element > .taxi-command-bar[data-horizontal-location] { min-width: var(--taxi-command-minimum-width, 0px); }
 .taxi-preview[data-os=linux]:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-command-bar { min-width: 0; }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-element[data-compact-command-bars] { width: var(--taxi-min-width); }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-items--horizontal[data-native-command-row] > .taxi-element[data-kind=CommandBar] {
@@ -926,3 +999,27 @@ button { cursor: default; }
 }
 /* Authored popup controls include the native trailing arrow edge. */
 .taxi-preview[data-os=linux] .taxi-element[data-kind=Popup] > .taxi-popup > .taxi-button--dropdown { padding-right: 6px; }
+
+/* Independently placed additions reserve one native inset above and below the row. */
+.taxi-preview[data-os=linux] .taxi-element[data-standalone-addition] { margin-block: 1px; }
+.taxi-preview[data-os=linux] .taxi-items--horizontal > .taxi-element[data-kind=ViewStatusAddition]:not([data-group-vertical-align=Top], [data-group-vertical-align=Bottom]) { top: -.5px; }
+.taxi-element[data-standalone-addition] {
+  width: var(--taxi-addition-width);
+  min-width: var(--taxi-addition-minimum);
+  max-width: min(100%, var(--taxi-addition-maximum, 100%));
+}
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-standalone-addition][data-stretch-x=true] { width: var(--taxi-addition-minimum); }
+.taxi-preview[data-form-layout=allocated] .taxi-items--vertical > .taxi-element[data-standalone-addition][data-stretch-x=true] { width: 100%; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element[data-standalone-addition][data-stretch-x=true] { min-width: var(--taxi-addition-minimum); }
+.taxi-items--vertical > [data-standalone-addition][data-group-horizontal-align=Right] { justify-self: end; }
+.taxi-items--vertical > [data-standalone-addition][data-group-horizontal-align=Center] { justify-self: center; }
+.taxi-preview[data-os] .taxi-table-search--standalone { width: 100%; min-width: 0; margin: 0; }
+.taxi-preview[data-os=linux] .taxi-table-search--standalone > .taxi-search-clear { background: #fff; flex: none; }
+.taxi-table-search--standalone input::placeholder { color: var(--taxi-search-hint, #ccc); }
+.taxi-element[data-kind=SearchControlAddition] { height: 27px; }
+.taxi-element[data-kind=SearchControlAddition] > .taxi-button {
+  display: flex; width: 100% !important; justify-content: flex-start; padding-inline: 6px;
+}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button { top: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button > canvas[data-native-picture] { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > [aria-disabled=true] > canvas[data-native-picture] { filter: grayscale(.8); opacity: .5; }

@@ -99,7 +99,7 @@ exports.run = async function() {
   await until(async () => await matches('Local icon', '', first)
     && await matches('Text command', 'Text command', null)
     && await matches('Mixed command', 'Mixed command', first)
-    && await matches('No icon', 'No icon', null)
+    && await matches('No icon', '', null)
     && await matches('GeneratedIcon', '', generated), 'authored and generated command pictures use their effective representation');
 
   if (process.platform === 'linux') {

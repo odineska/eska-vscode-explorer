@@ -126,10 +126,27 @@ export function fontLineHeight(value) {
   const { ascent, descent } = fontLineMetrics(value);
   return ascent + descent;
 }
+/** Designer retains Width in XML but ignores it for Linux command-bar buttons. */
+export function buttonAuthoredWidth(node, os) {
+  return os === 'linux' && scalar(node, 'Type') === 'CommandBarButton' ? 0 : number(node, 'Width');
+}
+
 /** Native raised-button padding scales from the 13px reference font. */
 export function buttonMetrics(value) {
   const { pixels, ascent, descent } = fontLineMetrics(value);
   return { horizontalPadding: pixels, verticalPadding: Math.round(pixels * 3 / 13), lineHeight: ascent + descent };
+}
+// Designer's line unit differs from the browser line box at some hinted sizes.
+// Measured regular DefaultGUIFont pairs are bound by native-button-heights.
+const linuxButtonLineUnits = Object.freeze({8:13,9:14,10:16,11:17,12:18,14:22,16:24,18:28,20:31});
+export function buttonControlHeight(node, os) {
+  const value = node?.presentation.font, metrics = buttonMetrics(value);
+  const usual = os === 'linux' && node?.kind === 'Button' && scalar(node, 'Type', 'UsualButton') === 'UsualButton';
+  const rows = usual ? Math.max(1, Math.floor(number(node, 'Height', 1))) : 1;
+  const calibrated = !value?.italic && (value?.weight ?? 400) === 400
+    && (!value?.face || ['Arial', 'Liberation Sans', 'ESKA Taxi Sans'].includes(value.face));
+  const unit = (calibrated ? linuxButtonLineUnits[value?.points ?? 10] : undefined) ?? fontLineHeight(value);
+  return Math.max(26, metrics.lineHeight + 2 * metrics.verticalPadding + 2 + (rows - 1) * unit);
 }
 /** Discrete Linux button fill avoids Chromium's gradient dithering. Height excludes borders. */
 export function buttonBackground(height, background = [255, 255, 255]) {
@@ -159,6 +176,27 @@ export function buttonBackgroundShade(height, y, channel = 255) {
 }
 // Reference Linux character units, calibrated against 10–16pt native inputs.
 function inputUnit(node) { return (fontPixels(node.presentation.font) * 5 - 1) / 8; }
+// Measured Taxi 8.3.27 units for default-formatted numeric lengths 0–51.
+// Preserve native quantization before scaling; Chromium text advances are unrelated.
+const numericInputUnits = [
+  1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 11, 11, 12, 13,
+  13, 14, 15, 15, 16, 17, 17, 18, 19, 19, 20, 21, 21, 22, 23,
+  23, 24, 25, 25, 26, 27, 27, 28, 29, 30, 30, 31, 32, 32, 33,
+  34, 34, 35, 36,
+];
+function scaledAutomaticInputWidth(node, units) {
+  return Math.round(units * 10 * (fontPixels(node.presentation.font) - 1) / 12) + 11;
+}
+function linuxNumericInputWidth(node) {
+  const { digits, fraction = 0, allowedSign } = node.presentation.valueType;
+  if (!Number.isInteger(digits) || digits < 1 || digits > 38) return Math.round(20 * inputUnit(node) + 1);
+  const decimals = Math.max(0, Math.min(digits, fraction));
+  const groups = Math.floor(Math.max(0, digits - decimals - 1) / 3);
+  // A missing sign reduces the text length before Designer quantizes it to width units.
+  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits)
+    - Number(allowedSign === 'Nonnegative');
+  return scaledAutomaticInputWidth(node, numericInputUnits[length]);
+}
 const inputChoiceWidth = 20;
 const referenceOpenWidth = 22;
 export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
@@ -166,6 +204,15 @@ export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
 }
+/** Explicit single-line text labels use fixed Taxi character units. */
+export function stringLabelMetrics(node, os) {
+  const width = Math.trunc(number(node, 'Width'));
+  if (os !== 'linux' || node.kind !== 'LabelField' || node.presentation.valueType?.kind !== 'string'
+      || width <= 0 || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
+  const painted = !!property(node, 'BackColor'), size = fontLineMetrics(node.presentation.font);
+  return { preferred: width * 10 + (painted ? 2 : 0), height: size.ascent + size.descent + (painted ? 4 : 2) };
+}
+
 /** Intrinsic size of a single-line numeric label in Linux Designer. */
 export function numericLabelMetrics(node, os) {
   const type = node.presentation.valueType;
@@ -199,12 +246,16 @@ export function inputRows(node) {
   const explicit = number(node, 'Height');
   return explicit > 0 ? Math.max(1, explicit) : 2;
 }
+/** Shared native vertical unit for multiline inputs and form tables. */
+export function inputHeightUnit(node, os) {
+  const single = inputHeight(node, os);
+  return os === 'linux' ? single + (single < 29 ? 5 : 6) : 20;
+}
 export function inputControlHeight(node, os) {
   const single = inputHeight(node, os);
   if (os !== 'linux') return flag(node, 'MultiLine', false) ? Math.max(2, number(node, 'Height', 3)) * 20 : single;
   // Linux Designer height units use the control height plus a gap measured at 8–20pt.
-  const step = single + (single < 29 ? 5 : 6);
-  return single + (inputRows(node) - 1) * step;
+  return single + (inputRows(node) - 1) * inputHeightUnit(node, os);
 }
 export function inputRowHeight(node, os, captioned = true) {
   const height=inputHeight(node,os)+2;
@@ -216,44 +267,99 @@ export function inputTextBaseline(height, value) {
   // Preserve the native four-pixel top inset before centering the text line.
   return Math.max(ascent+3,Math.floor((height+ascent-descent)/2));
 }
-export function inputChoiceButton(node, os) {
+function enumerationInput(node) {
+  const type = node.presentation.valueType, types = type.types ?? [];
+  return type.kind === 'reference' && types.length > 0 && types.every(value =>
+    value.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && value.name.startsWith('EnumRef.'));
+}
+export function inputListChoice(node, os) {
+  return flag(node, 'ListChoiceMode', os === 'linux' && enumerationInput(node));
+}
+export function inputOpenButton(node, os) {
+  return flag(node, 'OpenButton', node.presentation.valueType.kind === 'reference' && !(os === 'linux' && enumerationInput(node)));
+}
+function requestedInputChoice(node, os) {
   const type = node.presentation.valueType;
-  const automatic = ['reference', 'composite', 'number'].includes(type.kind) || type.kind === 'date' && type.dateParts !== 'Time';
+  const automatic = ['reference', 'composite'].includes(type.kind) || type.kind === 'number' && (os !== 'linux' || type.fraction > 0)
+    || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
-  return flag(node, 'ListChoiceMode', false) || flag(node, 'ChoiceButton', automatic && !readOnly);
+  return inputListChoice(node, os) || flag(node, 'ChoiceButton', automatic && !readOnly);
+}
+export function inputChoiceButton(node, os) {
+  return textInputWidthBounds(node, os)?.choice ?? requestedInputChoice(node, os);
+}
+export function textInputStretchesByDefault(node) {
+  if (flag(node, 'MultiLine', false)) return true;
+  const length = node.presentation.valueType.length;
+  return !length || length > 10;
+}
+/** Keep preference, growth and the painted choice outset in one native profile. */
+export function textInputWidthBounds(node, os, choiceVisible) {
+  if (node.presentation.valueType.kind !== 'string' || !linuxFixedInputWidth(node, os) || flag(node, 'MultiLine', false)) return;
+  const authored = Math.trunc(number(node, 'Width')), limit = Math.max(0, number(node, 'MaxWidth'));
+  const length = node.presentation.valueType.length;
+  const manual = !flag(node, 'AutoMaxWidth');
+  const requestedChoice = requestedInputChoice(node, os);
+  const cap = manual ? Math.min(50, limit || 50) : 40;
+  const preferredPaint = authored > 0 ? authored * 10 + 11 + Number(requestedChoice) * 21
+    : Math.min(scaledAutomaticInputWidth(node, length || 15) + Number(requestedChoice) * 21, scaledAutomaticInputWidth(node, cap));
+  // The native value box needs one pixel beside the borders and choice button.
+  const choice = requestedChoice && (choiceVisible ?? preferredPaint >= 24);
+  const stretch = flag(node, 'HorizontalStretch', textInputStretchesByDefault(node));
+  const bound = manual ? limit ? limit * 10 + 10 : undefined
+    : scaledAutomaticInputWidth(node, Math.min(length || 40, 40)) - 1;
+  const maximumPaint = stretch && bound !== undefined ? Math.max(preferredPaint, bound) : undefined;
+  const outset = Number(choice);
+  return { preferred: preferredPaint - outset, maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
+    preferredPaint, maximumPaint, requestedChoice, choice, outset, stretch };
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
   return os === 'linux' && node.kind === 'InputField' && ['string', 'number', 'date'].includes(kind)
     && (kind === 'string' || !flag(node, 'MultiLine', false))
-    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+    && !flag(node, 'OpenButton', false) && !flag(node, 'ClearButton', false) && (!flag(node, 'SpinButton', false) || kind === 'number');
 }
 function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
 }
+/** Painted choice borders extend past the logical box; spin controls own their whole border. */
+export function inputPaintedOutset(node, os) {
+  return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
+}
+export function linuxReferenceInput(node, os) {
+  return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind)
+    && !flag(node, 'MultiLine', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+}
 function linuxReferenceWithOpenButton(node, os) {
-  return os === 'linux' && node.kind === 'InputField' && node.presentation.valueType.kind === 'reference'
-    && !flag(node, 'MultiLine', false) && flag(node, 'OpenButton')
-    && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+  return linuxReferenceInput(node, os) && inputOpenButton(node, os);
 }
 export function nativeReferenceInput(node, os) {
   return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
+  const label = stringLabelMetrics(node, os);
+  if (label) return label.preferred;
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.preferred;
   const unit = inputUnit(node);
-  const reference = linuxReferenceWithOpenButton(node, os);
+  const reference = linuxReferenceInput(node, os), open = reference && inputOpenButton(node, os);
   const native = reference || linuxFixedInputWidth(node, os);
+  const spin = native && flag(node, 'SpinButton', false);
+  // Multiline controls include the choice button's trailing edge in their own box.
+  const choiceInset = Number(reference && !open || native && flag(node, 'MultiLine', false));
+  const buttons = (open ? referenceOpenWidth : 0) + (spin ? 21 : 0)
+    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + choiceInset : 0);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
     if (!native) return Math.max(20, width * unit + 4);
-    const buttons = (reference ? referenceOpenWidth : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth : 0);
     return width * 10 + 11 + buttons;
   }
-  if (reference && inputChoiceButton(node, os)) return Math.round(20 * unit + 1) + referenceButtonWidth;
+  if (reference) return Math.round(20 * unit + 1) + buttons;
   if (['ProgressBarField', 'TrackBarField'].includes(node.kind)) return 320;
   if (node.kind === 'LabelField') return 150;
   const type = node.presentation.valueType;
+  if (type.kind === 'number' && native) return linuxNumericInputWidth(node) + buttons;
   if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
   if (type.kind === 'date') {
@@ -273,7 +379,15 @@ export function fieldValue(node, culture, locale = culture) {
   }
   return '';
 }
-export function fieldStyle(node, os) {
+export function fieldStyle(node, os, choiceVisible) {
+  const text = textInputWidthBounds(node, os, choiceVisible);
+  if (text) {
+    const available = text.outset ? 'calc(100% - 1px)' : '100%';
+    return { width: `${text.preferred}px`,
+      ...(text.stretch ? { 'min-width': text.maximum === undefined ? available : `min(${available}, ${text.maximum}px)` }
+        : text.preferred < 20 ? { 'min-width': `${text.preferred}px` } : {}),
+      ...(text.maximum === undefined ? {} : { 'max-width': `min(100%, ${text.maximum}px)` }) };
+  }
   const native = linuxSimpleInput(node, os);
   // Native bounds do not change preferred dimensions in the Configurator preview.
   const usesLayoutBounds = native || linuxReferenceWithOpenButton(node, os);
@@ -283,10 +397,11 @@ export function fieldStyle(node, os) {
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
     ? `min(100%, ${automaticTextWidth(node)}px)` : '100%';
   const stretch = flag(node, 'HorizontalStretch', false);
+  const choiceOutset = inputPaintedOutset(node, os);
   // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
   return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),
     ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),
-    ...(stretch ? native ? { 'min-width': inputChoiceButton(node, os) ? 'calc(100% - 1px)' : '100%' } : { width: '100%' } : {}) };
+    ...(stretch ? native ? { 'min-width': choiceOutset ? 'calc(100% - 1px)' : '100%' } : { width: '100%' } : {}) };
 }
 export function localizedProperty(value, locale) {
   if (value?.caption) return value.caption[locale.startsWith('ru') ? 'ru-RU' : 'en-US'];

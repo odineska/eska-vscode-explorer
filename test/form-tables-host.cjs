@@ -54,6 +54,12 @@ async function checkSourceBar(ui, view, document, english) {
   }
   assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] svg')"), true);
   await ui.evaluate("globalThis.__tableSourceBar = document.querySelector('.taxi-command-bar'); true");
+  const empty = '<ColumnGroup name="EmptyColumns" id="1000"><Group>Horizontal</Group><ChildItems/></ColumnGroup>';
+  await change(withColumn.replace(input, input + empty).replace(/<Table\b[^>]*\bname="Rows"[^>]*>/, '$&<Footer>true</Footer>'));
+  await until(() => ui.evaluate("document.querySelectorAll('.taxi-table-footer [role=cell]').length === 1"), 'empty horizontal group creates no footer cell');
+  assert.ok([...view.nodes.values()].some(node => node.kind === 'ColumnGroup' && node.name === 'EmptyColumns'));
+  assert.deepEqual(ui.scriptErrors(), []);
+
 
   await change(withColumn.replace(input, input.replace('</InputField>', '<Visible>false</Visible></InputField>')));
   await until(() => ui.evaluate(`!${grid} && ${buttons}.length === 6`), 'declared but hidden columns keep source commands');
@@ -158,7 +164,22 @@ exports.run = async function () {
     assert.equal(geometry.paging, form.kind === 'DynamicList' ? 4 : 0);
     assert.equal(geometry.fabricatedRows, 0);
     assert.equal(geometry.headerColor, 'rgb(242, 242, 242)');
-    if (form.kind !== 'DynamicList') assert.equal(geometry.frame.height, explicitCommands || form.kind === 'NoViewStatus' ? 312 : form.kind === 'GridFooter' ? 225 : form.kind === 'NoAutoFill' ? 307 : form.kind === 'Vertical' ? 343 : 342);
+    if (process.platform === 'linux' && form.nativeFrame) {
+      const expected = form.nativeFrame[english ? 'en' : 'ru'];
+      assert.deepEqual([geometry.frame.width, geometry.frame.height], expected.frame, form.kind + ' native outer frame');
+      assert.deepEqual([geometry.control.x - geometry.frame.x, geometry.control.y - geometry.frame.y,
+        geometry.control.width, geometry.control.height], expected.grid, form.kind + ' native grid rectangle');
+    } else if (form.kind !== 'DynamicList') {
+      const linux = process.platform === 'linux';
+      const height = explicitCommands || form.kind === 'NoViewStatus' ? linux ? 314 : 312
+        : { GridFooter: 225, NoAutoFill: 307, Vertical: 343 }[form.kind] ?? (linux ? 344 : 342);
+      assert.equal(geometry.frame.height, height, `${form.kind} native frame height`);
+    }
+    if (explicitCommands && process.platform === 'linux') {
+      assert.equal(geometry.control.y - geometry.frame.y, 74, `${form.kind} native grid offset`);
+      assert.deepEqual(geometry.buttons.map(button => [button.x - geometry.frame.x, button.y - geometry.frame.y, button.width, button.height]),
+        form.kind === 'TablePopup' ? [[13, 39, 77, 26]] : [[13, 39, 115, 26], [137, 39, 133, 26]]);
+    }
     if (form.kind === 'MetadataTable') assert.deepEqual(geometry.columns.map(column => column.width), [97, 177, 176, 54]);
     if (form.kind === 'DynamicList') assert.deepEqual(geometry.columns.map(column => column.width), [108, english ? 344 : 308]);
     if (form.kind === 'ColumnHidden') assert.deepEqual(geometry.columns.map(column => column.label),['Amount','Active']);
@@ -274,6 +295,7 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
     const bar = "document.querySelector('.taxi-table-horizontal-scrollbar')";
     const viewport = "document.querySelector('.taxi-table-content')";
     await until(() => ui.evaluate(`!!${bar} && ${viewport}.scrollWidth > ${viewport}.clientWidth`), 'horizontal table strip visible');
+    if (fixed) await until(() => ui.evaluate(`${viewport}.closest('.taxi-form-frame').offsetWidth === 634`), 'fixed table frame follows the dirty preferred width');
     const geometry = await ui.evaluate(`(() => {
       const content = ${viewport}, strip = ${bar}, table = content.parentElement;
       return { height: strip.offsetHeight, reserved: table.clientHeight - content.clientHeight,

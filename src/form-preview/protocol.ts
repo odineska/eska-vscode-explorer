@@ -36,7 +36,7 @@ export interface Presentation {
   picture: FormPicture | null;
   buttonRepresentation?: ButtonRepresentation;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
-  valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; dateParts: string | null; types: PropertyKey[] };
+  valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; allowedSign?: "Any" | "Nonnegative"; dateParts: string | null; types: PropertyKey[] };
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
   autoCommandItems?: AutoCommandItem[];
   objectCommandMenu?: AutoCommandItem[][];
@@ -60,7 +60,7 @@ export interface FormDefinition { name: string | null; origin: Origin; propertie
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { importantColor: Color; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -177,6 +177,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
       || !(dependency.version === null || typeof dependency.version === "string") || !["form", "metadata", "picture"].includes(String(dependency.role))) invalid();
     ids.add(dependency.id);
   }
+  if (value.model.formHelpAvailable !== undefined && typeof value.model.formHelpAvailable !== "boolean") invalid();
   if (!Array.isArray(value.model.assets) || value.model.assets.length > 256) invalid();
   const assets = new Set<string>();
   for (const asset of value.model.assets) {

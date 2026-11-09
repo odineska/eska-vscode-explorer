@@ -8,14 +8,32 @@ import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
-import { borderBoxSize, boundingScale } from './layout-box.mjs';
+import { borderBoxSize, boundingScale, boxInsets, pixels } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
 import { authoredGroupRows } from './authored-group-rows.js';
 import { commandBarLayout } from './command-bar-layout.js';
+import { layoutGroupSpacing } from './group-spacing-layout.js';
+import { measureDecorations } from './decoration-layout.js';
+import { sameDecorationLines } from './decoration-metrics.mjs';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
+
+function naturalFormSize(root, rows, widths) {
+  const footprints = new Map(rows.map(items => {
+    const children = [...items.children];
+    const gap = pixels(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
+    let spacing = gap * Math.max(0, children.length - 1), content = 0;
+    for (const child of children) {
+      const css = getComputedStyle(child);
+      spacing += pixels(css.marginLeft) + pixels(css.marginRight);
+      content += widths.get(child.dataset.element) ?? 0;
+    }
+    return [items.dataset.layoutOwner, { width: content + spacing, spacing }];
+  }));
+  return { frame: borderBoxSize(root), widths, rows: footprints };
+}
 
 /** One local geometry owner per webview. Resize never changes the source model or the shared session. */
 export function createFormLayout(controller, viewport, preview, frame) {
@@ -36,8 +54,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
+  const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
+  let natural, needsNatural = true;
+  let headingTitles = [];
+  const headingHeights = new Map();
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -62,7 +84,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
     const body = root.querySelector(':scope > .taxi-form-content');
-    const scroll = [surface.scrollLeft, surface.scrollTop, body.scrollLeft, body.scrollTop];
+    const bodyScroll = body.dataset.rootCommandPosition === 'Bottom' ? body.querySelector(':scope > .taxi-items') : body;
+    const scroll = [surface.scrollLeft, surface.scrollTop, bodyScroll.scrollLeft, bodyScroll.scrollTop];
     const refresh = needsPreferred;
     if (refresh) {
       needsPreferred = false;
@@ -73,35 +96,60 @@ export function createFormLayout(controller, viewport, preview, frame) {
         .map(items => [items.dataset.layoutOwner, items]));
       const targets = { elements: elementByKey, containers, children: node => node.children.filter(child => elementByKey.has(child.key)) };
       content.dataset.formLayout = 'preferred';
+      headingTitles = [...root.querySelectorAll('.taxi-group-title[data-native-heading-minimum]')];
+      headingHeights.clear();
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
       if (aboveTitles().size) setAboveTitles(new Set());
+      if (decorations().size) setDecorations(new Map());
       const scale = boundingScale(root);
-      rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
-      allocateTableCommands = measureTableCommands(root, scale);
-      const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
-      unitedColumns = alignUnitedColumns(state.model.root, context);
-      const throughScopes = alignThroughLabels(state.model.root, context);
-      unitedColumns.alignColumns();
-      unitedRows = alignUnitedRows(state.model.root, context, wrapped());
-      numericRows = alignNumericLabelRows(state.model.root, context);
-      minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
-      allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
-      adaptiveTitles = inputTitleLayout(state.model.root, context, minimumCaptions);
-      checkboxes = checkboxLayout(state.model.root, context);
-      minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
-      unitedRows.capturePreferredColumns();
-      allocateGroupRows = authoredGroupRows(root, scale, alignment);
-      allocateCommandBars = commandBarLayout(root, context);
-      const nextPreferred = rect(root);
-      setPreferred(nextPreferred);
+      const model = state.model.root, context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
+      const rows = [...containers.values()].filter(items => items.dataset.grouping === 'HorizontalIfPossible');
+      const activeWrap = wrapped();
+      function prepare(wrap) {
+        rootCommands = measureRootCommands(root.querySelector('.taxi-root-commands'), scale);
+        allocateTableCommands = measureTableCommands(root, scale);
+        decorationsLayout = measureDecorations(model, context, state);
+        layoutGroupSpacing(model, context);
+        unitedColumns = alignUnitedColumns(model, context);
+        const throughScopes = alignThroughLabels(model, context);
+        unitedColumns.alignColumns();
+        unitedRows = alignUnitedRows(model, context, wrap);
+        numericRows = alignNumericLabelRows(model, context);
+        minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
+        allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
+        adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
+        checkboxes = checkboxLayout(model, context);
+        minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
+        unitedRows.capturePreferredColumns();
+        allocateGroupRows = authoredGroupRows(root, scale, alignment);
+        allocateCommandBars = commandBarLayout(root, context);
+      }
+      const stacked = rows.filter(items => activeWrap.has(items.dataset.layoutOwner));
+      if (needsNatural && stacked.length) {
+        // Measure the native horizontal footprint, including spacing inside painted descendants.
+        for (const items of stacked) items.classList.replace('taxi-items--vertical', 'taxi-items--horizontal');
+        try {
+          prepare(new Set());
+          natural = naturalFormSize(root, rows, new Map(elements.map(element => [element.dataset.element, rect(element).width])));
+        } finally {
+          clearAlignment();
+          for (const items of stacked) items.classList.replace('taxi-items--horizontal', 'taxi-items--vertical');
+        }
+        needsNatural = false;
+      }
+      prepare(activeWrap);
+      const measured = elements.map(element => [element, rect(element)]);
+      const widths = new Map(measured.map(([element, size]) => [element.dataset.element, size.width]));
+      if (needsNatural) {
+        natural = naturalFormSize(root, rows, widths);
+        needsNatural = false;
+      }
+      setPreferred(natural.frame);
       needsMinimum = true;
-      const widths = new Map();
-      for (const element of elements) {
-        const value = rect(element);
-        widths.set(element.dataset.element, value.width);
-        element.style.setProperty('--taxi-preferred-width', `${value.width}px`);
-        element.style.setProperty('--taxi-preferred-height', `${value.height}px`);
+      for (const [element, size] of measured) {
+        element.style.setProperty('--taxi-preferred-width', `${size.width}px`);
+        element.style.setProperty('--taxi-preferred-height', `${size.height}px`);
       }
       setPreferredWidths(widths);
     }
@@ -111,12 +159,12 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
-        headingWidths: unitedColumns.headingWidths, available,
+        headingHeights, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
-      body.scrollLeft = scroll[2]; body.scrollTop = scroll[3];
+      bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
     }
     const style = getComputedStyle(surface);
     const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
@@ -128,11 +176,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
     // Recheck fit against the resized area before scrollbars from the old arrangement settle.
     const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0);
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) {
-      if (unitedColumns.headingWidths.size && next.width !== previous.width) needsMinimum = true;
+      if (headingTitles.length && next.width !== previous.width) needsMinimum = true;
       setSize(next); schedule();
     }
     rootCommands?.allocate();
@@ -146,6 +194,25 @@ export function createFormLayout(controller, viewport, preview, frame) {
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
+    for (const title of headingTitles) {
+      const bounds = rect(title);
+      if (bounds.height <= 0) continue;
+      // The native full width may be smaller than Chromium's glyph advances.
+      const wrap = bounds.width + .5 < Number(title.dataset.nativeTextWidth);
+      const changed = wrap !== title.hasAttribute('data-native-heading-wrapped');
+      if (changed) title.toggleAttribute('data-native-heading-wrapped', wrap);
+      const height = changed ? rect(title).height : bounds.height;
+      if (height === headingHeights.get(title)) continue;
+      headingHeights.set(title, height);
+      needsMinimum = true;
+      schedule();
+    }
+    const nextDecorations = decorationsLayout.allocate();
+    const previousDecorations = decorations();
+    if (nextDecorations.size !== previousDecorations.size
+        || [...nextDecorations].some(([key, value]) => !sameDecorationLines(previousDecorations.get(key), value))) {
+      setDecorations(nextDecorations); needsMinimum = true; schedule();
+    }
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);
@@ -155,20 +222,49 @@ export function createFormLayout(controller, viewport, preview, frame) {
       needsMinimum = true;
       schedule();
     }
-    const wrap = new Set();
-    for (const items of conditionalGroups) {
-      const children = [...items.children];
-      const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
-      const dimension = items.hasAttribute('data-native-command-row') ? '--taxi-min-width' : '--taxi-preferred-width';
-      const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue(dimension) || '0'), 0)
-        + Math.max(0, children.length - 1) * gap;
-      if (rect(items).width + .5 < required) wrap.add(items.dataset.layoutOwner);
-    }
+    const wrap = measureWrapping(root, conditionalGroups);
     setWrapped(previous => {
       if (previous.size === wrap.size && [...previous].every(key => wrap.has(key))) return previous;
-      if (unitedRows && [...unitedRows.owners].some(key => previous.has(key) !== wrap.has(key))) needsPreferred = true;
+      needsPreferred = true;
       needsMinimum = true; schedule(); return wrap;
     });
+  }
+  function measureWrapping(root, conditionalGroups) {
+    const wrap = new Set();
+    if (!conditionalGroups.length) return wrap;
+    const widths = preferredWidths(), changed = [];
+    // Test the allocation of unfolded widths before giving the occupied space back to stacked groups.
+    if (wrapped().size) {
+      for (const element of root.querySelectorAll('.taxi-element')) {
+        const key = element.dataset.element, width = natural.widths.get(key);
+        if (width !== undefined && width !== widths.get(key)) {
+          changed.push(element);
+          element.style.setProperty('--taxi-preferred-width', `${width}px`);
+        }
+      }
+      if (changed.length) setPreferredWidths(natural.widths);
+    }
+    try {
+      for (const items of conditionalGroups) {
+        const key = items.dataset.layoutOwner, footprint = natural.rows.get(key);
+        if (!footprint) continue;
+        const required = items.hasAttribute('data-native-command-row')
+          ? [...items.children].reduce((width, child) => width + pixels(child.style.getPropertyValue('--taxi-min-width')), footprint.spacing)
+          : footprint.width;
+        const available = rect(items).width - boxInsets(getComputedStyle(items)).width;
+        if (available + .5 < required) wrap.add(key);
+      }
+    } finally {
+      for (const element of changed) {
+        element.style.setProperty('--taxi-preferred-width', `${widths.get(element.dataset.element)}px`);
+      }
+      if (changed.length) setPreferredWidths(widths);
+    }
+    return wrap;
+  }
+  function invalidatePreferred() {
+    needsPreferred = needsNatural = true;
+    schedule();
   }
   createEffect(() => {
     // Subscribe to geometry-bearing model values, not the transport sequence or selection.
@@ -178,14 +274,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
     };
     visit(state.model.root); JSON.stringify(state.ui.collapsed);
     state.model.scriptVariant; state.locale; state.culture; state.os;
-    needsPreferred = true; schedule();
+    invalidatePreferred();
   });
   createEffect(() => { state.ui.zoom; needsMinimum = true; schedule(); });
   createEffect(() => { preferredX(); preferredY(); needsMinimum = true; schedule(); });
   onMount(() => {
     mounted = true;
     const observer = new ResizeObserver(schedule); observer.observe(viewport()); observer.observe(frame());
-    document.fonts?.ready.then(() => { if (active) { needsPreferred = true; schedule(); } });
+    document.fonts?.ready.then(() => { if (active) invalidatePreferred(); });
     schedule();
     onCleanup(() => observer.disconnect());
   });
@@ -205,13 +301,14 @@ export function createFormLayout(controller, viewport, preview, frame) {
     authoredHeight, tableFormScroll: () => geometry().tableFormScroll,
     itemsMinimumHeight: () => geometry().itemsHeight,
     viewportResized,
-    invalidate: () => { needsPreferred = true; schedule(); },
+    invalidate: invalidatePreferred,
     preferred, minimumFor: node => geometry().minima.get(node.key),
     preferredWidthFor: node => preferredWidths().get(node.key),
     stretch: (node, axis) => stretches(node, axis, state.ui.collapsed, state.model.root),
     wrapped: node => wrapped().has(node.key),
     captionFor: node => fieldCaptions().get(node.key),
     titleAbove: node => aboveTitles().has(node.key),
-    initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * 10.5}px` : 'max-content',
+    decorationFor: node => decorations().get(node.key),
+    initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * (state.os === 'linux' ? 10 : 10.5) + (state.os === 'linux' ? 30 : 0)}px` : 'max-content',
   };
 }

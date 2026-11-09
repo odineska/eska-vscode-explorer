@@ -1,6 +1,7 @@
-import { color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
+import { additionKinds, additionStretches } from './addition-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -32,11 +33,18 @@ export function hasAuthoredGroupHeight(node, os) {
   return os === 'linux' && ordinaryGroup(node) && number(node, 'Height') > 0;
 }
 
-/** An automatic group width can contract even if the group receives no extra space. */
+function containsConditionalGroup(node) {
+  return node.presentation.displayed && (node.presentation.grouping === 'HorizontalIfPossible'
+    || node.children.some(containsConditionalGroup));
+}
+
+/** Automatic widths and conditional groups can contract to their children's minima. */
 export function groupCanShrink(node, os, root = node) {
   if (os !== 'linux') return false;
   const automatic = (ordinaryGroup(node) || node.kind === 'CommandBar') && number(node, 'Width') <= 0;
-  return automatic || compactCommandBarGroup(node, root);
+  const conditional = ordinaryGroup(node) && node.presentation.grouping === 'HorizontalIfPossible';
+  const pages = node.kind === 'Pages' && number(node, 'Width') <= 0 && node.children.some(containsConditionalGroup);
+  return automatic || conditional || pages || compactCommandBarGroup(node, root);
 }
 
 export function automaticHorizontalSpacing(node) {
@@ -44,7 +52,7 @@ export function automaticHorizontalSpacing(node) {
 }
 
 export function displayedInPreview(node, root = node) {
-  if (!node.presentation.displayed) return false;
+  if (!node.presentation.displayed || additionKinds.has(node.kind) && !flag(node, 'Visible')) return false;
   if (node.kind === 'Table') return hasTableSurface(node);
   if (node.kind === 'CommandBar') return commandBarContent(root, node).visible;
   // Designer omits a group's own decoration and dimensions when its content is absent.
@@ -68,7 +76,8 @@ export function stretches(node, axis, collapsed = {}, root = node) {
     return node.children.some(child => displayedInPreview(child, root) && stretches(child, axis, collapsed, root));
   }
   if (surfaces.has(node.kind)) return true;
-  if (axis === 'x' && node.kind === 'CommandBar') return true;
+  if (axis === 'x' && (node.kind === 'CommandBar' || additionStretches(node))) return true;
+  if (axis === 'x' && node.kind === 'InputField' && node.presentation.valueType?.kind === 'string') return textInputStretchesByDefault(node);
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);
   if (node.kind === 'InputField' && inputRows(node) > 1
@@ -80,6 +89,8 @@ export function stretches(node, axis, collapsed = {}, root = node) {
 export function stretchWeight(node, axis) { return positive(number(node, axis === 'x' ? 'Width' : 'Height')) || 1; }
 
 function automaticInputMaximum(node, os, referenceLane = false) {
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.maximum;
   const auto = scalar(node, 'AutoMaxWidth', 'Auto');
   if (explicitNo(auto)) return;
   const { kind, length } = node.presentation.valueType;
@@ -110,9 +121,12 @@ function inputMinimum(node, axis, os, authoredHeight) {
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
 export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false } = {}) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
-  const explicit = number(node, dimension), stretch = stretches(node, axis);
+  const explicit = axis === 'x' && node.kind === 'Button' ? buttonAuthoredWidth(node, os) : number(node, dimension);
+  const stretch = stretches(node, axis);
   // With an explicit fixed size, Designer ignores maximum-size properties.
   if (explicit > 0 && !stretch) return {};
+  const text = axis === 'x' ? textInputWidthBounds(node, os) : undefined;
+  if (text) return { minimum: Math.min(80, text.preferred), maximum: text.maximum };
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
@@ -143,6 +157,8 @@ function manualLaneMaximum(node) {
 /** A bounded input in a Linux horizontal row reserves only its usable width. */
 export function horizontalInputMaximum(node, os) {
   if (os !== 'linux' || node.kind !== 'InputField' || !stretches(node, 'x')) return;
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.maximum;
   const maximum = manualLaneMaximum(node);
   if (maximum === undefined) return automaticMultilineMaximum(node, os);
   const intrinsic = fieldWidth(node, os);

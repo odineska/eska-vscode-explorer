@@ -94,7 +94,8 @@ async function run() {
   await checkCaptionThemes(ui, service, view, main);
   const geometry = await ui.evaluate(`(() => { const frame=document.querySelector('.taxi-form-frame').getBoundingClientRect(), input=document.querySelector('.taxi-input').getBoundingClientRect(); return {frame:{width:frame.width,height:frame.height},input:{width:input.width,height:input.height},controlWidth:document.querySelector('.taxi-field-control').getBoundingClientRect().width,script:!!document.querySelector('script[src*="form-preview"]')}; })()`);
   assert.ok(geometry.frame.width > 400);
-  assert.equal(geometry.input.width,geometry.controlWidth,'automatic string fills its allocated column');
+  const inputMaximum = process.platform === 'linux' ? 410 : Infinity;
+  assert.equal(geometry.input.width,Math.min(inputMaximum,geometry.controlWidth),'automatic string respects its native allocation limit');
   assert.ok(geometry.input.width>211,'automatic string grows beyond its preferred width');
   assert.equal(geometry.script,true);
   const shellGeometry = await shellResize(ui, service, view);

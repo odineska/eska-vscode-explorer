@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { commandBarContent } from '../webview/forms/command-bar-model.mjs';
 import { compactCommandBarGroup, displayedInPreview, groupCanShrink, stretches } from '../webview/forms/layout-model.mjs';
 import { formReferenceRoot } from './form-references.mjs';
-import { FORM_NS } from '../webview/forms/model.mjs';
+import { FORM_NS, buttonAuthoredWidth } from '../webview/forms/model.mjs';
 
 const node=(kind,properties={},children=[])=>({kind,key:kind,name:kind,children,auxiliary:[],
   properties:Object.entries(properties).map(([name,value])=>({key:{namespace:FORM_NS,name},value:{kind:'text',text:String(value)}})),
@@ -77,4 +77,98 @@ test('the native geometry matrix binds every case to its measured XML and distin
     const identities=[...elements.matchAll(/\bid="(-?\d+)"/gu)].map(match=>match[1]);
     assert.equal(new Set(identities).size,identities.length,row.name+' visual IDs');
   }
+});
+
+
+test('additional menus reserve trailing space without introducing an empty table surface', () => {
+  const table = node('Table'); table.name = 'Rows';
+  const find = node('Button', { CommandName: 'Form.Item.Rows.StandardCommand.Find' });
+  const additional = node('Button', { CommandName: 'Form.Command.Second', LocationInCommandBar: 'InAdditionalSubmenu' });
+  const customize = node('Button', { CommandName: 'Form.StandardCommand.CustomizeForm' });
+  const bar = node('CommandBar', { CommandSource: 'Item.Rows' }, [find, additional, customize]);
+  const root = node('Form', {}, [table, bar]), content = commandBarContent(root, bar);
+  assert.equal(content.source, undefined);
+  assert.equal(content.tableCommands, false);
+  assert.deepEqual(content.inline, []);
+  assert.deepEqual(content.more, [additional, customize]);
+  assert.equal(content.spaceBeforeMore, true);
+  assert.equal(content.visible, true);
+  assert.deepEqual(bar.children, [find, additional, customize]);
+  const plain = node('CommandBar', {}, [additional]);
+  assert.equal(commandBarContent(plain, plain).spaceBeforeMore, true);
+  const direct = node('CommandBar', {}, [node('Button', { CommandName: 'Form.Command.Run' })]);
+  assert.equal(commandBarContent(direct, direct).spaceBeforeMore, false);
+});
+
+test('native command overflow corpus binds 24 sources and three compatibility probes', async () => {
+  const root = new URL('tests/fixtures/forms/native-command-overflow/', formReferenceRoot);
+  const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(metrics.rows.length, 24);
+  assert.equal(new Set(metrics.rows.map(row => row.name)).size, 24);
+  assert.equal(metrics.rows.filter(row => row.compatibility24).length, 3);
+  for (const row of metrics.rows) {
+    const source = await readFile(new URL(row.name + '.xml', root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.xmlSha256, row.name);
+    for (const locale of ['ru', 'en']) {
+      const native = row.locales[locale];
+      assert.match(native.screenshotSha256, /^[a-f0-9]{64}$/u);
+      if (native.commandsPaint.More && row.stretch !== false) {
+        assert.equal(native.commandsPaint.More[0] + native.commandsPaint.More[2] + 21, native.frame[0], row.name);
+      }
+      if (row.compatibility24) {
+        const { screenshotSha256: currentHash, ...current } = native;
+        const { screenshotSha256: previousHash, ...previous } = row.compatibility24.locales[locale];
+        assert.match(currentHash, /^[a-f0-9]{64}$/u); assert.match(previousHash, /^[a-f0-9]{64}$/u);
+        assert.deepEqual(current, previous, row.name + '/' + locale);
+      }
+    }
+  }
+  const natural = metrics.rows.find(row => row.name === 'NaturalEmptySource');
+  assert.deepEqual(natural.locales.ru.frame, [456, 143]);
+  assert.deepEqual(natural.locales.en.frame, [504, 143]);
+  const plain = metrics.rows.find(row => row.name === 'PlainInputs');
+  const single = metrics.rows.find(row => row.name === 'PlainInputsSingle');
+  const double = metrics.rows.find(row => row.name === 'PlainInputsDouble');
+  assert.deepEqual(plain.locales.ru.fields, single.locales.ru.fields);
+  assert.equal(double.locales.ru.fields.Middle[0] - plain.locales.ru.fields.Middle[0], 10);
+});
+
+
+test('Linux ignores stored Width of command-bar buttons while retaining ordinary button sizes', () => {
+  const command = node('Button', { Type: 'CommandBarButton', Width: 8 });
+  const ordinary = node('Button', { Type: 'UsualButton', Width: 8 });
+  assert.equal(buttonAuthoredWidth(command, 'linux'), 0);
+  assert.equal(buttonAuthoredWidth(ordinary, 'linux'), 8);
+  assert.equal(buttonAuthoredWidth(command, 'windows'), 8);
+  assert.equal(command.properties.find(p => p.key.name === 'Width').value.text, '8');
+});
+
+
+test('command frame references retain locale minima and ignored XML widths', async () => {
+  const root = new URL('tests/fixtures/forms/native-command-frame/', formReferenceRoot);
+  const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  assert.equal(metrics.rows.length, 8);
+  for (const row of metrics.rows) {
+    const source = await readFile(new URL(row.name + '.xml', root));
+    assert.equal(createHash('sha256').update(source).digest('hex'), row.xmlSha256, row.name);
+  }
+  const rows = new Map(metrics.rows.map(row => [row.name, row]));
+  assert.deepEqual(rows.get('SingleInlineRoot').locales.ru.frame, [94, 143]);
+  assert.deepEqual(rows.get('SingleInlineRoot').locales.en.frame, [142, 143]);
+  for (const locale of ['ru', 'en']) {
+    assert.deepEqual(rows.get('DoubleShortInlineRoot').locales[locale].commandsPaint,
+      rows.get('DoubleLongInlineRoot').locales[locale].commandsPaint);
+  }
+  const source = await readFile(new URL('DoubleLongInlineRoot.xml', root), 'utf8');
+  assert.equal((source.match(/<Width>8<\/Width>/gu) ?? []).length, 2);
+  const recorded = JSON.parse(await readFile(new URL('../native-button-rows/metrics.json', root), 'utf8'));
+  const probe = recorded.cases.find(row => row.name === 'ProbeButtons');
+  assert.deepEqual(probe.locales.ru.nativeFrame, [139, 187]);
+  assert.deepEqual(probe.locales.en.nativeFrame, [142, 187]);
+  const groups = new URL('../native-groups/', root);
+  const popup = JSON.parse(await readFile(new URL('frame-locales.json', groups), 'utf8')).rows[0];
+  const popupSource = await readFile(new URL(popup.name + '.xml', groups));
+  assert.equal(createHash('sha256').update(popupSource).digest('hex'), popup.xmlSha256);
+  assert.deepEqual(popup.locales.ru.frame, [111, 79]);
+  assert.deepEqual(popup.locales.en.frame, [142, 79]);
 });

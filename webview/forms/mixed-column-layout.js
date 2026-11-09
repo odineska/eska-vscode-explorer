@@ -1,6 +1,5 @@
-import { fieldCaptionProfile } from './font-metrics.mjs';
 import { availableTrackWidth, updateStyle } from './layout-box.mjs';
-import { controlBounds, groupCanShrink, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
+import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
 import { inputRows, nativeReferenceInput, scalar } from './model.mjs';
 
 const sum = values => values.reduce((total, value) => total + value, 0);
@@ -68,29 +67,18 @@ function topTrackWidths(available, tracks, weights, round) {
   return [width, picture.preferred, room - width];
 }
 
-function ownerHeading(owner, items, os) {
-  if (!groupCanShrink(owner, os)) return;
-  const group = items.parentElement;
-  const title = group.querySelector(':scope > .taxi-group-title');
-  const profile = title && fieldCaptionProfile(title.textContent, owner.presentation.titleFont);
-  return profile && {group, items, title, minimum: profile.minimum, preferred: profile.preferred};
-}
-
 /** Keep mixed rows in one column scope while their automatic titles move above the controls. */
 export function mixedColumnLayout(context) {
   const { alignment, os, scale } = context;
-  const minimumRows = new Map(), headingWidths = new Map(), allocations = [];
+  const minimumRows = new Map(), allocations = [];
 
-  function register(owner, items, lanes, setCell, setLane) {
+  function register(items, lanes, setCell, setLane) {
     for (const lane of lanes) {
       for (const entry of lane.children) entry.size = controlSize(entry, context);
     }
     const adaptive = lanes.every(lane => referencePictureLabel(lane, os));
-    const heading = adaptive ? ownerHeading(owner, items, os) : undefined;
-    if (heading) {
-      headingWidths.set(heading.group, heading);
-      alignment.style(heading.title, '--taxi-group-heading-space', '');
-    }
+    const title = adaptive && items.parentElement.querySelector(':scope > .taxi-group-title[data-native-heading-minimum]');
+    const heading = title ? { items, preferred: Number(title.dataset.nativeTextWidth) } : undefined;
     const shared = lanes.filter(lane => !lane.node.presentation.united);
     const widest = adaptive ? trackProfiles(lanes) : undefined;
     if (shared.length) registerScope(shared, false, heading, widest, setCell, setLane);
@@ -124,10 +112,6 @@ export function mixedColumnLayout(context) {
   }
 
   function allocate(above) {
-    for (const heading of headingWidths.values()) {
-      heading.wraps = availableTrackWidth(heading.items, 1, scale) < heading.preferred;
-      updateStyle(heading.title, '--taxi-group-heading-space', heading.wraps ? 'normal' : 'nowrap');
-    }
     for (const {lanes, plans, united, heading, widest} of allocations) {
       const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, widest.length, scale)));
       const plan = plans.find(candidate => candidate.minimum <= available) ?? plans.at(-1);
@@ -135,7 +119,8 @@ export function mixedColumnLayout(context) {
       const {tracks} = plan;
       const moved = plan.above.size > 0;
       // When the group heading wraps, Designer sizes the top-title rows from the value widths.
-      const weights = heading?.wraps ? tracks : widest;
+      const titleWraps = heading && availableTrackWidth(heading.items, 1, scale) < heading.preferred;
+      const weights = titleWraps ? tracks : widest;
       const widths = moved && !tracks[0].reserve
         ? topTrackWidths(room, tracks, weights, united ? Math.floor : Math.ceil)
         : allocateLaneSizes(room, tracks);
@@ -155,5 +140,5 @@ export function mixedColumnLayout(context) {
     }
   }
 
-  return { register, allocate, minimumRows, headingWidths };
+  return { register, allocate, minimumRows };
 }

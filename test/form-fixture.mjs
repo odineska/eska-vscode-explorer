@@ -8,7 +8,7 @@ export async function createFormSource(fixture) {
 <Width>50</Width><CommandBarLocation>None</CommandBarLocation><AutoCommandBar name="FormCommandBar" id="-1"/>
 <ChildItems><UsualGroup name="Group" id="1"><Title><v8:item><v8:lang>ru</v8:lang><v8:content>Параметры</v8:content></v8:item><v8:item><v8:lang>en</v8:lang><v8:content>Parameters</v8:content></v8:item></Title><Group>Vertical</Group><ShowTitle>true</ShowTitle><ChildItems>
 <InputField name="Name" id="2"><DataPath>Name</DataPath><AutoMarkIncomplete>true</AutoMarkIncomplete><Title><v8:item><v8:lang>ru</v8:lang><v8:content>Наименование</v8:content></v8:item><v8:item><v8:lang>en</v8:lang><v8:content>Name</v8:content></v8:item></Title><Width>20</Width></InputField>
-<Button name="Action" id="3"><Title><v8:item><v8:lang>ru</v8:lang><v8:content>Выполнить</v8:content></v8:item><v8:item><v8:lang>en</v8:lang><v8:content>Execute</v8:content></v8:item></Title></Button>
+<Button name="Action" id="3"><CommandName>Form.StandardCommand.Close</CommandName><Title><v8:item><v8:lang>ru</v8:lang><v8:content>Выполнить</v8:content></v8:item><v8:item><v8:lang>en</v8:lang><v8:content>Execute</v8:content></v8:item></Title></Button>
 </ChildItems></UsualGroup><Pages name="Pages" id="4"><ChildItems><Page name="First" id="5"><Title>First</Title><ChildItems><LabelDecoration name="Label" id="6"><Title>First page</Title></LabelDecoration></ChildItems></Page><Page name="Other" id="7"><Title>Other</Title><ChildItems><LabelDecoration name="SecondLabel" id="8"><Title>Other page</Title></LabelDecoration></ChildItems></Page></ChildItems></Pages></ChildItems><Attributes><Attribute name="Name" id="1"><Type><v8:Type xmlns:xs="http://www.w3.org/2001/XMLSchema">xs:string</v8:Type></Type></Attribute></Attributes>`;
   const text = `\ufeff<?xml version="1.0" encoding="UTF-8"?>\r\n<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core">${body}</Form>\r\n`;
   for (const name of ['Preview', 'Second']) {
@@ -277,8 +277,10 @@ export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
   await addProbeStyleItems(fixture, input);
-  return createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible',
+  const rows = await createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible',
     'PagesTop', 'PagesBottom', 'PagesNone', 'PagesAuto', 'PagesLeft', 'PagesRight', 'PagesSwipe', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
+  const reference = JSON.parse(await readFile(join(input, 'frame-locales.json'), 'utf8'));
+  return rows.map(row => ({ ...row, nativeFrameLocales: reference.rows.find(native => native.name === row.kind)?.locales }));
 }
 
 async function addNativeGoods(fixture, catalog) {
@@ -289,8 +291,62 @@ async function addNativeGoods(fixture, catalog) {
   await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
 }
 
+export async function createReferenceWidthGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native reference directory.');
+  await addNativeGoods(fixture, join(input, 'Catalog.xml'));
+  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
+  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(join(input, 'Enum.xml')));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+  return createMeasuredFormGallery(fixture, input);
+}
+
+export async function createTableHeightGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native table height directory.');
+  await addNativeGoods(fixture, join(input, 'Catalog.xml'));
+  return createMeasuredFormGallery(fixture, input);
+}
+
+export async function createCommandPaletteGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native command palette directory.');
+  const { rows, profiles, captions, additionSourceMembers } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  const cases = new Map(rows.map(row => [row.name, row.selections]));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  const config = await readFile(configuration, 'utf8');
+  await writeFile(configuration, config.replace('</Properties>', '<ScriptVariant>English</ScriptVariant></Properties>'));
+  const forms = await createGallery(fixture, [...cases.keys()], input);
+  const formGallery = forms.map(form => ({
+    ...form, expected: { selections: cases.get(form.kind).map(({ name, profile, unavailable }) => ({ name, profile, unavailable })) },
+  }));
+  return { formGallery, profiles, captions, additionSourceMembers };
+}
+
+export async function createTablePaletteGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native table palette directory.');
+  const { rows, profiles, captions } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  // The RPC test uses separate projects for both variants of the same catalog.
+  const cases = new Map(rows.filter(row => !row.hierarchical).map(row => [row.name, row.selections]));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await mkdir(join(fixture.source, 'Documents'), { recursive: true });
+  await writeFile(join(fixture.source, 'Documents', 'NativeSale.xml'), await readFile(join(input, 'NativeSale.xml')));
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Document>NativeSale</Document>'));
+  const forms = await createGallery(fixture, [...cases.keys()], input);
+  const formGallery = forms.map(form => ({
+    ...form, expected: { selections: cases.get(form.kind).map(({ name, profile, unavailable }) => ({ name, profile, unavailable })) },
+  }));
+  return { formGallery, profiles, captions };
+}
+
 export async function createTableGallery(fixture) {
-  const result = await createGallery(fixture, ['Default', 'GridFooter', 'Horizontal', 'HorizontalTitled', 'Vertical', 'InCell', 'Marked', 'ReadOnly', 'NoAutoFill']);
+  const frames = JSON.parse(await readFile(join(process.env.ESKA_FORM_FIXTURES, 'frame-metrics.json'), 'utf8'));
+  const result = (await createGallery(fixture, frames.rows.map(row => row.name)))
+    .map(form => ({ ...form, nativeFrame: frames.rows.find(row => row.name === form.kind).locales }));
   if (process.env.ESKA_FORM_CONTEXT_FIXTURES) {
     const input = process.env.ESKA_FORM_CONTEXT_FIXTURES;
     if (!isAbsolute(input)) throw new Error('ESKA_FORM_CONTEXT_FIXTURES must be absolute.');
@@ -598,4 +654,13 @@ export async function createTablePixelsGallery(fixture) {
     if(!row)throw new Error(`Missing native table pixel reference for ${form.kind}.`);
     return {...form,expectedTablePixels:row.locales};
   });
+}
+
+export async function createStandaloneAdditionGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the standalone additions directory.');
+  const { rows } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const forms = await createGallery(fixture, rows.map(row => row.name), input);
+  return forms.map((form, index) => ({ ...form, expected: rows[index].locales }));
 }

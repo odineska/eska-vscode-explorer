@@ -54,8 +54,8 @@ test('explicit stretch and weights are independent of preferred size',()=>{
 test('fixed explicit dimensions ignore maximums; zero maximum means unlimited',()=>{
   assert.deepEqual(controlBounds(node('InputField',{HorizontalStretch:false,Width:20,MaxWidth:5}),'x',200,'linux'),{});
   assert.deepEqual(controlBounds(node('InputField',{AutoMaxWidth:false,MaxWidth:0}),'x',200,'linux'),{minimum:80,maximum:undefined});
-  assert.deepEqual(controlBounds(node('InputField',{AutoMaxWidth:false,MaxWidth:30,MinWidth:4}),'x',200,'linux'),{minimum:80,maximum:300});
-  assert.equal(controlBounds(node('InputField',{Width:4,MaxWidth:1}),'x',200,'linux').maximum,undefined,'explicit stretch dimensions are weights');
+  assert.deepEqual(controlBounds(node('InputField',{AutoMaxWidth:false,MaxWidth:30,MinWidth:4}),'x',200,'linux'),{minimum:80,maximum:310});
+  assert.equal(controlBounds(node('InputField',{Width:4,MaxWidth:1}),'x',200,'linux').maximum,410,'the automatic ceiling is independent of authored width');
 });
 
 test('Linux multiline input keeps its XML height under viewport pressure', () => {
@@ -156,7 +156,8 @@ test('picture fields reserve the measured Linux slot and accept a Designer borde
 
 test('native automatic string maximum does not cap explicitly stretched number or date controls',()=>{
   assert.equal(controlBounds(node('InputField'),'x',undefined,'linux').maximum,410);
-  for(const kind of ['string','number','date']) {
+  assert.equal(controlBounds(node('InputField',{HorizontalStretch:true}),'x',undefined,'linux').maximum,410);
+  for(const kind of ['number','date']) {
     const field=node('InputField',{HorizontalStretch:true});field.presentation.valueType.kind=kind;
     assert.equal(controlBounds(field,'x',undefined,'linux').maximum,undefined,kind+' explicit stretch');
   }
@@ -219,8 +220,8 @@ test('a manual maximum on a horizontal text field includes the native control in
   field.presentation.valueType.length = 13;
   assert.equal(horizontalInputMaximum(field, 'linux'), 150);
   assert.equal(horizontalInputMaximum(field, 'win32'), undefined);
-  assert.equal(horizontalInputMaximum(node('InputField', {MaxWidth:14}), 'linux'), undefined);
-  assert.equal(horizontalInputMaximum(node('InputField', {AutoMaxWidth:false, MaxWidth:14, Width:20}), 'linux'), undefined);
+  assert.equal(horizontalInputMaximum(node('InputField', {MaxWidth:14}), 'linux'), 410);
+  assert.equal(horizontalInputMaximum(node('InputField', {AutoMaxWidth:false, MaxWidth:14, Width:20}), 'linux'), 211);
 });
 
 test('the cap on a reference beside a date follows the measured Linux widths', () => {

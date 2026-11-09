@@ -9,7 +9,7 @@ function reserveWidth(value, width, fullWidth = width) {
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingWidths, available }) {
+export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingHeights, available, conditionalWidth }) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -25,22 +25,27 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing), height: value.height + spacing.height });
   function items(element) {
     if (!element) return { width: 0, height: 0 };
-    const children = [...element.children].filter(child => child.classList.contains('taxi-element')).map(item);
+    const elements = [...element.children].filter(child => child.classList.contains('taxi-element'));
+    const children = elements.map(item);
+    const reflows = conditionalWidth && element.dataset.grouping === 'HorizontalIfPossible';
     const horizontal = element.hasAttribute('data-united-columns') || getComputedStyle(element).display === 'flex';
     const css = getComputedStyle(element), gap = pixels(horizontal ? css.columnGap : css.rowGap) * Math.max(0, children.length - 1);
-    const width = sizeOf => horizontal
-      ? children.reduce((sum, child) => sum + sizeOf(child), gap) : Math.max(0, ...children.map(sizeOf));
+    // A conditional row can use the widest child's minimum when stacked.
+    const width = sizeOf => horizontal && !reflows
+      ? children.reduce((sum, child) => sum + sizeOf(child), gap)
+      : Math.max(0, ...children.map((child, index) => sizeOf(child) - (reflows && horizontal
+        ? pixels(elements[index].style.getPropertyValue('--taxi-group-spacing-x')) : 0)));
     const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings), height: horizontal
       ? Math.max(0, ...children.map(value => value.height)) : children.reduce((sum, value) => sum + value.height, gap) };
     const padding = insets(element);
     if (element.hasAttribute('data-united-columns')) {
       // Use the allocator's lower bound for this row, including independent captions.
       const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
-      if (laneMinimum) value.width = value.fullWidth = laneMinimum + gap;
+      if (laneMinimum && !reflows) value.width = value.fullWidth = laneMinimum + gap;
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     const minimum = minimumRows.get(element);
-    if (minimum !== undefined) value.width = value.fullWidth = minimum;
+    if (minimum !== undefined && !reflows) value.width = value.fullWidth = minimum;
     return add(add(value, padding), margins(element));
   }
   function item(element) {
@@ -73,11 +78,11 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       value = items(group.querySelector(':scope > .taxi-items'));
       const title = group.querySelector(':scope > .taxi-group-title');
       if (title) {
-        const box = marginBox(title);
-        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, box.height);
-        else value.height += box.height;
-        const heading = headingWidths.get(group);
-        reserveWidth(value, heading?.minimum ?? textWidth(title, scale), heading?.preferred);
+        const height = (headingHeights.get(title) ?? size(title).height) + margins(title).height;
+        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, height);
+        else value.height += height;
+        const preferred = textWidth(title, scale);
+        reserveWidth(value, Number(title.dataset.nativeHeadingMinimum ?? preferred), preferred);
       }
       value = add(value, insets(group));
       if (element.hasAttribute('data-compact-command-bars')) {
@@ -102,6 +107,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     } else {
       const child = element.firstElementChild;
       value = child ? marginBox(child) : { width: 0, height: 0 };
+      if (child?.hasAttribute('data-native-decoration')) value.width = Number(child.dataset.decorationMinimum) + insets(child).width;
     }
     const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-min-width')
       || element.style.getPropertyValue('--taxi-united-cell-width'));
@@ -112,10 +118,13 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       }
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
     }
+    const spacing = { width: pixels(element.style.getPropertyValue('--taxi-group-spacing-x')),
+      height: pixels(element.style.getPropertyValue('--taxi-group-spacing-y')) };
+    value = add(value, spacing);
     minima.set(element.dataset.element, value);
     if (value.fullWidth > value.width) headingFloors.set(element, value);
-    element.style.setProperty('--taxi-min-width', `${value.width}px`);
-    element.style.setProperty('--taxi-min-height', `${value.height}px`);
+    element.style.setProperty('--taxi-min-width', `${value.width - spacing.width}px`);
+    element.style.setProperty('--taxi-min-height', `${value.height - spacing.height}px`);
     return value;
   }
   const content = root.querySelector(':scope > .taxi-form-content'), title = root.querySelector(':scope > .taxi-form-title');
@@ -131,7 +140,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     minimum.width = minimum.fullWidth;
     for (const [element, bounds] of headingFloors) {
       bounds.width = bounds.fullWidth;
-      element.style.setProperty('--taxi-min-width', `${bounds.width}px`);
+      element.style.setProperty('--taxi-min-width', `${bounds.width - pixels(element.style.getPropertyValue('--taxi-group-spacing-x'))}px`);
     }
   }
   return { minimum, minima, itemsHeight, chromeHeight };
