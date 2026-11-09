@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
@@ -270,6 +272,81 @@ async function verifyDateBlock(main, view, document) {
   }
 }
 
+async function verifyColumnSurplus(service, main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const { fixtures } = JSON.parse(await fs.readFile(path.join(directory, 'column-surplus-metrics.json'), 'utf8'));
+  const original = document.getText();
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = surface => surface.evaluate(`(() => {
+    const form = document.querySelector('.taxi-form-frame');
+    if (!form?.closest('[data-form-layout=allocated]')) return null;
+    const frame = form.getBoundingClientRect();
+    const find = id => form.querySelector('[data-element$=":current:' + id + '"]');
+    const box = element => {
+      const rect = element?.getBoundingClientRect();
+      return rect ? [rect.x - frame.x, rect.width] : null;
+    };
+    return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
+      inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
+      dateBlock: box(find(40)), divider: !!form.querySelector('.taxi-column-divider') };
+  })()`);
+  async function observe(surface, file, { width, columns, inputs, dateBlock = null, divider }) {
+    const revision = view.snapshot.revision;
+    await allocateFormViewport(surface, [width, 420]);
+    const expected = { width, columns, inputs, dateBlock, divider };
+    const description = `${file} matches native column widths at ${width}px`;
+    let actual, stable = 0;
+    await until(async () => {
+      actual = await measure(surface);
+      stable = isDeepStrictEqual(actual, expected) ? stable + 1 : 0;
+      return stable >= 2;
+    }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
+    assert.equal(view.snapshot.revision, revision);
+    return actual;
+  }
+  const results = [];
+  try {
+    for (const { file, sourceSha256, cases } of fixtures) {
+      const source = await fs.readFile(path.join(directory, file), 'utf8');
+      assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+      await editFormSource(document, view, source);
+      await ui.evaluate('document.fonts.ready.then(()=>true)');
+      const sizes = [];
+      for (const entry of [...cases, cases[0]]) sizes.push(await observe(ui, file, entry));
+      results.push({ file, sizes });
+
+      if (!cases.at(-1).dateBlock) continue;
+      const workbench = await ui.nativeWindow();
+      await service.receive(view, main, { type: 'detach' });
+      await until(() => view.frames.get('preview')?.ready, 'detached bounded columns ready');
+      const preview = view.frames.get('preview');
+      const floating = await frame({ detached: true, state: { title: preview.panel.title } });
+      try {
+        assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+        const wide = cases.at(-1);
+        await observe(floating, file, wide);
+        await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
+        await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));
+        await until(() => floating.evaluate("__boundedGroup.isConnected && getComputedStyle(__boundedGroup).backgroundColor === 'rgb(255, 255, 224)'"),
+          'dirty group styling applied in place');
+        await observe(floating, file, wide);
+        await observe(floating, file, cases[0]);
+        await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
+      } finally {
+        floating.close();
+        await service.receive(view, preview, { type: 'dock' });
+        await until(() => !view.frames.has('preview'), 'bounded columns returned to workbench');
+      }
+      await until(() => ui.evaluate("!!document.querySelector('.preview-scroll')"), 'docked bounded columns rendered');
+      await observe(ui, file, cases.at(-1));
+    }
+    return { kind: 'ColumnSurplus', fixtures: results };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -324,6 +401,7 @@ exports.run = async () => {
     if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
       results.push(await verifyUnitedRowHeight(main, view, document, keys));
       results.push(await verifyDateBlock(main, view, document));
+      results.push(await verifyColumnSurplus(service, main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));

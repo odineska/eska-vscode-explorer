@@ -99,10 +99,12 @@ export function dateBlockLayout(model, context) {
     }
     alignment.style(checkbox.element, '--taxi-field-caption-width', '');
     alignment.mark(owner, 'data-fixed-date-block');
-    alignment.style(owner, '--taxi-fixed-date-width', '');
+    const outer = spacing + boxInsets(getComputedStyle(group)).width;
+    // Use the same calibrated width for preferred measurement and for a fully expanded block.
+    alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
     blocks.push({ items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, canMove, sideMinimum, preferred,
-      slots, outer: spacing + boxInsets(getComputedStyle(group)).width });
+      slots, outer });
   }
 
   if (os === 'linux') visit(model);

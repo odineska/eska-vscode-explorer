@@ -1,7 +1,7 @@
 import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing, allocateLaneSizes, stretchWeight } from './layout-model.mjs';
 import { inputLaneLayout } from './input-lane-layout.js';
 import { shareUnitedGroupSpacing } from './group-spacing-layout.js';
-import { availableTrackWidth, borderBoxSize, pixels, updateStyle } from './layout-box.mjs';
+import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 function ordinaryVerticalGroup(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
@@ -106,6 +106,18 @@ export function alignUnitedRows(model, context, wrapped) {
       }
     }
   }
+  function stretchWidth(node, minima) {
+    const element = elements.get(node.key);
+    if (element.dataset.stretchX !== 'true') return 0;
+    const preferred = pixels(element.style.getPropertyValue('--taxi-preferred-width'));
+    const width = Math.min(preferred, minima.get(node.key)?.maximumWidth ?? Infinity);
+    const items = containers.get(node.key);
+    if (!items || !ordinaryVerticalGroup(node)) return width;
+    const child = Math.max(0, ...mountedChildren(node).map(node => stretchWidth(node, minima)));
+    if (!child) return width;
+    return Math.min(width, child + boxInsets(getComputedStyle(items)).width
+      + boxInsets(getComputedStyle(items.parentElement)).width);
+  }
   function allocateWidths(captions, minima) {
     allocateInputs(captions);
     for (const pair of columnPairs.values()) {
@@ -125,7 +137,14 @@ export function alignUnitedRows(model, context, wrapped) {
       const available = availableTrackWidth(pair.items, lanes.length, scale);
       const tracks = lanes.map((lane, index) => ({ ...lane, preferred: preferred[index] }));
       for (const [index, node] of pair.groups.entries()) columnBounds.set(elements.get(node.key), tracks[index]);
-      const widths = allocateLaneSizes(available, tracks);
+      let widths = allocateLaneSizes(available, tracks);
+      if (widths.reduce((sum, width) => sum + width, 0) < available) {
+        // The group tracks still fill the row when all controls have reached their caps.
+        // A wide fixed descendant contributes to the preferred size, but does not attract surplus.
+        widths = allocateLaneSizes(available, tracks.map((track, index) => ({ ...track,
+          preferred: widths[index], maximum: Infinity, growthWeight: Math.max(1, stretchWidth(pair.groups[index], minima)),
+        })));
+      }
       updateStyle(pair.items, '--taxi-united-allocated-columns', widths.map(width => `${width}px`).join(' '));
     }
   }
