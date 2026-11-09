@@ -83,7 +83,7 @@ function captionTrack(track, { targets, os, scale }, minimumCaptions) {
   return { ...track, fields, preferredRow };
 }
 
-/** Reflow ordinary caption scopes with a horizontal row without replacing their fields. */
+/** Reflow ordinary caption scopes while keeping their shared track and field owners. */
 export function layoutThroughCaptions(scopes, context, minimumCaptions) {
   const { alignment, os, scale, targets } = context;
   if (os !== 'linux') return () => {};
@@ -92,7 +92,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions) {
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
       .map(node => targets.containers.get(node.key)).filter(Boolean);
-    if (!scope.some(track => track.horizontal) && !separated.length) continue;
+    const vertical = !scope.some(track => track.horizontal) && !separated.length;
     // Preferred alignment supports offsets; caption reflow is measured for tracks with one origin.
     if (scope.some(track => Math.abs(track.left - scope[0].left) > .5)) continue;
     const tracks = scope.map(track => captionTrack(track, context, minimumCaptions));
@@ -126,19 +126,31 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions) {
         }
       }
     }
-    allocations.push({ tracks, preferred, compact, minimum });
+    const steps = vertical
+      ? [...new Set(fields.map(field => field.caption.preferred + inputCaptionInset))]
+        .filter(width => width > minimum).sort((a, b) => b - a)
+      : undefined;
+    allocations.push({ tracks, preferred, compact, minimum, steps });
   }
 
   return function allocateWidths(captions, minima) {
-    for (const { tracks, preferred, compact, minimum } of allocations) {
+    for (const { tracks, preferred, compact, minimum, steps } of allocations) {
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue}) => {
         const available = borderBoxSize(container, scale).width - boxInsets(getComputedStyle(container)).width;
         const reserve = horizontal ? (minima.get(node.key)?.width ?? 0) - fields[0].minimum
           : Math.max(...fields.map(field => (minima.get(field.key)?.width ?? 0) - field.minimum));
-        return { capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
+        return { available, capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
       });
-      const full = measured.every(track => track.full);
-      const shared = measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
+      // Keep each unwrapped title with its preferred control, from the longest title down.
+      const step = steps?.find(width => tracks.every(({ fields }, index) => fields.every(field => {
+        const reserve = (minima.get(field.key)?.width ?? field.minimum) - field.minimum;
+        const control = field.caption.preferred + inputCaptionInset <= width
+          ? Math.max(reserve, field.preferredValue) : reserve;
+        return width + control <= measured[index].available + .5;
+      })));
+      const full = steps ? step === preferred : measured.every(track => track.full);
+      const shared = steps ? step ?? minimum
+        : measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
       for (const [index, {container, horizontal, fields, fullWidth}] of tracks.entries()) {
         const [leading] = fields;
         const { capacity } = measured[index];

@@ -123,3 +123,22 @@ test('nested reflow binds both captures and all referenced viewport profiles to 
   assert.deepEqual(cases.get('Twin41').fields.D.slice(0,2), [134,71]);
   assert.equal(cases.get('Parallel31').fills.WrapperA[2], 151);
 });
+
+test('wrapped title references bind the canonical XML and all viewport steps', async () => {
+  const root = new URL('tests/fixtures/forms/native-wrapped-titles/', formReferenceRoot);
+  const { rows } = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
+  const cases = new Map(rows.map(row => [row.name, row]));
+  assert.equal(rows.length, 21);
+  assert.equal(cases.size, rows.length);
+  for (const row of rows) {
+    const xml = await readFile(new URL(row.file, root));
+    assert.equal(createHash('sha256').update(xml).digest('hex'), row.fixtureSha256, row.name);
+    assert.match(row.canonicalSha256, /^[a-f0-9]{64}$/u);
+    for (const locale of ['en', 'ru']) assert.match(row.captures[locale], /^[a-f0-9]{64}$/u);
+    for (const step of row.reflow?.cases ?? []) assert.ok(cases.has(step), step);
+  }
+  assert.deepEqual(cases.get('HeadingNormal22').headingLines, { Outer: 3 });
+  assert.deepEqual(cases.get('Caption30').captionLines, { NameInput: 2, Password: 2, Port: 1, Connect: 2 });
+  assert.equal(cases.get('CombinedNormal45').fields.NameInput[0], 229);
+  assert.deepEqual(cases.get('CombinedNormal30').fields.AgentPort, [60, 270, 61, 23]);
+});

@@ -30,6 +30,14 @@ async function geometry(ui, keys, expected) {
       fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
       groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
       fills,
+      headingLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.headingLines ?? {}))}.map(name => {
+        const title = nodes.get(keys[name])?.querySelector(':scope > .taxi-group > .taxi-group-title');
+        return [name, title ? Math.round(title.offsetHeight / parseFloat(getComputedStyle(title).lineHeight)) : 0];
+      })),
+      captionLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLines ?? {}))}.map(name => {
+        const label = nodes.get(keys[name])?.querySelector('.taxi-field-label');
+        return [name, label ? label.querySelectorAll('.taxi-field-caption-line').length || 1 : 0];
+      })),
     };
   })()`);
 }
@@ -38,6 +46,8 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
+    && ['headingLines', 'captionLines'].every(key => expected[key] === undefined
+      || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
 }
@@ -108,7 +118,7 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
 
 async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
   const profiles = plan.cases.map(name => gallery.find(sample => sample.kind === name).expected);
-  const identity = [...view.nodes.values()].find(node => node.name === 'B').identity;
+  const identity = [...view.nodes.values()].find(node => node.name === (plan.selected ?? 'B')).identity;
   const changed = plan.edit && original.replace(plan.edit.from, plan.edit.to);
   if (plan.edit) assert.notEqual(changed, original);
   await service.receive(view, main, { type: 'select', identity });
@@ -125,13 +135,13 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
     } catch (error) {
       throw new Error(name + ' ' + JSON.stringify({ actual, preferredWidth }), { cause: error });
     }
-    assert.equal(await target.evaluate('__paintedRowInputs.every(element => element.isConnected)'), true);
+    assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
     assert.deepEqual(view.selected, identity);
     assert.deepEqual(target.scriptErrors(), []);
     results.push({ name, ...actual });
   }
   async function resize(target, mode) {
-    await target.evaluate('globalThis.__paintedRowInputs = [...document.querySelectorAll(".taxi-input")]; true');
+    await target.evaluate('globalThis.__resizedFormInputs = [...document.querySelectorAll(".taxi-input")]; true');
     try {
       for (const [index, profile] of profiles.entries()) {
         await allocateFormViewport(target, profile.frame);
@@ -144,7 +154,7 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
         if (changed && index === 0) {
           await editFormSource(document, view, changed);
           await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
-            'painted row received the folded edit');
+            'resized form received the dirty edit');
           await target.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
           await observe(target, profile, mode + '-folded-dirty-' + width);
         }
