@@ -125,9 +125,9 @@ export function decorationCaptionProfile(text, font) {
 }
 
 /** A parenthesized suffix keeps the break space in its width but starts at the left edge. */
-export function fieldCaptionLines(profile, width) {
+function wrapFieldCaption(profile, width, format) {
   return profile.paragraphs.flatMap(({characters, edges}) => {
-    if (!characters.length) return [''];
+    if (!characters.length) return [format('', 0)];
     const lines = [];
     let start = 0;
     while (start < characters.length) {
@@ -140,11 +140,20 @@ export function fieldCaptionLines(profile, width) {
       }
       if (end < characters.length && characters[end] !== ' ' && boundary > start) end = boundary;
       const line = characters.slice(start, end).join('').trim();
-      if (line) lines.push(line);
+      if (line) lines.push(format(line, edges[end] - edges[start]));
       start = end;
     }
-    return lines.length ? lines : [''];
+    return lines.length ? lines : [format('', 0)];
   });
+}
+
+export function fieldCaptionLines(profile, width) {
+  return wrapFieldCaption(profile, width, text => text);
+}
+
+export function fieldCaptionOccupiedWidth(profile, width) {
+  if (width >= profile.preferred) return profile.preferred;
+  return Math.max(0, ...wrapFieldCaption(profile, width, (_, span) => span));
 }
 
 /** Keep kerning inside each native caption fragment, never across fragment boundaries. */

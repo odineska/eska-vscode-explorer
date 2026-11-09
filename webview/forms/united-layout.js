@@ -12,6 +12,21 @@ function groupWidthInsets(items) {
   return items ? boxInsets(getComputedStyle(items)).width + boxInsets(getComputedStyle(items.parentElement)).width : 0;
 }
 
+function packedDateColumn(pair, tracks, available) {
+  const column = pair.packedDateColumn;
+  if (!column || available >= pair.preferred) return;
+  const { index, insets, block, inputPreference } = column;
+  // Fit whole words before rounding the column tracks for display.
+  const provisional = allocateLaneSizes(available, tracks, { fractional: true })[index];
+  const packed = block.pack(provisional - insets);
+  if (!packed) return;
+  const other = 1 - index;
+  const cap = Math.max(packed.width + insets, inputPreference, tracks[index].minimum, available - tracks[other].preferred);
+  const width = Math.min(Math.floor(provisional + 1e-7), cap);
+  const widths = index === 0 ? [width, available - width] : [available - width, width];
+  return { key: block.key, widths, plan: packed.allocate(width - insets) };
+}
+
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
 export function alignUnitedRows(model, context, wrapped) {
   const { targets, alignment, collapsed, os, scale } = context;
@@ -118,13 +133,17 @@ export function alignUnitedRows(model, context, wrapped) {
               pair.captionColumns = pair.groups.map((node, index) => {
                 const insets = groupWidthInsets(containers.get(node.key))
                   + pixels(elements.get(node.key).style.getPropertyValue('--taxi-group-spacing-x'));
-                const fields = blocks[index].some(block => block.compactWidth !== undefined)
+                const fields = blocks[index].some(block => block.pack || block.compactWidth !== undefined)
                   ? children[index].filter(child => elements.get(child.key).dataset.stretchX === 'true') : [];
                 const widths = fields.map(field => field.presentation.titleLocation === 'None'
                   ? textInputWidthBounds(field, os)?.preferredPaint : undefined);
                 const inputPreference = widths.length && widths.every(Number.isFinite) ? Math.max(...widths) + insets : undefined;
                 return { insets, blocks: blocks[index], inputPreference };
               });
+              const packed = pair.captionColumns.flatMap(({ insets, blocks, inputPreference }, index) =>
+                blocks.length === 1 && blocks[0].pack && inputPreference !== undefined
+                  ? [{ index, insets, block: blocks[0], inputPreference }] : []);
+              if (packed.length === 1) pair.packedDateColumn = packed[0];
             }
           }
         }
@@ -168,7 +187,8 @@ export function alignUnitedRows(model, context, wrapped) {
   }
   function allocateWidths(captions, minima) {
     allocateInputs(captions);
-    for (const pair of columnPairs.values()) {
+    const packedDates = new Map();
+    for (const [owner, pair] of columnPairs) {
       if (!pair.groups) continue;
       const lanes = pair.groups.map((node, index) => {
         const bounds = minima.get(node.key);
@@ -208,6 +228,11 @@ export function alignUnitedRows(model, context, wrapped) {
         widths[index] -= spare;
         widths[other] += spare;
       }
+      const packed = packedDateColumn(pair, tracks, available);
+      if (packed) {
+        widths = packed.widths;
+        packedDates.set(packed.key, { ...packed.plan, owner });
+      }
       if (widths.reduce((sum, width) => sum + width, 0) < available) {
         // The group tracks still fill the row when all controls have reached their caps.
         // A wide fixed descendant contributes to the preferred size, but does not attract surplus.
@@ -217,6 +242,7 @@ export function alignUnitedRows(model, context, wrapped) {
       }
       updateStyle(pair.items, '--taxi-united-allocated-columns', widths.map(width => `${width}px`).join(' '));
     }
+    return packedDates;
   }
   function columnFraction(element) {
     const column = element.closest('.taxi-element[data-united-cell]');

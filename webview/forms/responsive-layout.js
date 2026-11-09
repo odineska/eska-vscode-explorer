@@ -199,13 +199,16 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
     allocateThroughCaptions(captions, geometry().minima);
-    unitedRows.allocateWidths(captions, geometry().minima);
+    const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
+    for (const [key, plan] of packedDates) {
+      if (columnDividers.get(plan.owner)?.tracks) packedDates.delete(key);
+    }
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
-    dateBlocks.allocate(captions, above, unitedRows.columnFraction);
+    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates);
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);

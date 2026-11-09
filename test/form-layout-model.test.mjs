@@ -4,7 +4,7 @@ import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, contro
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
-import { fieldCaptionLines, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
+import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
   presentation:{displayed:true,valueType:{kind:'string'},font:{points:10,weight:400}}});
@@ -223,6 +223,18 @@ test('numeric captions preserve words, explicit lines and the native suffix brea
   assert.deepEqual(fieldCaptionLines(custom, custom.compact), ['Очень длинная', 'надпись:']);
   const explicit = fieldCaptionProfile('Quantity\n\nAmount:', font);
   assert.deepEqual(fieldCaptionLines(explicit, explicit.preferred), ['Quantity', '', 'Amount:']);
+});
+
+test('caption packing changes at the whole-word threshold before track rounding', () => {
+  const title = fieldCaptionProfile('Дата отражения в учете:');
+  assert.equal(fieldCaptionOccupiedWidth(title, 107.99), 97);
+  assert.equal(fieldCaptionOccupiedWidth(title, 108), 108);
+  assert.equal(fieldCaptionOccupiedWidth(title, title.preferred), title.preferred);
+
+  const left = { minimum: 90, preferred: 471 }, right = { minimum: 441, preferred: 612 };
+  const [, raw] = allocateLaneSizes(730, [left, right], { fractional: true });
+  assert.ok(raw > 502 && raw < 503);
+  assert.deepEqual(allocateLaneSizes(730, [left, right]), [227, 503]);
 });
 
 test('narrow numeric rows fill the value boxes before restoring trailing captions', () => {

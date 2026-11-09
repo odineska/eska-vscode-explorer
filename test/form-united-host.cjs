@@ -373,6 +373,17 @@ async function verifyColumnSurplus(service, main, view, document) {
         await observe(floating, file, wide);
         await observe(floating, file, cases[0]);
         await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
+        const compact = cases.find(entry => entry.width === 774 && entry.checkCaption?.[2] === 2);
+        if (compact) {
+          const before = await observe(floating, file, compact);
+          const revision = view.snapshot.revision;
+          await floating.dragHorizontally('.taxi-column-divider', 40);
+          await until(async () => {
+            const manual = await measure(floating);
+            return manual?.columns[0][1] === before.columns[0][1] + 40 && manual.checkCaption?.[2] === 3;
+          }, 'manual division recalculates the wrapped date block from the chosen width');
+          assert.equal(view.snapshot.revision, revision);
+        }
       } finally {
         floating.close();
         await service.receive(view, preview, { type: 'dock' });

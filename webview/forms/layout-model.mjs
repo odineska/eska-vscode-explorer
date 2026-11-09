@@ -246,8 +246,8 @@ export function fitCaptionWidths(available, tracks, trailingOnly = false) {
   return { captions, valueSpace: width - captionTotal, preferredValues, minimumValues };
 }
 
-/** Allocate bounded tracks in native pixels, including space reserved for control chrome. */
-export function allocateLaneSizes(available, lanes) {
+/** Allocate bounded tracks, retaining fractional budgets when choosing text wraps. */
+export function allocateLaneSizes(available, lanes, { fractional = false } = {}) {
   const preferred = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
   let widths;
   let round = Math.round;
@@ -286,7 +286,7 @@ export function allocateLaneSizes(available, lanes) {
     widths = lanes.map(lane => Math.max(lane.preferred,
       Math.min(lane.maximum, lane.reserve + Math.max(0, lane.preferred - lane.reserve - 1) * factor)));
   }
-  return roundTrackWidths(widths, round);
+  return fractional ? widths : roundTrackWidths(widths, round);
 }
 
 export function roundTrackWidths(widths, round = Math.round) {

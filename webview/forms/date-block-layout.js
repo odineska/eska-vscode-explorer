@@ -1,7 +1,7 @@
 import { checkboxField } from './checkbox-layout.js';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
-import { fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateLaneSizes, groupCanShrink } from './layout-model.mjs';
+import { fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
+import { allocateLaneSizes, cappedTrackGrowth, groupCanShrink, roundTrackWidths } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fontLineHeight, inputPaintedOutset, scalar } from './model.mjs';
 
@@ -40,6 +40,30 @@ function captionWidths(space, date, checkbox) {
 function dateCaptions(fields, minimum = Math.max(0, ...fields.map(field => field.caption.minimum))) {
   const widths = fields.map(field => field.caption.preferred);
   return { minimum, preferred: Math.max(0, ...widths), shortest: widths.length ? Math.min(...widths) : 0 };
+}
+
+function packSideCaptions(available, { base, fields, date, checkbox, minimumWidth, minimumTitle }) {
+  const space = available - base;
+  if (space < date.minimum + checkbox.minimum) return;
+  const [budget] = allocateLaneSizes(space, [date, checkbox], { fractional: true });
+  const title = Math.max(...fields.map(field => fieldCaptionOccupiedWidth(field.caption, budget)));
+  if (title < minimumTitle) return;
+  const check = fieldCaptionOccupiedWidth(checkbox, space - title);
+  const width = base + title + check;
+  if (width < minimumWidth) return;
+
+  return {
+    width,
+    allocate(available) {
+      // A stretching neighbor can keep part of the unused column width.
+      const growth = cappedTrackGrowth(Math.max(0, available - width), [
+        { weight: title, limit: date.preferred - title },
+        { weight: check, limit: checkbox.preferred - check },
+      ]);
+      const [titleWidth, checkWidth] = roundTrackWidths([title + growth[0], check + growth[1]], Math.floor);
+      return { width: base + titleWidth + checkWidth, title: titleWidth, check: checkWidth };
+    },
+  };
 }
 
 /** A non-united row exposes its leading date to the vertical block's shared caption column. */
@@ -112,10 +136,6 @@ export function dateBlockLayout(model, context) {
     const mixedWidth = mixedInset
       ? Math.max(aboveWidth, sideMinimum + spacing - mixedInset, ...sideFields.filter(field => !field.input).map(sideTrackWidth))
       : sideWidth;
-    if (canMove) titleFloors.set(node.key, {
-      mixed: Math.max(0, mixedWidth - minimum), side: Math.max(0, sideWidth - minimum),
-    });
-
     for (const [container, mode] of fixedTop ? [] : [[items, 'all'], [row, 'leading']]) {
       alignment.mark(container, 'data-through-labels', mode);
       alignment.style(container, '--taxi-through-label-width', `${date.preferred + inputCaptionInset}px`);
@@ -138,26 +158,41 @@ export function dateBlockLayout(model, context) {
     alignment.mark(owner, 'data-fixed-date-block', authoredTop ? 'authored' : '');
     alignment.style(leading.element, '--taxi-date-title-line-height', `${leading.wrappedLineHeight}px`);
     const outer = spacing + boxInsets(getComputedStyle(group)).width;
-    if (fixedTop) titleFloors.set(node.key, {
-      mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
-    });
+    if (fixedTop) {
+      titleFloors.set(node.key, {
+        mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
+      });
+    } else {
+      const topWidth = Math.max(0, ...fields.filter(field => field.top).map(field => Math.max(field.value, field.caption.preferred)));
+      const profile = {
+        base: fixed + sideValue + outer, fields: sideFields, date, checkbox: checkbox.caption,
+        minimumWidth: Math.max(topWidth, sideWidth + outer - spacing),
+        minimumTitle: leading.top ? topPreferred - sideValue : 0,
+      };
+      titleFloors.set(node.key, {
+        mixed: canMove ? Math.max(0, mixedWidth - minimum) : 0,
+        side: canMove ? Math.max(0, sideWidth - minimum) : 0,
+        pack: canMove || sideValue === lockedValue ? width => packSideCaptions(width, profile) : undefined,
+      });
+    }
     // Use the same calibrated width for preferred measurement and for a fully expanded block.
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
-    blocks.push({ items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, fixedTop, authoredTop,
+    blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop,
       sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate });
   }
 
   if (os === 'linux') visit(model);
   return {
     minimumRows, minimumCaptions, titleFloors,
-    allocate(captions, above, columnFraction) {
+    allocate(captions, above, columnFraction, packedDates) {
       for (const block of blocks) {
-        const { items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
-          canMove, fixedTop, authoredTop, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing,
+        const { key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
+          canMove, authoredTop, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing,
           lockedValue, lockedDate } = block;
         const width = authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
-        updateStyle(owner, '--taxi-fixed-date-width', `${Math.round(width + outer)}px`);
+        const packed = packedDates.get(key);
+        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.round(width + outer)}px`);
         const available = availableTrackWidth(row, slots.length, scale);
         const sideUnavailable = canMove && available + spacing < Math.round(mixedWidth);
         const lockedOnly = sideUnavailable || !canMove;
@@ -170,7 +205,7 @@ export function dateBlockLayout(model, context) {
         const space = available - fixed - sideTrack;
         const minimum = active
           ? Math.max(lockedDate?.minimum ?? 0, Math.min(active.minimum, space - checkbox.caption.minimum)) : 0;
-        const [title, sideCheck] = active
+        const [title, sideCheck] = packed ? [packed.title, packed.check] : active
           ? captionWidths(Math.max(space, minimum + checkbox.caption.minimum), { ...active, minimum }, checkbox.caption) : [0, 0];
         // A top caption can still share the track reserved by its side-captioned siblings.
         const sideReserve = leading.top && active ? sideTrack + title : 0;
