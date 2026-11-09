@@ -103,6 +103,61 @@ function sourceVariant(xml, edit) {
   return changed;
 }
 
+async function verifyColumnDivider(ui, original, replace) {
+  const read = () => ui.evaluate(`(() => {
+    const owner = document.querySelector('.taxi-items[data-layout-owner$=":current:1"]');
+    const separator = owner.querySelector(':scope > .taxi-column-divider');
+    const visible = separator?.getBoundingClientRect().height > 0;
+    return {
+      horizontal: owner.classList.contains('taxi-items--horizontal'),
+      tracks: getComputedStyle(owner).gridTemplateColumns.split(' ').map(parseFloat),
+      range: visible ? ['min', 'now', 'max'].map(name => Number(separator.getAttribute('aria-value'+name))) : null,
+      x: visible ? separator.getBoundingClientRect().left - owner.getBoundingClientRect().left : null,
+      label: visible ? separator.getAttribute('aria-label') : null,
+    };
+  })()`);
+  async function observe(predicate, label) {
+    let result;
+    await until(async () => { result = await read(); return predicate(result); }, label);
+    return result;
+  }
+  async function press(key, bound) {
+    await ui.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
+      new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true}));true`);
+    return observe(result => result.range && result.range[1] === result.range[bound], 'divider reaches '+key);
+  }
+
+  const [wide, narrow] = [[974, 250], [540, 250]];
+  await allocateFormViewport(ui, wide);
+  const initial = await observe(result => result.horizontal && !result.range, 'wide columns fit without a divider');
+  await allocateFormViewport(ui, narrow);
+  const automatic = await observe(result => result.range?.[0] < result.range?.[2], 'compressed columns show a movable divider');
+  assert.equal(automatic.label, vscode.env.language.startsWith('ru') ? 'Изменить ширину колонок формы' : 'Resize form columns');
+  const [minimum, current, maximum] = automatic.range;
+  const delta = maximum - current >= current - minimum ? Math.min(12, maximum - current) : -Math.min(12, current - minimum);
+  await ui.dragHorizontally('.taxi-column-divider', delta);
+  const dragged = await observe(result => result.range?.[1] === current + delta, 'pointer drag moves the divider');
+  assert.ok(Math.abs(dragged.x - automatic.x - delta) < 1);
+
+  const right = await press('End', 2), left = await press('Home', 0);
+  assert.ok(right.x - left.x > 10);
+  assert.ok(right.tracks[0] > left.tracks[0] && right.tracks[1] < left.tracks[1]);
+  assert.ok(Math.abs(right.tracks[0] + right.tracks[1] - left.tracks[0] - left.tracks[1]) < .1);
+
+  await allocateFormViewport(ui, wide);
+  const restored = await observe(result => result.horizontal && !result.range, 'divider leaves a wide viewport');
+  assert.deepEqual(restored.tracks, initial.tracks);
+  await allocateFormViewport(ui, narrow);
+  await observe(result => result.range?.[1] === left.range[1], 'narrow viewport restores the local position');
+  const uncombined = original.replace('<UsualGroup name="Column1" id="11">', '$&<United>false</United>');
+  assert.notEqual(uncombined, original);
+  await replace(uncombined);
+  await observe(result => result.horizontal && !result.range, 'exposed rows have no column divider');
+  await replace(original);
+  await observe(result => result.range?.[1] === left.range[1], 'dirty undo restores the column divider');
+  return {label:'detached-column-divider', automatic, dragged, left, right, wide:restored};
+}
+
 async function verifyDetached(service, view, main, ui, identity, run) {
   await service.receive(view, main, {type:'select', identity});
   await until(() => view.selected?.key.value === identity.key.value, 'column field selected');
@@ -250,6 +305,7 @@ exports.run = async () => {
             await replace(original);
             await pose(floating, keys, narrow);
             await pose(floating, keys, wide);
+            results.push(await verifyColumnDivider(floating, original, replace));
           });
           results.push({label:'detached-auto-reference-resize-dirty', ...observation});
         }

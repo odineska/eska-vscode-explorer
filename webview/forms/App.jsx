@@ -1,5 +1,6 @@
 import { For, Show, Switch, Match, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
+import { Splitter } from './Splitter.jsx';
 import { inspectorLayout } from './inspector-layout.mjs';
 import { PropertyValue } from './PropertyValue.jsx';
 import { PropertyPalette } from './PropertyPalette.jsx';
@@ -11,14 +12,6 @@ function handlerLinks(model, matches) {
   return result;
 }
 
-function Splitter(props) {
-  let start, initial;
-  return <div role="separator" tabindex="0" aria-orientation={props.vertical ? 'vertical' : 'horizontal'} class={`form-splitter ${props.vertical ? 'form-splitter--vertical' : ''}`}
-    onPointerDown={event => { event.preventDefault(); start = props.vertical ? event.clientX : event.clientY; initial = props.value(); event.currentTarget.setPointerCapture(event.pointerId); }}
-    onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) props.change(initial + ((props.vertical ? event.clientX : event.clientY) - start) * (props.factor?.() ?? 1)); }}
-    onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
-    onKeyDown={event => { if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) { event.preventDefault(); props.change(props.value() + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 10 : -10)); } }}/>
-}
 function ElementTree(props) {
   const c = props.controller, state = c.state;
   const [scroll, setScroll] = createSignal(0), [height, setHeight] = createSignal(180);

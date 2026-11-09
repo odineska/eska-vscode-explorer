@@ -1,6 +1,7 @@
 import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacing } from './layout-model.mjs';
 import { inputLaneLayout } from './input-lane-layout.js';
 import { shareUnitedGroupSpacing } from './group-spacing-layout.js';
+import { pixels } from './layout-box.mjs';
 
 function ordinaryVerticalGroup(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
@@ -11,7 +12,7 @@ export function alignUnitedRows(model, context, wrapped) {
   const { targets, alignment, collapsed } = context;
   const { elements, containers, children: mountedChildren } = targets;
   const { mark, style } = alignment;
-  const owners = new Set();
+  const owners = new Set(), columnPairs = new Map();
   const { register, minimumCaptions, allocateWidths } = inputLaneLayout(context);
 
   function lane(node) {
@@ -55,7 +56,13 @@ export function alignUnitedRows(model, context, wrapped) {
       && (children.every(ordinaryVerticalGroup) || separatedColumn)) {
       owners.add(node.key);
       if (automaticHorizontalSpacing(node)) mark(items, 'data-united-auto-spacing');
-      if (!wrapped.has(node.key)) shareRows(items, children, node.presentation.grouping === 'Horizontal');
+      if (!wrapped.has(node.key)) {
+        shareRows(items, children, node.presentation.grouping === 'Horizontal');
+        // Exposed rows share their parent's grid and have no separate column boundary.
+        if (children.length === 2 && children.every(child => ordinaryVerticalGroup(child) && child.presentation.united)) {
+          columnPairs.set(node.key, { items, left: children[0].key, right: children[1].key });
+        }
+      }
     }
     for (const child of node.children) visit(child);
   }
@@ -82,9 +89,12 @@ export function alignUnitedRows(model, context, wrapped) {
     for (const owner of owners) {
       const items = containers.get(owner);
       if (items.hasAttribute('data-united-columns')) {
-        style(items, '--taxi-united-preferred-columns', getComputedStyle(items).gridTemplateColumns);
+        const columns = getComputedStyle(items).gridTemplateColumns;
+        style(items, '--taxi-united-preferred-columns', columns);
+        const pair = columnPairs.get(owner);
+        if (pair) pair.preferred = columns.split(' ').reduce((width, track) => width + pixels(track), 0);
       }
     }
   }
-  return { owners, minimumCaptions, allocateWidths, capturePreferredColumns };
+  return { owners, columnPairs, minimumCaptions, allocateWidths, capturePreferredColumns };
 }

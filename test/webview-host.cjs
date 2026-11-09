@@ -202,6 +202,25 @@ async function frame(tab) {
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result?.value;
     },
+    /** Send trusted pointer events through this isolated webview's debugging session. */
+    async dragHorizontally(selector, distance) {
+      const {result} = await send('Runtime.evaluate', {contextId:context.id, expression:`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + Math.min(8, rect.height / 2));
+        if (document.elementFromPoint(x, y) === element) return {x,y};
+      })()`, returnByValue:true}, context.sessionId);
+      if (!result.value) throw new Error('Drag target is outside the webview: ' + selector);
+      const {x,y} = result.value, target = {x:x+distance,y};
+      await send('Input.dispatchMouseEvent', {type:'mouseMoved',x,y,button:'none'}, context.sessionId);
+      await send('Input.dispatchMouseEvent', {type:'mousePressed',x,y,button:'left',buttons:1,clickCount:1}, context.sessionId);
+      try {
+        await send('Input.dispatchMouseEvent', {type:'mouseMoved',...target,button:'left',buttons:1}, context.sessionId);
+      } finally {
+        await send('Input.dispatchMouseEvent', {type:'mouseReleased',...target,button:'left',clickCount:1}, context.sessionId);
+      }
+    },
     /** Bring only the task's main workbench to the foreground for native editor commands. */
     async focusWorkbench() { await send('Page.bringToFront'); },
     /** Leave native HTML tooltips outside the measured form before a pixel capture. */

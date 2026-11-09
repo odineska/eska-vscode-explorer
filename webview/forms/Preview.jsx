@@ -2,6 +2,7 @@ import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, o
 import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, stringLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { StandaloneAddition } from './Additions.jsx';
+import { Splitter } from './Splitter.jsx';
 import { additionKinds, additionWidth } from './addition-model.mjs';
 import { SpecialField } from './SpecialField.jsx';
 import { createNativeButtonWidth, createNativeTextWidth } from './text-metrics.js';
@@ -304,6 +305,7 @@ export function Items(props) {
           || bar.children.some(child => child.presentation.displayed && tableSearchReference(scalar(child, 'CommandName'))?.table === table.name));
     }).map(node => node.key));
   });
+  const divider = () => horizontal() ? layout?.columnDivider(props.node.key) : undefined;
   const tracks = axis => {
     const dimension = axis === 'x' ? 'width' : 'height';
     return children().map(node => {
@@ -325,11 +327,15 @@ export function Items(props) {
     data-content-vertical-align={contentAlignment() ? '' : undefined}
     data-content-horizontal-align={horizontalAlignment() ? '' : undefined}
     data-native-stacked-columns={columns() ? '' : undefined}
+    data-column-divider={divider()?.tracks ? 'manual' : divider() ? 'auto' : undefined}
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
-      '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+      '--taxi-resized-columns': divider()?.tracks, '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
+    <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
+      label={props.controller.state.strings.resizeFormColumns} value={() => split().value}
+      factor={() => 100 / props.controller.state.ui.zoom} change={value => layout.moveColumnDivider(props.node.key, value)}/>}</Show>
   </div>;
 }
 

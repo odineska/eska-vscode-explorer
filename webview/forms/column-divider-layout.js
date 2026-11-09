@@ -1,0 +1,49 @@
+import { createSignal } from 'solid-js';
+import { availableTrackWidth, boundingScale, pixels } from './layout-box.mjs';
+
+const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+
+/** The column allocation is local to this preview, including when it is detached. */
+export function createColumnDividers(schedule) {
+  const [dividers, setDividers] = createSignal(new Map());
+  const positions = new WeakMap();
+
+  function allocate(pairs, minima, root) {
+    const previous = dividers();
+    if (!pairs.size && !previous.size) return;
+    const scale = pairs.size ? boundingScale(root) : 1;
+    const next = new Map();
+    let changed = false;
+    for (const [key, { items, left, right, preferred }] of pairs) {
+      const width = availableTrackWidth(items, 2, scale);
+      // The native outline and rounded CSS track widths can differ by one pixel.
+      if (width + 1 >= preferred || width <= 0) continue;
+      const minimum = Math.ceil(minima.get(left)?.width ?? 0);
+      const maximum = Math.max(minimum, Math.floor(width - (minima.get(right)?.width ?? 0)));
+      const saved = positions.get(items);
+      const manual = saved?.left === left && saved.right === right && maximum > minimum;
+      const firstTrack = manual ? saved.value : pixels(getComputedStyle(items).gridTemplateColumns);
+      const value = clamp(Math.round(firstTrack), minimum, maximum);
+      const tracks = manual ? `${value}px ${width - value}px` : undefined;
+      const before = previous.get(key);
+      if (!before || before.value !== value || before.minimum !== minimum || before.maximum !== maximum
+        || before.tracks !== tracks || before.items !== items || before.left !== left || before.right !== right) changed = true;
+      next.set(key, { minimum, maximum, value, tracks, items, left, right });
+    }
+    if (changed || previous.size !== next.size) {
+      setDividers(next);
+      // Caption and nested column allocation use the resulting grid tracks.
+      schedule();
+    }
+  }
+
+  function move(key, value) {
+    const divider = dividers().get(key);
+    if (!divider || divider.minimum === divider.maximum) return;
+    const next = clamp(Math.round(value), divider.minimum, divider.maximum);
+    positions.set(divider.items, { left: divider.left, right: divider.right, value: next });
+    schedule();
+  }
+
+  return { allocate, get: key => dividers().get(key), move };
+}

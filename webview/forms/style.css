@@ -944,6 +944,31 @@ button { cursor: default; }
   max-width: var(--taxi-field-track);
 }
 
+/* The divider occupies the existing column gap without adding a measured item. */
+.taxi-column-divider { display: none; }
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns][data-column-divider] { position: relative; }
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns][data-column-divider=manual] {
+  grid-template-columns: var(--taxi-resized-columns);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] > .taxi-column-divider {
+  display: block;
+  position: absolute;
+  grid-area: 1 / 1 / -1 / 2;
+  inset-block: 1px;
+  inset-inline-end: calc(var(--taxi-horizontal-gap) / -2);
+  width: 8px;
+  transform: translateX(50%);
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+  background: repeating-linear-gradient(#dcdcdc 0 1px, #d7d7d7 1px 3px, #dcdcdc 3px 4px, transparent 4px 6px) center / 1px 100% no-repeat;
+}
+.taxi-column-divider[aria-disabled=true] { pointer-events: none; }
+.taxi-column-divider:is(:hover, :focus-visible, :active) {
+  background-color: var(--vscode-sash-hoverBorder, #007acc);
+}
+@media (forced-colors: active) { .taxi-column-divider { border-inline-start: 1px dashed CanvasText; } }
+
 /* Horizontal groups in a vertical stack share their logical column widths. */
 .taxi-preview[data-form-layout] .taxi-items[data-united-mixed-titles] > .taxi-element > .taxi-field-row[data-title-location=Top] {
   row-gap: 3px; padding-block: 1px;

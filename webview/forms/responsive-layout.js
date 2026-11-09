@@ -12,6 +12,7 @@ import { borderBoxSize, boundingScale, boxInsets, pixels } from './layout-box.mj
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
 import { boundedGroupRows } from './authored-group-rows.js';
+import { createColumnDividers } from './column-divider-layout.js';
 import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
@@ -22,7 +23,7 @@ export const useFormLayout = () => useContext(FormLayoutContext);
 
 function naturalFormSize(root, rows, widths) {
   const footprints = new Map(rows.map(items => {
-    const children = [...items.children];
+    const children = [...items.children].filter(child => child.classList.contains('taxi-element'));
     const gap = pixels(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
     let spacing = gap * Math.max(0, children.length - 1), content = 0;
     for (const child of children) {
@@ -76,6 +77,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     undoAlignment.length = 0;
   };
   const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
+  const columnDividers = createColumnDividers(schedule);
   const rect = borderBoxSize;
   function measure() {
     scheduled = undefined;
@@ -193,6 +195,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const captions = new Map(), previousCaptions = fieldCaptions();
     allocateThroughCaptions(captions, geometry().minima);
     unitedRows.allocateWidths(captions);
+    columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     numericRows?.allocateWidths(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
@@ -303,6 +306,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const allocated = formAllocation(size(), preferred(), frameMinimum, state.ui.zoom);
       return { width: allocated.width, height: authoredHeight() || allocated.height };
     },
+    columnDivider: columnDividers.get, moveColumnDivider: columnDividers.move,
     authoredHeight, tableFormScroll: () => geometry().tableFormScroll,
     itemsMinimumHeight: () => geometry().itemsHeight,
     viewportResized,
