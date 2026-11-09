@@ -710,7 +710,7 @@ function Field(props) {
     <Match when={checkbox()}><CheckBoxControl {...props}/></Match>
     <Match when={node().kind === 'RadioButtonField'}><RadioChoices {...props}/></Match>
     <Match when={node().kind === 'LabelField'}><span class="taxi-label-field" data-numeric-label={numericLabel() ? '' : undefined} style={labelValueStyle()}>
-      {node().presentation.valueType.kind === 'number' ? '' : fieldValue(node(), state.culture, state.locale)}
+      {['number', 'date'].includes(node().presentation.valueType.kind) ? '' : fieldValue(node(), state.culture, state.locale)}
     </span></Match>
     <Match when={node().kind === 'ProgressBarField'}><span class="taxi-progress" style={fieldStyle(node())}><i/></span></Match>
     <Match when={node().kind === 'TrackBarField'}><span class="taxi-track" style={fieldStyle(node())}><i/><b/></span></Match>

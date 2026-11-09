@@ -214,15 +214,23 @@ export function referenceAlternatives(type) {
     part.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && /Ref\./u.test(part.name));
 }
 
-/** Single-line text and reference labels use fixed Taxi character units. */
+/** Text, reference and date labels use native Taxi dimensions on Linux. */
 export function textLabelMetrics(node, os) {
   const type = node.presentation.valueType, width = Math.trunc(number(node, 'Width'));
-  if (os !== 'linux' || node.kind !== 'LabelField' || number(node, 'Height') > 1
-      || !['Left', 'None'].includes(node.presentation.titleLocation)
-      || !(['string', 'reference'].includes(type?.kind) || referenceAlternatives(type))) return;
+  if (os !== 'linux' || node.kind !== 'LabelField') return;
+  const date = type?.kind === 'date';
+  const height = Math.trunc(number(node, 'Height'));
+  if (!date && (height > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)
+      || !(['string', 'reference'].includes(type?.kind) || referenceAlternatives(type)))) return;
+
   const painted = !!property(node, 'BackColor'), size = fontLineMetrics(node.presentation.font);
-  return { preferred: (width > 0 ? width * 10 : 150) + (painted ? 2 : 0),
-    height: size.ascent + size.descent + (painted ? 4 : 2) };
+  const outset = painted ? 2 : 0;
+  const dateWidth = { Date: 90, Time: 80 }[type?.dateParts] ?? 150;
+  const natural = date ? Math.round(dateWidth * (size.pixels - 1) / 12) : 150;
+  const lines = date ? Math.max(1, height) : 1;
+  const bounds = { preferred: (width > 0 ? width * 10 : natural) + outset,
+    height: (size.ascent + size.descent) * lines + 2 + outset };
+  return date ? { ...bounds, outset } : bounds;
 }
 
 /** Intrinsic size of a single-line numeric label in Linux Designer. */

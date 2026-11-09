@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
 import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
@@ -223,6 +224,20 @@ test('numeric captions preserve words, explicit lines and the native suffix brea
   assert.deepEqual(fieldCaptionLines(custom, custom.compact), ['Очень длинная', 'надпись:']);
   const explicit = fieldCaptionProfile('Quantity\n\nAmount:', font);
   assert.deepEqual(fieldCaptionLines(explicit, explicit.preferred), ['Quantity', '', 'Amount:']);
+});
+
+test('date labels retain native value bounds for their date parts, font and explicit dimensions', () => {
+  for (const [dateParts, points, width, height, preferred, paintHeight] of [
+    ['DateTime', 10, 0, 0, 152, 19], ['Date', 10, 0, 0, 92, 19], ['Time', 10, 0, 0, 82, 19],
+    ['DateTime', 12, 0, 0, 190, 23], ['DateTime', 16, 0, 0, 252, 29],
+    ['DateTime', 10, 25, 0, 252, 19], ['DateTime', 10, 0, 2, 152, 34],
+  ]) {
+    const label = node('LabelField', { Width: width, Height: height, BackColor: 'web:Pink' });
+    label.presentation.valueType = { kind: 'date', dateParts };
+    label.presentation.titleLocation = 'Top';
+    label.presentation.font.points = points;
+    assert.deepEqual(textLabelMetrics(label, 'linux'), { preferred, height: paintHeight, outset: 2 });
+  }
 });
 
 test('caption packing changes at the whole-word threshold before track rounding', () => {
