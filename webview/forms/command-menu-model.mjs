@@ -111,6 +111,10 @@ export function rootCommandPlacement(node, state) {
   const position = scalar(node, 'CommandBarLocation', 'Auto');
   const authoredAlignment = scalar(bar, 'HorizontalAlign');
   const alignment = ['Center', 'Right'].includes(authoredAlignment) ? authoredAlignment : 'Left';
+  return { ...formCommandPlacement(node, bar, state), position, alignment };
+}
+
+export function formCommandPlacement(node, bar, state) {
   const declared = bar?.children ?? [];
   const authoredCommands = declaredCommands(declared, new Set());
   const automatic = automaticCommands(node, state).filter(item => !authoredCommands.has(item.key));
@@ -142,7 +146,7 @@ export function rootCommandPlacement(node, state) {
     return sectionItems(sections);
   };
   const showHelp = !!helpNode || automaticTail && helpAvailable !== false && !authoredCommands.has(help.key);
-  return { inline, more, help: showHelp, helpNode, position, alignment, rows };
+  return { inline, more, help: showHelp, helpNode, rows };
 }
 
 export function startsRootCommandSection(previous, item) {

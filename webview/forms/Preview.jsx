@@ -27,7 +27,7 @@ import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive
 import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
-import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
+import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
@@ -183,19 +183,23 @@ export function CommandButton(props) {
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} stroke={standaloneBorder()} inactive={standaloneInactive()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
 }
+function GeneratedFormCommand(props) {
+  const item = () => props.item;
+  const label = () => menuCaption(item(), props.controller.state);
+  return <Show when={item().items?.length} fallback={
+    <CommandButton controller={props.controller} command={item()} label={label()} primary={item().primary} rootBar/>
+  }>
+    <PopupMenu command={item()} label={label()} controller={props.controller} nativeDropdown rootBar/>
+  </Show>;
+}
+
 function RootCommands(props) {
   const state = props.controller.state, placement = () => props.placement;
   return <div class="taxi-root-commands" data-root-command-alignment={placement().alignment}
     data-root-command-overflow={placement().more ? '' : undefined}>
     <For each={placement().inline}>{(item, index) =>
       <div data-root-command="" data-root-command-section={startsRootCommandSection(placement().inline[index() - 1], item) ? '' : undefined}>
-        <Show when={menuNode(item)} fallback={
-          <Show when={item.items?.length} fallback={
-            <CommandButton controller={props.controller} command={item} label={menuCaption(item, state)} primary={item.primary} rootBar/>
-          }>
-            <PopupMenu command={item} label={menuCaption(item, state)} controller={props.controller} nativeDropdown rootBar/>
-          </Show>
-        }>
+        <Show when={menuNode(item)} fallback={<GeneratedFormCommand item={item} controller={props.controller}/>}>
           {node => <Element node={node()} controller={props.controller} rootBar/>}
         </Show>
       </div>
@@ -385,12 +389,16 @@ function CommandBar(props) {
   const root = () => state.model.root;
   const commands = createMemo(() => commandBarContent(root(), node()));
   const source = () => commands().source;
+  const formCommands = createMemo(() => commands().formSource && node().presentation.objectCommandMenu?.length
+    ? formCommandPlacement(node(), node(), state) : undefined);
+  const generated = createMemo(() => formCommands()?.inline.filter(item => !menuNode(item)) ?? []);
   const hasSearch = () => !!tableSearch(source());
   const additions = createMemo(() => {
     const projection = tableAdditionsProjection(root(), source());
     return projection?.bar.key === node().key ? projection : undefined;
   });
   const menu = createMemo(() => {
+    if (formCommands()) return formCommands().rows();
     const table = source();
     if (!table || !node().presentation.tableCommandMenu) return menuItems(commands().more);
     const declared = [...new Set([...commands().inline, ...commands().more, ...commands().trailing])];
@@ -404,11 +412,17 @@ function CommandBar(props) {
   return <div ref={bar} class="taxi-command-bar" style={{ '--taxi-command-minimum-width': minimum() === undefined ? undefined : `${minimum() + 33}px` }} data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
     <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
+    <For each={generated()}>{(item, index) => <div data-root-command-section={
+      startsRootCommandSection(generated()[index() - 1], item) ? '' : undefined}
+      data-root-command-section-after={index() === generated().length - 1 && commands().inline.length
+        && startsRootCommandSection(item, commands().inline[0]) ? '' : undefined}>
+      <GeneratedFormCommand item={item} controller={props.controller}/>
+    </div>}</For>
     <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
     <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
       spacer={commands().spaceBeforeMore}/>
     <Show when={menu().length} fallback={<Show when={source() || commands().formSource}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
-      <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+      <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} rootMenu={!!formCommands()} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
     </Show>
     <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;

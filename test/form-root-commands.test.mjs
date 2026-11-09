@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FORM_NS } from '../webview/forms/model.mjs';
-import { menuChildren, menuSeparator, rootCommandPlacement, startsRootCommandSection } from '../webview/forms/command-menu-model.mjs';
+import { menuChildren, menuSeparator, formCommandPlacement, rootCommandPlacement, startsRootCommandSection } from '../webview/forms/command-menu-model.mjs';
 import { fitCommandPrefix } from '../webview/forms/root-command-layout.mjs';
 
 const property = (name, text) => ({ key: { namespace: FORM_NS, name }, value: { kind: 'text', text } });
@@ -54,6 +54,18 @@ test('manual placement can expose More without adding automatic commands or Help
   assert.equal(placement.help, false);
   assert.deepEqual(rootCommandPlacement(form()).rows().map(item => item.key),
     [standard('CustomizeForm').key, standard('Help').key]);
+});
+
+test('a standalone Form command bar projects generated actions and respects authored overrides', () => {
+  const [close, write, post] = ['PostAndClose', 'Write', 'Post'].map(standard);
+  const override = button('custom-write', write.key);
+  const bar = { kind: 'CommandBar', children: [override], properties: [property('CommandSource', 'Form')],
+    presentation: { autoCommandItems: [close, write, post], objectCommandMenu: [[close, write], [post]] } };
+  const placement = formCommandPlacement(bar, bar);
+  assert.deepEqual(placement.inline, [close, post, override]);
+  assert.deepEqual(keys(placement.rows()).filter(key => key !== menuSeparator), [
+    close.key, post.key, override.key, standard('CustomizeForm').key, standard('Help').key,
+  ]);
 });
 
 test('bottom command bar keeps authored Help in the tail only when available or forced', () => {

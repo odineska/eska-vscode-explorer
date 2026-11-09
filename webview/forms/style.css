@@ -226,7 +226,8 @@ button { cursor: default; }
   margin-top: 10px;
 }
 .taxi-root-commands > :is([data-root-command], [data-root-command-tail]) { display: flex; flex: none; }
-.taxi-preview[data-os=linux] .taxi-root-commands > [data-root-command-section] { margin-inline-start: 11px; }
+.taxi-preview[data-os=linux] :is(.taxi-root-commands, .taxi-command-bar) > [data-root-command-section] { margin-inline-start: 11px; }
+.taxi-preview[data-os=linux] .taxi-command-bar > [data-root-command-section-after] { margin-inline-end: 11px; }
 .taxi-preview:not([data-form-layout=preferred]) .taxi-root-commands > [data-root-command-hidden] { display: none; }
 .taxi-command-spacer { flex: 1 1 auto; min-width: 12px; }
 .taxi-root-commands > .taxi-command-spacer { min-width: 0; margin-inline-start: calc(-1 * var(--taxi-root-command-gap)); }
