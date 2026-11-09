@@ -73,6 +73,11 @@ try {
   if (basename(suite) === "form-activity-host.cjs") fixture.formActivity = await (await import("./form-fixture.mjs")).createFormActivitySource(fixture);
   if (basename(suite) === "form-table-pixels-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTablePixelsGallery(fixture);
   if (basename(suite) === "form-table-height-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableHeightGallery(fixture);
+  if (basename(suite) === "form-table-palette-host.cjs") {
+    const { formGallery, profiles, captions } = await (await import("./form-fixture.mjs")).createTablePaletteGallery(fixture);
+    fixture.formGallery = formGallery;
+    fixture.tablePalette = { profiles, captions };
+  }
   if (basename(suite) === "form-reference-widths-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createReferenceWidthGallery(fixture);
   if (basename(suite) === "form-tables-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableGallery(fixture);
   if (basename(suite) === "form-pictures-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createPictureFormSource(fixture);

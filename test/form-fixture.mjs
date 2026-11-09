@@ -309,6 +309,24 @@ export async function createTableHeightGallery(fixture) {
   return createMeasuredFormGallery(fixture, input);
 }
 
+export async function createTablePaletteGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native table palette directory.');
+  const { rows, profiles, captions } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  // The RPC test uses separate projects for both variants of the same catalog.
+  const cases = new Map(rows.filter(row => !row.hierarchical).map(row => [row.name, row.selections]));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await mkdir(join(fixture.source, 'Documents'), { recursive: true });
+  await writeFile(join(fixture.source, 'Documents', 'NativeSale.xml'), await readFile(join(input, 'NativeSale.xml')));
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Document>NativeSale</Document>'));
+  const forms = await createGallery(fixture, [...cases.keys()], input);
+  const formGallery = forms.map(form => ({
+    ...form, expected: { selections: cases.get(form.kind).map(({ name, profile, unavailable }) => ({ name, profile, unavailable })) },
+  }));
+  return { formGallery, profiles, captions };
+}
+
 export async function createTableGallery(fixture) {
   const frames = JSON.parse(await readFile(join(process.env.ESKA_FORM_FIXTURES, 'frame-metrics.json'), 'utf8'));
   const result = (await createGallery(fixture, frames.rows.map(row => row.name)))
