@@ -54,6 +54,12 @@ async function checkSourceBar(ui, view, document, english) {
   }
   assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] svg')"), true);
   await ui.evaluate("globalThis.__tableSourceBar = document.querySelector('.taxi-command-bar'); true");
+  const empty = '<ColumnGroup name="EmptyColumns" id="1000"><Group>Horizontal</Group><ChildItems/></ColumnGroup>';
+  await change(withColumn.replace(input, input + empty).replace(/<Table\b[^>]*\bname="Rows"[^>]*>/, '$&<Footer>true</Footer>'));
+  await until(() => ui.evaluate("document.querySelectorAll('.taxi-table-footer [role=cell]').length === 1"), 'empty horizontal group creates no footer cell');
+  assert.ok([...view.nodes.values()].some(node => node.kind === 'ColumnGroup' && node.name === 'EmptyColumns'));
+  assert.deepEqual(ui.scriptErrors(), []);
+
 
   await change(withColumn.replace(input, input.replace('</InputField>', '<Visible>false</Visible></InputField>')));
   await until(() => ui.evaluate(`!${grid} && ${buttons}.length === 6`), 'declared but hidden columns keep source commands');

@@ -33,11 +33,34 @@ function FooterCell(props) {
   const face = () => tableFooterFont(props.table, node());
   const foreground = () => appearance()?.footerForeground ?? props.table.presentation.foreground;
   const label = () => props.column.fields.map(item => text(item.presentation.footerText, state.locale, state.strings)).join(', ');
-  return <div role="cell" onClick={event => { event.stopPropagation(); props.controller.select(node()); }}
-    style={bandTextStyle(face(), foreground(), appearance()?.footerBackground, scalar(node(), 'FooterHorizontalAlign', 'Left').toLowerCase(), state.os)}>
+  return <div role="cell" class="taxi-table-footer-cell" data-footer-column={node().key} data-last-column={props.last ? '' : undefined}
+    onClick={event => { event.stopPropagation(); props.controller.select(node()); }}
+    style={{ ...bandTextStyle(face(), foreground(), appearance()?.footerBackground, scalar(node(), 'FooterHorizontalAlign', 'Left').toLowerCase(), state.os), height: `${props.height}px` }}>
     <NativeLabel text={label()} font={face()} foreground={foreground()} placement="tableFooter"
       enabled={state.os === 'linux'} calibrated={props.column.fields.length === 1} runtime={props.controller.nativeText}/>
   </div>;
+}
+
+/** Footer bands follow the same logical columns as the header, without group captions. */
+function Footer(props) {
+  const model = () => props.model;
+  return <Show when={model().columns.length}><Switch>
+    <Match when={model().mode === 'field' || model().mode === 'inCell' || !model().children.length}>
+      <FooterCell column={model().columns[0]} table={props.table} controller={props.controller} height={props.height} last={props.last}/>
+    </Match>
+    <Match when={model().mode === 'horizontal'}>
+      <div class="taxi-table-footer-horizontal" style={{ 'grid-column': `span ${model().columns.length}`, height: `${props.height}px` }}>
+        <For each={model().children}>{(child, index) => <Footer model={child} table={props.table} controller={props.controller}
+          height={props.height} last={props.last && index() === model().children.length - 1}/>}</For>
+      </div>
+    </Match>
+    <Match when={model().mode === 'vertical'}>
+      <div class="taxi-table-footer-vertical" style={{ height: `${props.height}px` }}>
+        <For each={model().children}>{(child, index) => <Footer model={child} table={props.table} controller={props.controller}
+          height={child.footerHeight + (index() === model().children.length - 1 ? Math.max(0, props.height - model().footerHeight) : 0)} last={props.last}/>}</For>
+      </div>
+    </Match>
+  </Switch></Show>;
 }
 
 function Header(props) {
@@ -164,10 +187,10 @@ export function Table(props) {
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
       aria-disabled={inactive() || undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>
-      <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
+      <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" data-clip-header={layout().clipHeader ? '' : undefined} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
-        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': tracks() }}><For each={layout().columns}>{column => <FooterCell column={column} table={node()} controller={props.controller}/>}</For></div></Show>
+        <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{(child, index) => <Footer model={child} table={node()} controller={props.controller} height={layout().footer} last={index() === layout().children.length - 1}/>}</For></div></Show>
       </div>
       <Show when={!layout().dynamic}><div class="taxi-table-scrollbar" aria-hidden="true"><For each={[0,1]}>{()=><span><Show when={state.os==='linux'}><svg width="6" height="4" viewBox="0 0 6 4" shape-rendering="crispEdges"><For each={tableScrollbarGrays}>{(value,index)=><rect x={index()%6} y={Math.floor(index()/6)} width="1" height="1" fill={`rgb(${value},${value},${value})`}/>}</For></svg></Show></span>}</For></div></Show>
       <Show when={horizontal()}>{scrollbar()}</Show>

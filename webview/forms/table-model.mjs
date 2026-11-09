@@ -16,34 +16,49 @@ function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, he
   return Math.min(height, Math.max(2, bands * (rowHeight + 1) + headerGrowth));
 }
 
-function linuxTableHeight(table, header, footer, depth, dynamic) {
+function allocateBand(height, base, reference = defaultBandHeight) {
+  const preferred = Math.max(height, base);
+  return preferred + Math.round((preferred - reference) * 5 / 8);
+}
+
+function mergeColumnRows(children, vertical) {
+  const combine = key => vertical ? children.reduce((sum, child) => sum + child[key], 0)
+    : Math.max(...children.map(child => child[key]));
+  return Object.fromEntries(['rowSpan', 'rowHeaderHeight', 'rowFooterHeight', 'footerHeight']
+    .map(key => [key, combine(key)]));
+}
+
+function linuxTableHeight(table, header, footer, depth, dynamic, rows) {
   const unit = inputHeightUnit(table, 'linux'), baseBand = bandHeight(table.presentation.font);
   const rowCount = number(table, 'HeightInTableRows'), authored = number(table, 'Height');
-  const edge = Number(dynamic), deep = depth === 3 ? 1 : 0;
-  const headerBase = header ? depth * baseBand : 0, footerBase = footer ? baseBand : 0;
-  const headerExtra = Math.max(0, header - headerBase), footerExtra = Math.max(0, footer - footerBase);
-  const growth = extra => extra + Math.round(extra * 5 / 8);
-  const headerGrowth = growth(headerExtra), footerGrowth = growth(footerExtra);
-  const allocateBand = (height, base, reference) => {
-    const preferred = Math.max(height, base);
-    return preferred + Math.round((preferred - reference) * 5 / 8);
-  };
-  const allocatedHeader = allocateBand(header, headerBase, header ? depth * defaultBandHeight : 0);
-  const allocatedFooter = allocateBand(footer, footerBase, footer ? defaultBandHeight : 0);
-  const bands = allocatedHeader + allocatedFooter;
+  const edge = Number(dynamic), deep = rows.rowSpan - 1;
+  const baseline = rows.rowSpan * allocateBand(baseBand, baseBand);
+  const headerGrowth = header ? Math.max(0, rows.rowHeaderHeight - baseline) : 0;
+  const footerGrowth = footer ? Math.max(0, rows.rowFooterHeight - baseline) : 0;
+  const bands = (header ? rows.rowHeaderHeight : 0) + (footer ? rows.rowFooterHeight : 0);
+  const minimum = units => (unit + 7) * Math.max(1, Math.min(rows.rowSpan, Math.trunc(units)))
+    + 1 + headerGrowth + footerGrowth + edge;
   const dimensions = (units, maximum = false) => {
     const grid = units * unit;
-    // A one-line maximum may clip the footer; an authored height preserves both bands.
-    if (maximum && grid <= allocatedHeader) return { height: unit + 8 + headerGrowth + edge, header, footer };
-    if (grid > bands) return { height: grid + 1 + (header ? 2 + deep : 0) + (footer ? 2 : 0)
+    // A short maximum clips the bands; an authored height reserves the visible row units.
+    if (maximum && header && grid <= rows.rowHeaderHeight) return { height: minimum(units), header, footer };
+    if (grid > bands) return { height: grid + 1 + (header ? 2 + deep : 0) + (footer ? 2 + deep : 0)
       + headerGrowth + footerGrowth + edge, header, footer };
-    if (header && footer) return { height: bands + edge, header: header - 1, footer: footer - 1 };
-    return { height: unit + 8 + headerGrowth + footerGrowth + edge, header, footer };
+    if (header && footer) {
+      if (!deep) return { height: bands + edge, header: header - 1, footer: footer - 1 };
+      return { height: Math.max(minimum(units), units * (unit + 1) + 2 + headerGrowth + footerGrowth + edge),
+        header, footer, clipHeader: true };
+    }
+    return { height: minimum(units), header, footer };
   };
   let result;
-  if (rowCount > 0) result = { height: bands + rowCount * unit + 1 + edge, header, footer };
+  if (rowCount > 0) result = {
+    height: bands + rowCount * rows.rowSpan * unit + 1 + edge - deep * (Number(!!header) + Number(!!footer)),
+    header, footer,
+  };
   else if (authored > 0) result = dimensions(authored);
-  else result = { height: (dynamic ? 16 : 8) * unit + 3 + deep + (footer && !dynamic ? 2 : 0)
+  else result = { height: (dynamic ? 16 * unit + 3 + deep
+    : 8 * unit + 1 + (header ? 2 + deep : 0) + (footer ? 2 + deep : 0))
     + headerGrowth + footerGrowth + edge, header, footer };
   const maximum = !flag(table, 'AutoMaxHeight') && number(table, 'MaxHeight');
   if (rowCount <= 0 && maximum > 0) {
@@ -51,7 +66,7 @@ function linuxTableHeight(table, header, footer, depth, dynamic) {
     if (capped.height < result.height) result = capped;
   }
   return { ...result, minimum: Math.min(result.height, groupGridMinimum(result.height,
-    header ? depth : 0, !!footer, headerExtra, rowCount, authored, unit) + edge) };
+    header ? depth : 0, !!footer, Math.max(0, header - depth * baseBand), rowCount, authored, unit) + edge) };
 }
 
 export function tableFooterFont(table, column) {
@@ -230,20 +245,30 @@ export function tableLayout(table, state = {}, additions) {
   const nativeDynamicList = linux && dynamic;
   const captions = { locale, strings: state.strings };
   const metrics = node => column(node, readOnly, dynamic, linux, captions);
+  const baseBand = bandHeight(table.presentation.font);
+  const rowMetrics = (node, height) => {
+    const footerHeight = bandHeight(tableFooterFont(table, node));
+    return { rowSpan: 1, rowHeaderHeight: allocateBand(height, baseBand),
+      rowFooterHeight: allocateBand(footerHeight, baseBand), footerHeight };
+  };
   function visit(node) {
     const titleHeight = bandHeight(node.presentation.titleFont);
-    if (node.kind !== 'ColumnGroup') return { node, mode: 'field', depth: 1,
-      height: flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight,
-      columns: [metrics(node)], children: [] };
+    if (node.kind !== 'ColumnGroup') {
+      const height = flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight;
+      return { node, mode: 'field', depth: 1, height, ...rowMetrics(node, height),
+        columns: [metrics(node)], children: [] };
+    }
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
     const captionHeight = show ? titleHeight : 0;
-    if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children,
+    const rows = children.length ? mergeColumnRows(children, mode === 'Vertical') : rowMetrics(node, titleHeight);
+    if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children, ...rows,
       height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight),
       depth: (show ? 1 : 0) + Math.max(1, ...children.map(child => child.depth)), columns: children.flatMap(child => child.columns) };
     const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(metrics);
     const width = mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width));
     const growthWeight = parts.some(part => part.growthWeight) ? width : 0;
     return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, captionHeight, children,
+      ...(mode === 'InCell' ? rowMetrics(node, titleHeight) : rows),
       height: captionHeight + (mode === 'InCell' ? titleHeight : children.reduce((sum, child) => sum + child.height, 0)),
       depth: (show ? 1 : 0) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
       columns: [{ node, fields, width, growthWeight }] };
@@ -263,12 +288,15 @@ export function tableLayout(table, state = {}, additions) {
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
   let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
   let footer = flag(table, 'Footer', false)
-    ? columns.length ? Math.max(...columns.map(item => bandHeight(tableFooterFont(table, item.node)))) : defaultBandHeight : 0;
+    ? children.length ? Math.max(...children.map(child => child.footerHeight)) : defaultBandHeight : 0;
   const rowCount = number(table, 'HeightInTableRows');
   let height = dynamic ? 452 : 227 + Number(depth === 3), groupMinimumHeight;
+  let clipHeader = false;
   if (linux) {
-    const geometry = linuxTableHeight(table, header, footer, depth, dynamic);
+    const rows = children.length ? mergeColumnRows(children, false) : rowMetrics(table, defaultBandHeight);
+    const geometry = linuxTableHeight(table, header, footer, depth, dynamic, rows);
     ({ height, header, footer } = geometry);
+    clipHeader = geometry.clipHeader ?? false;
     groupMinimumHeight = geometry.minimum;
   } else if (rowCount > 0) {
     const defaultHeader = header ? depth * defaultBandHeight : 0, defaultFooter = footer ? defaultBandHeight : 0;
@@ -297,7 +325,7 @@ export function tableLayout(table, state = {}, additions) {
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

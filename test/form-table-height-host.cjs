@@ -4,7 +4,7 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
 
-function geometryExpression(view) {
+function geometryExpression(view, expected) {
   const keys = Object.fromEntries([...view.nodes.values()].map(node =>
     [node.name, `${node.identity.source}:current:${node.identity.key.value}`]));
   return `(() => {
@@ -16,8 +16,16 @@ function geometryExpression(view) {
     const grid=control('Rows'),pager=grid?.parentElement.querySelector('.taxi-table-pagination');if(!grid)return null;
     const fields=Object.fromEntries(['Above','Below','Rows'].map(name=>[name,box(control(name))]));
     const paginationBandHeight=pager?.getBoundingClientRect().height||0;
-    return {frame:[origin.width,origin.height],fields,
+    const result={frame:[origin.width,origin.height],fields,
       combinedGrid:[...fields.Rows.slice(0,3),fields.Rows[3]+paginationBandHeight],paginationBandHeight};
+    if(${Object.hasOwn(expected, 'footerCells')}) {
+      const names=${JSON.stringify(Object.keys(expected.footerCells ?? {}))};
+      result.footerCells=Object.fromEntries(names.map(name=>{
+        const e=[...root.querySelectorAll('.taxi-table-footer [data-footer-column]')].find(e=>e.dataset.footerColumn===keys[name]);
+        const r=e?.getBoundingClientRect();return[name,r?[r.y-origin.y,r.height]:null];
+      }));
+    }
+    return result;
   })()`;
 }
 
@@ -42,10 +50,10 @@ async function assertVisible(ui) {
     'complete installed frame is visible: '+JSON.stringify(bounds));
 }
 
-async function stableGeometry(ui, view) {
+async function stableGeometry(ui, view, expected) {
   let actual, previous, stable = 0;
   await until(async () => {
-    actual = await ui.evaluate(geometryExpression(view));
+    actual = await ui.evaluate(geometryExpression(view, expected));
     const value = JSON.stringify(actual);
     stable = value === previous ? stable + 1 : 0;
     previous = value;
@@ -78,7 +86,7 @@ exports.run = async () => {
     try {
       await prepareCaptureWindow(ui);
       await ui.evaluate('document.fonts.ready.then(()=>true)');
-      const actual = await stableGeometry(ui, view);
+      const actual = await stableGeometry(ui, view, form.expected.locales[locale]);
       await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR ?? fixture.root, 'table-height-current.json'), JSON.stringify({name:form.kind,actual,expected:form.expected.locales[locale]}));
       assertGeometry(actual, form, locale, form.kind);
       await assertVisible(ui);
@@ -88,7 +96,11 @@ exports.run = async () => {
       results.push({ name: form.kind, ...actual, nativeGeometryCompared: process.platform === 'linux' });
       await ui.parkPointer();
       await ui.screenshot('table-height-' + form.kind + '-' + locale + '.png');
-      if (['StaticDefault', 'DynamicDefault', 'StatusOnly', 'SearchAuto'].includes(form.kind)) {
+      const compound = {
+        StaticDepth1Default: {dirty:['StaticDepth1Height3','StaticDepth2Height6','StaticDepth3Height6','StaticCaptionDepth2Height6','StaticCaptionDepth3Height6','StaticDepth1Default'], detached:['StaticDepth2Rows4','StaticDepth3Rows6','StaticDepth1Default']},
+        StaticDepth2Rows1: {dirty:['StaticDepth2Rows2','StaticDepth2Rows6','StaticDepth2Rows4','StaticDepth2Font16Rows2','StaticDepth2Font16Height6','StaticDepth2Font16Max1','StaticDepth2Rows1'], detached:['StaticDepth2Rows4','StaticDepth2FooterRows2','StaticDepth2NoHeaderRows2','StaticDepth2Rows1']},
+      }[form.kind];
+      if (compound || ['StaticDefault', 'DynamicDefault', 'StatusOnly', 'SearchAuto'].includes(form.kind)) {
         const identity = [...view.nodes.values()].find(node => node.name === 'Rows').identity;
         await service.receive(view, main, { type: 'select', identity });
         const remember = target => target.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll');true");
@@ -98,7 +110,7 @@ exports.run = async () => {
           await editFormSource(doc, view, await fs.readFile(next.path, 'utf8'));
           await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'current table revision');
           if (allocated) await allocateFormViewport(target, next.expected.locales[locale].frame);
-          const geometry = await stableGeometry(target, view);
+          const geometry = await stableGeometry(target, view, next.expected.locales[locale]);
           assertGeometry(geometry, next, locale, 'dirty ' + kind);
           await assertVisible(target);
           assert.deepEqual(view.selected, identity);
@@ -110,7 +122,7 @@ exports.run = async () => {
         const status = form.kind === 'StatusOnly';
         const toolbar = form.kind === 'SearchAuto';
         await remember(ui);
-        const changes = toolbar
+        const changes = compound ? compound.dirty : toolbar
           ? ['NoViewStatus', 'SearchFixed', 'SearchNone', 'SearchTop', 'NoInlineBar', 'SearchAuto']
           : status
           ? ['StatusNone', 'StatusSearch', 'StatusCommands', 'StatusFixed', 'StatusOnly']
@@ -126,7 +138,7 @@ exports.run = async () => {
           assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
           await prepareCaptureWindow(floating, true);
           await remember(floating);
-          const floatingChanges = toolbar ? ['SearchFixed', 'SearchTop', 'SearchAuto']
+          const floatingChanges = compound ? compound.detached : toolbar ? ['SearchFixed', 'SearchTop', 'SearchAuto']
             : status ? ['StatusSearch', 'StatusFixed', 'StatusOnly']
             : dynamic ? ['DynamicFont16Max7', 'DynamicDefault'] : ['StaticManual7', 'StaticRows9Max7'];
           for (const kind of floatingChanges) await change(kind, floating, true);
