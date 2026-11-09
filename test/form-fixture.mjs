@@ -309,6 +309,22 @@ export async function createTableHeightGallery(fixture) {
   return createMeasuredFormGallery(fixture, input);
 }
 
+export async function createCommandPaletteGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native command palette directory.');
+  const { rows, profiles, captions, additionSourceMembers } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  const cases = new Map(rows.map(row => [row.name, row.selections]));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  const config = await readFile(configuration, 'utf8');
+  await writeFile(configuration, config.replace('</Properties>', '<ScriptVariant>English</ScriptVariant></Properties>'));
+  const forms = await createGallery(fixture, [...cases.keys()], input);
+  const formGallery = forms.map(form => ({
+    ...form, expected: { selections: cases.get(form.kind).map(({ name, profile, unavailable }) => ({ name, profile, unavailable })) },
+  }));
+  return { formGallery, profiles, captions, additionSourceMembers };
+}
+
 export async function createTablePaletteGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the native table palette directory.');

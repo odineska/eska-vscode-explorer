@@ -46,7 +46,7 @@ function Row(props) {
       <Switch>
         <Match when={handler()}><button class="form-handler" type="button" title={state.strings.handler} onClick={() => props.openHandler(handler().index)}>{handler().handler.name}</button></Match>
         <Match when={eventText() !== undefined}>{eventText()}</Match>
-        <Match when={field()}><PropertyValue field={field()} state={state} scalarCaption={caption(value().caption, state)}/></Match>
+        <Match when={field()}><PropertyValue field={field()} state={state} valueCaption={caption(value().caption, state)}/></Match>
         <Match when={value().kind === 'absent' && value().default.kind === 'boolean'}>
           <input type="checkbox" disabled checked={value().default.value} aria-label={label()}/>
         </Match>

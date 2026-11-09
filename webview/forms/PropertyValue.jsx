@@ -14,7 +14,7 @@ export function PropertyValue(props) {
   const fields = () => value().kind === 'record' ? value().fields : [];
   return <div class="form-property-value">
     <Switch>
-      <Match when={props.scalarCaption !== undefined && value().kind === 'text'}><span title={value().text}>{props.scalarCaption}</span></Match>
+      <Match when={props.valueCaption !== undefined && value().kind === 'text'}><span title={value().text}>{props.valueCaption}</span></Match>
       <Match when={boolean() !== undefined}><input type="checkbox" disabled checked={boolean()} aria-label={translated(props.field, language(), props.field.key.name)} title={value().text}/></Match>
       <Match when={localizations() !== undefined && localizations().length < 2}><span>{localizations()[0]?.content ?? ''}</span></Match>
       <Match when={localizations()?.length > 1}>
@@ -23,7 +23,7 @@ export function PropertyValue(props) {
         </details>
       </Match>
       <Match when={value().kind === 'record' && fields().length}>
-        <details class="form-property-record" onToggle={event => setExpanded(event.currentTarget.open)}><summary>{summary(props.field, language()) || props.state.strings.details}</summary>
+        <details class="form-property-record" onToggle={event => setExpanded(event.currentTarget.open)}><summary>{props.valueCaption ?? (summary(props.field, language()) || props.state.strings.details)}</summary>
           <Show when={expanded()}><dl><For each={fields()}>{child => <div>
             <dt title={`{${child.key.namespace ?? ''}}${child.key.name}`}>{translated(child, language(), child.key.name)}</dt>
             <dd><PropertyValue field={child} state={props.state}/></dd>

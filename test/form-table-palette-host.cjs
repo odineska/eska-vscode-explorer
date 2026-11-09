@@ -2,51 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { frame, until, sameSourcePath, editFormSource } = require('./webview-host.cjs');
+const { until, editFormSource } = require('./webview-host.cjs');
 
-function platformRow(id) {
-  return `document.querySelector('.form-properties [data-palette-id="platform:${id}"]')`;
-}
-
-async function checkPalette(ui, profile, target, captions, language) {
-  const expected = profile[target.profile];
-  const expression = `(() => {
-    const rows = [...document.querySelectorAll('.form-properties [data-palette-id^="platform:"]')];
-    return rows.map(row => ({
-      id: row.dataset.paletteId.slice('platform:'.length),
-      label: row.querySelector('th')?.textContent,
-      available: row.dataset.paletteAvailable !== 'false'
-    }));
-  })()`;
-  let actual;
-  await until(async () => {
-    actual = await ui.evaluate(expression);
-    return actual.length === expected.length;
-  }, 'native table palette rows rendered');
-  assert.deepEqual(actual.map(row => row.id), expected);
-  assert.deepEqual(actual.filter(row => !row.available).map(row => row.id), target.unavailable);
-  for (const row of actual) {
-    if (captions[row.id]) assert.equal(row.label, captions[row.id][language], row.id);
-  }
-}
-
-async function selectFromTree(ui, view, name) {
-  const node = [...view.nodes.values()].find(node => node.name === name);
-  assert.ok(node, name);
-  const { source, key } = node.identity;
-  const id = 'form-row-' + source + ':current:' + key.value;
-  await until(() => ui.evaluate(`!!document.getElementById(${JSON.stringify(id)})`), 'table palette target present');
-  await ui.evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
-  await until(() => view.palette?.revision === view.snapshot.revision
-    && view.palette.identity.source === source && view.palette.identity.key.value === key.value,
-  'table palette selection published');
-  assert.deepEqual(view.selected, node.identity);
-  return node.identity;
-}
-
-async function awaitRevision(view) {
-  await until(() => view.palette?.revision === view.snapshot.revision, 'palette matches dirty revision');
-}
+const { platformRow, checkPalette, selectFromTree, awaitRevision, withPaletteForm } = require('./native-form-palette-host.cjs');
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
@@ -59,15 +17,7 @@ exports.run = async () => {
   const service = explorer.formPreview;
 
   for (const form of forms) {
-    const before = await fs.readFile(form.path), source = before.toString('utf8');
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
-    await vscode.window.showTextDocument(document, { preview: false });
-    await vscode.commands.executeCommand('eska.explorer.previewForm');
-    const findView = () => [...service.views.values()].find(view => sameSourcePath(view.path, form.path));
-    await until(() => findView()?.phase === 'ready', 'table palette form ready');
-    const view = findView(), main = view.frames.get('main');
-    const ui = await frame({ state: { title: main.panel.title } });
-    try {
+    await withPaletteForm(service, form, async ({ ui, view, document, main, source }) => {
       for (const target of form.expected.selections) {
         await selectFromTree(ui, view, target.name);
         await checkPalette(ui, profiles, target, captions, language);
@@ -124,15 +74,7 @@ exports.run = async () => {
         assert.equal(await ui.evaluate(`!!document.querySelector('.form-properties [data-property-name=HeaderDataPath]')`), true);
         cases.push('column-header-dirty-keeps-raw-value-and-expanded-title');
       }
-      assert.deepEqual(ui.scriptErrors(), []);
-      assert.deepEqual(await fs.readFile(form.path), before);
-    } finally {
-      await editFormSource(document, view, source);
-      ui.close();
-      main.panel.dispose();
-      await until(() => !findView(), 'table palette form released');
-      await Promise.all([...service.closing]);
-    }
+    });
   }
   await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed:true, language, cases, sourceWrites:false }));
