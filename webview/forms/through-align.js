@@ -68,14 +68,14 @@ function separatedRow(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Horizontal' && scalar(node, 'ThroughAlign') === 'DontUse';
 }
 
-function captionTrack(track, { targets, os, scale }, minimumCaptions) {
+function captionTrack(track, { targets, os, scale }, minimumCaptions, adaptiveFields) {
   const { node, container, horizontal } = track;
   if (container.hasAttribute('data-united-columns') || container.hasAttribute('data-united-horizontal-lane')) return;
   const children = targets.children(node);
   const participants = horizontal ? children.slice(0, 1) : children;
   const fields = participants.map(child => inputCaption(child, targets.elements.get(child.key), os)).filter(Boolean);
   if (!fields.length || fields.some(({ node, key, caption, element }) => node.kind !== 'InputField'
-    || !caption || minimumCaptions.has(key) || element.style.getPropertyValue('--taxi-lane-input-min-width'))) return;
+    || !caption || minimumCaptions.has(key) || adaptiveFields.has(key) || element.style.getPropertyValue('--taxi-lane-input-min-width'))) return;
   if (horizontal && (children.length < 2 || node.presentation.grouping !== 'Horizontal' || number(node, 'Width') > 0
     || fields[0].element.dataset.stretchX !== 'true' || container.parentElement.querySelector(':scope > .taxi-group-title'))) return;
   const gap = pixels(getComputedStyle(container).columnGap);
@@ -85,7 +85,7 @@ function captionTrack(track, { targets, os, scale }, minimumCaptions) {
 }
 
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
-export function layoutThroughCaptions(scopes, context, minimumCaptions) {
+export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
   if (os !== 'linux') return () => {};
   const allocations = [];
@@ -96,7 +96,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions) {
     const vertical = !scope.some(track => track.horizontal) && !separated.length;
     // Preferred alignment supports offsets; caption reflow is measured for tracks with one origin.
     if (scope.some(track => Math.abs(track.left - scope[0].left) > .5)) continue;
-    const tracks = scope.map(track => captionTrack(track, context, minimumCaptions));
+    const tracks = scope.map(track => captionTrack(track, context, minimumCaptions, adaptiveFields));
     if (tracks.some(track => !track)) continue;
 
     const fields = tracks.flatMap(track => track.fields);

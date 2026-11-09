@@ -121,8 +121,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
         unitedRows = alignUnitedRows(model, context, wrap);
         numericRows = alignNumericLabelRows(model, context);
         minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
-        allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions);
+        // Rows that can move titles above their inputs own their resize allocation.
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
+        allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
         unitedRows.capturePreferredColumns();
