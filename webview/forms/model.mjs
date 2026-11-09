@@ -328,8 +328,8 @@ export function textInputWidthBounds(node, os, choiceVisible) {
   // The native value box needs one pixel beside the borders and choice button.
   const choice = requestedChoice && (choiceVisible ?? preferredPaint >= 24);
   const stretch = flag(node, 'HorizontalStretch', textInputStretchesByDefault(node));
-  const bound = manual ? limit ? limit * 10 + 10 : undefined
-    : scaledAutomaticInputWidth(node, Math.min(length || 40, 40)) - 1;
+  // String length affects the preferred box, while AutoMaxWidth uses the font's standard limit.
+  const bound = manual ? limit ? limit * 10 + 10 : undefined : automaticTextWidth(node);
   const maximumPaint = stretch && bound !== undefined ? Math.max(preferredPaint, bound) : undefined;
   const outset = Number(choice);
   return { preferred: preferredPaint - outset, maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
