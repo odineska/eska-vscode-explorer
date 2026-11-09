@@ -98,8 +98,7 @@ export function color(value) {
   return `var(--taxi-${value.value}, var(--taxi-TextColor))`;
 }
 export function find(root, identity) { const id = typeof identity === 'string' ? identity : key({ identity }); if (root?.key === id) return root; for (const child of [...root?.children ?? [], ...root?.auxiliary ?? []]) { const found = find(child, id); if (found) return found; } }
-/** Select each enclosing page without changing unrelated page groups. */
-export function pageSelections(root, selected) {
+export function formElementPath(root, selected) {
   const path = [];
   function visit(node) {
     if (!node) return false;
@@ -108,8 +107,12 @@ export function pageSelections(root, selected) {
     for (const child of [...node.children, ...node.auxiliary]) if (visit(child)) return true;
     path.pop(); return false;
   }
-  if (!visit(root)) return {};
-  const pages = {};
+  return visit(root) ? path : [];
+}
+
+/** Select each enclosing page without changing unrelated page groups. */
+export function pageSelections(root, selected) {
+  const path = formElementPath(root, selected), pages = {};
   for (let i = 0; i + 1 < path.length; i++) if (path[i].kind === 'Pages' && path[i + 1].kind === 'Page') pages[path[i].key] = path[i + 1].key;
   return pages;
 }

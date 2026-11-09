@@ -49,8 +49,9 @@ test('X11 focus is configured only for Linux native hosts',()=>{
 test('form catalogue covers concrete drivers and ledger IDs with whole-suite transitions',async()=>{
   const ids = catalog.suites.map(row => row.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(ids.length, 97);
+  assert.equal(ids.length, 98);
   const required = [
+    'inspector-navigation',
     'wrapped-titles', 'nested-reflow', 'painted-group-spacing', 'standalone-additions',
     'command-palette', 'table-palette', 'table-row-depth',
     'mixed-row-spacing', 'help-command', 'checkbox-caption-size',

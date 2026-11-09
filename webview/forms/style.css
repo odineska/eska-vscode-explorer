@@ -15,62 +15,6 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 button, select { font: inherit; color: inherit; }
 button { cursor: default; }
-.form-shell { display: flex; flex-direction: column; width: 100%; height: 100%; }
-.form-toolbar { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 3px 8px; border-bottom: 1px solid var(--vscode-panel-border, #ccc); flex: 0 0 auto; }
-.form-toolbar #title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.form-toolbar-spacer { flex: 1; }
-.form-toolbar button, .form-property-actions button { border: 1px solid var(--vscode-button-border, transparent); background: var(--vscode-button-secondaryBackground, #e7e7e7); color: var(--vscode-button-secondaryForeground, #333); padding: 3px 8px; white-space: nowrap; }
-.form-toolbar button:hover, .form-property-actions button:hover { background: var(--vscode-button-secondaryHoverBackground, #d7d7d7); }
-.form-toolbar button:focus-visible, .form-tabs button:focus-visible, .form-tree:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
-.form-zoom { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-.form-zoom select { background: var(--vscode-dropdown-background, #fff); border: 1px solid var(--vscode-dropdown-border, #aaa); }
-.form-inspectors { display: grid; flex: 0 0 auto; min-height: 100px; overflow: hidden; }
-.form-pane { display: flex; flex-direction: column; overflow: hidden; min-width: 0; border: 1px solid var(--vscode-panel-border, #bbb); }
-.form-pane-title { display: flex; align-items: center; gap: 8px; padding: 3px 6px; min-height: 24px; background: var(--vscode-sideBarSectionHeader-background, #eee); font-weight: 600; flex: 0 0 auto; }
-.form-pane-title span { font-size: 90%; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.form-splitter { height: 5px; min-height: 5px; background: var(--vscode-editorGroup-border, #ccc); cursor: row-resize; flex: 0 0 5px; touch-action: none; }
-.form-splitter--vertical { height: auto; min-height: 0; width: 4px; cursor: col-resize; }
-.form-splitter:hover, .form-splitter:focus { background: var(--vscode-sash-hoverBorder, #007acc); }
-.form-tabs { display: flex; flex: 0 0 auto; overflow: auto; min-height: 26px; border-top: 1px solid var(--vscode-panel-border, #ccc); background: var(--vscode-editorGroupHeader-tabsBackground, #eee); }
-.form-tabs button { border: none; border-right: 1px solid var(--vscode-panel-border, #ccc); padding: 4px 9px; background: transparent; white-space: nowrap; }
-.form-tabs button.active { background: var(--vscode-tab-activeBackground, #fff); border-bottom: 2px solid var(--vscode-tab-activeBorderTop, #007acc); }
-.form-tree { flex: 1; min-height: 0; overflow: auto; outline: none; }
-.form-tree-row { display: flex; align-items: center; position: absolute; left: 0; right: 0; height: 22px; gap: 4px; white-space: nowrap; padding-right: 8px; }
-.form-tree-row.selected { background: var(--vscode-list-inactiveSelectionBackground, #d6e8f8); color: var(--vscode-list-inactiveSelectionForeground, inherit); }
-.form-tree:focus .form-tree-row.selected { background: var(--vscode-list-activeSelectionBackground, #007acc); color: var(--vscode-list-activeSelectionForeground, #fff); }
-.form-tree-expander { width: 14px; flex: 0 0 14px; padding: 0; border: none; background: transparent; }
-.form-node-icon { display: inline-block; height: 8px; width: 13px; border: 1px solid #b74730; background: #fff; border-radius: 1px; flex: 0 0 auto; }
-.form-node-icon--Form { height: 13px; border-color: #6c96af; box-shadow: inset 0 3px #9fc5db; }
-.form-node-icon--Table { height: 12px; border-color: #698da1; background: repeating-linear-gradient(90deg, transparent 0 3px, #a0b6c3 3px 4px), repeating-linear-gradient(transparent 0 3px, #a0b6c3 3px 4px); }
-.form-node-icon--UsualGroup, .form-node-icon--Page, .form-node-icon--Pages { height: 11px; border-color: #599441; background: #d9e9b4; }
-.form-node-icon--AutoCommandBar, .form-node-icon--CommandBar { height: 5px; border-color: #8c8c8c; background: repeating-linear-gradient(90deg, #fff 0 2px, #9b9b9b 2px 3px); }
-.form-node-icon--ContextMenu, .form-node-icon--ExtendedTooltip { border-color: #aaa; opacity: .6; }
-.form-table-scroll { min-height: 0; flex: 1; overflow: auto; }
-.form-definitions, .form-properties { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
-.form-definitions td, .form-definitions th, .form-properties td, .form-properties th { text-align: left; vertical-align: top; border-bottom: 1px solid var(--vscode-panel-border, #ddd); border-right: 1px solid var(--vscode-panel-border, #ddd); padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
-.form-definitions th { position: sticky; top: 0; background: var(--vscode-editorGroupHeader-tabsBackground, #eee); }
-.form-properties th { width: 45%; background: var(--vscode-sideBar-background, #f5f5f5); }
-.form-properties td { white-space: normal; overflow-wrap: anywhere; }
-.form-properties .form-property-category th { font-weight: 600; background: var(--vscode-sideBarSectionHeader-background, #eee); }
-.form-properties .form-property-default { color: var(--vscode-descriptionForeground, #666); }
-.form-properties .form-property-default input { margin: 0; vertical-align: middle; }
-.form-properties tr[data-palette-available=false] > :is(th,td) { color: var(--vscode-disabledForeground, #888); }
-.form-properties tr:focus-visible, .form-definitions tr:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); outline-offset: -1px; }
-.form-property-value { white-space: normal; overflow-wrap: anywhere; }
-.form-property-value input[type=checkbox] { margin: 0; vertical-align: middle; }
-.form-property-record > summary { cursor: pointer; }
-.form-property-record dl, .form-property-qualifiers { margin: 3px 0 0; }
-.form-property-record dl > div, .form-property-qualifiers > div { padding: 3px 0; border-top: 1px solid var(--vscode-panel-border, #ddd); }
-.form-property-record dt, .form-property-qualifiers dt { color: var(--vscode-descriptionForeground, #666); }
-.form-property-record dd, .form-property-qualifiers dd { margin: 1px 0 0 8px; }
-.form-property-actions { display: flex; gap: 4px; padding: 4px; flex: 0 0 auto; }
-.form-handler { border: none; padding: 0; background: transparent; color: var(--vscode-textLink-foreground, #0066a3); cursor: pointer; text-align: left; }
-.form-handler:focus-visible { outline: 1px solid var(--vscode-focusBorder, #007acc); }
-.form-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 23px; padding: 3px 8px; border-top: 1px solid var(--vscode-panel-border, #ccc); font-size: 11px; }
-.form-status--stale { color: var(--vscode-editorWarning-foreground, #bf8803); }
-.form-status span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.form-status span:last-child { white-space: nowrap; }
-.form-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .preview-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; background: #fff; padding: 8px; }
 /* The form profile is isolated from the VS Code theme and from the inspector's typography. */
 .taxi-preview { color-scheme: light; color: #555; font: 13.333333px/1.2 Arial, sans-serif; width: max-content; min-width: 100%;
@@ -666,18 +610,6 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-search-clear { position: relative; }
 .taxi-search-clear > svg { display: block; position: absolute; left: 6px; top: 6px; pointer-events: none; }
 
-/* Inspector preferences are clamped locally; tiny windows scroll the shell instead of clipping controls. */
-.form-shell { overflow: auto; min-width: 0; min-height: 0; }
-.form-toolbar { flex-wrap: wrap; }
-.form-toolbar #title { flex: 1 1 160px; min-width: 0; }
-.form-inspectors { min-height: 84px; overflow: auto; grid-template-rows: minmax(0, 1fr); }
-.form-pane { min-height: 0; overflow: auto; }
-.form-tree { min-height: 22px; }
-.form-table-scroll { min-height: 26px; }
-.form-property-actions { flex-wrap: wrap; }
-.form-status { flex-wrap: wrap; }
-.form-status span:first-child { flex: 1 1 160px; min-width: 0; }
-.form-status span:last-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .preview-scroll { min-height: 96px; }
 
 /* Preferred geometry is measured without allocating the surrounding editor's free space. */

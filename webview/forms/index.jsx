@@ -3,6 +3,7 @@ import { controller } from './controller.js';
 import { App } from './App.jsx';
 import { createNativeTextRuntime } from './native-text.js';
 import './style.css';
+import './inspector.css';
 const c = controller(acquireVsCodeApi());
 c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src);
 const dispose = render(() => <App controller={c}/>, document.getElementById('root'));

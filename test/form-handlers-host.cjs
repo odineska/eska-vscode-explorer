@@ -18,7 +18,12 @@ exports.run = async () => {
   await until(async()=>await ui.evaluate("document.querySelector('.form-event .form-handler')?.textContent==='ПриОткрытии'"),'root event link');
   const navigate=async(name,expected=name)=>{
     main.panel.reveal();
-    await ui.evaluate(`(()=>{const button=[...document.querySelectorAll('.form-handler')].find(button=>button.textContent===${JSON.stringify(name)});if(!button)throw new Error('missing handler button');button.click()})()`);
+    await until(() => ui.evaluate(`(()=>{
+      const button = [...document.querySelectorAll('.form-handler')].find(button => button.textContent === ${JSON.stringify(name)});
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`), `handler action ${name}`);
     await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===form.module&&vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===expected,'handler declaration selected');
     assert.equal(view.phase,'ready');
   };
@@ -52,9 +57,11 @@ exports.run = async () => {
   assert.equal(typeof transferred,'string');assert.ok(uploads.some(value=>value.method==='query/bufferClose'&&value.bufferId===transferred));
   main.panel.reveal();
   await ui.evaluate(`([...document.querySelectorAll('.form-inspectors .form-tabs button')].find(button=>button.textContent===${JSON.stringify(vscode.env.language.startsWith('ru')?'Команды':'Commands')})).click()`);
-  await until(async()=>await ui.evaluate("document.querySelector('.form-definitions .form-handler')?.textContent==='ExecuteCommand'"),'command action link');
+  await ui.evaluate("document.querySelector('.form-data-row[data-form-data-path=Execute]').click()");
+  await until(async()=>await ui.evaluate("document.querySelector('.form-properties .form-handler')?.textContent==='ExecuteCommand'"),'selected command action link');
   await navigate('ExecuteCommand');
   main.panel.reveal();
+  await ui.evaluate("[...document.querySelectorAll('.form-tree-row')].find(row=>row.id.endsWith(':2')).click()");
   await replace(document,'<Event name="OnChange" callType="After">NameChangedAfter</Event>','<Event name="OnChange" callType="After">MissingHandler</Event>');
   await until(async()=>view.phase==='ready'&&await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].some(button=>button.textContent==='MissingHandler')"),'missing handler link');
   await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].find(button=>button.textContent==='MissingHandler').click()");

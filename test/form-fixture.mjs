@@ -39,6 +39,39 @@ export async function createFormInspectorSource(fixture) {
   return form;
 }
 
+export async function createInspectorNavigationSource(fixture) {
+  const form = await createFormSource(fixture), root = join(fixture.source, 'Configuration.xml');
+  await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Document>InspectorReceipt</Document>'));
+  const owner = join(fixture.source, 'Documents', 'InspectorReceipt.xml');
+  await mkdir(dirname(owner), { recursive: true });
+  const schema = 'http://www.w3.org/2001/XMLSchema', core = 'http://v8.1c.ru/8.1/data/core';
+  const typed = (kind, qualifiers = '') => `<Type xmlns:v8="${core}" xmlns:xs="${schema}"><v8:Type>xs:${kind}</v8:Type>${qualifiers}</Type>`;
+  const amount = typed('decimal', '<v8:NumberQualifiers><v8:Digits>15</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Nonnegative</v8:AllowedSign></v8:NumberQualifiers>');
+  const children = `<Attribute uuid="b-amount"><Properties><Name>Amount</Name>${amount}</Properties></Attribute>
+    <TabularSection uuid="b-lines"><Properties><Name>Lines</Name></Properties><ChildObjects>
+    <Attribute uuid="b-quantity"><Properties><Name>Quantity</Name>${typed('decimal')}</Properties></Attribute>
+    </ChildObjects></TabularSection>`;
+  await writeFile(owner, descriptor('Document', 'InspectorReceipt', children, '<NumberLength>11</NumberLength><NumberType>String</NumberType>'));
+  const attributes = `<Attributes>
+    <Attribute name="Object" id="1"><Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config"><v8:Type>cfg:DocumentObject.InspectorReceipt</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute>
+    <Attribute name="Amount" id="2">${typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>')}</Attribute>
+    </Attributes>`;
+  const xml = form.text.replace('<DataPath>Name</DataPath>', '<DataPath>Object.Amount</DataPath>')
+    .replace('<LabelDecoration name="SecondLabel" id="8"><Title>Other page</Title></LabelDecoration>',
+      '<InputField name="SecondAmount" id="8"><Title>Second amount</Title><DataPath>Object.Amount</DataPath></InputField>')
+    .replace(/<Attributes>[\s\S]*?<\/Attributes>/u, attributes);
+  await writeFile(form.path, xml);
+  let deep = Array.from({length: 2250}, (_, index) => `<InputField name="DeepField${index}" id="${index + 1000}">
+    <Visible>false</Visible><DataPath>Value${index % 1000}</DataPath></InputField>`).join('');
+  for (let depth = 22; depth >= 0; depth--) deep = `<UsualGroup name="Branch${depth}" id="${depth + 1}">
+    <Group>Vertical</Group><ShowTitle>false</ShowTitle><ChildItems>${deep}</ChildItems></UsualGroup>`;
+  const text = typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>');
+  const largeAttributes = Array.from({length: 1000}, (_, index) => `<Attribute name="Value${index}" id="${index + 1}">${text}</Attribute>`).join('');
+  await writeFile(form.second, `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform"><CommandBarLocation>None</CommandBarLocation>
+    <AutoCommandBar name="FormCommandBar" id="-1"/><ChildItems>${deep}</ChildItems><Attributes>${largeAttributes}</Attributes></Form>`);
+  return { ...form, owner, text: xml };
+}
+
 export async function createFormHandlerSource(fixture) {
   const form=await createFormInspectorSource(fixture);
   const xml=await readFile(form.path,'utf8');

@@ -584,6 +584,24 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "inspector-navigation",
+      "driver": "test/form-inspector-navigation-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "lifecycle",
       "driver": "test/form-lifecycle-host.cjs",
       "mode": "installed",

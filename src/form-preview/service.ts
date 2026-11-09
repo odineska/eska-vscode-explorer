@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, extname, basename } from "node:path";
 import { ExplorerError, isRecord, projectEnabled, type WirePath } from "../protocol.js";
@@ -9,18 +9,21 @@ import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { FormSession } from "./client.js";
-import { identityKey, isIdentity, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
+import { identityKey, isIdentity, isDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
 import { parsePreviewNavigation, type PreviewNavigation } from "./navigation.js";
 import { formEditorRange, formSourceKey } from "./source.js";
 import { movePreviewToNewWindow } from "./window.js";
+import { defaultInspectorUi, parseInspectorState, type InspectorState } from "./inspector-state.js";
 
 const VIEW_TYPE = "eska.formViewer";
+const INSPECTOR_STATE_KEY = "formInspector.states";
+const MAX_SAVED_INSPECTORS = 40;
 type Role = "main" | "preview";
 type InputPath = Pick<FormInput, "root" | "path">;
 type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
 type InputRoot = { wire: WirePath; path: string };
-interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean }
+interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean; pendingReveal?: ElementIdentity }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
@@ -30,6 +33,7 @@ interface View {
   inputRoots: InputRoot[]; formInputs: Map<string, FormInputSource>;
   previewNavigation?: PreviewNavigation;
   palette: FormPalette | undefined;
+  inspectorState: InspectorState | undefined;
 }
 async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
   const found = await revealFile(tree, path);
@@ -57,6 +61,9 @@ export class FormPreviewService implements vscode.Disposable {
   private readonly closing = new Set<Promise<void>>();
   private stopping: Promise<void> | undefined;
   private disposed = false;
+  private inspectorStates: Map<string, InspectorState> | undefined;
+  private inspectorTimer: ReturnType<typeof setTimeout> | undefined;
+  private inspectorWrite: PromiseLike<void> = Promise.resolve();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly connection: Connection,
     private readonly tree: () => MetadataTree | undefined, private readonly ensureTree: () => Promise<MetadataTree | undefined>,
@@ -82,12 +89,46 @@ export class FormPreviewService implements vscode.Disposable {
     if (existing) return existing;
     const pending = this.opening.get(key); if (pending) return pending;
     const create = Promise.resolve().then(() => {
-      const view: View = { key, tree, entry, path, application, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
-        frames: new Map(), client: undefined, snapshot: undefined, palette: undefined, nodes: new Map(), selected: undefined, phase: "loading", notice: "", sequence: 0, wanted: 0,
+      const inspectorState = this.savedInspectors().get(this.inspectorKey(key));
+      const view: View = { key, tree, entry, path, application, inspectorState, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
+        frames: new Map(), client: undefined, snapshot: undefined, palette: undefined, nodes: new Map(), selected: inspectorState?.selection, phase: "loading", notice: "", sequence: 0, wanted: 0,
         running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "", navigation: 0, inputRoots: [], formInputs: new Map() };
       this.views.set(key, view); return view;
     });
     this.opening.set(key, create); try { return await create; } finally { this.opening.delete(key); }
+  }
+  private inspectorKey(key: string): string {
+    return createHash("sha256").update(key).digest("hex");
+  }
+  private savedInspectors(): Map<string, InspectorState> {
+    if (this.inspectorStates) return this.inspectorStates;
+    const stored = this.context.workspaceState.get<unknown>(INSPECTOR_STATE_KEY);
+    this.inspectorStates = new Map();
+    if (isRecord(stored)) {
+      for (const [key, value] of Object.entries(stored).slice(-MAX_SAVED_INSPECTORS)) {
+        const state = parseInspectorState(value);
+        if (state && /^[a-f0-9]{64}$/.test(key)) this.inspectorStates.set(key, state);
+      }
+    }
+    return this.inspectorStates;
+  }
+  private rememberInspector(view: View, state: InspectorState): void {
+    view.inspectorState = { ui: state.ui, ...(view.selected ? { selection: view.selected } : {}) };
+    const states = this.savedInspectors(), key = this.inspectorKey(view.key);
+    states.delete(key);
+    states.set(key, view.inspectorState);
+    if (states.size > MAX_SAVED_INSPECTORS) states.delete(states.keys().next().value!);
+    this.inspectorTimer ??= setTimeout(() => { void this.flushInspectors(); }, 350);
+  }
+  private flushInspectors(): PromiseLike<void> {
+    if (!this.inspectorTimer) return this.inspectorWrite;
+    clearTimeout(this.inspectorTimer);
+    this.inspectorTimer = undefined;
+    const saved = Object.fromEntries(this.savedInspectors());
+    this.inspectorWrite = Promise.resolve(this.inspectorWrite)
+      .then(() => this.context.workspaceState.update(INSPECTOR_STATE_KEY, saved))
+      .catch(error => this.log(`form_inspector_state ${String(error)}`));
+    return this.inspectorWrite;
   }
   private frame(view: View, role: Role, restored?: vscode.WebviewPanel): Frame {
     const panel = restored ?? vscode.window.createWebviewPanel(VIEW_TYPE, role === "main" ? view.title : `${view.title} — ${this.strings().preview}`,
@@ -109,7 +150,14 @@ export class FormPreviewService implements vscode.Disposable {
     if (value.type === "ready") {
       frame.ready = true;
       view.previewNavigation ??= parsePreviewNavigation(value.previewNavigation) ?? { pages: {}, collapsed: {} };
-      this.publish(view, true, frame); return;
+      this.publish(view, true, frame);
+      if (frame.pendingReveal) this.showOnForm(view, frame.pendingReveal);
+      return;
+    }
+    if (value.type === "inspectorState" && frame.role === "main" && view.frames.get("main") === frame) {
+      const state = parseInspectorState(value);
+      if (state) this.rememberInspector(view, state);
+      return;
     }
     if (value.type === "previewNavigation") {
       if (view.frames.get(frame.role) !== frame) return;
@@ -122,8 +170,18 @@ export class FormPreviewService implements vscode.Disposable {
     if (value.type === "refresh") { if (!this.tree()) await this.ensureTree(); view.suspended = false; this.schedule(view, 0); return; }
     if (value.type === "select" && isIdentity(value.identity) && view.nodes.has(identityKey(value.identity))) {
       view.selected = value.identity;
-      for (const target of view.frames.values()) if (target.ready) void target.panel.webview.postMessage({ type: "selection", identity: value.identity });
+      this.rememberInspector(view, { ui: { ...(view.inspectorState?.ui ?? defaultInspectorUi()), inspectedData: "" } });
+      for (const target of view.frames.values()) if (target.ready) void target.panel.webview.postMessage({ type: "selection", identity: value.identity, external: target !== frame });
       await this.updatePalette(view); return;
+    }
+    if (value.type === "showOnForm" && isIdentity(value.identity)) {
+      this.showOnForm(view, value.identity);
+      return;
+    }
+    if (value.type === "copyInspectorType" && frame.role === "main" && typeof value.value === "string" && value.value.length <= 262_144) {
+      await vscode.env.clipboard.writeText(value.value);
+      void frame.panel.webview.postMessage({ type: "inspectorTypeCopied" });
+      return;
     }
     if (value.type === "detach") { await this.detach(view); return; }
     if (value.type === "revealPreview") { view.frames.get("preview")?.panel.reveal(); return; }
@@ -142,6 +200,15 @@ export class FormPreviewService implements vscode.Disposable {
       await this.locate(view, value.target as unknown as FormTarget);
     }
   }
+  private showOnForm(view: View, identity: ElementIdentity): void {
+    const target = view.frames.get("preview") ?? view.frames.get("main");
+    if (!target || view.selected === undefined || identityKey(view.selected) !== identityKey(identity)) return;
+    if (!target.ready) { target.pendingReveal = identity; return; }
+    delete target.pendingReveal;
+    target.panel.reveal(undefined, false);
+    void target.panel.webview.postMessage({ type: "showOnForm", identity });
+  }
+
   /** Resolve the asynchronous editor activation before invoking the native move command. */
   private async detach(view: View): Promise<void> {
     const existing = view.frames.get("preview");
@@ -337,10 +404,12 @@ export class FormPreviewService implements vscode.Disposable {
   private publish(view: View, model = true, initializeNavigation?: Frame): void {
     for (const frame of view.frames.values()) if (frame.ready) void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
       role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true,
-      ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation } : {}),
+      ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
+        ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
       ...(frame.role === "main" ? { palette: view.palette ?? null } : {}),
-      ...(view.selected ? { selection: view.selected } : {}),
+      // Status and palette updates can race with selection messages from another frame.
+      ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
       ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
   }
   private failure(view: View, error: unknown): void {
@@ -373,7 +442,10 @@ export class FormPreviewService implements vscode.Disposable {
   private async locate(view: View, target: FormTarget): Promise<void> {
     const navigation = ++view.navigation, { client, snapshot } = view;
     if (!client || !snapshot || view.phase !== "ready") return;
-    if (target.kind !== "definition" && (!isIdentity(target.identity) || !view.nodes.has(identityKey(target.identity)))) return;
+    if (target.kind === "dataPath") {
+      if (!isDataPath(target.path) || !snapshot.model.dataFields?.some(field => field.origin
+        && field.path.length === target.path.length && field.path.every((part, index) => part === target.path[index]))) return;
+    } else if (target.kind !== "definition" && (!isIdentity(target.identity) || !view.nodes.has(identityKey(target.identity)))) return;
     const current = this.navigationGuard(view, client, snapshot, navigation);
     try {
       const location = await client.locate(snapshot, target);
@@ -427,6 +499,13 @@ export class FormPreviewService implements vscode.Disposable {
       const view = await this.view(tree, entry, state.path, typeof state.application === "string" ? state.application : undefined);
       if (!view.selected && isIdentity(state.selection)) view.selected = state.selection;
       const role = state.role as Role; if (view.frames.has(role)) { panel.dispose(); view.frames.get(role)?.panel.reveal(); return; }
+      if (role === "main") {
+        const inspector = parseInspectorState(state);
+        if (inspector) {
+          view.inspectorState = inspector;
+          if (inspector.selection && !view.snapshot) view.selected = inspector.selection;
+        }
+      }
       this.frame(view, role, panel); this.schedule(view, 0);
     } catch (error) { panel.dispose(); this.log(`form_restore ${error instanceof ExplorerError ? error.code : "requestFailed"}`); }
   }
@@ -444,7 +523,7 @@ export class FormPreviewService implements vscode.Disposable {
     for (const view of views) { if (view.timer) clearTimeout(view.timer); await view.running; await view.client?.close().catch(() => {}); view.client = undefined; }
   }
   shutdown(): Promise<void> {
-    if (!this.stopping) this.stopping = (async () => { this.disposed = true; for (const disposable of this.disposables) disposable.dispose(); for (const view of [...this.views.values()]) { this.release(view); for (const frame of view.frames.values()) frame.panel.dispose(); } await Promise.allSettled([...this.closing]); })();
+    if (!this.stopping) this.stopping = (async () => { this.disposed = true; for (const disposable of this.disposables) disposable.dispose(); for (const view of [...this.views.values()]) { this.release(view); for (const frame of view.frames.values()) frame.panel.dispose(); } await Promise.allSettled([...this.closing]); await this.flushInspectors(); })();
     return this.stopping;
   }
   dispose(): void { void this.shutdown(); }

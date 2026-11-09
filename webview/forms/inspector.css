@@ -1,0 +1,369 @@
+.form-shell {
+  --inspector-surface: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --inspector-header: var(--vscode-sideBarSectionHeader-background, var(--inspector-surface));
+  --inspector-border: var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
+  --inspector-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  --inspector-focus: var(--vscode-focusBorder, currentColor);
+  --inspector-hover: var(--vscode-list-hoverBackground, var(--inspector-header));
+  --inspector-related: var(--vscode-list-inactiveSelectionBackground, var(--inspector-hover));
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  background: var(--inspector-surface);
+}
+
+.form-toolbar, .form-status {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  padding: 3px 8px;
+}
+.form-toolbar {
+  gap: 6px;
+  min-height: 34px;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--inspector-surface));
+  border-bottom: 1px solid var(--inspector-border);
+}
+.form-toolbar #title {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-weight: 600;
+}
+.form-toolbar-spacer { flex: 0 1 4px; }
+.form-toolbar > button {
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  white-space: nowrap;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--inspector-header));
+}
+.form-toolbar > button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--inspector-hover)); }
+.form-zoom { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.form-zoom select {
+  background: var(--vscode-dropdown-background, var(--inspector-surface));
+  color: var(--vscode-dropdown-foreground, inherit);
+  border: 1px solid var(--vscode-dropdown-border, var(--inspector-border));
+}
+.form-status {
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 23px;
+  border-top: 1px solid var(--inspector-border);
+  color: var(--inspector-muted);
+  font-size: .85em;
+}
+.form-status--stale { color: var(--vscode-editorWarning-foreground, var(--inspector-muted)); }
+.form-status span:first-child { flex: 1 1 160px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-status span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.form-empty { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; }
+
+.form-inspectors {
+  display: grid;
+  flex: 0 0 auto;
+  min-height: 84px;
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
+  isolation: isolate;
+}
+.form-inspectors[data-inspector-layout=compactStacked] { grid-template-rows: auto minmax(75px, 1fr) minmax(70px, 1fr); }
+.form-inspector-header {
+  grid-area: 1 / 1 / 2 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--inspector-border);
+}
+.form-inspector-search {
+  display: flex;
+  flex: 1 1 190px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 560px;
+  min-height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-input-border, var(--inspector-border));
+  border-radius: 4px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+}
+.form-inspector-search:focus-within { border-color: var(--inspector-focus); }
+.form-inspector-search input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.form-inspector-search input::placeholder { color: var(--vscode-input-placeholderForeground, var(--inspector-muted)); }
+.form-inspector-search input::-webkit-search-cancel-button { display: none; }
+
+.form-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-row: 2;
+}
+.form-pane--structure { grid-column: 1; }
+.form-pane--data { grid-column: 3; }
+.form-pane--properties { grid-column: 5; }
+.form-inspector-sash--structure { grid-area: 2 / 2; }
+.form-inspector-sash--properties { grid-area: 2 / 4; }
+.form-inspectors[data-inspector-layout=compact] .form-pane--data { grid-column: 1; }
+.form-inspectors[data-inspector-layout=compact] .form-pane--properties { grid-column: 3; }
+.form-inspectors[data-inspector-layout=compact] .form-inspector-sash--properties { grid-column: 2; }
+.form-inspectors[data-inspector-layout=compactStacked] > .form-pane { grid-column: 1; }
+.form-inspectors[data-inspector-layout=compactStacked] .form-pane--properties { grid-row: 3; border-top: 1px solid var(--inspector-border); }
+.form-inspectors [hidden] { display: none; }
+
+.form-pane-heading {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 8px;
+  gap: 4px;
+  background: var(--inspector-header);
+}
+.form-pane-heading h2 { margin: 0; font-size: .92em; font-weight: 600; }
+.form-pane-tools { display: flex; align-items: center; }
+.form-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 0 4px;
+  padding-inline: 5px;
+  border-bottom: 1px solid var(--inspector-border);
+}
+.form-inspector-header .form-tabs { border-bottom: 0; max-width: 100%; }
+.form-tabs button {
+  min-height: 25px;
+  padding: 2px 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--inspector-muted);
+  white-space: nowrap;
+}
+.form-tabs button:hover { background: var(--inspector-hover); color: var(--vscode-foreground); }
+.form-tabs button.active {
+  border-bottom-color: var(--vscode-tab-activeBorderTop, var(--inspector-focus));
+  color: var(--vscode-tab-activeForeground, var(--vscode-foreground));
+}
+.form-icon { width: 16px; height: 16px; flex: 0 0 16px; display: inline-block; vertical-align: middle; }
+.form-icon-button, .form-tree-expander {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+}
+.form-icon-button { width: 23px; height: 23px; border-radius: 3px; }
+.form-icon-button:disabled { color: var(--vscode-disabledForeground, var(--inspector-muted)); }
+.form-icon-button:not(:disabled):hover, .form-tree-expander:hover { background: var(--vscode-toolbar-hoverBackground, var(--inspector-hover)); }
+.form-tree-expander { width: 16px; flex: 0 0 16px; height: 18px; }
+.form-tree-expander .form-icon { width: 12px; height: 12px; flex-basis: 12px; }
+.form-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-splitter {
+  height: 5px;
+  min-height: 5px;
+  flex: 0 0 5px;
+  cursor: row-resize;
+  touch-action: none;
+  background: var(--vscode-editorGroup-border, var(--inspector-border));
+}
+.form-splitter--vertical { width: 4px; height: auto; min-height: 0; cursor: col-resize; }
+.form-splitter:is(:hover, :focus-visible, :active) { background: var(--vscode-sash-hoverBorder, var(--inspector-focus)); }
+
+.form-tree, .form-table-scroll { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.form-tree-canvas { position: relative; }
+.form-tree-row {
+  --form-indent: min(calc(var(--form-depth) * 13px), 42%);
+  position: absolute;
+  inset-inline: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding-inline: calc(6px + var(--form-indent)) 7px;
+}
+.form-tree-row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 8px;
+  width: var(--form-indent);
+  pointer-events: none;
+  background: repeating-linear-gradient(to right, var(--vscode-tree-indentGuidesStroke, var(--inspector-border)) 0 1px, transparent 1px 13px);
+}
+.form-tree-caption { font-size: .86em; color: var(--inspector-muted); }
+.form-tree-hidden:not(.selected):not(.related) { color: var(--vscode-disabledForeground, var(--inspector-muted)); }
+.form-path-trail { flex: 0 0 auto; padding: 3px 8px; font-size: .85em; color: var(--inspector-muted); border-top: 1px solid var(--inspector-border); }
+.form-tree-row:hover, .form-data-row:hover { background: var(--inspector-hover); }
+:is(.form-tree-row,.form-data-row).related {
+  background: var(--inspector-related);
+  box-shadow: inset 2px 0 var(--vscode-textLink-foreground, var(--inspector-focus));
+}
+:is(.form-tree-row,.form-data-row).selected {
+  background: var(--vscode-list-inactiveSelectionBackground, var(--inspector-hover));
+  color: var(--vscode-list-inactiveSelectionForeground, inherit);
+}
+:is(.form-tree,.form-data-grid):focus-within :is(.form-tree-row,.form-data-row).selected {
+  background: var(--vscode-list-activeSelectionBackground, var(--inspector-focus));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-editor-background));
+}
+.form-tree-row.selected .form-tree-caption { color: inherit; }
+.form-row-link { display: inline-flex; margin-inline-start: auto; flex: none; }
+.form-row-link .form-icon { width: 13px; height: 13px; }
+.form-list-empty { padding: 10px 8px; color: var(--inspector-muted); }
+
+.form-data-grid { overflow-x: hidden; }
+.form-definitions, .form-properties {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: inherit;
+}
+.form-definitions thead { position: sticky; top: 0; z-index: 1; color: var(--inspector-muted); }
+.form-definitions th {
+  position: relative;
+  height: 24px;
+  padding: 2px 8px;
+  text-align: left;
+  font-weight: 400;
+  font-size: .9em;
+  background: var(--inspector-surface);
+  border-bottom: 1px solid var(--inspector-border);
+}
+.form-data-splitter { position: absolute; inset: 0 0 0 auto; width: 5px; min-height: 0; height: auto; cursor: col-resize; }
+.form-definitions td { padding: 0 8px; height: 32px; vertical-align: middle; }
+.form-data-heading td { font-size: .87em; color: var(--inspector-muted); border-top: 1px solid var(--inspector-border); }
+.form-data-spacer td { height: inherit; padding: 0; }
+.form-data-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+  padding-inline-start: min(calc(var(--form-depth) * 12px), 40%);
+}
+.form-data-name .form-icon { width: 14px; height: 14px; flex-basis: 14px; }
+.form-type-label { display: grid; min-width: 0; line-height: 1.12; }
+.form-type-label small { color: var(--inspector-muted); font-size: .82em; }
+.form-data-row.selected small { color: inherit; }
+.form-command-list { padding: 5px 7px; }
+.form-command-entry { display: flex; align-items: center; gap: 5px; min-height: 24px; }
+.form-command-entry:has(ul) { flex-wrap: wrap; }
+.form-command-entry ul { flex-basis: 100%; margin: 0 0 5px 20px; padding: 0; list-style: none; }
+.form-command-entry li { padding-block: 2px; }
+.form-link, .form-handler {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+  text-align: left;
+  cursor: pointer;
+}
+.form-link:hover, .form-handler:hover { text-decoration: underline; }
+.form-command-entry.form-link, .form-usage-list button { max-width: 100%; }
+.form-handler { overflow-wrap: anywhere; }
+
+.form-property-context { padding: 7px 8px; }
+.form-context-kind { display: flex; align-items: center; gap: 6px; color: var(--inspector-muted); font-size: .9em; }
+.form-property-context h3 { margin: 3px 0; font-size: 1.12em; font-weight: 600; overflow-wrap: anywhere; }
+.form-context-path { margin-block: 2px; color: var(--inspector-muted); font-size: .88em; overflow-wrap: anywhere; }
+.form-property-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 5px; margin-block: 5px; }
+.form-property-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px;
+  color: inherit;
+  border: 1px solid var(--inspector-border);
+  border-radius: 3px;
+  background: transparent;
+  font-size: .89em;
+}
+.form-property-actions button:hover { background: var(--inspector-hover); }
+.form-property-actions .form-icon { width: 13px; height: 13px; flex-basis: 13px; }
+.form-context-facts { margin: 4px 0 0; }
+.form-context-facts > div { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 4px; }
+.form-context-facts dt { color: var(--inspector-muted); }
+.form-context-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.form-type-details { margin-top: 6px; }
+.form-type-details summary, .form-property-record > summary { cursor: pointer; overflow-wrap: anywhere; }
+.form-type-tools { display: flex; justify-content: end; }
+.form-type-details pre {
+  margin: 0;
+  padding: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font: .88em/1.35 var(--vscode-editor-font-family, monospace);
+  background: var(--vscode-textCodeBlock-background, var(--inspector-header));
+}
+.form-usage-list { border-top: 1px solid var(--inspector-border); padding: 5px 8px; }
+.form-usage-list h4 { margin: 0 0 3px; font-size: .92em; font-weight: 600; }
+.form-usage-list h4 span { color: var(--inspector-muted); font-weight: 400; }
+.form-usage-list button { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
+.form-properties :is(th,td) {
+  vertical-align: top;
+  padding: 3px 7px;
+  text-align: left;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.form-properties th { width: 44%; color: var(--inspector-muted); }
+.form-properties :is(.form-property-category,.form-declared-category) th {
+  padding-block: 4px;
+  font-weight: 600;
+  border-top: 1px solid var(--inspector-border);
+  background: var(--inspector-header);
+  color: inherit;
+}
+.form-properties .form-property-default { color: var(--inspector-muted); }
+.form-properties input[type=checkbox] { margin: 0; vertical-align: middle; }
+.form-properties tr[data-palette-available=false] > :is(th,td) { color: var(--vscode-disabledForeground, var(--inspector-muted)); }
+.form-property-record dl, .form-property-qualifiers { margin: 3px 0 0; }
+.form-property-record dl > div, .form-property-qualifiers > div { padding: 3px 0; border-top: 1px solid var(--inspector-border); }
+.form-property-record dt, .form-property-qualifiers dt { color: var(--inspector-muted); }
+.form-property-record dd, .form-property-qualifiers dd { margin: 1px 0 0 8px; }
+
+:is(.form-toolbar,.form-inspectors) :is(button,select,[tabindex],[role=tree],[role=treegrid],summary):focus-visible {
+  outline: 1px solid var(--inspector-focus);
+  outline-offset: -1px;
+}
+:is(.vscode-high-contrast,.vscode-high-contrast-light) .form-inspectors :is(.form-tree-row,.form-data-row):is(.selected,.related) {
+  outline: 1px solid var(--vscode-contrastActiveBorder, var(--inspector-focus));
+  outline-offset: -1px;
+}
+.form-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
