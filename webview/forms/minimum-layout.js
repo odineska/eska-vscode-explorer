@@ -11,7 +11,7 @@ function reserveWidth(value, width, fullWidth = width) {
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingHeights, available, conditionalWidth }) {
+export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, widthFloors, headingHeights, available, conditionalWidth }) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -53,6 +53,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     }
     const minimum = minimumRows.get(element);
     if (minimum !== undefined && !reflows) value.width = value.fullWidth = minimum;
+    const floor = widthFloors.get(element);
+    if (floor !== undefined) reserveWidth(value, floor);
     return add(add(value, padding), margins(element));
   }
   function item(element) {

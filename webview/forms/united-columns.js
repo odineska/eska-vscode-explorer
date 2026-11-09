@@ -47,7 +47,7 @@ export function alignUnitedColumns(model, context) {
   const { targets, alignment, os, collapsed, scale } = context;
   const { elements, containers, children: mountedChildren } = targets;
   const { mark, style } = alignment;
-  const scopes = [], mixed = mixedColumnLayout(context);
+  const scopes = [], columnModels = new Map(), mixed = mixedColumnLayout(context);
 
   function entryFor(node, { mixedRow = false, commandColumns = false, allowWidth = false } = {}) {
     const element = elements.get(node.key), location = node.presentation.titleLocation;
@@ -139,6 +139,8 @@ export function alignUnitedColumns(model, context) {
     scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly || lanes.some(hasUnlabeledCheckbox) });
   }
   function visit(node) {
+    const items = containers.get(node.key);
+    if (items) columnModels.set(items, node);
     registerColumns(node);
     // Page panels own an Items container without an element wrapper.
     for (const child of node.children) visit(child);
@@ -212,7 +214,31 @@ export function alignUnitedColumns(model, context) {
     for (const child of entry.children ?? []) captureCaption(child);
   }
 
-  function registerThroughColumns({ owner, tracks }) {
+  function inputSurface(node) {
+    const element = elements.get(node.key).querySelector(':scope > .taxi-field-row > .taxi-field-control > .taxi-input');
+    return element && { element, outset: inputPaintedOutset(node, os) };
+  }
+
+  function leadingPeers(column, stackNodes) {
+    const fixedSiblings = [], stacks = [];
+    const owner = columnModels.get(column);
+    for (const node of owner ? mountedChildren(owner) : []) {
+      const element = elements.get(node.key);
+      if (element.dataset.stretchX === 'true') {
+        if (stackNodes.has(node.key)) {
+          stacks.push({ items: containers.get(node.key), fields: mountedChildren(node).map(inputSurface).filter(Boolean) });
+        }
+      } else if (ordinaryGroup(node) && node.presentation.grouping === 'Vertical') {
+        fixedSiblings.push({ element, outset: 0 });
+      } else if (node.kind === 'InputField' && node.presentation.titleLocation === 'None') {
+        const value = inputSurface(node);
+        if (value) fixedSiblings.push({ ...value, rigid: true, width: fieldWidth(node, os) });
+      }
+    }
+    return { fixedSiblings, stacks };
+  }
+
+  function registerThroughColumns({ tracks }, stackNodes) {
     if (tracks.some(track => Math.abs(track.left - tracks[0].left) > .5)) return;
     const lanes = tracks.filter(track => track.horizontal).map(({node}) => entryFor(node, { allowWidth: true }));
     if (!lanes.length || lanes.some(lane => !lane || lane.title || lane.node.presentation.united
@@ -222,10 +248,7 @@ export function alignUnitedColumns(model, context) {
     if (lanes.some(lane => number(lane.node, 'Width') * 10 > intrinsic(lane, 10))) return;
     const fields = tracks.filter(track => !track.horizontal).flatMap(({ node }) => mountedChildren(node).map(child => entryFor(child)))
       .filter(entry => entry?.kind === 'field' && entry.location === 'Left');
-    const fixedSiblings = mountedChildren(owner).filter(node => (ordinaryGroup(node) && node.presentation.grouping === 'Vertical')
-      || (node.kind === 'InputField' && node.presentation.titleLocation === 'None'))
-      .map(node => elements.get(node.key)).filter(element => element.dataset.stretchX === 'false');
-    mixed.registerThrough(lanes, fields, fixedSiblings);
+    mixed.registerThrough(lanes, fields, column => leadingPeers(column, stackNodes));
   }
 
   function alignColumns(throughScopes) {
@@ -245,7 +268,10 @@ export function alignUnitedColumns(model, context) {
       // Standalone fields already use their vertical grid and remain free to resize.
       for (const lane of lanes) if (lane.kind === 'group') placeLane(lane, 0, tracks, gap);
     }
-    if (os === 'linux') for (const scope of throughScopes) registerThroughColumns(scope);
+    if (os === 'linux') {
+      const stackNodes = new Set(throughScopes.filter(scope => scope.local).map(scope => scope.tracks[0].node.key));
+      for (const scope of throughScopes) registerThroughColumns(scope, stackNodes);
+    }
   }
   return { ...mixed, alignColumns };
 }

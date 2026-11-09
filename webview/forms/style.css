@@ -787,6 +787,7 @@ button { cursor: default; }
   .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) max-content;
 }
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-through-mixed-lane] { min-width: var(--taxi-through-preferred-width, 0); }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-through-input-stack] { max-width: var(--taxi-through-stack-width, none); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-through-picture] > .taxi-field-row > .taxi-field-control > .taxi-picture-field {
   width: 100% !important;

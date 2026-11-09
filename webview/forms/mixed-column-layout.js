@@ -1,6 +1,8 @@
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
-import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, roundTrackWidths, stretches } from './layout-model.mjs';
+import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
 import { flag, inputRows, nativeReferenceInput, number, property, scalar } from './model.mjs';
+import { fieldCaptionProfile } from './font-metrics.mjs';
+import { inputCaptionInset } from './field-caption-layout.js';
 
 const sum = values => values.reduce((total, value) => total + value, 0);
 const gap = 10;
@@ -94,7 +96,7 @@ function topTrackWidths(available, tracks, weights, round) {
 /** Keep mixed rows in one column scope while their automatic titles move above the controls. */
 export function mixedColumnLayout(context) {
   const { alignment, os, scale } = context;
-  const minimumRows = new Map(), allocations = [], throughAllocations = [];
+  const minimumRows = new Map(), widthFloors = new Map(), allocations = [], throughAllocations = [];
 
   function sizeEntries(entries) {
     for (const entry of entries) entry.size = controlSize(entry, context);
@@ -137,7 +139,7 @@ export function mixedColumnLayout(context) {
     if (plans) allocations.push({lanes, plans, united, heading, widest});
   }
 
-  function registerThrough(lanes, fields, fixedSiblings) {
+  function registerThrough(lanes, fields, peers) {
     sizeEntries(lanes.flatMap(lane => lane.children));
     const hasTooltip = entry => entry.row.querySelector('[data-tooltip-button]');
     if (!lanes.every(lane => referencePictureLabel(lane, os) && !hasTooltip(lane.children[0]))) return;
@@ -166,10 +168,51 @@ export function mixedColumnLayout(context) {
     while (column && !members.every(element => column.contains(element))) {
       column = column.parentElement?.closest('.taxi-items');
     }
-    throughAllocations.push({ column, lanes, references, fixedSiblings });
+    const captions = [...references, ...lanes.map(lane => lane.children[0])].map(({ node, row, labelGap }) => {
+      const label = row.querySelector('.taxi-field-label')?.getAttribute('aria-label') ?? '';
+      const profile = fieldCaptionProfile(label, node.presentation.titleFont);
+      return profile && profile.minimum + inputCaptionInset + labelGap;
+    });
+    const compactReserve = captions.every(Number.isFinite) ? Math.max(...captions) : undefined;
+    throughAllocations.push({ column, lanes, references, compactReserve, ...peers(column) });
   }
 
-  function allocateThrough({ lanes, references, fixedSiblings }) {
+  function leadingOrigin(lanes) {
+    return lanes[0].children[0].element.getBoundingClientRect().left / scale;
+  }
+
+  function occupiedWidth(fields, origin) {
+    return Math.max(0, ...fields.map(({ element, outset, width = 0 }) => {
+      const { left, right } = element.getBoundingClientRect();
+      return Math.round(Math.max(right / scale, left / scale + width) + outset - origin);
+    }));
+  }
+
+  function captureThroughPreferred() {
+    for (const scope of throughAllocations) {
+      const { column, lanes, fixedSiblings, stacks } = scope;
+      const origin = leadingOrigin(lanes);
+      const [leading, picture, label] = trackProfiles(lanes);
+      const spacing = (lanes[0].children.length - 1) * pixels(getComputedStyle(lanes[0].items).columnGap);
+      const rigid = occupiedWidth(fixedSiblings.filter(peer => peer.rigid), origin);
+      const fixed = occupiedWidth(fixedSiblings, origin);
+      const stack = Math.max(0, ...stacks.map(({ items, fields }) => occupiedWidth(fields, origin)
+        + pixels(getComputedStyle(items).paddingRight) + pixels(getComputedStyle(items.parentElement).paddingRight)));
+      // A fixed group that is wider in the preferred layout already supplies the leading slot.
+      scope.stackWidth = stack > fixed ? stack : 0;
+      const width = Math.max(leading.preferred, scope.stackWidth, rigid);
+      if (width > leading.preferred) {
+        const preferred = width + picture.preferred + label.preferred + spacing;
+        for (const { items } of lanes) alignment.style(items, '--taxi-through-preferred-width', `${preferred}px`);
+      }
+      if (rigid > 0) {
+        const floor = rigid + picture.minimum + label.minimum + spacing;
+        widthFloors.set(column, Math.max(floor, widthFloors.get(column) ?? 0));
+      }
+    }
+  }
+
+  function allocateThrough({ lanes, references, fixedSiblings, compactReserve, stackWidth }) {
     // Read the caption after the through-aligned groups have chosen their wrapped titles.
     for (const lane of lanes) {
       const [entry] = lane.children;
@@ -178,18 +221,27 @@ export function mixedColumnLayout(context) {
     const tracks = trackProfiles(lanes), [leading, picture, label] = tracks;
     const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, tracks.length, scale)));
     // A fixed sibling occupies the leading track across the vertical stack.
-    const fixed = Math.max(0, ...fixedSiblings.map(element => Math.round(borderBoxSize(element, scale).width)));
+    const origin = leadingOrigin(lanes);
+    const fixed = occupiedWidth(fixedSiblings, origin);
     const floor = Math.min(fixed, available - picture.minimum - label.minimum);
-    leading.minimum = Math.max(leading.minimum, floor);
-    leading.preferred = Math.max(leading.preferred, leading.minimum);
+    const renderedMinimum = Math.max(leading.minimum, floor);
+    const stackDominates = stackWidth > leading.preferred;
+    // A wrapping title contributes its compact width to the shrink calculation.
+    const compactMinimum = leading.minimum - leading.reserve + (compactReserve ?? leading.reserve);
+    leading.minimum = stackDominates ? Math.max(floor, Math.min(renderedMinimum, compactMinimum)) : renderedMinimum;
+    leading.preferred = Math.max(leading.preferred, leading.minimum, stackWidth);
     leading.maximum = Math.max(leading.maximum, leading.preferred);
-    const requested = allocateLaneSizes(available, tracks, { fractional: true });
+    leading.growthWeight = leading.preferred - leading.reserve;
+    let requested = allocateLaneSizes(available, tracks, { fractional: true });
+    if (stackDominates && requested[0] < renderedMinimum) {
+      leading.minimum = renderedMinimum;
+      requested = allocateLaneSizes(available, tracks, { fractional: true });
+    }
     const preferred = sum(tracks.map(track => track.preferred));
-    // Growth rounds the two leading boxes first. The final label receives the remaining pixels.
-    const first = requested.slice(0, 2).map(Math.round);
-    const widths = available < preferred
-      ? roundTrackWidths(requested, Math.floor)
-      : [...first, Math.round(sum(requested)) - sum(first)];
+    // Round the two leading boxes independently and give the last label the remaining pixels.
+    const round = available < preferred ? Math.floor : Math.round;
+    const first = requested.slice(0, 2).map(round);
+    const widths = [...first, round(sum(requested) + 1e-7) - sum(first)];
     for (const lane of lanes) {
       for (const [index, entry] of lane.children.entries()) {
         updateStyle(entry.element, '--taxi-united-cell-flex', `0 0 ${widths[index]}px`);
@@ -200,7 +252,7 @@ export function mixedColumnLayout(context) {
       const width = Math.max(entry.size.minimum, widths[0] - caption - entry.labelGap);
       updateStyle(entry.element, '--taxi-through-value-width', `${width}px`);
     }
-    return lanes[0].children[0].element.getBoundingClientRect().left / scale + widths[0];
+    return origin + widths[0];
   }
 
   function allocate(above) {
@@ -233,5 +285,5 @@ export function mixedColumnLayout(context) {
     return new Map(throughAllocations.map(scope => [scope.column, allocateThrough(scope)]));
   }
 
-  return { register, registerThrough, allocate, minimumRows };
+  return { register, registerThrough, captureThroughPreferred, allocate, minimumRows, widthFloors };
 }

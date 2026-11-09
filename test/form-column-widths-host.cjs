@@ -6,7 +6,7 @@ const {frame, until, allocateFormViewport, editFormSource, sameSourcePath } = re
 
 async function pose(ui, keys, expected) {
   await allocateFormViewport(ui, expected.viewport ?? expected.frame);
-  let actual;
+  let actual, previousControls;
   try {
     await until(async () => {
       actual = await ui.evaluate(`(() => {
@@ -25,17 +25,22 @@ async function pose(ui, keys, expected) {
           const lines = field.dataset.kind === 'LabelField' ? label.textContent.split('\\n') : [label.textContent];
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : lines};
         }
-        return {frame:[origin.width,origin.height],controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
+        return {frame:[origin.width,origin.height],preferredWidth:parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
       actual.browserErrors=ui.scriptErrors();
+      // The viewport can reach its target before the allocator updates the controls.
+      const signature = JSON.stringify(actual.controls);
+      const settled = signature === previousControls;
+      previousControls = signature;
       const tolerance = expected.tolerancePx ?? 0;
       const aligned = expected.alignedY?.map(name => actual.controls[name]?.[1]);
       const trailing = expected.alignedEndX?.map(name => {
         const [x, , width] = actual.controls[name] ?? [];
         return x + width;
       });
-      return actual.layout === 'allocated' && actual.browserErrors.length === 0
+      return settled && actual.layout === 'allocated' && actual.browserErrors.length === 0
         && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
+        && (expected.preferredWidth === undefined || actual.preferredWidth === expected.preferredWidth)
         && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
         && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
@@ -51,6 +56,9 @@ async function pose(ui, keys, expected) {
     }, expected.name);
   } catch (error) {
     throw new Error(JSON.stringify({case:expected.name,actual,expected}), {cause:error});
+  }
+  if (expected.viewport?.[0] < expected.frame[0]) {
+    assert.equal(await ui.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
   }
   return {label:expected.name,...actual};
 }
@@ -84,7 +92,9 @@ function sourceVariant(xml, edit) {
     assert.ok(['fixLeft','fixRight'].includes(edit));
     return editField(xml, edit === 'fixLeft' ? 'A' : 'B', properties => '<HorizontalStretch>false</HorizontalStretch>' + properties);
   }
-  let changed = xml;
+  let changed = edit.form
+    ? xml.replace(/^[\s\S]*?(?=<ChildItems>)/u, properties => editProperties(properties, edit.form))
+    : xml;
   for (const [name, title] of Object.entries(edit.titles ?? {})) {
     changed = editField(changed, name, properties => properties.replace(/<Title>[\s\S]*?<\/Title>/u, titleXml(title)));
   }
@@ -259,9 +269,6 @@ exports.run = async () => {
           await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
           const revision = view.snapshot.revision;
           results.push(await pose(floating, keys, expected));
-          if (expected.viewport?.[0] < expected.frame[0]) {
-            assert.equal(await floating.evaluate("document.querySelector('.preview-scroll').scrollWidth > document.querySelector('.preview-scroll').clientWidth"), true);
-          }
           assert.equal(view.snapshot.revision, revision);
         }
         await replace(original);

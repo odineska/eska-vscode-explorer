@@ -129,6 +129,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
         throughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
+        unitedColumns.captureThroughPreferred();
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns(dateBlocks.titleFloors);
         allocateGroupRows = boundedGroupRows(root, scale, alignment);
@@ -170,7 +171,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'minimum';
       const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
-        minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
+        minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
         headingHeights, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });

@@ -44,20 +44,20 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {
       const local = os === 'linux' && scope.length === 1 && localInputStack(scope[0], children, os);
       if (local || scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) {
-        scopes.push({ owner: node, tracks: scope, local });
+        scopes.push({ tracks: scope, local });
       }
     }
   }
   visit(model);
 
-  const aligned = scopes.map(({ owner, tracks, local }) => {
+  const aligned = scopes.map(({ tracks, local }) => {
     const measured = tracks.map(({ node, container, track, horizontal }) => {
       const css = getComputedStyle(track);
       const width = parseFloat(css.gridTemplateColumns);
       const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
       return { node, container, horizontal, left, end: left + width };
     });
-    return { owner, tracks: measured, local };
+    return { tracks: measured, local };
   }).filter(({ tracks }) => tracks.every(track => Number.isFinite(track.end)));
   for (const { tracks: scope } of aligned) {
     if (scope.length === 1) continue;
