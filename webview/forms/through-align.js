@@ -142,11 +142,12 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
           : Math.max(...fields.map(field => (minima.get(field.key)?.width ?? 0) - field.minimum));
         return { available, capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
       });
-      // Keep each unwrapped title with its preferred control, from the longest title down.
+      // Each step reserves the preferred control width for the captions that set it.
+      // Shorter captions still fit when their controls shrink to their minima.
       const step = steps?.find(width => tracks.every(({ fields }, index) => fields.every(field => {
         const reserve = (minima.get(field.key)?.width ?? field.minimum) - field.minimum;
-        const control = field.caption.preferred + inputCaptionInset <= width
-          ? Math.max(reserve, field.preferredValue) : reserve;
+        const setsWidth = field.caption.preferred + inputCaptionInset === width;
+        const control = setsWidth ? Math.max(reserve, field.preferredValue) : reserve;
         return width + control <= measured[index].available + .5;
       })));
       const full = steps ? step === preferred : measured.every(track => track.full);

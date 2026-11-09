@@ -197,6 +197,51 @@ async function verifyWrappedRows(form, service, results) {
   await Promise.all([...service.closing]);
 }
 
+async function verifySharedCaptionSteps(document, view, main, results) {
+  const original = document.getText();
+  const title = text => `<Title><v8:item><v8:lang>ru</v8:lang><v8:content>${text}</v8:content></v8:item></Title>`;
+  const column = (name, id, children, properties) => `<UsualGroup name="${name}" id="${id}">
+    <Group>Vertical</Group><Representation>None</Representation><ShowTitle>false</ShowTitle>${properties}
+    <ChildItems>${children}</ChildItems></UsualGroup>`;
+  const field = (name, id, caption) => `<InputField name="${name}" id="${id}">
+    <DataPath>${name}</DataPath>${title(caption)}<TitleLocation>Left</TitleLocation></InputField>`;
+  const markup = caption => `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
+    <Width>35</Width><CommandBarLocation>None</CommandBarLocation><ChildItems>${column('Outer', 1,
+      column('RecordGroup', 2, field('Record', 31, 'Платежный документ'), '<United>false</United>')
+      + column('MemoGroup', 3, field('Memo', 32, caption), '<United>false</United>'), '<ThroughAlign>Use</ThroughAlign>')}</ChildItems>
+    <Attributes><Attribute name="Record" id="1"><Type><v8:Type>cfg:CatalogRef.Товары</v8:Type></Type></Attribute>
+    <Attribute name="Memo" id="2"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>210</v8:Length>
+    <v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute></Attributes></Form>`;
+  const ui = await frame({ state: { title: main.panel.title } });
+  try {
+    for (const [width, caption, x, lines] of [[384, 'Описание', 151, 1], [384, 'Описание платежа', 151, 1],
+      [294, 'Описание платежа', 87, 2], [384, 'Описание платежа', 151, 1]]) {
+      await editFormSource(document, view, markup(caption));
+      await allocateFormViewport(ui, [width, 200]);
+      const label = `shared captions at ${width} px with ${caption}`;
+      let actual;
+      await until(async () => {
+        actual = await ui.evaluate(`(() => {
+          const frame = document.querySelector('.taxi-form-frame'), bounds = frame.getBoundingClientRect();
+          return { width: bounds.width, fields: [...frame.querySelectorAll('.taxi-element[data-kind=InputField]')].map(field => {
+            const x = field.querySelector('.taxi-input').getBoundingClientRect().x - bounds.x;
+            const label = field.querySelector('.taxi-field-label');
+            return { x, lines: label.querySelectorAll('.taxi-field-caption-line').length || 1, title: label.getAttribute('aria-label') };
+          }) };
+        })()`);
+        return actual.width === width && actual.fields.length === 2
+          && actual.fields[1].title === `${caption}:`
+          && actual.fields.every(field => field.x === x && field.lines === lines);
+      }, label).catch(error => { throw new Error(`${label}: ${JSON.stringify(actual)}`, { cause: error }); });
+      results.push({ label, ...actual });
+    }
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const [form, ...wrapped] = fixture.formGallery;
@@ -303,6 +348,7 @@ exports.run = async () => {
   assert.notEqual(framed, left[0]);
   await replaceSource(source.replace(left[0], framed));
   await verify(ui, true, 'explicit Use crosses the strong divider');
+  if (process.platform === 'linux') await verifySharedCaptionSteps(document, view, main, results);
   assert.deepEqual(await fs.readFile(form.path), original);
   main.panel.dispose();
   await until(() => service.views.size === 0, 'preview released');
