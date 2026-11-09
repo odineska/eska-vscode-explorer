@@ -854,6 +854,9 @@ button { cursor: default; }
   .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) max-content;
 }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-through-mixed-field][data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-input {
+  max-width: min(var(--taxi-through-value-width, 100%), var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))));
+}
 .taxi-preview[data-form-layout=minimum] .taxi-field-control,
 .taxi-preview[data-form-layout=minimum] .taxi-field-control > *,
 .taxi-preview[data-form-layout=minimum] .taxi-special { max-width: none !important; }
@@ -909,7 +912,7 @@ button { cursor: default; }
 
 /* Ordinary vertical groups in one horizontal layout use the same row tracks. */
 .taxi-preview[data-os=linux] .taxi-items:is([data-united-auto-spacing], [data-through-labels=leading][data-auto-spacing], [data-through-separated-row][data-auto-spacing]) { --taxi-horizontal-gap: 10px; }
-.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading] > .taxi-element[data-stretch-x=true] {
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-through-labels=leading]:where(:not([data-through-mixed-lane])) > .taxi-element[data-stretch-x=true] {
   flex-basis: var(--taxi-field-track, var(--taxi-preferred-width)) !important;
 }
 .taxi-preview[data-form-layout] .taxi-items[data-united-columns] {
@@ -1024,7 +1027,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=minimum] .taxi-items[data-united-flex-lane] > .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-label-field {
   width: 100% !important;
 }
-.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-flex-lane] > .taxi-element {
+.taxi-preview[data-form-layout=allocated] .taxi-items:is([data-united-flex-lane], [data-through-mixed-lane]) > .taxi-element {
   flex: var(--taxi-united-cell-flex) !important;
   width: auto !important;
   min-width: var(--taxi-united-cell-min-width);

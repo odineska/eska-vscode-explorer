@@ -1,4 +1,4 @@
-import { availableTrackWidth, updateStyle } from './layout-box.mjs';
+import { availableTrackWidth, borderBoxSize, pixels, updateStyle } from './layout-box.mjs';
 import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
 import { inputRows, nativeReferenceInput, scalar } from './model.mjs';
 
@@ -35,10 +35,14 @@ function trackProfiles(lanes, above) {
   });
 }
 
+function stretchReference(entry, os) {
+  return entry.node.kind === 'InputField' && entry.size.growthWeight > 0
+    && inputRows(entry.node) === 1 && nativeReferenceInput(entry.node, os) && !!laneInputBounds(entry.node, os);
+}
+
 function referencePictureLabel(lane, os) {
   const [field, picture, label] = lane.children;
-  return lane.children.length === 3 && field.kind === 'field' && field.size.growthWeight > 0
-    && inputRows(field.node) === 1 && nativeReferenceInput(field.node, os) && !!laneInputBounds(field.node, os)
+  return lane.children.length === 3 && field.kind === 'field' && stretchReference(field, os)
     && picture.node.kind === 'PictureField' && !picture.size.growthWeight
     && label.node.kind === 'LabelField' && label.size.growthWeight > 0;
 }
@@ -70,12 +74,14 @@ function topTrackWidths(available, tracks, weights, round) {
 /** Keep mixed rows in one column scope while their automatic titles move above the controls. */
 export function mixedColumnLayout(context) {
   const { alignment, os, scale } = context;
-  const minimumRows = new Map(), allocations = [];
+  const minimumRows = new Map(), allocations = [], throughAllocations = [];
+
+  function sizeEntries(entries) {
+    for (const entry of entries) entry.size = controlSize(entry, context);
+  }
 
   function register(items, lanes, setCell, setLane) {
-    for (const lane of lanes) {
-      for (const entry of lane.children) entry.size = controlSize(entry, context);
-    }
+    sizeEntries(lanes.flatMap(lane => lane.children));
     const adaptive = lanes.every(lane => referencePictureLabel(lane, os));
     const title = adaptive && items.parentElement.querySelector(':scope > .taxi-group-title[data-native-heading-minimum]');
     const heading = title ? { items, preferred: Number(title.dataset.nativeTextWidth) } : undefined;
@@ -111,6 +117,55 @@ export function mixedColumnLayout(context) {
     if (plans) allocations.push({lanes, plans, united, heading, widest});
   }
 
+  function registerThrough(lanes, fields, fixedSiblings) {
+    sizeEntries(lanes.flatMap(lane => lane.children));
+    const hasTooltip = entry => entry.row.querySelector('[data-tooltip-button]');
+    if (!lanes.every(lane => referencePictureLabel(lane, os) && !hasTooltip(lane.children[0]))) return;
+    sizeEntries(fields);
+    const references = fields.filter(entry => stretchReference(entry, os) && !hasTooltip(entry));
+    if (!references.length) return;
+
+    for (const lane of lanes) {
+      alignment.mark(lane.items, 'data-through-mixed-lane');
+      for (const {element} of lane.children) {
+        alignment.style(element, '--taxi-united-cell-flex', '0 0 var(--taxi-preferred-width)');
+        alignment.style(element, '--taxi-united-cell-min-width', '0px');
+      }
+    }
+    for (const { element } of references) {
+      alignment.mark(element, 'data-through-mixed-field');
+      alignment.style(element, '--taxi-through-value-width', '');
+    }
+    throughAllocations.push({ lanes, references, fixedSiblings });
+  }
+
+  function allocateThrough({ lanes, references, fixedSiblings }) {
+    // Read the caption after the through-aligned groups have chosen their wrapped titles.
+    for (const lane of lanes) {
+      const [entry] = lane.children;
+      entry.labelWidth = pixels(getComputedStyle(entry.row).gridTemplateColumns);
+    }
+    const tracks = trackProfiles(lanes), [leading, picture, label] = tracks;
+    const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, tracks.length, scale)));
+    // A fixed sibling occupies the leading track across the vertical stack.
+    const fixed = Math.max(0, ...fixedSiblings.map(element => Math.round(borderBoxSize(element, scale).width)));
+    const floor = Math.min(fixed, available - picture.minimum - label.minimum);
+    leading.minimum = Math.max(leading.minimum, floor);
+    leading.preferred = Math.max(leading.preferred, leading.minimum);
+    leading.maximum = Math.max(leading.maximum, leading.preferred);
+    const widths = allocateLaneSizes(available, tracks);
+    for (const lane of lanes) {
+      for (const [index, entry] of lane.children.entries()) {
+        updateStyle(entry.element, '--taxi-united-cell-flex', `0 0 ${widths[index]}px`);
+      }
+    }
+    for (const entry of references) {
+      const caption = pixels(getComputedStyle(entry.row).gridTemplateColumns);
+      const width = Math.max(entry.size.minimum, widths[0] - caption - entry.labelGap);
+      updateStyle(entry.element, '--taxi-through-value-width', `${width}px`);
+    }
+  }
+
   function allocate(above) {
     for (const {lanes, plans, united, heading, widest} of allocations) {
       const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, widest.length, scale)));
@@ -138,7 +193,8 @@ export function mixedColumnLayout(context) {
         }
       }
     }
+    for (const scope of throughAllocations) allocateThrough(scope);
   }
 
-  return { register, allocate, minimumRows };
+  return { register, registerThrough, allocate, minimumRows };
 }

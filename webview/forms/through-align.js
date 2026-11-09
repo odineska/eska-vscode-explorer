@@ -33,18 +33,21 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     }
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {
-      if (scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) scopes.push(scope);
+      if (scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) scopes.push({ owner: node, tracks: scope });
     }
   }
   visit(model);
 
-  const tracks = scopes.map(scope => scope.map(({ node, container, track, horizontal }) => {
-    const css = getComputedStyle(track);
-    const width = parseFloat(css.gridTemplateColumns);
-    const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
-    return { node, container, horizontal, left, end: left + width };
-  })).filter(scope => scope.every(track => Number.isFinite(track.end)));
-  for (const scope of tracks) {
+  const aligned = scopes.map(({ owner, tracks }) => {
+    const measured = tracks.map(({ node, container, track, horizontal }) => {
+      const css = getComputedStyle(track);
+      const width = parseFloat(css.gridTemplateColumns);
+      const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
+      return { node, container, horizontal, left, end: left + width };
+    });
+    return { owner, tracks: measured };
+  }).filter(({ tracks }) => tracks.every(track => Number.isFinite(track.end)));
+  for (const { tracks: scope } of aligned) {
     if (scope.length === 1) continue;
     const end = Math.max(...scope.map(track => track.end));
     for (const {container, horizontal, left} of scope) {
@@ -52,7 +55,7 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
       alignment.style(container, '--taxi-through-label-width', `${end - left}px`);
     }
   }
-  return tracks;
+  return aligned;
 }
 
 function inputCaption(node, element, os) {
@@ -89,7 +92,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
   const { alignment, os, scale, targets } = context;
   if (os !== 'linux') return () => {};
   const allocations = [];
-  for (const scope of scopes) {
+  for (const { tracks: scope } of scopes) {
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
       .map(node => targets.containers.get(node.key)).filter(Boolean);

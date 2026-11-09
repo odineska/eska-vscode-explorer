@@ -119,7 +119,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         layoutGroupSpacing(model, context, bottomCommands);
         unitedColumns = alignUnitedColumns(model, context);
         const throughScopes = alignThroughLabels(model, context);
-        unitedColumns.alignColumns();
+        unitedColumns.alignColumns(throughScopes);
         unitedRows = alignUnitedRows(model, context, wrap);
         allocateInlineRows = alignInlineFieldRows(model, context);
         numericRows = alignNumericLabelRows(model, context);

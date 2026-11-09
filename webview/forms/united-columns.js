@@ -5,14 +5,14 @@ import { mixedColumnLayout } from './mixed-column-layout.js';
 
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
-function ordinaryRow(node) {
+function ordinaryRow(node, allowWidth = false) {
   return ordinaryGroup(node) && (node.presentation.grouping === 'Horizontal'
       || node.presentation.grouping === 'HorizontalIfPossible' && node.presentation.united === false
         && node.children.every(child => child.kind === 'CommandBar'))
     && typeof node.presentation.united === 'boolean'
     && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'))
     && automaticHorizontalSpacing(node)
-    && number(node, 'Width') <= 0 && !property(node, 'BackColor');
+    && (allowWidth || number(node, 'Width') <= 0) && !property(node, 'BackColor');
 }
 
 function leadingField(entry) {
@@ -49,7 +49,7 @@ export function alignUnitedColumns(model, context) {
   const { mark, style } = alignment;
   const scopes = [], mixed = mixedColumnLayout(context);
 
-  function entryFor(node, mixedRow = false, commandColumns = false) {
+  function entryFor(node, { mixedRow = false, commandColumns = false, allowWidth = false } = {}) {
     const element = elements.get(node.key), location = node.presentation.titleLocation;
     const choice = ['RadioButtonField', 'CheckBoxField'].includes(node.kind);
     if ((node.kind === 'InputField' || choice) && (location === 'Left' || mixedRow && location === 'Top')) {
@@ -78,12 +78,12 @@ export function alignUnitedColumns(model, context) {
       const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
       if (control) return { kind: 'control', node, element, width: borderBoxSize(control, scale).width };
     }
-    if (!ordinaryRow(node)) return;
+    if (!ordinaryRow(node, allowWidth)) return;
     const items = containers.get(node.key), group = items?.parentElement;
     if (!items) return;
     const nodes = mountedChildren(node);
     const mixed = os === 'linux' && nodes.some(child => ['LabelField', 'PictureField'].includes(child.kind));
-    const children = nodes.map(child => entryFor(child, mixed, commandColumns));
+    const children = nodes.map(child => entryFor(child, { mixedRow: mixed, commandColumns }));
     if (!children.length || children.some(child => !child)) return;
     const titleElement = group.querySelector(':scope > .taxi-group-title');
     if (!titleElement) return { kind: 'group', node, element, items, group, children };
@@ -116,7 +116,7 @@ export function alignUnitedColumns(model, context) {
     const nodes = columnNodes(node, exposed);
     const commandColumns = nodes.some(child => ordinaryRow(child) && !child.presentation.united
       && mountedChildren(child).some(item => item.kind === 'CommandBar'));
-    return nodes.map(child => entryFor(child, false, commandColumns));
+    return nodes.map(child => entryFor(child, { commandColumns }));
   }
 
   const covered = new Set();
@@ -212,7 +212,23 @@ export function alignUnitedColumns(model, context) {
     for (const child of entry.children ?? []) captureCaption(child);
   }
 
-  function alignColumns() {
+  function registerThroughColumns({ owner, tracks }) {
+    if (tracks.some(track => Math.abs(track.left - tracks[0].left) > .5)) return;
+    const lanes = tracks.filter(track => track.horizontal).map(({node}) => entryFor(node, { allowWidth: true }));
+    if (!lanes.length || lanes.some(lane => !lane || lane.title || lane.node.presentation.united
+      || lane.items.matches('[data-united-horizontal-lane]'))) return;
+    for (const lane of lanes) captureCaption(lane);
+    // A width below the row's intrinsic size does not create a separate column in Designer.
+    if (lanes.some(lane => number(lane.node, 'Width') * 10 > intrinsic(lane, 10))) return;
+    const fields = tracks.filter(track => !track.horizontal).flatMap(({ node }) => mountedChildren(node).map(child => entryFor(child)))
+      .filter(entry => entry?.kind === 'field' && entry.location === 'Left');
+    const fixedSiblings = mountedChildren(owner).filter(node => (ordinaryGroup(node) && node.presentation.grouping === 'Vertical')
+      || (node.kind === 'InputField' && node.presentation.titleLocation === 'None'))
+      .map(node => elements.get(node.key)).filter(element => element.dataset.stretchX === 'false');
+    mixed.registerThrough(lanes, fields, fixedSiblings);
+  }
+
+  function alignColumns(throughScopes) {
     // Through-align may contribute a caption from a different vertical branch.
     for (const {lanes, gap, preserveAlignment} of columns) {
       for (const lane of lanes) {
@@ -229,6 +245,7 @@ export function alignUnitedColumns(model, context) {
       // Standalone fields already use their vertical grid and remain free to resize.
       for (const lane of lanes) if (lane.kind === 'group') placeLane(lane, 0, tracks, gap);
     }
+    if (os === 'linux') for (const scope of throughScopes) registerThroughColumns(scope);
   }
   return { ...mixed, alignColumns };
 }
