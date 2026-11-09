@@ -6,9 +6,19 @@ export function Pdf(props){
  let surface,canvas;const [ready,setReady]=createSignal(false),owner={};
  createEffect(on(()=>[props.controller.state.os,props.controller.state.sequence,props.controller.state.ui.zoom,props.metrics],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(props.controller.state.os!=='linux')return;
-  const draw=()=>{const metrics=props.metrics,rect=surface.getBoundingClientRect(),calibrated=metrics?.calibrated&&devicePixelRatio===1&&props.controller.state.ui.zoom===100&&rect.width===metrics.width-2&&rect.height===metrics.height-2;
-   if(calibrated){canvas.width=metrics.width-2;canvas.height=metrics.height-2;canvas.getContext('2d').putImageData(new ImageData(pdfSurfaceRgba(metrics.width,metrics.height,flag(props.node,'Enabled')),canvas.width,canvas.height),0,0);}
-   setReady(!!calibrated);runtime?.issue(owner,!calibrated);
+  const draw = () => {
+   const metrics = props.metrics;
+   const rect = surface.getBoundingClientRect();
+   const calibrated = metrics?.calibrated && devicePixelRatio === 1 && props.controller.state.ui.zoom === 100
+     && rect.width === metrics.width - 2 && rect.height === metrics.height - 2;
+   const pixels = calibrated ? pdfSurfaceRgba(metrics.width, metrics.height, flag(props.node, 'Enabled')) : undefined;
+   if (pixels) {
+    canvas.width = metrics.width - 2;
+    canvas.height = metrics.height - 2;
+    canvas.getContext('2d').putImageData(new ImageData(pixels, canvas.width, canvas.height), 0, 0);
+   }
+   setReady(Boolean(pixels));
+   runtime?.issue(owner, !pixels);
   };
   const frame=requestAnimationFrame(draw),resize=new ResizeObserver(draw);resize.observe(surface);draw();onCleanup(()=>{cancelAnimationFrame(frame);resize.disconnect();runtime?.issue(owner,false);});
  }));
