@@ -56,7 +56,7 @@ async function pose(ui, keys, expected) {
 }
 
 function editField(xml, name, transform) {
-  const field = new RegExp(`(<(?:InputField|LabelField) name="${name}" id="\\d+">)([\\s\\S]*?)(</(?:InputField|LabelField)>)`);
+  const field = new RegExp(`(<(?:InputField|LabelField|PictureField) name="${name}" id="\\d+">)([\\s\\S]*?)(</(?:InputField|LabelField|PictureField)>)`);
   assert.match(xml, field);
   return xml.replace(field, (_, open, properties, close) => open + transform(properties) + close);
 }

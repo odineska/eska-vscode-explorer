@@ -1,6 +1,6 @@
-import { availableTrackWidth, borderBoxSize, pixels, updateStyle } from './layout-box.mjs';
-import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
-import { inputRows, nativeReferenceInput, scalar } from './model.mjs';
+import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
+import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, roundTrackWidths, stretches } from './layout-model.mjs';
+import { flag, inputRows, nativeReferenceInput, number, property, scalar } from './model.mjs';
 
 const sum = values => values.reduce((total, value) => total + value, 0);
 const gap = 10;
@@ -16,6 +16,26 @@ function controlSize(entry, { os, collapsed }) {
   const minimum = laneInputBounds(entry.node, os)?.narrowMinimum
     ?? bounds.minimum ?? (entry.node.kind === 'LabelField' ? 60 : 80);
   return { preferred, minimum: Math.min(preferred, minimum), maximum, growthWeight: preferred };
+}
+
+function measureThroughPicture(entry, { alignment, scale }) {
+  const { node, element, width } = entry;
+  const authored = number(node, 'Width');
+  if (!authored || flag(node, 'AutoMaxWidth') || authored !== number(node, 'MaxWidth')) return;
+  const control = element.querySelector('.taxi-picture-field');
+  const border = boxInsets(getComputedStyle(control));
+  // The authored maximum includes the value width. The border remains visible at the cap.
+  entry.size = { minimum: Math.min(width, 10 + border.width), preferred: width,
+    maximum: width + border.width, growthWeight: width };
+  const height = number(node, 'Height');
+  const fixedHeight = height > 0 && !flag(node, 'AutoMaxHeight') && height === number(node, 'MaxHeight');
+  alignment.mark(element, 'data-through-picture', fixedHeight ? 'height' : '');
+  if (fixedHeight) {
+    const painted = borderBoxSize(control, scale).height + border.height;
+    alignment.style(element, '--taxi-through-picture-height', `${painted}px`);
+    const vertical = scalar(node, 'GroupVerticalAlign');
+    alignment.style(element, '--taxi-through-picture-offset', vertical === 'Center' ? '.5px' : vertical ? '0px' : '1px');
+  }
 }
 
 function trackProfiles(lanes, above) {
@@ -126,6 +146,11 @@ export function mixedColumnLayout(context) {
     if (!references.length) return;
 
     for (const lane of lanes) {
+      const [, picture, label] = lane.children;
+      measureThroughPicture(picture, context);
+      if (property(label.node, 'BackColor')) {
+        label.size.minimum = Math.min(label.size.preferred, label.size.minimum + 2);
+      }
       alignment.mark(lane.items, 'data-through-mixed-lane');
       for (const {element} of lane.children) {
         alignment.style(element, '--taxi-united-cell-flex', '0 0 var(--taxi-preferred-width)');
@@ -158,7 +183,13 @@ export function mixedColumnLayout(context) {
     leading.minimum = Math.max(leading.minimum, floor);
     leading.preferred = Math.max(leading.preferred, leading.minimum);
     leading.maximum = Math.max(leading.maximum, leading.preferred);
-    const widths = allocateLaneSizes(available, tracks);
+    const requested = allocateLaneSizes(available, tracks, { fractional: true });
+    const preferred = sum(tracks.map(track => track.preferred));
+    // Growth rounds the two leading boxes first. The final label receives the remaining pixels.
+    const first = requested.slice(0, 2).map(Math.round);
+    const widths = available < preferred
+      ? roundTrackWidths(requested, Math.floor)
+      : [...first, Math.round(sum(requested)) - sum(first)];
     for (const lane of lanes) {
       for (const [index, entry] of lane.children.entries()) {
         updateStyle(entry.element, '--taxi-united-cell-flex', `0 0 ${widths[index]}px`);
