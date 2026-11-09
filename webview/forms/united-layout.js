@@ -286,11 +286,16 @@ export function alignUnitedRows(model, context, wrapped) {
     const packedDates = new Map();
     for (const [owner, pair] of columnPairs) {
       if (!pair.groups) continue;
+      const available = availableTrackWidth(pair.items, pair.groups.length, scale);
+      const bounds = pair.groups.map(node => minima.get(node.key));
+      const side = bounds.map((size, index) => Math.max(size?.width ?? pair.natural[index], size?.sideWidth ?? 0));
+      // Keep the previous shared caption alignment when both columns fit side by side.
+      const fitsSide = side.reduce((sum, width) => sum + width, 0) <= available + .5;
       const lanes = pair.groups.map((node, index) => {
-        const bounds = minima.get(node.key);
-        const minimum = bounds?.width ?? pair.natural[index];
+        const size = bounds[index];
+        const minimum = fitsSide ? side[index] : size?.width ?? pair.natural[index];
         const preferred = Math.max(minimum, pair.natural[index]);
-        return { minimum, preferred, maximum: Math.max(preferred, bounds?.maximumWidth ?? Infinity),
+        return { minimum, preferred, maximum: Math.max(preferred, size?.maximumWidth ?? Infinity),
           growthWeight: stretchWeight(node, 'x') };
       });
       // A complex pair can already expand inside the form's preferred width.
@@ -300,7 +305,6 @@ export function alignUnitedRows(model, context, wrapped) {
       const preferred = pair.hasThroughDates ? lanes.map(lane => lane.preferred)
         : allocateLaneSizes(Math.max(natural, pair.available), lanes);
       pair.preferred = preferred.reduce((sum, width) => sum + width, 0);
-      const available = availableTrackWidth(pair.items, lanes.length, scale);
       let tracks = lanes.map((lane, index) => ({ ...lane, preferred: preferred[index] }));
       const floors = captionFloors(pair, tracks, minima, available);
       pair.minimumWidths = floors?.widths;

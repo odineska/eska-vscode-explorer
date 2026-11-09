@@ -4,8 +4,20 @@ const path = require('node:path');
 const vscode = require('vscode');
 const {frame, until, allocateFormViewport, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
+async function pressDivider(ui, key) {
+  await ui.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
+    new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true}));true`);
+}
+
 async function pose(ui, keys, expected) {
   await allocateFormViewport(ui, expected.viewport ?? expected.frame);
+  if (expected.dividerKey) {
+    await until(() => ui.evaluate(`(() => {
+      const width = document.querySelector('.taxi-form-frame').getBoundingClientRect().width;
+      return width === ${expected.frame[0]} && !!document.querySelector('.taxi-column-divider');
+    })()`), 'divider appears at the measured width');
+    await pressDivider(ui, expected.dividerKey);
+  }
   let actual, previousControls;
   try {
     await until(async () => {
@@ -150,8 +162,7 @@ async function verifyColumnDivider(ui, original, replace) {
     return result;
   }
   async function press(key, bound) {
-    await ui.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
-      new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true}));true`);
+    await pressDivider(ui, key);
     return observe(result => result.range && result.range[1] === result.range[bound], 'divider reaches '+key);
   }
 
@@ -261,11 +272,12 @@ exports.run = async () => {
     } else if (process.platform === 'linux' && (placements || checkbox)) {
       const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
-        const wide = checkbox ? form.cases[0] : {name:'wide captions',frame:[1180,250],
+        const explicitWide = checkbox || form.kind === 'VerticalAmountTitles';
+        const wide = explicitWide ? form.cases[0] : {name:'wide captions',frame:[1180,250],
           locations:Object.fromEntries(Object.keys(placements).map(name => [name, 'Left']))};
         const initial = await pose(floating, keys, wide);
-        if (checkbox) results.push(initial);
-        for (const expected of form.cases.slice(checkbox ? 1 : 0)) {
+        if (explicitWide) results.push(initial);
+        for (const expected of form.cases.slice(explicitWide ? 1 : 0)) {
           await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
           const revision = view.snapshot.revision;
           results.push(await pose(floating, keys, expected));

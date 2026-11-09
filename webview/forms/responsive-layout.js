@@ -171,7 +171,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
       content.dataset.formLayout = 'minimum';
       const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
-        minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
+        minimumCaptions, minimumInputs: throughCaptions.minimumInputs,
+        commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
         fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
@@ -199,7 +200,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     rootCommands?.allocate();
     allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
-    throughCaptions.allocate(captions, geometry().minima);
+    const throughAbove = new Set();
+    throughCaptions.allocate(captions, geometry().minima, throughAbove);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     for (const [key, plan] of packedDates) {
@@ -213,6 +215,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateInlineRows(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    for (const key of throughAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
     throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);

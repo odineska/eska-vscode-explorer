@@ -2,16 +2,18 @@ import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
 import { throughCaptionWidth } from './field-caption-layout.js';
 
 const widthWithHeadings = value => value.fullWidth ?? value.width;
+const widthWithSideCaptions = value => value.sideWidth ?? value.width;
 const maximumWidth = value => value.maximumWidth ?? Infinity;
 
 function reserveWidth(value, width, fullWidth = width) {
   value.fullWidth = Math.max(widthWithHeadings(value), fullWidth);
+  value.sideWidth = Math.max(widthWithSideCaptions(value), width);
   value.width = Math.max(value.width, width);
   value.maximumWidth = Math.max(maximumWidth(value), fullWidth);
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, widthFloors, fixedThroughWidths, headingHeights, available, conditionalWidth }) {
+export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs, commandWidth, minimumRows, widthFloors, fixedThroughWidths, headingHeights, available, conditionalWidth }) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -25,6 +27,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
   const insets = element => boxInsets(getComputedStyle(element));
   const add = (value, spacing) => ({ width: value.width + spacing.width,
     fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing),
+    sideWidth: widthWithSideCaptions(value) + widthWithSideCaptions(spacing),
     maximumWidth: maximumWidth(value) + spacing.width, height: value.height + spacing.height });
   function items(element) {
     if (!element) return { width: 0, maximumWidth: 0, height: 0 };
@@ -38,7 +41,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       ? children.reduce((sum, child) => sum + sizeOf(child), gap)
       : Math.max(0, ...children.map((child, index) => sizeOf(child) - (reflows && horizontal
         ? pixels(elements[index].style.getPropertyValue('--taxi-group-spacing-x')) : 0)));
-    const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings), height: horizontal
+    const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings),
+      sideWidth: width(widthWithSideCaptions), height: horizontal
       ? Math.max(0, ...children.map(value => value.height)) : children.reduce((sum, value) => sum + value.height, gap) };
     value.maximumWidth = horizontal ? children.reduce((sum, child) => sum + maximumWidth(child), gap)
       : Math.max(0, ...children.map(maximumWidth));
@@ -46,13 +50,13 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     if (element.hasAttribute('data-united-columns')) {
       // Use the allocator's lower bound for this row, including independent captions.
       const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
-      if (laneMinimum && !reflows) value.width = value.fullWidth = laneMinimum + gap;
+      if (laneMinimum && !reflows) value.width = value.fullWidth = value.sideWidth = laneMinimum + gap;
     }
     if (element.hasAttribute('data-united-columns') || element.hasAttribute('data-fixed-date-row')) {
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     const minimum = minimumRows.get(element);
-    if (minimum !== undefined && !reflows) value.width = value.fullWidth = minimum;
+    if (minimum !== undefined && !reflows) value.width = value.fullWidth = value.sideWidth = minimum;
     const floor = widthFloors.get(element);
     if (floor !== undefined) reserveWidth(value, floor);
     if (fixedThroughWidths.size) {
@@ -85,6 +89,11 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
         width: (vertical ? Math.max(title.width, content.width) : title.width + gap + content.width) + padding.width,
         height: Math.max(rowHeight(content.height), pixels(css.minHeight)),
       };
+      const inputMinimum = minimumInputs.get(element.dataset.element);
+      if (inputMinimum) {
+        if (inputMinimum.aboveWidth !== undefined) value.width = inputMinimum.aboveWidth + padding.width;
+        value.sideWidth = Math.max(value.width, content.width + inputMinimum.alignedCaption + inputMinimum.gap + padding.width);
+      }
       const widthLimit = pixels(element.style.getPropertyValue('--taxi-control-max-width'));
       if (widthLimit && child?.classList.contains('taxi-input')) {
         const controlWidth = widthLimit + margins(child).width;
@@ -120,12 +129,14 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
     } else if (pages) {
       const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), margins(page))));
       value = { width: Math.max(0, ...children.map(value => value.width)), fullWidth: Math.max(0, ...children.map(widthWithHeadings)),
+        sideWidth: Math.max(0, ...children.map(widthWithSideCaptions)),
         height: Math.max(0, ...children.map(value => value.height)) };
       const tabs = pages.querySelector(':scope > .taxi-tabs');
       if (tabs) {
         const box = marginBox(tabs), side = ['TabsOnLeftHorizontal','TabsOnRightHorizontal'].includes(pages.dataset.representation);
         if (side) {
           value.fullWidth += box.width;
+          value.sideWidth += box.width;
           value.width += box.width;
         } else value.height += box.height;
       }
@@ -136,7 +147,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       if (child?.hasAttribute('data-native-decoration')) value.width = Number(child.dataset.decorationMinimum) + insets(child).width;
     }
     const inlineMinimum = pixels(element.style.getPropertyValue('--taxi-inline-track-minimum'));
-    if (inlineMinimum) value.width = value.fullWidth = inlineMinimum;
+    if (inlineMinimum) value.width = value.fullWidth = value.sideWidth = inlineMinimum;
     const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-min-width')
       || element.style.getPropertyValue('--taxi-united-cell-width'));
     reserveWidth(value, columnWidth);

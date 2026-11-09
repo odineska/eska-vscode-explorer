@@ -1,4 +1,4 @@
-import { fieldWidth, inputPaintedOutset, inputRows, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
+import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
@@ -9,6 +9,12 @@ const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-fiel
 function labelScope(node, os) {
   return node.presentation.grouping === 'Vertical' && (['Form', 'Page'].includes(node.kind) || ordinaryGroup(node)
     || os === 'linux' && node.kind === 'UsualGroup' && scalar(node, 'Behavior') === 'Collapsible');
+}
+
+function movableNumber(node, os) {
+  return node.presentation.valueType?.kind === 'number' && linuxFixedInputWidth(node, os)
+    && node.presentation.titleLocation === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
+    && scalar(node, 'ToolTipRepresentation') !== 'Button';
 }
 
 function localInputStack(track, children, os) {
@@ -43,7 +49,9 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {
       const local = os === 'linux' && scope.length === 1 && localInputStack(scope[0], children, os);
-      if (local || scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) {
+      const entries = children(scope[0].node);
+      if (local || scope.length > 1 || os === 'linux' && (entries.some(separatedRow)
+        || entries.length > 1 && entries.some(child => movableNumber(child, os)))) {
         scopes.push({ tracks: scope, local });
       }
     }
@@ -99,20 +107,34 @@ function captionTrack(track, { targets, os, scale }, minimumCaptions, adaptiveFi
   return { ...track, fields, preferredRow };
 }
 
+function sideReserve(field, minima) {
+  return field.numberWidth === undefined ? (minima.get(field.key)?.width ?? field.minimum) - field.minimum
+    : field.numberWidth + field.gap;
+}
+
 function captionStep(steps, tracks, minima, available) {
   // The fields whose captions set this step retain their preferred value widths.
   return steps?.find(width => tracks.every(({ fields }, index) => fields.every(field => {
-    const reserve = (minima.get(field.key)?.width ?? field.minimum) - field.minimum;
+    const reserve = sideReserve(field, minima);
     const setsWidth = field.caption.preferred + inputCaptionInset === width;
     const control = setsWidth ? Math.max(reserve, field.preferredValue) : reserve;
     return width + control <= available[index] + .5;
   })));
 }
 
+function allocateIndependentCaption(field, available, minima, captions, above) {
+  const capacity = available - sideReserve(field, minima);
+  const top = field.numberWidth !== undefined && capacity + .5 < field.minimum;
+  if (top) above.add(field.key);
+  const width = top ? available : Math.max(field.caption.minimum, Math.floor(capacity) - inputCaptionInset);
+  allocateFieldCaption(captions, field, Math.min(field.caption.preferred, width), top ? 0 : inputCaptionInset);
+  updateStyle(field.element, '--taxi-field-columns', top ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
+}
+
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
-  const shared = [], stacks = [], stackLimits = new Map();
+  const shared = [], stacks = [], stackLimits = new Map(), minimumInputs = new Map();
   for (const { tracks: scope, local } of os === 'linux' ? scopes : []) {
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
@@ -126,7 +148,13 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     const fields = tracks.flatMap(track => track.fields);
     const width = metric => Math.max(...fields.map(field => field.caption[metric])) + inputCaptionInset;
     const preferred = width('preferred'), compact = width('compact'), minimum = width('minimum');
-    if (minimum >= preferred && !local) continue;
+    if (vertical) for (const field of fields) {
+      if (field.element.dataset.stretchX === 'false' && movableNumber(field.node, os)) {
+        field.numberWidth = fieldWidth(field.node, os) + inputPaintedOutset(field.node, os);
+      }
+    }
+    const independentCaptions = fields.some(field => field.numberWidth !== undefined);
+    if (minimum >= preferred && !local && !independentCaptions) continue;
     const end = Math.max(...tracks.map(track => track.end));
     for (const items of separated) alignment.mark(items, 'data-through-separated-row');
     for (const track of tracks) {
@@ -140,9 +168,15 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
       }
       alignment.style(track.container, '--taxi-through-allocated-label-width', '');
       for (const field of track.fields) {
-        field.minimum = track.horizontal ? field.caption.minimum + inputCaptionInset : minimum;
+        field.minimum = track.horizontal || independentCaptions ? field.caption.minimum + inputCaptionInset : minimum;
         minimumCaptions.set(field.key, field.minimum);
         alignment.style(field.element, '--taxi-field-caption-width', '');
+        if (independentCaptions) {
+          const aboveWidth = field.numberWidth === undefined ? undefined : Math.max(field.numberWidth, field.caption.minimum);
+          // Keep the side-caption budget available even when the physical minimum is smaller.
+          minimumInputs.set(field.key, { alignedCaption: minimum, gap: field.gap, aboveWidth });
+          alignment.style(field.element, '--taxi-field-columns', '');
+        }
         field.capped = track.horizontal && field.element.hasAttribute('data-horizontal-input-limit');
         if (field.capped) {
           alignment.style(field.element, '--taxi-through-caption-reserve', '');
@@ -155,7 +189,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
       ? [...new Set(fields.map(field => field.caption.preferred + inputCaptionInset))]
         .filter(width => width > minimum).sort((a, b) => b - a)
       : undefined;
-    const allocation = { tracks, preferred, compact, minimum, steps };
+    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions };
     if (local) {
       const [track] = tracks;
       alignment.mark(track.container, 'data-through-input-stack');
@@ -178,8 +212,8 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
   }
 
-  function allocateWidths(allocations, captions, minima, leadingEdges) {
-    for (const { tracks, preferred, compact, minimum, steps } of allocations) {
+  function allocateWidths(allocations, captions, minima, above, leadingEdges) {
+    for (const { tracks, preferred, compact, minimum, steps, independentCaptions } of allocations) {
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
         // The stack has its own captions but occupies the leading track of the mixed rows.
         const edge = leadingEdges?.get(parent);
@@ -189,16 +223,21 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         }
         const available = borderBoxSize(container, scale).width - boxInsets(getComputedStyle(container)).width;
         const reserve = horizontal ? (minima.get(node.key)?.width ?? 0) - fields[0].minimum
-          : Math.max(...fields.map(field => (minima.get(field.key)?.width ?? 0) - field.minimum));
+          : Math.max(...fields.map(field => sideReserve(field, minima)));
         return { available, capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
       });
       const step = steps && captionStep(steps, tracks, minima, measured.map(track => track.available));
       const shared = steps ? step ?? minimum
         : measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
       const full = steps ? shared === preferred : measured.every(track => track.full);
+      const separate = independentCaptions && measured.some(track => track.capacity + .5 < minimum);
       for (const [index, {container, horizontal, fields, fullWidth}] of tracks.entries()) {
         const [leading] = fields;
-        const { capacity } = measured[index];
+        const { capacity, available } = measured[index];
+        if (separate) {
+          for (const field of fields) allocateIndependentCaption(field, available, minima, captions, above);
+          continue;
+        }
         const independent = horizontal && shared > capacity + .5;
         const assigned = full ? fullWidth : independent
           ? Math.max(leading.minimum, Math.min(capacity, leading.caption.preferred + inputCaptionInset)) : shared;
@@ -207,13 +246,14 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
           const wrap = !full && assigned < field.caption.preferred + inputCaptionInset;
           allocateFieldCaption(captions, field, wrap ? assigned - inputCaptionInset : undefined, inputCaptionInset);
           if (field.capped) updateStyle(field.element, '--taxi-through-caption-reserve', `${assigned - field.minimum}px`);
+          if (independentCaptions) updateStyle(field.element, '--taxi-field-columns', '');
         }
       }
     }
   }
   return {
-    stackLimits,
-    allocate: (captions, minima) => allocateWidths(shared, captions, minima),
-    allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, leadingEdges),
+    stackLimits, minimumInputs,
+    allocate: (captions, minima, above) => allocateWidths(shared, captions, minima, above),
+    allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, undefined, leadingEdges),
   };
 }
