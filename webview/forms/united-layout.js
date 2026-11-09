@@ -44,10 +44,17 @@ function partialCaptionFloors(column, candidates, available) {
   };
 }
 
-function packedDateColumn(pair, tracks, available, widths, partial) {
+function fillFraction(width, { minimum, preferred }) {
+  return preferred > minimum ? Math.max(0, Math.min(1, (width - minimum) / (preferred - minimum))) : 1;
+}
+
+function packedDateColumn(pair, tracks, available, widths, partial, minima) {
   const column = pair.packedDateColumn;
   if (!column || available >= pair.preferred) return;
   const { index, insets, block, inputPreference } = column;
+  const through = block.through;
+  // Match the separator's one-pixel tolerance at the preferred row width.
+  if (through && available + 1 >= pair.preferred) return;
   const blockWidth = widths[index] - insets;
   const transition = block.transition;
   if (partial?.reserveLabel) {
@@ -64,7 +71,9 @@ function packedDateColumn(pair, tracks, available, widths, partial) {
   }
   // Fit whole words before rounding the column tracks for display.
   const provisional = allocateLaneSizes(available, tracks, { fractional: true })[index];
-  const packed = block.pack(provisional - insets);
+  const throughBudget = width => Math.min(block.widthAt(fillFraction(width, tracks[index])), blockWidth - through.trailingMinimum);
+  const budget = through ? throughBudget(provisional) : provisional - insets;
+  const packed = block.pack(budget);
   if (!packed) {
     if (transition && blockWidth < transition.sideMinimum && blockWidth > transition.abovePreferred) {
       return { key: block.key, widths, plan: { width: transition.abovePreferred } };
@@ -72,10 +81,15 @@ function packedDateColumn(pair, tracks, available, widths, partial) {
     return;
   }
   const other = 1 - index;
-  const cap = Math.max(packed.width + insets, inputPreference, tracks[index].minimum, available - tracks[other].preferred);
-  const width = Math.min(Math.floor(provisional + 1e-7), cap);
+  // A bounded sibling can use the width freed by wrapping while its controls still have room to grow.
+  const preferred = through ? Math.min(Math.round(throughBudget(widths[index])),
+    Math.max(packed.width, through.leadingWidth(budget, minima))) : packed.width;
+  const trailing = through?.trailingPreferred ?? 0;
+  const cap = Math.max(preferred + insets + trailing, inputPreference ?? 0, tracks[index].minimum, available - tracks[other].preferred);
+  const width = through ? Math.min(widths[index], Math.round(cap)) : Math.min(Math.floor(provisional + 1e-7), cap);
   const allocated = index === 0 ? [width, available - width] : [available - width, width];
-  return { key: block.key, widths: allocated, plan: packed.allocate(width - insets) };
+  const dateWidth = Math.max(preferred, width - insets - trailing);
+  return { key: block.key, widths: allocated, plan: packed.allocate(dateWidth, through ? Math.round : Math.floor) };
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
@@ -178,8 +192,9 @@ export function alignUnitedRows(model, context, wrapped) {
             const children = pair.groups.map(mountedChildren);
             const blocks = children.map(nodes => nodes.flatMap(node => {
               const profile = titleFloors.get(node.key);
-              const trailing = fixedThroughWidths.get(elements.get(node.key))?.trailingMinimum ?? 0;
-              return profile ? [{ key: node.key, trailing, ...profile }] : [];
+              if (!profile) return [];
+              const through = fixedThroughWidths.get(elements.get(node.key));
+              return [{ key: node.key, trailing: through?.trailingMinimum ?? 0, ...profile, through }];
             }));
             if (blocks.some(children => children.length)) {
               pair.captionColumns = pair.groups.map((node, index) => {
@@ -193,9 +208,11 @@ export function alignUnitedRows(model, context, wrapped) {
                 return { insets, blocks: blocks[index], inputPreference };
               });
               pair.hasThroughDates = blocks.some(column => column.some(block => block.trailing > 0));
-              const packed = pair.captionColumns.flatMap(({ insets, blocks, inputPreference }, index) =>
-                blocks.length === 1 && blocks[0].pack && !blocks[0].trailing && inputPreference !== undefined
-                  ? [{ index, insets, block: blocks[0], inputPreference }] : []);
+              const packed = pair.captionColumns.flatMap(({ insets, blocks, inputPreference }, index) => {
+                const [block] = blocks;
+                if (blocks.length !== 1 || !block.pack || (block.through ? !block.widthAt : inputPreference === undefined)) return [];
+                return [{ index, insets, block, inputPreference }];
+              });
               if (packed.length === 1) pair.packedDateColumn = packed[0];
             }
           }
@@ -284,7 +301,7 @@ export function alignUnitedRows(model, context, wrapped) {
         widths[index] -= spare;
         widths[other] += spare;
       }
-      const packed = packedDateColumn(pair, tracks, available, widths, floors?.partial);
+      const packed = packedDateColumn(pair, tracks, available, widths, floors?.partial, minima);
       if (packed) {
         widths = packed.widths;
         packedDates.set(packed.key, { ...packed.plan, owner, manual: packed.manual });
@@ -303,9 +320,7 @@ export function alignUnitedRows(model, context, wrapped) {
   function columnFraction(element) {
     const column = element.closest('.taxi-element[data-united-cell]');
     const bounds = columnBounds.get(column);
-    if (!bounds || bounds.preferred <= bounds.minimum) return 1;
-    const width = borderBoxSize(column, scale).width;
-    return Math.max(0, Math.min(1, (width - bounds.minimum) / (bounds.preferred - bounds.minimum)));
+    return bounds ? fillFraction(borderBoxSize(column, scale).width, bounds) : 1;
   }
   return { owners, columnPairs, minimumCaptions, allocateWidths, capturePreferredColumns, columnFraction };
 }

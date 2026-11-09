@@ -1,6 +1,6 @@
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
-import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, stretches } from './layout-model.mjs';
-import { flag, inputRows, nativeReferenceInput, number, property, scalar } from './model.mjs';
+import { controlBounds, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, pictureFieldStyle, stretches } from './layout-model.mjs';
+import { flag, inputRows, nativeReferenceInput, number, property, scalar, textLabelMetrics } from './model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
 
@@ -20,12 +20,13 @@ function controlSize(entry, { os, collapsed }) {
   return { preferred, minimum: Math.min(preferred, minimum), maximum, growthWeight: preferred };
 }
 
-function measureThroughPicture(entry, { alignment, scale }) {
-  const { node, element, width } = entry;
+function measureThroughPicture(entry, { alignment, os, scale }) {
+  const { node, element } = entry;
   const authored = number(node, 'Width');
   if (!authored || flag(node, 'AutoMaxWidth') || authored !== number(node, 'MaxWidth')) return;
   const control = element.querySelector('.taxi-picture-field');
   const border = boxInsets(getComputedStyle(control));
+  const width = pixels(pictureFieldStyle(node, os).width);
   // The authored maximum includes the value width. The border remains visible at the cap.
   entry.size = { minimum: Math.min(width, 10 + border.width), preferred: width,
     maximum: width + border.width, growthWeight: width };
@@ -151,6 +152,11 @@ export function mixedColumnLayout(context) {
     for (const lane of lanes) {
       const [, picture, label] = lane.children;
       measureThroughPicture(picture, context);
+      const labelBounds = textLabelMetrics(label.node, os);
+      if (labelBounds) {
+        label.width = labelBounds.preferred;
+        label.size = controlSize(label, context);
+      }
       if (property(label.node, 'BackColor')) {
         label.size.minimum = Math.min(label.size.preferred, label.size.minimum + 2);
       }
@@ -189,7 +195,7 @@ export function mixedColumnLayout(context) {
     }));
   }
 
-  function captureThroughPreferred() {
+  function captureThroughPreferred(stackLimits) {
     for (const scope of throughAllocations) {
       const { column, lanes, fixedSiblings, stacks } = scope;
       const origin = leadingOrigin(lanes);
@@ -223,8 +229,16 @@ export function mixedColumnLayout(context) {
           return width;
         }));
         const trailing = picture.minimum + label.minimum;
+        const peers = stacks.map(({ items }) => ({
+          offset: Math.round(items.getBoundingClientRect().left / scale - origin), limit: stackLimits.get(items),
+        }));
         const layout = {
           trailingMinimum: trailing + spacing + inset,
+          trailingPreferred: picture.preferred + label.preferred + spacing + inset,
+          leadingWidth(available, minima) {
+            return Math.max(rigid, leading.preferred, ...peers.map(({ offset, limit }) =>
+              offset + (limit?.(available - offset, minima) ?? Infinity)));
+          },
           availableWidth() {
             return Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale))) - trailing;
           },

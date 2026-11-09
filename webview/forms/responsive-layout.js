@@ -129,7 +129,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
         throughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
-        unitedColumns.captureThroughPreferred();
+        unitedColumns.captureThroughPreferred(throughCaptions.stackLimits);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns(dateBlocks.titleFloors, unitedColumns.fixedThroughWidths);
         allocateGroupRows = boundedGroupRows(root, scale, alignment);

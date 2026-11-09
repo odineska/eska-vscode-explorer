@@ -302,18 +302,22 @@ async function verifyColumnSurplus(service, main, view, document) {
     } : null;
     const divider = form.querySelector('.taxi-column-divider');
     const throughFields = [[1051, '.taxi-input'], [1071, '.taxi-input'], [1072, '.taxi-picture-field'], [1073, '.taxi-label-field']];
+    const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
-      dateBlock: box(find(40)), dateFields, checkCaption, dateLabel, divider: !!divider,
+      dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
+      dateFields, checkCaption, dateLabel, divider: !!divider,
       dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
       through: throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector))) };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
-    columns, inputs, dateBlock = null, dateFields, checkCaption, dateLabel, divider }) {
+    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, checkCaption, dateLabel, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
+    if (dateBlockWidth !== undefined) expected.dateBlockWidth = dateBlockWidth;
+    if (traceOffset !== undefined) expected.traceOffset = traceOffset;
     if (dateFields) expected.dateFields = dateFields;
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
@@ -330,7 +334,7 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
   const results = [];
   try {
-    for (const { file, sourceSha256, cases, leftTitles, titleVariants, through } of fixtures) {
+    for (const { file, sourceSha256, cases, leftTitles, titleVariants, through, throughVariants } of fixtures) {
       const source = await fs.readFile(path.join(directory, file), 'utf8');
       assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
       await editFormSource(document, view, source);
@@ -383,6 +387,21 @@ async function verifyColumnSurplus(service, main, view, document) {
             for (const pose of [...poses, poses[0]]) await observe(floating, file, pose);
           }
           await editFormSource(document, view, source);
+        }
+        if (throughVariants) {
+          result.throughVariants = [];
+          for (const { hideServices, traceWidth, cases: poses } of throughVariants) {
+            const variant = hideServices
+              ? source.replace('<UsualGroup name="Services" id="1089">', '$&<Visible>false</Visible>')
+              : source.replace('<InputField name="Trace" id="1091">', `$&<Width>${traceWidth}</Width>`);
+            assert.notEqual(variant, source);
+            await editFormSource(document, view, variant);
+            const resized = [];
+            for (const pose of [...poses, poses[0]]) resized.push(await observe(floating, file, pose));
+            result.throughVariants.push({ hideServices, traceWidth, resized });
+          }
+          await editFormSource(document, view, source);
+          await observe(floating, file, cases[1]);
         }
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");

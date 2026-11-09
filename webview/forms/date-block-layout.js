@@ -15,7 +15,7 @@ function fixedDateField(node, { targets, os, scale }) {
   const label = row?.querySelector(':scope > .taxi-field-label');
   const control = row?.querySelector(':scope > .taxi-field-control:not([data-tooltip-button]) > :is(.taxi-input,.taxi-label-field)');
   if (!label || !control) return;
-  const caption = fieldCaptionProfile(label.getAttribute('aria-label') ?? '', node.presentation.titleFont);
+  const caption = fieldCaptionProfile(label.getAttribute('aria-label') ?? '', node.presentation.titleFont, { splitTerminalColon: true });
   if (!caption?.preferred) return;
   const value = borderBoxSize(control, scale).width + inputPaintedOutset(node, os);
   const rowStyle = getComputedStyle(row);
@@ -56,13 +56,13 @@ function packSideCaptions(available, { base, fields, date, checkbox, minimumWidt
 
   return {
     width,
-    allocate(available) {
+    allocate(available, round = Math.floor) {
       // A stretching neighbor can keep part of the unused column width.
       const growth = cappedTrackGrowth(Math.max(0, available - width), [
         { weight: title, limit: date.preferred - title },
         { weight: check, limit: checkbox.preferred - check },
       ]);
-      const [titleWidth, checkWidth] = roundTrackWidths([title + growth[0], check + growth[1]], Math.floor);
+      const [titleWidth, checkWidth] = roundTrackWidths([title + growth[0], check + growth[1]], round);
       return { width: base + titleWidth + checkWidth, title: titleWidth, check: checkWidth };
     },
   };
@@ -196,6 +196,7 @@ export function dateBlockLayout(model, context) {
     alignment.mark(owner, 'data-fixed-date-block', authoredTop ? 'authored' : '');
     alignment.style(leading.element, '--taxi-date-title-line-height', `${leading.wrappedLineHeight}px`);
     const outer = spacing + boxInsets(getComputedStyle(group)).width;
+    const widthAt = fraction => outer + (authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * fraction);
     if (fixedTop) {
       titleFloors.set(node.key, {
         mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
@@ -221,6 +222,7 @@ export function dateBlockLayout(model, context) {
         mixed: canMove ? Math.max(0, mixedWidth - minimum) : 0,
         side: canMove ? Math.max(0, sideWidth - minimum) : 0,
         pack: canMove || sideValue === lockedValue ? width => packSideCaptions(width, profile) : undefined,
+        widthAt: authoredTop ? undefined : widthAt,
         transition,
       });
     }
@@ -228,7 +230,7 @@ export function dateBlockLayout(model, context) {
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
     blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop,
-      sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate,
+      widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate,
       minimumWidth: minimum + outer - spacing + boxInsets(getComputedStyle(items)).width });
   }
 
@@ -238,13 +240,13 @@ export function dateBlockLayout(model, context) {
     allocate(captions, above, columnFraction, packedDates, fixedThroughWidths) {
       for (const block of blocks) {
         const { key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
-          canMove, authoredTop, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing,
+          canMove, authoredTop, widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing,
           lockedValue, lockedDate, minimumWidth } = block;
-        const width = authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
+        const width = widthAt(columnFraction(owner));
         const limit = Math.max(minimumWidth, fixedThroughWidths.get(owner)?.availableWidth() ?? Infinity);
         const plan = packedDates.get(key);
         const packed = plan?.width <= limit ? plan : undefined;
-        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.min(limit, Math.round(width + outer))}px`);
+        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.min(limit, Math.round(width))}px`);
         const available = availableTrackWidth(row, slots.length, scale);
         const sideUnavailable = canMove && available + spacing < Math.round(mixedWidth);
         const lockedOnly = sideUnavailable || !canMove;

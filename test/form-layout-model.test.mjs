@@ -245,6 +245,9 @@ test('caption packing changes at the whole-word threshold before track rounding'
   assert.equal(fieldCaptionOccupiedWidth(title, 107.99), 97);
   assert.equal(fieldCaptionOccupiedWidth(title, 108), 108);
   assert.equal(fieldCaptionOccupiedWidth(title, title.preferred), title.preferred);
+  const dateLabel = fieldCaptionProfile('Дата запрета отражения:', undefined, { splitTerminalColon: true });
+  assert.deepEqual(fieldCaptionLines(dateLabel, 150), ['Дата запрета отражения', ':']);
+  assert.equal(fieldCaptionOccupiedWidth(dateLabel, 150), 80);
 
   const left = { minimum: 90, preferred: 471 }, right = { minimum: 441, preferred: 612 };
   const [, raw] = allocateLaneSizes(730, [left, right], { fractional: true });
