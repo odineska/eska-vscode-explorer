@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { inspectorType, technicalType } from '../webview/forms/inspector-type.mjs';
+import { inspectorType, inspectorTypeDetails, technicalType } from '../webview/forms/inspector-type.mjs';
 import { attributeFor, commandFor, dataRows, indexInspector, inspectorTerms, treeRows } from '../webview/forms/inspector-model.mjs';
 import { prepare, FORM_NS } from '../webview/forms/model.mjs';
 
@@ -47,6 +47,37 @@ test('composite and partially unknown type descriptions remain searchable and co
   assert.match(technicalType(description), /TypeSet = foreign:Choice[\s\S]*AllowedLength = Variable/u);
   assert.equal(describe(type('ext:string'), [qname('string', 'urn:vendor')]).label, 'ext:string');
   assert.equal(describe(type('x:Future'), [qname('Future', 'urn:future')]).label, 'x:Future');
+});
+
+test('full type details attach the qualified facts only to the matching composite members', () => {
+  const qualifiers = {
+    'typeQualifier.Length': 'Длина', 'typeQualifier.Length.0': 'Без ограничения',
+    'typeQualifier.AllowedLength.Variable': 'Переменная',
+    'typeQualifier.AllowedSign.Nonnegative': 'Неотрицательный',
+    'typeQualifier.DateFractions.Time': 'Время',
+  };
+  const declaration = field('Type', [
+    field('Type', 'x:string', core), field('Type', 'xs:decimal', core), field('Type', 'xs:dateTime', core),
+    field('Type', 'cfg:CatalogRef.Partners', core), field('TypeSet', 'ext:Opaque', core),
+    q('StringQualifiers', { Length: '0', AllowedLength: 'Variable' }),
+    q('NumberQualifiers', { Digits: '15', FractionDigits: '0', AllowedSign: 'Nonnegative' }),
+    q('DateQualifiers', { DateFractions: 'Time' }),
+    q('FutureQualifiers', { Extra: 'kept' }),
+  ]);
+  const normalized = { types: [qname('string'), qname('decimal'), qname('dateTime'), qname('CatalogRef.Partners', config)] };
+  assert.deepEqual(inspectorTypeDetails(declaration, normalized, 'ru-RU', {...strings, ...qualifiers}), [
+    { label: 'Строка', facts: [{ label: 'Длина', value: 'Без ограничения' }, { label: 'AllowedLength', value: 'Переменная' }] },
+    { label: 'Число', facts: [
+      { label: 'Digits', value: '15' }, { label: 'FractionDigits', value: '0' }, { label: 'AllowedSign', value: 'Неотрицательный' },
+    ] },
+    { label: 'Дата', facts: [{ label: 'DateFractions', value: 'Время' }] },
+    { label: 'Partners', category: 'СправочникСсылка', facts: [] },
+    { label: 'ext:Opaque', facts: [] },
+  ]);
+  assert.match(technicalType(declaration), /FutureQualifiers[\s\S]+Extra = kept/u);
+  assert.deepEqual(inspectorTypeDetails(undefined, { kind: 'number', digits: 11, fraction: 0 }, 'ru-RU', strings), [
+    { label: 'Число', facts: [{ label: 'Digits', value: '11' }, { label: 'FractionDigits', value: '0' }] },
+  ]);
 });
 
 function node(id, kind, name, properties = [], children = [], caption = name) {

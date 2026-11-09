@@ -100,9 +100,24 @@ exports.run = async () => {
   await until(() => ui.evaluate(`${lookup(title)}.textContent==='Amount'`), 'properties follow the data selection');
   const uses = await ui.evaluate("[...document.querySelectorAll('.form-usage-list button')].map(button=>button.textContent.trim())");
   assert.deepEqual(uses, ['Name', 'SecondAmount']);
-  await click(ui, '.form-type-details summary');
-  await click(ui, '.form-type-tools button');
-  await until(async () => /AllowedSign = Nonnegative/.test(await vscode.env.clipboard.readText()), 'complete technical type copied');
+  assert.equal(await ui.evaluate("!!document.querySelector('.form-type-members')"), false, 'type details are mounted on demand');
+  await click(ui, '.form-type-details > summary');
+  await waitFor(ui, '.form-type-facts');
+  const numericFacts = await ui.evaluate(`Array.from(document.querySelectorAll('.form-type-facts > div'),
+    row => [row.querySelector('dt').textContent, row.querySelector('dd').textContent])`);
+  assert.deepEqual(numericFacts, ru ? [
+    ['Всего разрядов', '15'], ['Знаков после запятой', '2'], ['Допустимый знак', 'Неотрицательный'],
+  ] : [
+    ['Total digits', '15'], ['Fraction digits', '2'], ['Allowed sign', 'Nonnegative'],
+  ]);
+  assert.equal(await ui.evaluate("document.querySelector('.form-type-source details').open"), false);
+  await click(ui, '.form-type-source summary');
+  assert.equal(await ui.evaluate("document.querySelector('.form-type-source details').open"), true);
+  const technical = await ui.evaluate("document.querySelector('.form-type-source pre').textContent");
+  assert.match(technical, /AllowedSign = Nonnegative/u);
+  await click(ui, '.form-type-source button');
+  await until(async () => (await vscode.env.clipboard.readText()).replace(/\r\n/gu, '\n') === technical, 'complete technical type copied');
+  await click(ui, '.form-type-source summary');
   await click(ui, '.form-usage-list button:last-child');
   await until(() => view.selected?.key.value === '8', 'second use explicitly selected');
   assert.equal(await activePage(ui), initialPage, 'ordinary selection does not switch preview pages');
@@ -147,11 +162,35 @@ exports.run = async () => {
   assert.equal(await floating.evaluate("!!document.querySelector('.form-inspectors')"), false);
   await floating.evaluate(`document.querySelector('.taxi-element[data-element$=":current:2"]').click()`);
   await until(() => view.selected?.key.value === '2' && ui.evaluate(`${lookup(title)}.textContent==='Name'`), 'selection from the separate form updates the inspector');
-  await ui.evaluate("document.querySelector('#root').style.width='100%'");
   await search(ui, 'Object.Amount');
   await waitFor(ui, field('Object.Amount'));
   await click(ui, field('Object.Amount'));
-  await ui.screenshot(`inspector-three-columns-${vscode.env.language}.png`);
+  await waitFor(ui, '.form-type-facts');
+  const typeFit = await ui.evaluate(`(() => {
+    const props = document.querySelector('.form-property-scroll');
+    return props.scrollWidth <= props.clientWidth;
+  })()`);
+  assert.equal(typeFit, true);
+  await ui.evaluate("document.querySelector('#root').style.width='100%'");
+  await ui.screenshot(`inspector-type-number-${vscode.env.language}.png`);
+  await search(ui, 'MixedType');
+  await waitFor(ui, field('MixedType'));
+  await click(ui, field('MixedType'));
+  await until(() => ui.evaluate("document.querySelectorAll('.form-type-member').length === 3"), 'composite type shows its three members');
+  const composite = await ui.evaluate(`Array.from(document.querySelectorAll('.form-type-member'), row => ({
+    label: row.querySelector('strong').textContent,
+    category: row.querySelector('small')?.textContent ?? null,
+    values: Array.from(row.querySelectorAll('dd'), value => value.textContent),
+  }))`);
+  assert.deepEqual(composite, [
+    { label: ru ? 'Строка' : 'String', category: null, values: ['80', ru ? 'Переменная' : 'Variable'] },
+    { label: ru ? 'Дата' : 'Date', category: null, values: [ru ? 'Время' : 'Time'] },
+    { label: 'InspectorReceipt', category: ru ? 'ДокументСсылка' : 'DocumentRef', values: [] },
+  ]);
+  assert.equal(await ui.evaluate(`!!document.querySelector('.form-properties [data-property-name="Type"]')`), false,
+    'the main type declaration is presented once');
+  await search(ui, '');
+  await ui.screenshot(`inspector-type-composite-${vscode.env.language}.png`);
   await search(ui, 'Quantity');
   await waitFor(ui, field('Object.Lines.Quantity'));
   await click(ui, field('Object.Lines.Quantity'));

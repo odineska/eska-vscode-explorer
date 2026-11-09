@@ -25,14 +25,20 @@ function qualifiedName(type) {
 }
 
 function primitive(type) {
-  if (type.namespace !== schema) return;
+  if (type?.namespace !== schema) return;
   if (['decimal', 'double', 'float', 'int', 'integer', 'long', 'short', 'byte', 'nonNegativeInteger'].includes(type.name)) return 'number';
   if (['dateTime', 'date', 'time'].includes(type.name)) return 'date';
   if (['string', 'boolean'].includes(type.name)) return type.name;
 }
 
-/** Summaries are for scanning. The original qualified names and annotations remain available separately. */
-export function inspectorType(field, valueType, locale, strings) {
+const qualifierGroups = new Map([
+  ['string', ['StringQualifiers', [['Length', 'length'], ['AllowedLength']]]],
+  ['number', ['NumberQualifiers', [['Digits', 'digits'], ['FractionDigits', 'fraction'], ['AllowedSign', 'allowedSign']]]],
+  ['date', ['DateQualifiers', [['DateFractions', 'dateParts']]]],
+]);
+const dateFractions = { date: 'Date', time: 'Time', dateTime: 'DateTime' };
+
+function members(field, valueType) {
   const entries = names(field);
   const normalized = valueType?.types ?? [];
   // Match by occurrence. Unknown TypeSet entries must not disappear when only Type was resolved.
@@ -44,42 +50,75 @@ export function inspectorType(field, valueType, locale, strings) {
     const resolved = entry.key.name === 'Type' && candidate?.name === name.name ? normalized[index++] : undefined;
     return [{ ...name, ...resolved, entry }];
   });
-  const types = fromField.length ? fromField : normalized;
-  const qualifier = (group, name) => content(nested(nested(field, group), name));
-  const length = qualifier('StringQualifiers', 'Length') ?? valueType?.length;
-  const digits = qualifier('NumberQualifiers', 'Digits') ?? valueType?.digits;
-  const fraction = qualifier('NumberQualifiers', 'FractionDigits') ?? valueType?.fraction;
-  const dateParts = qualifier('DateQualifiers', 'DateFractions') ?? valueType?.dateParts;
-  const language = locale.startsWith('ru') ? 'ru-RU' : 'en-US';
+  return fromField.length ? fromField : normalized;
+}
 
-  function present(type, fallback) {
-    const { namespace, name } = type ?? {};
-    const kind = primitive(type ?? {}) ?? fallback;
-    if (kind === 'string') return { label: typeText(strings, 'string') + (Number(length) > 0 ? ` (${length})` : '') };
-    if (kind === 'number') return { label: typeText(strings, 'number') + (digits != null ? ` (${digits}${fraction != null ? `, ${fraction}` : ''})` : '') };
-    if (kind === 'boolean') return { label: typeText(strings, 'boolean') };
-    if (kind === 'date') return { label: typeText(strings, dateParts === 'Time' || name === 'time' ? 'time'
-      : dateParts === 'DateTime' || dateParts == null && name === 'dateTime' ? 'dateTime' : 'date') };
-    const dot = name?.indexOf('.') ?? -1;
-    if (namespace === config && dot > 0) {
-      const category = name.slice(0, dot);
-      return { label: name.slice(dot + 1), category: typeText(strings, category) };
-    }
-    if (!name && ['table', 'reference'].includes(kind)) return { label: typeText(strings, kind) };
-    const translated = type?.entry?.value.caption?.[language];
-    if (namespace === core || namespace === config) return { label: strings[`dataType.${name}`] ?? translated ?? name };
-    return { label: translated ?? (type ? qualifiedName(type) : typeText(strings, 'unknown')) };
+function typePresentation(type, kind, language, strings) {
+  const { namespace, name } = type ?? {};
+  if (['string', 'number', 'boolean', 'date'].includes(kind)) return { label: typeText(strings, kind) };
+  const dot = name?.indexOf('.') ?? -1;
+  if (namespace === config && dot > 0) {
+    return { label: name.slice(dot + 1), category: typeText(strings, name.slice(0, dot)) };
   }
+  if (!name && ['table', 'reference'].includes(kind)) return { label: typeText(strings, kind) };
+  const translated = type?.entry?.value.caption?.[language];
+  if (namespace === core || namespace === config) return { label: strings[`dataType.${name}`] ?? translated ?? name };
+  return { label: translated ?? (type ? qualifiedName(type) : typeText(strings, 'unknown')) };
+}
 
-  const parts = types.map(type => present(type));
+function qualifier(field, valueType, group, name, fallback) {
+  return content(nested(nested(field, group), name)) ?? (fallback ? valueType?.[fallback] : undefined);
+}
+
+const typeLanguage = locale => locale.startsWith('ru') ? 'ru-RU' : 'en-US';
+
+/** Summaries are for scanning. The original qualified names and annotations remain available separately. */
+export function inspectorType(field, valueType, locale, strings) {
+  const types = members(field, valueType), language = typeLanguage(locale);
+  const length = qualifier(field, valueType, 'StringQualifiers', 'Length', 'length');
+  const digits = qualifier(field, valueType, 'NumberQualifiers', 'Digits', 'digits');
+  const fraction = qualifier(field, valueType, 'NumberQualifiers', 'FractionDigits', 'fraction');
+  const dateParts = qualifier(field, valueType, 'DateQualifiers', 'DateFractions', 'dateParts');
+  function compact(type, fallback) {
+    const kind = primitive(type) ?? fallback;
+    const presentation = typePresentation(type, kind, language, strings);
+    if (kind === 'string' && Number(length) > 0) return { label: `${presentation.label} (${length})` };
+    if (kind === 'number' && digits != null) {
+      return { label: `${presentation.label} (${digits}${fraction != null ? `, ${fraction}` : ''})` };
+    }
+    if (kind === 'date') {
+      const parts = dateParts ?? dateFractions[type?.name];
+      return { label: typeText(strings, parts === 'Time' ? 'time' : parts === 'DateTime' ? 'dateTime' : 'date') };
+    }
+    return presentation;
+  }
+  const parts = types.map(type => compact(type));
   const summary = types.length > 1 ? { label: typeText(strings, 'composite'), category: String(types.length) }
-    : present(types[0], valueType?.kind);
+    : compact(types[0], valueType?.kind);
   return {
     ...summary,
     count: types.length,
     search: [summary.label, ...parts.flatMap(part => [part.label, part.category, part.category && `${part.category}.${part.label}`]),
       ...types.map(qualifiedName)].filter(Boolean).join(' '),
   };
+}
+
+/** Keep each member's qualifiers with the relevant primitive, including in a composite type. */
+export function inspectorTypeDetails(field, valueType, locale, strings) {
+  const types = members(field, valueType), language = typeLanguage(locale);
+  return (types.length ? types : [undefined]).map(type => {
+    const kind = primitive(type) ?? (types.length <= 1 ? valueType?.kind : undefined);
+    const group = qualifierGroups.get(kind);
+    const facts = [];
+    for (const [name, fallback] of group?.[1] ?? []) {
+      const value = qualifier(field, valueType, group[0], name, fallback)
+        ?? (name === 'DateFractions' ? dateFractions[type?.name] : undefined);
+      if (value == null) continue;
+      const display = strings[`typeQualifier.${name}.${value}`] ?? String(value);
+      facts.push({ label: strings[`typeQualifier.${name}`] ?? name, value: display });
+    }
+    return { ...typePresentation(type, kind, language, strings), facts };
+  });
 }
 
 function technicalField(field, depth = 0) {

@@ -4,7 +4,7 @@ import { PropertyValue } from './PropertyValue.jsx';
 import { DataTypeLabel } from './InspectorLists.jsx';
 import { InspectorIcon, InspectorIconButton, nodeGlyph } from './InspectorIcon.jsx';
 import { FORM_NS, key } from './model.mjs';
-import { inspectorType, technicalType } from './inspector-type.mjs';
+import { inspectorType, inspectorTypeDetails, technicalType } from './inspector-type.mjs';
 
 const attributes = new Set(['Type', 'DataPath', 'Columns', 'MainAttribute', 'UseAlways', 'CommandName', 'Action', 'ParameterType']);
 const behavior = new Set(['Enabled', 'Visible', 'ReadOnly', 'EditMode', 'ChoiceMode', 'AutoFill', 'Use', 'AllowInCustomizableForm']);
@@ -56,12 +56,31 @@ function DeclaredProperties(props) {
 }
 
 function TypeDetails(props) {
+  const strings = () => props.state.strings;
   const technical = createMemo(() => technicalType(props.field, props.valueType));
-  return <Show when={technical()}><details class="form-type-details">
-    <summary>{props.state.strings.fullType}</summary>
-    <div class="form-type-tools"><InspectorIconButton icon="copy" label={props.state.strings.copyType}
-      onClick={() => props.copy(technical())}/></div>
-    <pre tabIndex="0">{technical()}</pre>
+  const [open, setOpen] = createSignal(false);
+  const members = () => inspectorTypeDetails(props.field, props.valueType, props.state.locale, strings());
+  return <Show when={technical()}><details class="form-type-details" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>{strings().fullType}</summary>
+    <Show when={open()}>
+      <ul class="form-type-members" aria-label={strings().fullType}>
+        <For each={members()}>{member => <li class="form-type-member">
+          <div class="form-type-member-title">
+            <InspectorIcon name="data"/>
+            <div><strong>{member.label}</strong>
+              <Show when={member.category}><small>{member.category}</small></Show>
+            </div>
+          </div>
+          <Show when={member.facts.length}><dl class="form-type-facts">
+            <For each={member.facts}>{fact => <div><dt>{fact.label}</dt><dd>{fact.value}</dd></div>}</For>
+          </dl></Show>
+        </li>}</For>
+      </ul>
+      <div class="form-type-source">
+        <details><summary>{strings().technicalType}</summary><pre tabIndex="0">{technical()}</pre></details>
+        <InspectorIconButton icon="copy" label={strings().copyType} onClick={() => props.copy(technical())}/>
+      </div>
+    </Show>
   </details></Show>;
 }
 
@@ -119,7 +138,10 @@ export function PropertyInspector(props) {
   };
   const path = () => data()?.path ?? props.selected?.path;
   const typeSource = () => data() ?? related();
-  const contextFields = createMemo(() => data()?.definition?.properties ?? []);
+  const contextFields = createMemo(() => {
+    const row = data();
+    return row?.definition?.properties.filter(field => field !== row.typeField) ?? [];
+  });
   const canShow = () => !data() && node().presentation.displayed !== false;
   const canLocate = () => state.phase === 'ready' && (!data() || props.canLocateData(data()));
 

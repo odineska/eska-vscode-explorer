@@ -55,6 +55,10 @@ export async function createInspectorNavigationSource(fixture) {
   const attributes = `<Attributes>
     <Attribute name="Object" id="1"><Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config"><v8:Type>cfg:DocumentObject.InspectorReceipt</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute>
     <Attribute name="Amount" id="2">${typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>')}</Attribute>
+    <Attribute name="MixedType" id="3"><Type xmlns:v8="${core}" xmlns:xs="${schema}" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
+    <v8:Type>xs:string</v8:Type><v8:Type>xs:dateTime</v8:Type><v8:Type>cfg:DocumentRef.InspectorReceipt</v8:Type>
+    <v8:StringQualifiers><v8:Length>80</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>
+    <v8:DateQualifiers><v8:DateFractions>Time</v8:DateFractions></v8:DateQualifiers></Type></Attribute>
     </Attributes>`;
   const xml = form.text.replace('<DataPath>Name</DataPath>', '<DataPath>Object.Amount</DataPath>')
     .replace('<LabelDecoration name="SecondLabel" id="8"><Title>Other page</Title></LabelDecoration>',
