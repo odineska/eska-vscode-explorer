@@ -68,6 +68,12 @@ function packSideCaptions(available, { base, fields, date, checkbox, minimumWidt
   };
 }
 
+function packTopCaption(available, { base, minimum, preferred, checkbox }) {
+  if (available < minimum) return;
+  const width = Math.max(minimum, base + fieldCaptionOccupiedWidth(checkbox, available - base));
+  return { width, allocate: width => ({ width: Math.min(preferred, width) }) };
+}
+
 function partialDateCaptions({ leading, label, base, topValue, sideValue, checkbox }) {
   const labelValue = label.value + label.gap + inputCaptionInset;
   const minimumTrack = Math.max(topValue, labelValue + label.caption.compact);
@@ -197,9 +203,12 @@ export function dateBlockLayout(model, context) {
     alignment.style(leading.element, '--taxi-date-title-line-height', `${leading.wrappedLineHeight}px`);
     const outer = spacing + boxInsets(getComputedStyle(group)).width;
     const widthAt = fraction => outer + (authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * fraction);
+    const minimumWidth = minimum + outer - spacing + boxInsets(getComputedStyle(items)).width;
     if (fixedTop) {
+      const profile = { base: fixed + topValue + outer, minimum: minimumWidth, preferred: preferred + outer, checkbox: checkbox.caption };
       titleFloors.set(node.key, {
         mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
+        top: { minimum: minimumWidth, pack: available => packTopCaption(available, profile) },
       });
     } else {
       const topWidth = Math.max(0, ...fields.filter(field => field.top).map(field => Math.max(field.value, field.caption.preferred)));
@@ -230,8 +239,7 @@ export function dateBlockLayout(model, context) {
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
     blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop,
-      widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate,
-      minimumWidth: minimum + outer - spacing + boxInsets(getComputedStyle(items)).width });
+      widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate, minimumWidth });
   }
 
   if (os === 'linux') visit(model);

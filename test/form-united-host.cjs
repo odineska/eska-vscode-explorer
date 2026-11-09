@@ -311,7 +311,7 @@ async function verifyColumnSurplus(service, main, view, document) {
       through: throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector))) };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
-    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, checkCaption, dateLabel, divider }) {
+    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, checkCaption, dateLabel, referenceRow, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
@@ -321,6 +321,7 @@ async function verifyColumnSurplus(service, main, view, document) {
     if (dateFields) expected.dateFields = dateFields;
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
+    if (referenceRow) expected.through = referenceRow;
     const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
@@ -332,6 +333,33 @@ async function verifyColumnSurplus(service, main, view, document) {
     assert.equal(view.snapshot.revision, revision);
     return actual;
   }
+
+  async function verifyThroughEnd(surface, width) {
+    const revision = view.snapshot.revision;
+    await until(async () => {
+      const state = await measure(surface);
+      return state?.width === width && state.divider;
+    }, 'the mixed columns and their divider are visible');
+    await surface.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
+      new KeyboardEvent('keydown', {key:'End', bubbles:true}));true`);
+    let endpoint;
+    await until(async () => {
+      endpoint = await measure(surface);
+      const range = endpoint?.dividerRange;
+      return range && range[1] === range[2] && endpoint.columns[0][1] === range[2];
+    }, 'the divider stops at the shared date and trailing controls minimum');
+    assert.equal(endpoint.width, width);
+    const [court, reference, picture, label] = endpoint.through;
+    const rightEdge = ([x, width]) => x + width;
+    assert.ok(Math.abs(rightEdge(endpoint.dateBlock) - rightEdge(reference)) <= 1);
+    assert.equal(rightEdge(court), rightEdge(reference));
+    assert.equal(picture[0], rightEdge(reference) + 10);
+    assert.equal(label[0], rightEdge(picture) + 10);
+    assert.ok(rightEdge(label) <= rightEdge(endpoint.columns[1]));
+    assert.equal(view.snapshot.revision, revision);
+    return endpoint;
+  }
+
   const results = [];
   try {
     for (const { file, sourceSha256, cases, leftTitles, titleVariants, through, throughVariants } of fixtures) {
@@ -390,15 +418,16 @@ async function verifyColumnSurplus(service, main, view, document) {
         }
         if (throughVariants) {
           result.throughVariants = [];
-          for (const { hideServices, traceWidth, cases: poses } of throughVariants) {
-            const variant = hideServices
-              ? source.replace('<UsualGroup name="Services" id="1089">', '$&<Visible>false</Visible>')
-              : source.replace('<InputField name="Trace" id="1091">', `$&<Width>${traceWidth}</Width>`);
+          for (const { hideServices, traceWidth, topTitles, tailWidth, cases: poses } of throughVariants) {
+            let variant = topTitles ? dateTitles('Top') : source;
+            if (hideServices) variant = variant.replace('<UsualGroup name="Services" id="1089">', '$&<Visible>false</Visible>');
+            if (traceWidth) variant = variant.replace('<InputField name="Trace" id="1091">', `$&<Width>${traceWidth}</Width>`);
+            if (tailWidth) variant = variant.replace(/<LabelField name="(?:Outgoing|Incoming)Org" id="\d+">/gu, `$&<Width>${tailWidth}</Width>`);
             assert.notEqual(variant, source);
             await editFormSource(document, view, variant);
             const resized = [];
             for (const pose of [...poses, poses[0]]) resized.push(await observe(floating, file, pose));
-            result.throughVariants.push({ hideServices, traceWidth, resized });
+            result.throughVariants.push({ hideServices, traceWidth, topTitles, tailWidth, resized });
           }
           await editFormSource(document, view, source);
           await observe(floating, file, cases[1]);
@@ -412,29 +441,22 @@ async function verifyColumnSurplus(service, main, view, document) {
         await observe(floating, file, cases[0]);
         if (!through) await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
         if (through) {
-          const revision = view.snapshot.revision;
-          await floating.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
-            new KeyboardEvent('keydown', {key:'End', bubbles:true}));true`);
-          let endpoint;
-          await until(async () => {
-            endpoint = await measure(floating);
-            const range = endpoint?.dividerRange;
-            return range && range[1] === range[2] && endpoint.columns[0][1] === range[2];
-          }, 'the divider stops at the shared date and trailing controls minimum');
-          assert.equal(endpoint.width, cases[0].width);
-          const [court, reference, picture, label] = endpoint.through;
-          const rightEdge = ([x, width]) => x + width;
-          assert.ok(Math.abs(rightEdge(endpoint.dateBlock) - rightEdge(reference)) <= 1);
-          assert.equal(rightEdge(court), rightEdge(reference));
-          assert.equal(picture[0], rightEdge(reference) + 10);
-          assert.equal(label[0], rightEdge(picture) + 10);
-          assert.ok(rightEdge(label) <= rightEdge(endpoint.columns[1]));
-          assert.equal(view.snapshot.revision, revision);
+          const endpoint = await verifyThroughEnd(floating, cases[0].width);
           result.end = endpoint;
           await floating.screenshot('united-date-through-end-' + vscode.env.language + '.png');
           await observe(floating, file, wide);
           const restored = await observe(floating, file, cases[0]);
           assert.deepEqual(restored.dividerRange, endpoint.dividerRange);
+
+          await editFormSource(document, view, dateTitles('Top'));
+          await allocateFormViewport(floating, [584, 760]);
+          const top = await verifyThroughEnd(floating, 584);
+          assert.equal(top.columns[1][1], 432);
+          assert.equal(top.dateBlockWidth, 328);
+          assert.ok(top.dateFields.every(([location]) => location === 'Top'));
+          result.topEnd = top;
+          await editFormSource(document, view, source);
+          await observe(floating, file, wide);
         }
         const compact = cases.find(entry => entry.width === 774 && entry.checkCaption?.[2] === 2);
         if (compact) {

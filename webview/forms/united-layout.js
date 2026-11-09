@@ -48,6 +48,28 @@ function fillFraction(width, { minimum, preferred }) {
   return preferred > minimum ? Math.max(0, Math.min(1, (width - minimum) / (preferred - minimum))) : 1;
 }
 
+function packThroughDate(block, track, insets, provisional, allocated, minima) {
+  const { through, top } = block;
+  const budget = width => {
+    const fraction = fillFraction(width, track);
+    const preferred = track.preferred - insets - through.trailingPreferred;
+    // The shared leading slot can grow after the date block reaches its own limit.
+    const requested = top ? top.minimum + Math.max(0, preferred - top.minimum) * fraction : block.widthAt(fraction);
+    return Math.min(requested, allocated - insets - through.trailingMinimum);
+  };
+  const space = budget(provisional);
+  const packed = (top?.pack ?? block.pack)(space);
+  if (!packed) return;
+  const width = Math.min(Math.round(budget(allocated)), Math.max(packed.width, through.leadingWidth(space, minima)));
+  return {
+    width,
+    allocate(leadingWidth) {
+      const plan = packed.allocate(leadingWidth, Math.round);
+      return top ? { ...plan, leadingWidth } : plan;
+    },
+  };
+}
+
 function packedDateColumn(pair, tracks, available, widths, partial, minima) {
   const column = pair.packedDateColumn;
   if (!column || available >= pair.preferred) return;
@@ -71,9 +93,8 @@ function packedDateColumn(pair, tracks, available, widths, partial, minima) {
   }
   // Fit whole words before rounding the column tracks for display.
   const provisional = allocateLaneSizes(available, tracks, { fractional: true })[index];
-  const throughBudget = width => Math.min(block.widthAt(fillFraction(width, tracks[index])), blockWidth - through.trailingMinimum);
-  const budget = through ? throughBudget(provisional) : provisional - insets;
-  const packed = block.pack(budget);
+  const packed = through ? packThroughDate(block, tracks[index], insets, provisional, widths[index], minima)
+    : block.pack(provisional - insets);
   if (!packed) {
     if (transition && blockWidth < transition.sideMinimum && blockWidth > transition.abovePreferred) {
       return { key: block.key, widths, plan: { width: transition.abovePreferred } };
@@ -82,14 +103,18 @@ function packedDateColumn(pair, tracks, available, widths, partial, minima) {
   }
   const other = 1 - index;
   // A bounded sibling can use the width freed by wrapping while its controls still have room to grow.
-  const preferred = through ? Math.min(Math.round(throughBudget(widths[index])),
-    Math.max(packed.width, through.leadingWidth(budget, minima))) : packed.width;
   const trailing = through?.trailingPreferred ?? 0;
-  const cap = Math.max(preferred + insets + trailing, inputPreference ?? 0, tracks[index].minimum, available - tracks[other].preferred);
+  const cap = Math.max(packed.width + insets + trailing, inputPreference ?? 0, tracks[index].minimum, available - tracks[other].preferred);
   const width = through ? Math.min(widths[index], Math.round(cap)) : Math.min(Math.floor(provisional + 1e-7), cap);
   const allocated = index === 0 ? [width, available - width] : [available - width, width];
-  const dateWidth = Math.max(preferred, width - insets - trailing);
-  return { key: block.key, widths: allocated, plan: packed.allocate(dateWidth, through ? Math.round : Math.floor) };
+  const plan = (fit, width) => fit?.allocate(Math.max(fit.width, width - insets - trailing));
+  return {
+    key: block.key, widths: allocated, plan: plan(packed, width),
+    manual: block.top && (firstTrack => {
+      const actual = index === 0 ? firstTrack : available - firstTrack;
+      return plan(packThroughDate(block, tracks[index], insets, actual, actual, minima), actual);
+    }),
+  };
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
@@ -210,8 +235,9 @@ export function alignUnitedRows(model, context, wrapped) {
               pair.hasThroughDates = blocks.some(column => column.some(block => block.trailing > 0));
               const packed = pair.captionColumns.flatMap(({ insets, blocks, inputPreference }, index) => {
                 const [block] = blocks;
-                if (blocks.length !== 1 || !block.pack || (block.through ? !block.widthAt : inputPreference === undefined)) return [];
-                return [{ index, insets, block, inputPreference }];
+                if (blocks.length !== 1) return [];
+                const canPack = block.through ? block.top || block.widthAt && block.pack : block.pack && inputPreference !== undefined;
+                return canPack ? [{ index, insets, block, inputPreference }] : [];
               });
               if (packed.length === 1) pair.packedDateColumn = packed[0];
             }

@@ -129,7 +129,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
         throughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
-        unitedColumns.captureThroughPreferred(throughCaptions.stackLimits);
+        unitedColumns.captureThroughPreferred(throughCaptions.stackLimits, dateBlocks.titleFloors);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns(dateBlocks.titleFloors, unitedColumns.fixedThroughWidths);
         allocateGroupRows = boundedGroupRows(root, scale, alignment);
@@ -214,7 +214,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
-    const leadingEdges = unitedColumns.allocate(above);
+    const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
     throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
