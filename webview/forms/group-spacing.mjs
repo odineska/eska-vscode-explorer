@@ -5,19 +5,35 @@ export function independentVerticalSection(node) {
     && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United');
 }
 
-/** Native separation is a boundary requirement, shared by both adjacent items. */
-export function groupSeparationEdges(node, children, horizontal, padding = {}) {
-  const empty = { x: [0, 0], y: [0, 0] };
-  if (node.kind !== 'UsualGroup') return empty;
-  const normal = scalar(node, 'Representation') === 'NormalSeparation';
+const empty = { distance: 0, insets: [] };
+
+function transverseEdge(edges, side) {
+  return {
+    distance: Math.max(0, ...edges.map(edge => edge[side].distance)),
+    insets: edges.flatMap(edge => edge[side].insets),
+  };
+}
+
+/** Carry boundary requests through transparent groups until a neighboring item consumes them. */
+export function groupSeparationEdges(node, children, horizontal, padding = {}, painted = false) {
+  if (node.kind !== 'UsualGroup') return { x: [empty, empty], y: [empty, empty] };
+  const representation = scalar(node, 'Representation', 'None');
+  const normal = representation === 'NormalSeparation';
   return Object.fromEntries(['x', 'y'].map(axis => {
     const edges = children.map(child => child[axis]);
-    const inherited = !edges.length ? [0, 0] : horizontal === (axis === 'x')
+    const inherited = !edges.length ? [empty, empty] : horizontal === (axis === 'x')
       ? [edges[0][0], edges.at(-1)[1]]
-      : [Math.max(...edges.map(edge => edge[0])), Math.max(...edges.map(edge => edge[1]))];
+      : [transverseEdge(edges, 0), transverseEdge(edges, 1)];
     const unit = axis === 'x' ? 10 : 8;
     const separated = normal && !(axis === 'y' && independentVerticalSection(node));
-    return [axis, inherited.map((value, side) => Math.max(value, separated ? unit - (padding[axis]?.[side] ?? 0) : 0))];
+    return [axis, inherited.map(({ distance, insets }, side) => {
+      if (painted && representation === 'None' && distance > 0) {
+        return { distance: 0, insets: [...insets, { key: node.key, distance }] };
+      }
+      const own = separated ? unit - (padding[axis]?.[side] ?? 0) : 0;
+      // A represented section supplies the common edge for its exposed descendants.
+      return own > 0 ? { distance: own, insets: [] } : { distance, insets };
+    })];
   }));
 }
 

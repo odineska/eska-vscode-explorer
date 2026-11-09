@@ -1,64 +1,153 @@
-const assert=require('node:assert/strict');
-const fs=require('node:fs/promises');
-const path=require('node:path');
-const vscode=require('vscode');
-const {frame,until,sameSourcePath,editFormSource,allocateFormViewport}=require('./webview-host.cjs');
-exports.run=async()=>{
- const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),results=[];
- const explorer=await vscode.extensions.all.find(e=>e.packageJSON.name==='eska-explorer').activate();
- await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
- const service=explorer.formPreview;
- for(const form of fixture.formGallery){
-  const disk=await fs.readFile(form.path);const doc=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
-  await vscode.window.showTextDocument(doc,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
-  const current=()=>[...service.views.values()].find(v=>sameSourcePath(v.path,form.path));await until(()=>current()?.phase==='ready','separation model ready');
-  const view=current(),main=view.frames.get('main'),ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
-  try{
-   const keys=Object.fromEntries([...view.nodes.values()].map(n=>[n.name,`${n.identity.source}:current:${n.identity.key.value}`]));
-   await ui.evaluate('document.fonts.ready.then(()=>true)');let actual,last,stable=0;
-   await until(async()=>{
-    actual=await ui.evaluate(`(()=>{const root=document.querySelector('.taxi-form-frame');if(!root)return null;const r=root.getBoundingClientRect();const box=e=>{if(!e)return null;const b=e.getBoundingClientRect();return[b.x-r.x,b.y-r.y,b.width,b.height]};const nodes=new Map([...root.querySelectorAll('[data-element]')].map(e=>[e.dataset.element,e]));const keys=${JSON.stringify(keys)};return{frame:[r.width,r.height],fields:Object.fromEntries(${JSON.stringify(Object.keys(form.expected.fields))}.map(name=>[name,box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),groups:Object.fromEntries(Object.entries(keys).filter(([name,key])=>nodes.get(key)?.querySelector(':scope>.taxi-group')).map(([name,key])=>[name,box(nodes.get(key))]))}})()`);
-    const current=JSON.stringify(actual);stable=current===last?stable+1:0;last=current;return actual&&stable>=3
-      && (process.platform!=='linux'||JSON.stringify(actual.frame)===JSON.stringify(form.expected.frame)
-        && JSON.stringify(actual.fields)===JSON.stringify(form.expected.fields));
-   },'stable separation geometry');
-   assert.deepEqual(ui.scriptErrors(),[]);results.push({name:form.kind,...actual});
-   await ui.parkPointer();await ui.screenshot('separation-'+form.kind+'-'+vscode.env.language+'.png');
-   if(form.kind==='NormalMiddle') {
-    const original=disk.toString('utf8'),control=fixture.formGallery.find(f=>f.kind==='ControlNone').expected;
-    const changed=original.replace('<Representation>NormalSeparation</Representation>','<Representation>None</Representation>');
-    assert.notEqual(changed,original);
-    const identity=[...view.nodes.values()].find(n=>n.name==='Below').identity;
-    await service.receive(view,main,{type:'select',identity});
-    const observe=target=>target.evaluate(`(()=>{const root=document.querySelector('.taxi-form-frame'),r=root.getBoundingClientRect();const keys=${JSON.stringify(keys)};return Object.fromEntries(${JSON.stringify(Object.keys(form.expected.fields))}.map(name=>{const e=[...root.querySelectorAll('[data-element]')].find(e=>e.dataset.element===keys[name]).querySelector('.taxi-input'),b=e.getBoundingClientRect();return[name,[b.x-r.x,b.y-r.y,b.width,b.height]]}))})()`);
-    async function update(xml,target,expected,label) {
-     await editFormSource(doc,view,xml);
-     await until(()=>target.evaluate('globalThis.__eskaNativeFormRevision === '+JSON.stringify(view.snapshot.revision)),'current separation revision');
-     let fields;await until(async()=>{fields=await observe(target);return process.platform!=='linux'||JSON.stringify(fields)===JSON.stringify(expected.fields)},label);
-     assert.deepEqual(view.selected,identity);assert.deepEqual(target.scriptErrors(),[]);results.push({name:label,fields});
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const vscode = require('vscode');
+const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
+
+async function geometry(ui, keys, expected) {
+  return ui.evaluate(`(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root || root.closest('.taxi-preview').dataset.formLayout !== 'allocated') return null;
+    const origin = root.getBoundingClientRect();
+    const box = element => {
+      if (!element) return null;
+      const r = element.getBoundingClientRect();
+      return [r.x - origin.x, r.y - origin.y, r.width, r.height];
+    };
+    const nodes = new Map([...root.querySelectorAll('[data-element]')].map(element => [element.dataset.element, element]));
+    const keys = ${JSON.stringify(keys)}, fields = ${JSON.stringify(Object.keys(expected.fields))};
+    const groups = Object.entries(keys).flatMap(([name, key]) => {
+      const element = nodes.get(key), surface = element?.querySelector(':scope > .taxi-group');
+      return surface ? [[name, element, surface]] : [];
+    });
+    const fills = Object.fromEntries(groups.filter(([, , surface]) => surface.classList.contains('taxi-group--painted'))
+      .map(([name, , surface]) => {
+        const [x,y,w,h] = box(surface);
+        return [name, surface.dataset.nativeGroupBackground === 'ready' ? [x,y+1,w,h-2] : null];
+      }));
+    return {
+      frame: [origin.width, origin.height],
+      fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
+      groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
+      fills,
+    };
+  })()`);
+}
+
+function matches(actual, expected, frame = true) {
+  return actual && (process.platform !== 'linux'
+    || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
+    && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
+    && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
+      && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
+}
+
+const changes = {
+  NormalMiddle: { control: 'ControlNone', select: 'Below', before: 'normal', after: 'none',
+    from: '<Representation>NormalSeparation</Representation>', to: '<Representation>None</Representation>' },
+  VerticalLeadingPaint: { control: 'VerticalBare', select: 'B', before: 'painted', after: 'bare',
+    from: '<BackColor>#E7D6FF</BackColor>', to: '' },
+};
+
+async function verifyUpdates({ document, service, view, main, ui, keys, original, expected, control, change }) {
+  const changed = original.replace(change.from, change.to);
+  assert.notEqual(changed, original);
+  const identity = [...view.nodes.values()].find(node => node.name === change.select).identity;
+  await service.receive(view, main, { type: 'select', identity });
+  const results = [];
+  async function update(xml, target, profile, name) {
+    await editFormSource(document, view, xml);
+    await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
+      'current separation revision');
+    let actual;
+    await until(async () => {
+      actual = await geometry(target, keys, profile);
+      return matches(actual, profile, false);
+    }, name);
+    assert.deepEqual(view.selected, identity);
+    assert.deepEqual(target.scriptErrors(), []);
+    results.push({ name, fields: actual.fields, fills: actual.fills });
+  }
+  const remember = 'globalThis.__separationInputs = [...document.querySelectorAll(".taxi-input")]; true';
+  const preserved = '__separationInputs.every(element => element.isConnected)';
+  await ui.evaluate(remember);
+  await update(changed, ui, control, 'main-dirty-' + change.after);
+  await update(original, ui, expected, 'main-dirty-' + change.before);
+  assert.equal(await ui.evaluate(preserved), true);
+
+  const workbench = await ui.nativeWindow();
+  await service.receive(view, main, { type: 'detach' });
+  await until(() => view.frames.get('preview')?.ready, 'separation detached');
+  const preview = view.frames.get('preview');
+  const floating = await frame({ detached: true, state: { title: preview.panel.title } });
+  try {
+    assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+    await floating.evaluate(remember);
+    for (const width of [400, 550, 400]) {
+      await allocateFormViewport(floating, [width,300]);
+      await update(changed, floating, control, 'detached-' + width + '-' + change.after);
+      await update(original, floating, expected, 'detached-' + width + '-' + change.before);
+      assert.equal(await floating.evaluate(preserved), true);
     }
-    await ui.evaluate(`globalThis.__separationInputs=[...document.querySelectorAll('.taxi-input')];true`);
-    await update(changed,ui,control,'main-dirty-none');await update(original,ui,form.expected,'main-dirty-normal');
-    assert.equal(await ui.evaluate('__separationInputs.every(e=>e.isConnected)'),true);
-    const workbench=await ui.nativeWindow();await service.receive(view,main,{type:'detach'});
-    await until(()=>view.frames.get('preview')?.ready,'separation detached');
-    const preview=view.frames.get('preview'),floating=await frame({detached:true,state:{title:preview.panel.title}});
+  } finally {
     try {
-     assert.notEqual((await floating.nativeWindow({detached:true})).targetId,workbench.targetId);
-     await floating.evaluate(`globalThis.__separationInputs=[...document.querySelectorAll('.taxi-input')];true`);
-     for(const width of [400,550,400]) {
-      await allocateFormViewport(floating,[width,300]);
-      await update(changed,floating,control,'detached-'+width+'-none');
-      await update(original,floating,form.expected,'detached-'+width+'-normal');
-      assert.equal(await floating.evaluate('__separationInputs.every(e=>e.isConnected)'),true);
-     }
-    }finally{
-     try{await service.receive(view,preview,{type:'dock'});await until(()=>!view.frames.has('preview'),'separation docked');}
-     finally{floating.close();}
+      await service.receive(view, preview, { type: 'dock' });
+      await until(() => !view.frames.has('preview'), 'separation docked');
+    } finally {
+      floating.close();
     }
-   }
-   assert.deepEqual(await fs.readFile(form.path),disk);
-  }finally{await editFormSource(doc,view,disk.toString('utf8'));ui.close();main.panel.dispose();await until(()=>service.views.size===0,'separation view released');await Promise.all([...service.closing]);}
- }
- await explorer.shutdown();await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,locale:vscode.env.language,sourceWrites:false,results}));
+  }
+  return results;
+}
+
+exports.run = async () => {
+  const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), results = [];
+  const explorer = await vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer').activate();
+  await vscode.commands.executeCommand('eska.explorer.connect');
+  await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
+  const service = explorer.formPreview;
+  for (const form of fixture.formGallery) {
+    const disk = await fs.readFile(form.path), original = disk.toString('utf8');
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
+    await vscode.window.showTextDocument(document, { preview: false });
+    await vscode.commands.executeCommand('eska.explorer.previewForm');
+    const current = () => [...service.views.values()].find(view => sameSourcePath(view.path, form.path));
+    await until(() => current()?.phase === 'ready', 'separation model ready');
+    const view = current(), main = view.frames.get('main');
+    const ui = await frame({ fixedFormArea: true, state: { title: main.panel.title } });
+    try {
+      const keys = Object.fromEntries([...view.nodes.values()].map(node =>
+        [node.name, `${node.identity.source}:current:${node.identity.key.value}`]));
+      const expected = form.expected;
+      await ui.evaluate('document.fonts.ready.then(() => true)');
+      let actual, previous, stable = 0;
+      await until(async () => {
+        actual = await geometry(ui, keys, expected);
+        const value = JSON.stringify(actual);
+        stable = value === previous ? stable + 1 : 0;
+        previous = value;
+        return stable >= 3 && matches(actual, expected);
+      }, 'stable separation geometry ' + form.kind);
+      assert.deepEqual(ui.scriptErrors(), []);
+      results.push({ name: form.kind, ...actual });
+      await ui.parkPointer();
+      await ui.screenshot('separation-' + form.kind + '-' + vscode.env.language + '.png');
+      const change = changes[form.kind];
+      if (change) {
+        const control = fixture.formGallery.find(sample => sample.kind === change.control).expected;
+        results.push(...await verifyUpdates({ document, service, view, main, ui, keys, original, expected, control, change }));
+      }
+      assert.deepEqual(await fs.readFile(form.path), disk);
+    } finally {
+      await editFormSource(document, view, original);
+      ui.close();
+      main.panel.dispose();
+      await until(() => service.views.size === 0, 'separation view released');
+      await Promise.all([...service.closing]);
+    }
+  }
+  await explorer.shutdown();
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
+    passed: true, locale: vscode.env.language, sourceWrites: false, results,
+  }));
 };

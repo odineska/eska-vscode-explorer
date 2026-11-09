@@ -1,5 +1,5 @@
-import { groupSeparationEdges, groupSpacingInterval } from './group-spacing.mjs';
-import { pixels } from './layout-box.mjs';
+import { groupSeparationEdges, groupSpacingInterval, independentVerticalSection } from './group-spacing.mjs';
+import { borderBoxSize, pixels } from './layout-box.mjs';
 
 const spacingProperty = axis => `--taxi-group-spacing-${axis}`;
 export const groupSpacingAmount = (element, axis) => pixels(element.style.getPropertyValue(spacingProperty(axis)));
@@ -13,8 +13,49 @@ export function setGroupSpacing(element, axis, amount, alignment) {
   alignment.style(element, margin, `${baseline + amount}px`);
 }
 
+function reservePaintedInsets(edge, axis, trailing, targets, alignment) {
+  const property = axis === 'x' ? (trailing ? 'padding-right' : 'padding-left')
+    : (trailing ? 'padding-bottom' : 'padding-top');
+  for (const { key, distance } of edge.insets) {
+    const items = targets.containers.get(key);
+    const original = pixels(getComputedStyle(items).getPropertyValue(property));
+    alignment.style(items, property, `${original + distance}px`);
+  }
+}
+
+function shareSectionInset(children, targets, alignment) {
+  const sections = new Map(children.filter(independentVerticalSection).map(child => {
+    const group = targets.containers.get(child.key)?.parentElement;
+    return [child.key, group ? pixels(getComputedStyle(group).paddingLeft) : 0];
+  }));
+  const inset = Math.max(0, ...sections.values());
+  if (!inset) return;
+  // Independent sections expose their leading content track to the surrounding column.
+  for (const child of children) {
+    if (sections.has(child.key) || child.kind?.endsWith('Field')) {
+      setGroupSpacing(targets.elements.get(child.key), 'x', inset - (sections.get(child.key) ?? 0), alignment);
+    }
+  }
+}
+
+function alignPaintedRow(children, targets, alignment, scale) {
+  if (children.length < 2 || !children.every(child => child.kind === 'UsualGroup'
+      && child.presentation?.grouping === 'Vertical' && child.presentation.united)) return;
+  const groups = children.map(child => targets.containers.get(child.key)?.parentElement);
+  if (groups.some(group => !group)) return;
+  const sizes = groups.map(group => {
+    const { paddingTop, paddingBottom } = getComputedStyle(group);
+    const top = pixels(paddingTop), bottom = pixels(paddingBottom);
+    return { top, bottom, content: borderBoxSize(group, scale).height - top - bottom };
+  });
+  if (sizes.some(size => size.top !== size.bottom || size.content !== sizes[0].content)
+      || sizes.every(size => size.top === sizes[0].top)) return;
+  // Equal-height content aligns across the painted insets of an ordinary row.
+  for (const child of children) alignment.style(targets.elements.get(child.key), 'align-self', 'center');
+}
+
 /** Project separation through nested groups before measuring preferred and minimum sizes. */
-export function layoutGroupSpacing(model, { targets, alignment, os }) {
+export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
   if (os !== 'linux') return;
   function visit(node) {
     // Pages have an Items container but no ordinary element wrapper.
@@ -31,12 +72,19 @@ export function layoutGroupSpacing(model, { targets, alignment, os }) {
         alignment.style(items, 'row-gap', `${Math.max(0, interval - 2)}px`);
       }
       for (let index = 1; index < children.length; index++) {
-        const separation = Math.max(edges[index - 1][axis][1], edges[index][axis][0]);
+        const previous = edges[index - 1][axis][1], next = edges[index][axis][0];
+        reservePaintedInsets(previous, axis, true, targets, alignment);
+        if (!previous.distance) reservePaintedInsets(next, axis, false, targets, alignment);
+        // The earlier section owns the shared outside interval when it requests one.
+        const separation = previous.distance || next.distance;
         const adjustment = axis === 'y' && interval === 0 ? -2 : 0;
         setGroupSpacing(targets.elements.get(children[index].key), axis, separation + adjustment, alignment);
       }
+      if (horizontal) alignPaintedRow(children, targets, alignment, scale);
+      else shareSectionInset(children, targets, alignment);
     }
-    return groupSeparationEdges(node, edges, horizontal, insets);
+    const painted = group?.classList.contains('taxi-group--painted') ?? false;
+    return groupSeparationEdges(node, edges, horizontal, insets, painted);
   }
   visit(model);
 }
