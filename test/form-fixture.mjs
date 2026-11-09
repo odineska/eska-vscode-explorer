@@ -655,3 +655,12 @@ export async function createTablePixelsGallery(fixture) {
     return {...form,expectedTablePixels:row.locales};
   });
 }
+
+export async function createStandaloneAdditionGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the standalone additions directory.');
+  const { rows } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  const forms = await createGallery(fixture, rows.map(row => row.name), input);
+  return forms.map((form, index) => ({ ...form, expected: rows[index].locales }));
+}

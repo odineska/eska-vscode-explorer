@@ -3,7 +3,7 @@ import { scalar, flag, property, caption, font, color, text, fontLineHeight } fr
 import { createTableLayout } from './table-layout.js';
 import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
 import { CommandButton, Element, PopupMenu } from './Preview.jsx';
-import { ViewStatus } from './Additions.jsx';
+import { SearchControl, ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { tableCommandRows } from './command-menu-model.mjs';
 import { TableSearch } from './TableSearch.jsx';
@@ -108,9 +108,7 @@ export function TableCommandActions(props) {
 
 /** Put the search controls in the order of the native toolbar. */
 export function TableToolbarSearch(props) {
-  const state = props.controller.state;
-  const searchControl = () => <CommandButton node={props.control} controller={props.controller}
-    label={state.strings.search} picture="StdPicture.SearchControl" iconOnly dropdown nativeDropdown/>;
+  const searchControl = () => <SearchControl node={props.control} controller={props.controller}/>;
   return <>
     <Show when={props.control && !props.search}>{searchControl()}</Show>
     <Show when={props.spacer}><span class="taxi-command-spacer"
@@ -183,7 +181,7 @@ export function Table(props) {
         </Show>
       </Show>
     </div></Show>
-    <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} top/>}</Show>
+    <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} placement="top"/>}</Show>
     <ViewStatus node={node()} controller={props.controller}/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
       aria-disabled={inactive() || undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>

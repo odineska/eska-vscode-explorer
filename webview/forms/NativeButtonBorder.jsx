@@ -15,13 +15,13 @@ function backdrop(element) {
 
 export function NativeButtonBorder(props) {
   const layout = useFormLayout();
-  createEffect(on(() => [props.enabled,props.primary,props.controller.state.sequence,props.controller.state.ui.zoom,layout?.preferred()],() => {
+  createEffect(on(() => [props.enabled,props.primary,props.stroke,props.inactive,props.controller.state.sequence,props.controller.state.ui.zoom,layout?.preferred()],() => {
     const button = props.button();
     if (!props.enabled) { props.setPaint(undefined); return; }
     onCleanup(observeRasterPaint(button,position => {
       const css = getComputedStyle(button), height = parseFloat(css.height), background = rgb(css.backgroundColor), outside = backdrop(button);
       if (!Number.isInteger(height) || height < 7 || height > 4096 || !background || !outside) { props.setPaint(undefined); return; }
-      props.setPaint(buttonBorderPaint({height,background,outside,primary:props.primary,position:position(height,props.controller.state.ui.zoom)}));
+      props.setPaint(buttonBorderPaint({height,background,outside,primary:props.primary,stroke:props.stroke ? rgb(css.borderTopColor) : undefined,inactive:props.inactive,position:position(height,props.controller.state.ui.zoom)}));
     }));
   }));
   return <span class="taxi-button-border" data-native-button-border={props.paint ? 'ready' : 'fallback'} aria-hidden="true">

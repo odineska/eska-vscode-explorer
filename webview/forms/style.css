@@ -422,8 +422,20 @@ button { cursor: default; }
 .taxi-table-search input::placeholder { color: #ccc; opacity: 1; }
 .taxi-table-search > span { width: 21px; text-align: center; border-left: 1px solid; border-left-color: inherit; line-height: 21px; font-size: 11px; }
 .taxi-table-search-controls { display: flex; gap: 14px; height: 21px; margin-bottom: 9px; align-items: stretch; }
-.taxi-table-search-controls > span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #d9d0a5; border-radius: 2px; background: #fff2c2; box-shadow: 0 1px #ddd; white-space: nowrap; }
-.taxi-table-search-controls i { font-style: normal; background: #8e8868; color: #fff2c2; border-radius: 50%; width: 12px; height: 12px; line-height: 11px; text-align: center; }
+.taxi-view-status-chip { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #cbc19f; border-block-color: #e4d9b2; border-radius: 3px; background: #fef2c7; box-shadow: 0 1px #dedcd3; white-space: nowrap; }
+/* The native chip paint includes its one-pixel shadow and preserves the text in the DOM. */
+.taxi-view-status-chip { position: relative; }
+.taxi-view-status-chip > .taxi-view-status-paint { display: none; position: absolute; left: -1px; top: -1px; pointer-events: none; }
+.taxi-view-status-chip[data-native-view-status=ready] { background: transparent; border-color: transparent; box-shadow: none; }
+.taxi-view-status-chip[data-native-view-status=ready] > :not(canvas) { visibility: hidden; }
+.taxi-view-status-chip[data-native-view-status=ready] > .taxi-view-status-paint { display: block; }
+.taxi-view-status-label { display: flex; flex: 1; min-width: 0; }
+.taxi-view-status-label > :is(.taxi-view-status-name, .taxi-view-status-value) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.taxi-view-status-label > :is(.taxi-view-status-name, .taxi-view-status-separator) { opacity: .75; }
+.taxi-view-status-separator { flex: none; white-space: pre; }
+.taxi-view-status--standalone { height: 22px; margin: 0; overflow: hidden; }
+.taxi-view-status--standalone > .taxi-view-status-chip { height: 21px; }
+.taxi-view-status-chip i { flex: 0 0 12px; font-style: normal; background: #847e68; color: #fef2c7; border-radius: 50%; height: 12px; line-height: 11px; text-align: center; }
 .taxi-table-field { --taxi-table-min-height: var(--taxi-table-compressed-height); }
 .taxi-table-field[data-native-column-sizing] { --taxi-table-min-height: var(--taxi-table-preferred-height); }
 .taxi-form-frame[data-authored-height] .taxi-table-field[data-native-column-sizing] {
@@ -563,7 +575,7 @@ button { cursor: default; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar { width: 12px; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar-track { border: none; background: #fff; }
 .taxi-planner .taxi-planner-scroll::-webkit-scrollbar-thumb { border: none; border-radius: 6px; background: #ccc; }
-.taxi-addition input { height: 22px; border: 1px solid #aaa; border-radius: 2px; width: 180px; padding: 2px 5px; background: #fff; }
+
 .taxi-unsupported { padding: 8px; border: 1px dashed #d49342; color: #8b5b1d; }
 .taxi-preview ::-webkit-scrollbar { width: 17px; height: 17px; }
 .taxi-preview ::-webkit-scrollbar-track { border: 1px solid #ccc; background: #f5f5f5; }
@@ -954,3 +966,27 @@ button { cursor: default; }
 }
 /* Authored popup controls include the native trailing arrow edge. */
 .taxi-preview[data-os=linux] .taxi-element[data-kind=Popup] > .taxi-popup > .taxi-button--dropdown { padding-right: 6px; }
+
+/* Independently placed additions reserve one native inset above and below the row. */
+.taxi-preview[data-os=linux] .taxi-element[data-standalone-addition] { margin-block: 1px; }
+.taxi-preview[data-os=linux] .taxi-items--horizontal > .taxi-element[data-kind=ViewStatusAddition]:not([data-group-vertical-align=Top], [data-group-vertical-align=Bottom]) { top: -.5px; }
+.taxi-element[data-standalone-addition] {
+  width: var(--taxi-addition-width);
+  min-width: var(--taxi-addition-minimum);
+  max-width: min(100%, var(--taxi-addition-maximum, 100%));
+}
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-standalone-addition][data-stretch-x=true] { width: var(--taxi-addition-minimum); }
+.taxi-preview[data-form-layout=allocated] .taxi-items--vertical > .taxi-element[data-standalone-addition][data-stretch-x=true] { width: 100%; }
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element[data-standalone-addition][data-stretch-x=true] { min-width: var(--taxi-addition-minimum); }
+.taxi-items--vertical > [data-standalone-addition][data-group-horizontal-align=Right] { justify-self: end; }
+.taxi-items--vertical > [data-standalone-addition][data-group-horizontal-align=Center] { justify-self: center; }
+.taxi-preview[data-os] .taxi-table-search--standalone { width: 100%; min-width: 0; margin: 0; }
+.taxi-preview[data-os=linux] .taxi-table-search--standalone > .taxi-search-clear { background: #fff; flex: none; }
+.taxi-table-search--standalone input::placeholder { color: var(--taxi-search-hint, #ccc); }
+.taxi-element[data-kind=SearchControlAddition] { height: 27px; }
+.taxi-element[data-kind=SearchControlAddition] > .taxi-button {
+  display: flex; width: 100% !important; justify-content: flex-start; padding-inline: 6px;
+}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button { top: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button > canvas[data-native-picture] { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > [aria-disabled=true] > canvas[data-native-picture] { filter: grayscale(.8); opacity: .5; }

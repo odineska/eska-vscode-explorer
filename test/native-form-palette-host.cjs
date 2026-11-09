@@ -47,7 +47,7 @@ async function awaitRevision(view) {
   await until(() => view.palette?.revision === view.snapshot.revision, 'palette matches dirty revision');
 }
 
-async function withPaletteForm(service, form, inspect) {
+async function withPaletteForm(service, form, inspect, frameOptions = {}) {
   const before = await fs.readFile(form.path), source = before.toString('utf8');
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
   await vscode.window.showTextDocument(document, { preview: false });
@@ -55,7 +55,7 @@ async function withPaletteForm(service, form, inspect) {
   const findView = () => [...service.views.values()].find(view => sameSourcePath(view.path, form.path));
   await until(() => findView()?.phase === 'ready', 'palette form ready');
   const view = findView(), main = view.frames.get('main');
-  const ui = await frame({ state: { title: main.panel.title } });
+  const ui = await frame({ ...frameOptions, state: { title: main.panel.title } });
   try {
     await inspect({ ui, view, document, main, source });
     assert.deepEqual(ui.scriptErrors(), []);

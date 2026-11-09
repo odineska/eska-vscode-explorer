@@ -1,6 +1,7 @@
 import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
+import { additionKinds, additionStretches } from './addition-model.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -44,7 +45,7 @@ export function automaticHorizontalSpacing(node) {
 }
 
 export function displayedInPreview(node, root = node) {
-  if (!node.presentation.displayed) return false;
+  if (!node.presentation.displayed || additionKinds.has(node.kind) && !flag(node, 'Visible')) return false;
   if (node.kind === 'Table') return hasTableSurface(node);
   if (node.kind === 'CommandBar') return commandBarContent(root, node).visible;
   // Designer omits a group's own decoration and dimensions when its content is absent.
@@ -68,7 +69,7 @@ export function stretches(node, axis, collapsed = {}, root = node) {
     return node.children.some(child => displayedInPreview(child, root) && stretches(child, axis, collapsed, root));
   }
   if (surfaces.has(node.kind)) return true;
-  if (axis === 'x' && node.kind === 'CommandBar') return true;
+  if (axis === 'x' && (node.kind === 'CommandBar' || additionStretches(node))) return true;
   if (axis === 'x' && node.kind === 'InputField' && node.presentation.valueType?.kind === 'string') return textInputStretchesByDefault(node);
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
     && ['string', 'reference'].includes(node.presentation.valueType?.kind);

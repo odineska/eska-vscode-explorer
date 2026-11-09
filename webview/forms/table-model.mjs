@@ -84,7 +84,7 @@ function commandBar(table) { return table.auxiliary?.find(node => node.kind === 
 
 export function hasTableSurface(table) {
   const bar = commandBar(table);
-  return !bar || flag(bar, 'Autofill') || bar.children.some(child => child.presentation.displayed) || hasColumns(table);
+  return !bar || bar.children.some(child => child.presentation.displayed) || hasColumns(table, flag(bar, 'Autofill'));
 }
 
 function findTable(node, name) {
@@ -308,7 +308,10 @@ export function tableLayout(table, state = {}, additions) {
   const toolbarWidth = dynamic ? english ? 454 : 418 : english ? 429 : 415;
   const contentMinWidth = columns.reduce((sum, column) => sum + column.width, 0);
   const explicit = number(table, 'Width');
-  const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth : 0);
+  const searchWidth = number(search, 'Width');
+  // An authored search width replaces the default toolbar reserve before the remaining space is allocated.
+  const searchReserve = linux && searchWidth > 0 ? searchWidth * 10 + 22 - 172 : 0;
+  const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth + searchReserve : 0);
   const nativeWidth = linux && explicit > 0 ? explicit * 10 : 0;
   const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
     ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
