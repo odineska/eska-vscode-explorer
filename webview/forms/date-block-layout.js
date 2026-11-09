@@ -9,16 +9,20 @@ function fixedDateField(node, { targets, os, scale }) {
   if (!['InputField', 'LabelField'].includes(node.kind) || node.presentation.valueType.kind !== 'date') return;
   const element = targets.elements.get(node.key);
   if (element.dataset.stretchX === 'true') return;
-  const row = element.querySelector(':scope > .taxi-field-row[data-title-location=Left]');
+  const location = scalar(node, 'TitleLocation', 'Auto');
+  const top = location === 'Top';
+  const row = element.querySelector(`:scope > .taxi-field-row[data-title-location=${top ? 'Top' : 'Left'}]`);
   const label = row?.querySelector(':scope > .taxi-field-label');
   const control = row?.querySelector(':scope > .taxi-field-control:not([data-tooltip-button]) > :is(.taxi-input,.taxi-label-field)');
   if (!label || !control) return;
   const caption = fieldCaptionProfile(label.getAttribute('aria-label') ?? '', node.presentation.titleFont);
   if (!caption?.preferred) return;
   const value = borderBoxSize(control, scale).width + inputPaintedOutset(node, os);
-  return { element, key: node.key, caption, value, input: node.kind === 'InputField',
-    lineHeight: pixels(getComputedStyle(label).lineHeight), gap: pixels(getComputedStyle(row).columnGap),
-    automatic: scalar(node, 'TitleLocation', 'Auto') === 'Auto' };
+  const rowStyle = getComputedStyle(row);
+  return { element, key: node.key, caption, value, input: node.kind === 'InputField', top,
+    lineHeight: pixels(getComputedStyle(label).lineHeight), gap: pixels(rowStyle.columnGap),
+    aboveHeight: top ? borderBoxSize(label, scale).height + pixels(rowStyle.rowGap) : 0,
+    automatic: location === 'Auto' };
 }
 
 function captionWidths(space, date, checkbox) {
@@ -62,6 +66,8 @@ export function dateBlockLayout(model, context) {
     if (middle.some(element => !['Button', 'PictureField'].includes(element.dataset.kind) || element.dataset.stretchX === 'true')) return;
     const fields = children.map(child => child === rowNode ? leading : fixedDateField(child, context));
     if (fields.some(field => !field)) return;
+    const fixedTop = fields.every(field => field.top);
+    if (!fixedTop && fields.some(field => field.top)) return;
 
     alignment.mark(row, 'data-checkbox-row');
     alignment.mark(row, 'data-fixed-date-row');
@@ -77,14 +83,17 @@ export function dateBlockLayout(model, context) {
     };
     const canMove = fields.every(field => field.automatic);
     const sideMinimum = fixed + sideValue + date.minimum + checkbox.caption.minimum;
-    const preferred = fixed + sideValue + date.preferred + checkbox.caption.preferred;
     const topMinimum = fixed + topValue + checkbox.caption.minimum;
-    minimumRows.set(row, spacing + (canMove ? topMinimum : sideMinimum));
+    const topPreferred = Math.max(leading.value, leading.caption.preferred);
+    const preferred = fixedTop
+      ? Math.max(fixed + topPreferred + checkbox.caption.preferred, ...fields.map(field => Math.max(field.value, field.caption.preferred) - spacing))
+      : fixed + sideValue + date.preferred + checkbox.caption.preferred;
+    minimumRows.set(row, spacing + (fixedTop || canMove ? topMinimum : sideMinimum));
     // The block keeps a stable minimum while its fields change caption positions.
     const aboveWidth = Math.max(topMinimum + spacing, ...fields.map(field => Math.max(field.value, field.caption.minimum)));
     const sideTrackWidth = field => field.value + field.gap + date.minimum;
     const sideWidth = Math.max(sideMinimum + spacing, ...fields.map(field => sideTrackWidth(field) + inputCaptionInset));
-    minimumRows.set(items, canMove ? aboveWidth : sideWidth);
+    minimumRows.set(items, fixedTop || canMove ? aboveWidth : sideWidth);
     const mixedInset = canMove && fields.some(field => field !== leading && field.input) ? inputCaptionInset : 0;
     const mixedWidth = mixedInset
       ? Math.max(sideMinimum + spacing - mixedInset, ...fields.filter(field => !field.input).map(sideTrackWidth))
@@ -93,7 +102,7 @@ export function dateBlockLayout(model, context) {
       mixed: Math.max(0, mixedWidth - aboveWidth), side: Math.max(0, sideWidth - aboveWidth),
     });
 
-    for (const [container, mode] of [[items, 'all'], [row, 'leading']]) {
+    for (const [container, mode] of fixedTop ? [] : [[items, 'all'], [row, 'leading']]) {
       alignment.mark(container, 'data-through-labels', mode);
       alignment.style(container, '--taxi-through-label-width', `${date.preferred + inputCaptionInset}px`);
       alignment.style(container, '--taxi-through-allocated-label-width', '');
@@ -104,6 +113,7 @@ export function dateBlockLayout(model, context) {
     }
     const elements = [leading.element, ...middle, checkbox.element];
     const heights = elements.map(element => borderBoxSize(element, scale).height);
+    heights[0] -= leading.aboveHeight;
     const rowHeight = Math.max(...heights);
     const slots = elements.map((element, index) => ({ element, offset: (rowHeight - heights[index]) / 2 }));
     for (const element of elements) {
@@ -111,13 +121,16 @@ export function dateBlockLayout(model, context) {
       alignment.style(element, '--taxi-fixed-date-top', '');
     }
     alignment.style(checkbox.element, '--taxi-field-caption-width', '');
-    alignment.mark(owner, 'data-fixed-date-block');
+    alignment.mark(owner, 'data-fixed-date-block', fixedTop ? 'top' : '');
     const outer = spacing + boxInsets(getComputedStyle(group)).width;
+    if (fixedTop) titleFloors.set(node.key, {
+      mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
+    });
     // Use the same calibrated width for preferred measurement and for a fully expanded block.
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
-    blocks.push({ items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, canMove, sideMinimum, preferred,
-      slots, outer, mixedInset, mixedWidth, sideWidth, spacing });
+    blocks.push({ items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, fixedTop,
+      sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing });
   }
 
   if (os === 'linux') visit(model);
@@ -125,30 +138,34 @@ export function dateBlockLayout(model, context) {
     minimumRows, minimumCaptions, titleFloors,
     allocate(captions, above, columnFraction) {
       for (const block of blocks) {
-        const { items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue,
-          canMove, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing } = block;
-        const width = sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
+        const { items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
+          canMove, fixedTop, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing } = block;
+        const width = fixedTop ? preferred : sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
         updateStyle(owner, '--taxi-fixed-date-width', `${Math.round(width + outer)}px`);
         const available = availableTrackWidth(row, slots.length, scale);
-        const moveRow = canMove && available + spacing < Math.round(mixedWidth);
+        const moveRow = fixedTop || canMove && available + spacing < Math.round(mixedWidth);
         // A standalone date joins the aligned caption track once its extra inset fits.
         const moveStandalone = canMove && available + spacing < Math.round(sideWidth);
         const inset = moveStandalone ? inputCaptionInset - mixedInset : inputCaptionInset;
         const sideTrack = sideValue - inputCaptionInset + inset;
         const space = available - fixed - sideTrack;
+        const topTrack = fixedTop
+          ? Math.max(topValue, Math.min(topPreferred, available - fixed - checkbox.caption.minimum))
+          : topValue;
         const [title, check] = moveRow
-          ? [0, Math.min(checkbox.caption.preferred, Math.max(checkbox.caption.minimum, available - fixed - topValue))]
+          ? [0, Math.min(checkbox.caption.preferred, Math.max(checkbox.caption.minimum, available - fixed - topTrack))]
           : captionWidths(Math.max(space, date.minimum + checkbox.caption.minimum), date, checkbox.caption);
-        const track = moveRow ? topValue : sideTrack + title;
+        const track = moveRow ? topTrack : sideTrack + title;
         const shared = moveRow ? '' : `${title + inset}px`;
         for (const container of [items, row]) updateStyle(container, '--taxi-through-allocated-label-width', shared);
         updateStyle(leading.element, '--taxi-field-track', `${track}px`);
         updateStyle(checkbox.element, '--taxi-field-track', `${checkbox.reserve + check}px`);
         allocateFieldCaption(captions, checkbox, check);
+        const outsideCaptionWidth = available + (fixedTop ? spacing : 0);
         for (const field of fields) {
           const move = moveRow || (field !== leading && field.input && moveStandalone);
-          if (move) above.add(field.key);
-          allocateFieldCaption(captions, field, move ? (field === leading ? track : available) : title, move ? 0 : inset);
+          if (move && !field.top) above.add(field.key);
+          allocateFieldCaption(captions, field, move ? (field === leading ? track : outsideCaptionWidth) : title, move ? 0 : inset);
         }
         const titleLines = captions.get(leading.key)?.split('\n').length ?? leading.caption.paragraphs.length;
         const raisedTitle = moveRow ? titleLines * leading.lineHeight : 0;

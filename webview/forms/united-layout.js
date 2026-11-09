@@ -2,6 +2,7 @@ import { stretches, ordinaryGroup, horizontalGrouping, automaticHorizontalSpacin
 import { inputLaneLayout } from './input-lane-layout.js';
 import { shareUnitedGroupSpacing } from './group-spacing-layout.js';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
+import { textInputWidthBounds } from './model.mjs';
 
 function ordinaryVerticalGroup(node) {
   return ordinaryGroup(node) && node.presentation.grouping === 'Vertical' && typeof node.presentation.united === 'boolean';
@@ -108,13 +109,22 @@ export function alignUnitedRows(model, context, wrapped) {
           if (pair.groups) {
             pair.available = availableTrackWidth(items, pair.natural.length, scale);
             if (!titleFloors.size) continue;
-            const blocks = pair.groups.map(node => mountedChildren(node).filter(child => titleFloors.has(child.key)));
+            const children = pair.groups.map(mountedChildren);
+            const blocks = children.map(nodes => nodes.flatMap(node => {
+              const profile = titleFloors.get(node.key);
+              return profile ? [{ key: node.key, ...profile }] : [];
+            }));
             if (blocks.some(children => children.length)) {
-              pair.captionColumns = pair.groups.map((node, index) => ({
-                insets: groupWidthInsets(containers.get(node.key))
-                  + pixels(elements.get(node.key).style.getPropertyValue('--taxi-group-spacing-x')),
-                blocks: blocks[index].map(child => ({ key: child.key, ...titleFloors.get(child.key) })),
-              }));
+              pair.captionColumns = pair.groups.map((node, index) => {
+                const insets = groupWidthInsets(containers.get(node.key))
+                  + pixels(elements.get(node.key).style.getPropertyValue('--taxi-group-spacing-x'));
+                const fields = blocks[index].some(block => block.compactWidth !== undefined)
+                  ? children[index].filter(child => elements.get(child.key).dataset.stretchX === 'true') : [];
+                const widths = fields.map(field => field.presentation.titleLocation === 'None'
+                  ? textInputWidthBounds(field, os)?.preferredPaint : undefined);
+                const inputPreference = widths.length && widths.every(Number.isFinite) ? Math.max(...widths) + insets : undefined;
+                return { insets, blocks: blocks[index], inputPreference };
+              });
             }
           }
         }
@@ -178,7 +188,26 @@ export function alignUnitedRows(model, context, wrapped) {
       pair.minimumWidths = floors?.widths;
       if (floors) tracks = tracks.map((track, index) => ({ ...track, minimum: floors.widths[index] }));
       for (const [index, node] of pair.groups.entries()) columnBounds.set(elements.get(node.key), tracks[index]);
-      let widths = floors?.allocated ?? allocateLaneSizes(available, tracks);
+      const topColumns = !floors && available < pair.preferred
+        ? pair.captionColumns?.flatMap(({ insets, blocks, inputPreference }, index) => blocks.flatMap(block =>
+          block.compactWidth !== undefined && minima.get(block.key)?.width + insets === tracks[index].minimum
+            ? [{ index, inputPreference, compactWidth: block.compactWidth + insets }] : []))
+        : undefined;
+      const top = topColumns?.length === 1 ? topColumns[0] : undefined;
+      // Round the top-caption track before its sibling takes the remainder.
+      let widths = floors?.allocated ?? (top?.index === 1
+        ? allocateLaneSizes(available, [tracks[1], tracks[0]]).reverse()
+        : allocateLaneSizes(available, tracks));
+      if (top?.inputPreference !== undefined) {
+        const { index, inputPreference, compactWidth } = top;
+        const other = 1 - index;
+        // Keep enough room for a two-line checkbox once its compact width fits.
+        const compact = widths[index] >= compactWidth ? compactWidth : 0;
+        const limit = Math.max(tracks[index].minimum, inputPreference, compact, available - tracks[other].preferred);
+        const spare = Math.max(0, widths[index] - limit);
+        widths[index] -= spare;
+        widths[other] += spare;
+      }
       if (widths.reduce((sum, width) => sum + width, 0) < available) {
         // The group tracks still fill the row when all controls have reached their caps.
         // A wide fixed descendant contributes to the preferred size, but does not attract surplus.

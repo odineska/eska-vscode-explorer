@@ -890,6 +890,9 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block] {
   min-width: var(--taxi-fixed-date-width);
 }
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block=top][data-stretch-x=false] {
+  width: var(--taxi-fixed-date-width);
+}
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-block][data-stretch-x=false] {
   width: min(100%, var(--taxi-fixed-date-width, var(--taxi-preferred-width)));
 }

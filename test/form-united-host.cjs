@@ -291,16 +291,19 @@ async function verifyColumnSurplus(service, main, view, document) {
       const rect = row?.querySelector('.taxi-input')?.getBoundingClientRect();
       return rect ? [row.dataset.titleLocation, rect.x - frame.x, rect.y - frame.y] : null;
     });
+    const caption = find(44)?.querySelector('.taxi-field-label');
+    const checkCaption = caption ? [...box(caption), caption.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
-      dateBlock: box(find(40)), dateFields, divider: !!form.querySelector('.taxi-column-divider') };
+      dateBlock: box(find(40)), dateFields, checkCaption, divider: !!form.querySelector('.taxi-column-divider') };
   })()`);
-  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, divider }) {
+  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, checkCaption, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, 420]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
     if (dateFields) expected.dateFields = dateFields;
+    if (checkCaption) expected.checkCaption = checkCaption;
     const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
@@ -314,7 +317,7 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
   const results = [];
   try {
-    for (const { file, sourceSha256, cases, leftTitles } of fixtures) {
+    for (const { file, sourceSha256, cases, leftTitles, topTitles } of fixtures) {
       const source = await fs.readFile(path.join(directory, file), 'utf8');
       assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
       await editFormSource(document, view, source);
@@ -332,17 +335,29 @@ async function verifyColumnSurplus(service, main, view, document) {
       try {
         assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
         const wide = cases.at(-1);
+        const dateTitles = location => source.replace(/(<(?:InputField|LabelField) name="(?:Stamp|Settlement|Limit)" id="\d+">)/gu,
+          `$1<TitleLocation>${location}</TitleLocation>`);
         if (leftTitles) {
           const mixed = cases.find(entry => entry.dateFields?.[0][0] === 'Top' && entry.dateFields[1][0] === 'Left');
           assert.ok(mixed);
-          const forced = source.replace(/(<(?:InputField|LabelField) name="(?:Stamp|Settlement|Limit)" id="\d+">)/gu,
-            '$1<TitleLocation>Left</TitleLocation>');
+          const forced = dateTitles('Left');
           assert.notEqual(forced, source);
           await observe(floating, file, mixed);
           await editFormSource(document, view, forced);
           await observe(floating, file, leftTitles);
           await editFormSource(document, view, source);
           await observe(floating, file, mixed);
+        }
+        if (topTitles) {
+          const explicit = dateTitles('Top');
+          assert.notEqual(explicit, source);
+          for (const { rightWidth, cases: poses } of topTitles) {
+            const variant = rightWidth ? explicit.replace('<Width>39</Width>', `<Width>${rightWidth}</Width>`) : explicit;
+            if (rightWidth) assert.notEqual(variant, explicit);
+            await editFormSource(document, view, variant);
+            for (const pose of [...poses, poses[0]]) await observe(floating, file, pose);
+          }
+          await editFormSource(document, view, source);
         }
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
