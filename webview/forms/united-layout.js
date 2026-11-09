@@ -79,8 +79,11 @@ export function alignUnitedRows(model, context, wrapped) {
       style(entry.element, '--taxi-united-column', String(index + 1));
     }
     shareUnitedGroupSpacing(lanes, alignment);
+    // A single row already receives its measured minimum from the parent layout.
+    // A max-content floor would retain the children's previous allocated heights.
+    const minimum = tracks === 1 ? '0' : 'max-content';
     style(items, '--taxi-united-tracks', Array.from({length: tracks}, (_, index) =>
-      flexible.has(index) ? 'minmax(max-content, 1fr)' : 'max-content').join(' '));
+      flexible.has(index) ? `minmax(${minimum}, 1fr)` : 'max-content').join(' '));
     register(items, children, allowWrap);
   }
 

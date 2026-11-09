@@ -170,6 +170,36 @@ async function verifyMixedColumns(main, view, document) {
   }
 }
 
+async function verifyUnitedRowHeight(main, view, document, { A1, A2 }) {
+  const original = document.getText();
+  const footer = '<InputField name="Footer" id="19"><DataPath>Name</DataPath><TitleLocation>None</TitleLocation></InputField>';
+  const capped = original.replace('<Height>2</Height><MultiLine>true</MultiLine>',
+    '<MultiLine>true</MultiLine><AutoMaxHeight>false</AutoMaxHeight><MaxHeight>4</MaxHeight>');
+  const xml = capped.replace('</ChildItems><Attributes>', `${footer}</ChildItems><Attributes>`);
+  const ui = await frame({ state: { title: main.panel.title } });
+  try {
+    await editFormSource(document, view, xml);
+    const keys = { A1, A2, Footer: key(named(view.snapshot.model.root, 'Footer')) };
+    const resize = async (height, matches, message) => {
+      await allocateFormViewport(ui, [720, height]);
+      let boxes;
+      await until(async () => {
+        boxes = await measure(ui, keys);
+        return boxes && matches(boxes);
+      }, message).catch(error => { throw new Error(`${message}: ${JSON.stringify(boxes)}`, {cause:error}); });
+      return boxes;
+    };
+    const tall = await resize(400, boxes => boxes.A1.height === 80 && boxes.Footer.y - boxes.A2.y > 60,
+      'the multiline field reaches its height limit');
+    const short = await resize(100, boxes => boxes.A1.height === 51 && boxes.A2.y + boxes.A2.height <= boxes.Footer.y,
+      'united columns shrink without overlapping the footer');
+    return { kind: 'UnitedRowHeight', tall, short };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -221,6 +251,9 @@ exports.run = async () => {
       assert.deepEqual(currentWidths,[151,151,191,191],input.kind+' native input widths');
     }
     results.push({kind:input.kind,leftGap,rightGap,horizontalGap,widths:currentWidths});
+    if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
+      results.push(await verifyUnitedRowHeight(main, view, document, keys));
+    }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+left)}).click()`);
