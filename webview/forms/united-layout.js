@@ -12,19 +12,70 @@ function groupWidthInsets(items) {
   return items ? boxInsets(getComputedStyle(items)).width + boxInsets(getComputedStyle(items.parentElement)).width : 0;
 }
 
-function packedDateColumn(pair, tracks, available) {
+function spreadCaptionSurplus(widths, weights, available, first = 0, round = Math.floor) {
+  const remainder = Math.max(0, available - widths.reduce((sum, width) => sum + width, 0));
+  const weight = weights.reduce((sum, width) => sum + width, 0) || 1;
+  const requested = widths.map((width, index) => width + remainder * weights[index] / weight);
+  return first === 1 ? roundTrackWidths(requested.reverse(), round).reverse() : roundTrackWidths(requested, round);
+}
+
+function partialCaptionFloors(column, candidates, available) {
+  const transition = column?.block.transition;
+  if (!transition) return;
+  const { index, insets, inputPreference } = column;
+  const { leadingTop, partial } = transition;
+  const { minimum, side } = candidates[index];
+  const labelMinimum = partial ? Math.max(minimum, partial.minimum + insets) : minimum;
+  const pinned = leadingTop && inputPreference > minimum && inputPreference < side && inputPreference >= labelMinimum;
+  if (!pinned && (!partial || labelMinimum >= side)) return;
+
+  const widths = candidates.map(candidate => candidate.minimum);
+  const weights = candidates.map(candidate => Math.max(0, candidate.minimum - candidate.insets));
+  const other = 1 - index;
+  const leadingMinimum = Math.max(labelMinimum, (partial?.leadingMinimum ?? Infinity) + insets);
+  const leadingSide = !pinned && leadingMinimum + widths[other] <= available;
+  widths[index] = pinned ? inputPreference : leadingSide ? leadingMinimum : labelMinimum;
+  if (widths[index] + widths[other] > available) return;
+  if (!pinned) weights[index] = inputPreference <= labelMinimum ? partial.preferredWeight : partial.valueWeight;
+  const first = leadingTop && !pinned ? index : 0;
+  return {
+    widths, allocated: spreadCaptionSurplus(widths, weights, available, first),
+    partial: { leadingSide, reserveLabel: !!partial },
+  };
+}
+
+function packedDateColumn(pair, tracks, available, widths, partial) {
   const column = pair.packedDateColumn;
   if (!column || available >= pair.preferred) return;
   const { index, insets, block, inputPreference } = column;
+  const blockWidth = widths[index] - insets;
+  const transition = block.transition;
+  if (partial?.reserveLabel) {
+    const layout = transition.partial;
+    return {
+      key: block.key, widths, plan: layout.allocate(blockWidth, partial.leadingSide),
+      manual(firstTrack) {
+        const actual = (index === 0 ? firstTrack : available - firstTrack) - insets;
+        if (actual >= layout.minimum && actual < transition.sideMinimum) {
+          return layout.allocate(actual, actual >= layout.leadingMinimum);
+        }
+      },
+    };
+  }
   // Fit whole words before rounding the column tracks for display.
   const provisional = allocateLaneSizes(available, tracks, { fractional: true })[index];
   const packed = block.pack(provisional - insets);
-  if (!packed) return;
+  if (!packed) {
+    if (transition && blockWidth < transition.sideMinimum && blockWidth > transition.abovePreferred) {
+      return { key: block.key, widths, plan: { width: transition.abovePreferred } };
+    }
+    return;
+  }
   const other = 1 - index;
   const cap = Math.max(packed.width + insets, inputPreference, tracks[index].minimum, available - tracks[other].preferred);
   const width = Math.min(Math.floor(provisional + 1e-7), cap);
-  const widths = index === 0 ? [width, available - width] : [available - width, width];
-  return { key: block.key, widths, plan: packed.allocate(width - insets) };
+  const allocated = index === 0 ? [width, available - width] : [available - width, width];
+  return { key: block.key, widths: allocated, plan: packed.allocate(width - insets) };
 }
 
 /** Share row tracks between side-by-side vertical groups. A united child uses one track. */
@@ -177,13 +228,13 @@ export function alignUnitedRows(model, context, wrapped) {
       const widths = candidates.map(candidate => candidate[level]);
       if (widths.reduce((sum, width) => sum + width, 0) <= available) return { widths };
     }
+    const partial = partialCaptionFloors(pair.packedDateColumn, candidates, available);
+    if (partial) return partial;
     // Before the side captions fit, share extra space in proportion to the minimum content widths.
     const widths = candidates.map(candidate => candidate.minimum);
     const weights = candidates.map(candidate => Math.max(0, candidate.minimum - candidate.insets));
-    const remainder = Math.max(0, available - widths.reduce((sum, width) => sum + width, 0));
-    const weight = weights.reduce((sum, width) => sum + width, 0) || 1;
-    const allocated = roundTrackWidths(widths.map((width, index) => width + remainder * weights[index] / weight), Math.floor);
-    return { widths, allocated };
+    const widerValue = pair.packedDateColumn?.block.transition?.widerValue;
+    return { widths, allocated: spreadCaptionSurplus(widths, weights, available, 0, widerValue ? Math.round : Math.floor) };
   }
   function allocateWidths(captions, minima) {
     allocateInputs(captions);
@@ -228,10 +279,10 @@ export function alignUnitedRows(model, context, wrapped) {
         widths[index] -= spare;
         widths[other] += spare;
       }
-      const packed = packedDateColumn(pair, tracks, available);
+      const packed = packedDateColumn(pair, tracks, available, widths, floors?.partial);
       if (packed) {
         widths = packed.widths;
-        packedDates.set(packed.key, { ...packed.plan, owner });
+        packedDates.set(packed.key, { ...packed.plan, owner, manual: packed.manual });
       }
       if (widths.reduce((sum, width) => sum + width, 0) < available) {
         // The group tracks still fill the row when all controls have reached their caps.

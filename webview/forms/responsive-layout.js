@@ -202,7 +202,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     for (const [key, plan] of packedDates) {
-      if (columnDividers.get(plan.owner)?.tracks) packedDates.delete(key);
+      const divider = columnDividers.get(plan.owner);
+      if (!divider?.tracks) continue;
+      const manual = plan.manual?.(divider.value);
+      if (manual) packedDates.set(key, manual);
+      else packedDates.delete(key);
     }
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions);

@@ -293,17 +293,25 @@ async function verifyColumnSurplus(service, main, view, document) {
     });
     const caption = find(44)?.querySelector('.taxi-field-label');
     const checkCaption = caption ? [...box(caption), caption.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
+    const labelRow = find(43)?.querySelector('.taxi-field-row');
+    const label = labelRow?.querySelector('.taxi-label-field');
+    const labelRect = label?.getBoundingClientRect();
+    const dateLabel = labelRect ? {
+      location: labelRow.dataset.titleLocation, background: getComputedStyle(label).backgroundColor, valueText: label.textContent,
+      control: [labelRect.x - frame.x, labelRect.y - frame.y, labelRect.width, labelRect.height],
+    } : null;
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
-      dateBlock: box(find(40)), dateFields, checkCaption, divider: !!form.querySelector('.taxi-column-divider') };
+      dateBlock: box(find(40)), dateFields, checkCaption, dateLabel, divider: !!form.querySelector('.taxi-column-divider') };
   })()`);
-  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, checkCaption, divider }) {
+  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, checkCaption, dateLabel, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, 420]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
     if (dateFields) expected.dateFields = dateFields;
     if (checkCaption) expected.checkCaption = checkCaption;
+    if (dateLabel) expected.dateLabel = dateLabel;
     const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
@@ -352,7 +360,7 @@ async function verifyColumnSurplus(service, main, view, document) {
           await observe(floating, file, mixed);
         }
         if (titleVariants) {
-          for (const { locations, caption, rightWidth, cases: poses } of titleVariants) {
+          for (const { locations, caption, rightWidth, labelProperties, cases: poses } of titleVariants) {
             let variant = dateTitles(locations);
             assert.notEqual(variant, source);
             if (caption) {
@@ -360,6 +368,11 @@ async function verifyColumnSurplus(service, main, view, document) {
               variant = variant.replaceAll(...caption);
             }
             if (rightWidth) variant = variant.replace('<Width>39</Width>', `<Width>${rightWidth}</Width>`);
+            if (labelProperties) {
+              const field = '<LabelField name="Limit" id="43">';
+              assert.ok(variant.includes(field));
+              variant = variant.replace(field, field + labelProperties);
+            }
             await editFormSource(document, view, variant);
             for (const pose of [...poses, poses[0]]) await observe(floating, file, pose);
           }
@@ -383,6 +396,25 @@ async function verifyColumnSurplus(service, main, view, document) {
             return manual?.columns[0][1] === before.columns[0][1] + 40 && manual.checkCaption?.[2] === 3;
           }, 'manual division recalculates the wrapped date block from the chosen width');
           assert.equal(view.snapshot.revision, revision);
+
+          await editFormSource(document, view, dateTitles({ Settlement: 'Top' }));
+          await allocateFormViewport(floating, [574, 420]);
+          let partial;
+          await until(async () => {
+            partial = await measure(floating);
+            return partial?.width === 574 && partial.dateLabel?.location === 'Left' && partial.dateFields[1][0] === 'Top';
+          }, 'the transition keeps the date label at the side while the date input is above');
+          const partialRevision = view.snapshot.revision;
+          const left = partial.columns[0][1];
+          const delta = left > 105 ? -5 : 5;
+          await floating.dragHorizontally('.taxi-column-divider', delta);
+          await until(async () => {
+            const next = await measure(floating);
+            return next?.columns[0][1] === left + delta && next.dateLabel?.location === 'Left'
+              && next.checkCaption[1] !== partial.checkCaption[1];
+          }, 'dragging through the transition updates the side label and checkbox tracks');
+          assert.equal(view.snapshot.revision, partialRevision);
+          await editFormSource(document, view, source);
         }
       } finally {
         floating.close();
