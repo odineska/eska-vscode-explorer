@@ -317,7 +317,7 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
   const results = [];
   try {
-    for (const { file, sourceSha256, cases, leftTitles, topTitles } of fixtures) {
+    for (const { file, sourceSha256, cases, leftTitles, titleVariants } of fixtures) {
       const source = await fs.readFile(path.join(directory, file), 'utf8');
       assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
       await editFormSource(document, view, source);
@@ -335,8 +335,11 @@ async function verifyColumnSurplus(service, main, view, document) {
       try {
         assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
         const wide = cases.at(-1);
-        const dateTitles = location => source.replace(/(<(?:InputField|LabelField) name="(?:Stamp|Settlement|Limit)" id="\d+">)/gu,
-          `$1<TitleLocation>${location}</TitleLocation>`);
+        const dateTitles = locations => source.replace(/<(?:InputField|LabelField) name="(Stamp|Settlement|Limit)" id="\d+">/gu,
+          (opening, name) => {
+            const location = typeof locations === 'string' ? locations : locations[name];
+            return location ? `${opening}<TitleLocation>${location}</TitleLocation>` : opening;
+          });
         if (leftTitles) {
           const mixed = cases.find(entry => entry.dateFields?.[0][0] === 'Top' && entry.dateFields[1][0] === 'Left');
           assert.ok(mixed);
@@ -348,12 +351,15 @@ async function verifyColumnSurplus(service, main, view, document) {
           await editFormSource(document, view, source);
           await observe(floating, file, mixed);
         }
-        if (topTitles) {
-          const explicit = dateTitles('Top');
-          assert.notEqual(explicit, source);
-          for (const { rightWidth, cases: poses } of topTitles) {
-            const variant = rightWidth ? explicit.replace('<Width>39</Width>', `<Width>${rightWidth}</Width>`) : explicit;
-            if (rightWidth) assert.notEqual(variant, explicit);
+        if (titleVariants) {
+          for (const { locations, caption, rightWidth, cases: poses } of titleVariants) {
+            let variant = dateTitles(locations);
+            assert.notEqual(variant, source);
+            if (caption) {
+              assert.ok(variant.includes(caption[0]));
+              variant = variant.replaceAll(...caption);
+            }
+            if (rightWidth) variant = variant.replace('<Width>39</Width>', `<Width>${rightWidth}</Width>`);
             await editFormSource(document, view, variant);
             for (const pose of [...poses, poses[0]]) await observe(floating, file, pose);
           }

@@ -887,10 +887,16 @@ button { cursor: default; }
 .taxi-preview:is([data-form-layout=minimum], [data-form-layout=allocated]) .taxi-items[data-fixed-date-row] > .taxi-element {
   margin-block-start: var(--taxi-fixed-date-top, 0px);
 }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-group-shrink-x][data-fixed-date-lane] {
+  width: 100%;
+}
+.taxi-items[data-fixed-date-row] > .taxi-element > .taxi-field-row[data-title-location=Top][data-wrapped-input-caption] > .taxi-field-label {
+  line-height: var(--taxi-date-title-line-height);
+}
 .taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block] {
   min-width: var(--taxi-fixed-date-width);
 }
-.taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block=top][data-stretch-x=false] {
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block=authored][data-stretch-x=false] {
   width: var(--taxi-fixed-date-width);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-block][data-stretch-x=false] {
