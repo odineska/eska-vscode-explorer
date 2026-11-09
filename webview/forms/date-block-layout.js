@@ -228,20 +228,23 @@ export function dateBlockLayout(model, context) {
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
     blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop,
-      sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate });
+      sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate,
+      minimumWidth: minimum + outer - spacing + boxInsets(getComputedStyle(items)).width });
   }
 
   if (os === 'linux') visit(model);
   return {
     minimumRows, minimumCaptions, titleFloors,
-    allocate(captions, above, columnFraction, packedDates) {
+    allocate(captions, above, columnFraction, packedDates, fixedThroughWidths) {
       for (const block of blocks) {
         const { key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
           canMove, authoredTop, sideMinimum, preferred, slots, outer, mixedInset, mixedWidth, sideWidth, spacing,
-          lockedValue, lockedDate } = block;
+          lockedValue, lockedDate, minimumWidth } = block;
         const width = authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * columnFraction(owner);
-        const packed = packedDates.get(key);
-        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.round(width + outer)}px`);
+        const limit = Math.max(minimumWidth, fixedThroughWidths.get(owner)?.availableWidth() ?? Infinity);
+        const plan = packedDates.get(key);
+        const packed = plan?.width <= limit ? plan : undefined;
+        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.min(limit, Math.round(width + outer))}px`);
         const available = availableTrackWidth(row, slots.length, scale);
         const sideUnavailable = canMove && available + spacing < Math.round(mixedWidth);
         const lockedOnly = sideUnavailable || !canMove;

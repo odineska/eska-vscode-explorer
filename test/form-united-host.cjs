@@ -300,13 +300,18 @@ async function verifyColumnSurplus(service, main, view, document) {
       location: labelRow.dataset.titleLocation, background: getComputedStyle(label).backgroundColor, valueText: label.textContent,
       control: [labelRect.x - frame.x, labelRect.y - frame.y, labelRect.width, labelRect.height],
     } : null;
+    const divider = form.querySelector('.taxi-column-divider');
+    const throughFields = [[1051, '.taxi-input'], [1071, '.taxi-input'], [1072, '.taxi-picture-field'], [1073, '.taxi-label-field']];
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
-      dateBlock: box(find(40)), dateFields, checkCaption, dateLabel, divider: !!form.querySelector('.taxi-column-divider') };
+      dateBlock: box(find(40)), dateFields, checkCaption, dateLabel, divider: !!divider,
+      dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
+      through: throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector))) };
   })()`);
-  async function observe(surface, file, { width, viewportWidth = width, columns, inputs, dateBlock = null, dateFields, checkCaption, dateLabel, divider }) {
+  async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
+    columns, inputs, dateBlock = null, dateFields, checkCaption, dateLabel, divider }) {
     const revision = view.snapshot.revision;
-    await allocateFormViewport(surface, [viewportWidth, 420]);
+    await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
     if (dateFields) expected.dateFields = dateFields;
@@ -325,14 +330,15 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
   const results = [];
   try {
-    for (const { file, sourceSha256, cases, leftTitles, titleVariants } of fixtures) {
+    for (const { file, sourceSha256, cases, leftTitles, titleVariants, through } of fixtures) {
       const source = await fs.readFile(path.join(directory, file), 'utf8');
       assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
       await editFormSource(document, view, source);
       await ui.evaluate('document.fonts.ready.then(()=>true)');
       const sizes = [];
       for (const entry of [...cases, cases[0]]) sizes.push(await observe(ui, file, entry));
-      results.push({ file, sizes });
+      const result = { file, sizes };
+      results.push(result);
 
       if (!cases.at(-1).dateBlock) continue;
       const workbench = await ui.nativeWindow();
@@ -385,7 +391,32 @@ async function verifyColumnSurplus(service, main, view, document) {
           'dirty group styling applied in place');
         await observe(floating, file, wide);
         await observe(floating, file, cases[0]);
-        await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
+        if (!through) await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
+        if (through) {
+          const revision = view.snapshot.revision;
+          await floating.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
+            new KeyboardEvent('keydown', {key:'End', bubbles:true}));true`);
+          let endpoint;
+          await until(async () => {
+            endpoint = await measure(floating);
+            const range = endpoint?.dividerRange;
+            return range && range[1] === range[2] && endpoint.columns[0][1] === range[2];
+          }, 'the divider stops at the shared date and trailing controls minimum');
+          assert.equal(endpoint.width, cases[0].width);
+          const [court, reference, picture, label] = endpoint.through;
+          const rightEdge = ([x, width]) => x + width;
+          assert.ok(Math.abs(rightEdge(endpoint.dateBlock) - rightEdge(reference)) <= 1);
+          assert.equal(rightEdge(court), rightEdge(reference));
+          assert.equal(picture[0], rightEdge(reference) + 10);
+          assert.equal(label[0], rightEdge(picture) + 10);
+          assert.ok(rightEdge(label) <= rightEdge(endpoint.columns[1]));
+          assert.equal(view.snapshot.revision, revision);
+          result.end = endpoint;
+          await floating.screenshot('united-date-through-end-' + vscode.env.language + '.png');
+          await observe(floating, file, wide);
+          const restored = await observe(floating, file, cases[0]);
+          assert.deepEqual(restored.dividerRange, endpoint.dividerRange);
+        }
         const compact = cases.find(entry => entry.width === 774 && entry.checkCaption?.[2] === 2);
         if (compact) {
           const before = await observe(floating, file, compact);

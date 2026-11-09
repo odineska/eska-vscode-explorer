@@ -131,7 +131,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         checkboxes = checkboxLayout(model, context);
         unitedColumns.captureThroughPreferred();
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
-        unitedRows.capturePreferredColumns(dateBlocks.titleFloors);
+        unitedRows.capturePreferredColumns(dateBlocks.titleFloors, unitedColumns.fixedThroughWidths);
         allocateGroupRows = boundedGroupRows(root, scale, alignment);
         allocateCommandBars = commandBarLayout(root, context);
       }
@@ -172,7 +172,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
-        headingHeights, available, conditionalWidth: state.os === 'linux',
+        fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
@@ -213,7 +213,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateInlineRows(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
-    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates);
+    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above);
     throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
     allocateGroupRows(geometry().minima);

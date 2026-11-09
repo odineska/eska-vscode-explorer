@@ -162,7 +162,7 @@ export function alignUnitedRows(model, context, wrapped) {
   }
 
   visit(model);
-  function capturePreferredColumns(titleFloors) {
+  function capturePreferredColumns(titleFloors, fixedThroughWidths) {
     for (const owner of owners) {
       const items = containers.get(owner);
       if (items.hasAttribute('data-united-columns')) {
@@ -178,7 +178,8 @@ export function alignUnitedRows(model, context, wrapped) {
             const children = pair.groups.map(mountedChildren);
             const blocks = children.map(nodes => nodes.flatMap(node => {
               const profile = titleFloors.get(node.key);
-              return profile ? [{ key: node.key, ...profile }] : [];
+              const trailing = fixedThroughWidths.get(elements.get(node.key))?.trailingMinimum ?? 0;
+              return profile ? [{ key: node.key, trailing, ...profile }] : [];
             }));
             if (blocks.some(children => children.length)) {
               pair.captionColumns = pair.groups.map((node, index) => {
@@ -191,8 +192,9 @@ export function alignUnitedRows(model, context, wrapped) {
                 const inputPreference = widths.length && widths.every(Number.isFinite) ? Math.max(...widths) + insets : undefined;
                 return { insets, blocks: blocks[index], inputPreference };
               });
+              pair.hasThroughDates = blocks.some(column => column.some(block => block.trailing > 0));
               const packed = pair.captionColumns.flatMap(({ insets, blocks, inputPreference }, index) =>
-                blocks.length === 1 && blocks[0].pack && inputPreference !== undefined
+                blocks.length === 1 && blocks[0].pack && !blocks[0].trailing && inputPreference !== undefined
                   ? [{ index, insets, block: blocks[0], inputPreference }] : []);
               if (packed.length === 1) pair.packedDateColumn = packed[0];
             }
@@ -218,7 +220,7 @@ export function alignUnitedRows(model, context, wrapped) {
       const { minimum } = tracks[index];
       const dates = blocks.flatMap(block => {
         const bounds = minima.get(block.key);
-        return bounds ? [{ ...block, width: bounds.width + insets }] : [];
+        return bounds ? [{ ...block, width: bounds.width + insets + block.trailing }] : [];
       });
       return { minimum, insets, mixed: Math.max(minimum, ...dates.map(date => date.width + date.mixed)),
         side: Math.max(minimum, ...dates.map(date => date.width + date.side)) };
@@ -251,7 +253,9 @@ export function alignUnitedRows(model, context, wrapped) {
       // A complex pair can already expand inside the form's preferred width.
       // Shrink both columns from that allocation before using their individual floors.
       const natural = lanes.reduce((sum, lane) => sum + lane.preferred, 0);
-      const preferred = allocateLaneSizes(Math.max(natural, pair.available), lanes);
+      // The trailing controls are already included in a mixed column's natural width.
+      const preferred = pair.hasThroughDates ? lanes.map(lane => lane.preferred)
+        : allocateLaneSizes(Math.max(natural, pair.available), lanes);
       pair.preferred = preferred.reduce((sum, width) => sum + width, 0);
       const available = availableTrackWidth(pair.items, lanes.length, scale);
       let tracks = lanes.map((lane, index) => ({ ...lane, preferred: preferred[index] }));
@@ -261,14 +265,15 @@ export function alignUnitedRows(model, context, wrapped) {
       for (const [index, node] of pair.groups.entries()) columnBounds.set(elements.get(node.key), tracks[index]);
       const topColumns = !floors && available < pair.preferred
         ? pair.captionColumns?.flatMap(({ insets, blocks, inputPreference }, index) => blocks.flatMap(block =>
-          block.compactWidth !== undefined && minima.get(block.key)?.width + insets === tracks[index].minimum
-            ? [{ index, inputPreference, compactWidth: block.compactWidth + insets }] : []))
+          block.compactWidth !== undefined && minima.get(block.key)?.width + insets + block.trailing === tracks[index].minimum
+            ? [{ index, inputPreference, compactWidth: block.compactWidth + insets + block.trailing }] : []))
         : undefined;
       const top = topColumns?.length === 1 ? topColumns[0] : undefined;
       // Round the top-caption track before its sibling takes the remainder.
       let widths = floors?.allocated ?? (top?.index === 1
         ? allocateLaneSizes(available, [tracks[1], tracks[0]]).reverse()
-        : allocateLaneSizes(available, tracks));
+        : pair.hasThroughDates ? roundTrackWidths(allocateLaneSizes(available, tracks, { fractional: true }))
+          : allocateLaneSizes(available, tracks));
       if (top?.inputPreference !== undefined) {
         const { index, inputPreference, compactWidth } = top;
         const other = 1 - index;

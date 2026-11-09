@@ -96,7 +96,8 @@ function topTrackWidths(available, tracks, weights, round) {
 /** Keep mixed rows in one column scope while their automatic titles move above the controls. */
 export function mixedColumnLayout(context) {
   const { alignment, os, scale } = context;
-  const minimumRows = new Map(), widthFloors = new Map(), allocations = [], throughAllocations = [];
+  const minimumRows = new Map(), widthFloors = new Map(), fixedThroughWidths = new Map();
+  const allocations = [], throughAllocations = [];
 
   function sizeEntries(entries) {
     for (const entry of entries) entry.size = controlSize(entry, context);
@@ -200,7 +201,9 @@ export function mixedColumnLayout(context) {
         + pixels(getComputedStyle(items).paddingRight) + pixels(getComputedStyle(items.parentElement).paddingRight)));
       // A fixed group that is wider in the preferred layout already supplies the leading slot.
       scope.stackWidth = stack > fixed ? stack : 0;
-      const width = Math.max(leading.preferred, scope.stackWidth, rigid);
+      const fixedDates = fixedSiblings.filter(({ element }) => element.hasAttribute('data-fixed-date-block')
+        && Math.abs(element.getBoundingClientRect().left / scale - origin) < .5);
+      const width = Math.max(leading.preferred, scope.stackWidth, rigid, fixedDates.length ? fixed : 0);
       if (width > leading.preferred) {
         const preferred = width + picture.preferred + label.preferred + spacing;
         for (const { items } of lanes) alignment.style(items, '--taxi-through-preferred-width', `${preferred}px`);
@@ -208,6 +211,25 @@ export function mixedColumnLayout(context) {
       if (rigid > 0) {
         const floor = rigid + picture.minimum + label.minimum + spacing;
         widthFloors.set(column, Math.max(floor, widthFloors.get(column) ?? 0));
+      }
+      if (fixedDates.length) {
+        // The fixed group shares the leading slot. The trailing controls need their own space.
+        const inset = Math.max(...lanes.map(lane => {
+          let width = 0;
+          for (let element = lane.items; element && element !== column; element = element.parentElement) {
+            const css = getComputedStyle(element);
+            width += pixels(css.paddingRight) + pixels(css.borderRightWidth) + pixels(css.marginRight);
+          }
+          return width;
+        }));
+        const trailing = picture.minimum + label.minimum;
+        const layout = {
+          trailingMinimum: trailing + spacing + inset,
+          availableWidth() {
+            return Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale))) - trailing;
+          },
+        };
+        for (const { element } of fixedDates) fixedThroughWidths.set(element, layout);
       }
     }
   }
@@ -285,5 +307,5 @@ export function mixedColumnLayout(context) {
     return new Map(throughAllocations.map(scope => [scope.column, allocateThrough(scope)]));
   }
 
-  return { register, registerThrough, captureThroughPreferred, allocate, minimumRows, widthFloors };
+  return { register, registerThrough, captureThroughPreferred, allocate, minimumRows, widthFloors, fixedThroughWidths };
 }

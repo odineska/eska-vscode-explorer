@@ -396,8 +396,12 @@ export async function createTableGallery(fixture) {
   return result;
 }
 
-export function createUnitedGallery(fixture) {
-  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
+export async function createUnitedGallery(fixture) {
+  const forms = await createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
+  if (process.platform === 'linux') {
+    await addNativeGoods(fixture, join(process.env.ESKA_FORM_FIXTURES, '..', 'native-context-tables', 'Catalog.xml'));
+  }
+  return forms;
 }
 
 export async function createColumnWidthGallery(fixture, locale) {
