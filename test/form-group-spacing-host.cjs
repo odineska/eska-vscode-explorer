@@ -49,6 +49,25 @@ const changes = {
     from: '<BackColor>#E7D6FF</BackColor>', to: '' },
 };
 
+async function inDetachedPreview(service, view, main, ui, verify) {
+  const workbench = await ui.nativeWindow();
+  await service.receive(view, main, { type: 'detach' });
+  await until(() => view.frames.get('preview')?.ready, 'separation detached');
+  const preview = view.frames.get('preview');
+  const floating = await frame({ detached: true, state: { title: preview.panel.title } });
+  try {
+    assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+    await verify(floating);
+  } finally {
+    try {
+      await service.receive(view, preview, { type: 'dock' });
+      await until(() => !view.frames.has('preview'), 'separation docked');
+    } finally {
+      floating.close();
+    }
+  }
+}
+
 async function verifyUpdates({ document, service, view, main, ui, keys, original, expected, control, change }) {
   const changed = original.replace(change.from, change.to);
   assert.notEqual(changed, original);
@@ -75,13 +94,7 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
   await update(original, ui, expected, 'main-dirty-' + change.before);
   assert.equal(await ui.evaluate(preserved), true);
 
-  const workbench = await ui.nativeWindow();
-  await service.receive(view, main, { type: 'detach' });
-  await until(() => view.frames.get('preview')?.ready, 'separation detached');
-  const preview = view.frames.get('preview');
-  const floating = await frame({ detached: true, state: { title: preview.panel.title } });
-  try {
-    assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+  await inDetachedPreview(service, view, main, ui, async floating => {
     await floating.evaluate(remember);
     for (const width of [400, 550, 400]) {
       await allocateFormViewport(floating, [width,300]);
@@ -89,14 +102,45 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
       await update(original, floating, expected, 'detached-' + width + '-' + change.before);
       assert.equal(await floating.evaluate(preserved), true);
     }
-  } finally {
-    try {
-      await service.receive(view, preview, { type: 'dock' });
-      await until(() => !view.frames.has('preview'), 'separation docked');
-    } finally {
-      floating.close();
+  });
+  return results;
+}
+
+async function verifyReflow({ service, view, main, ui, keys, expected, gallery }) {
+  const profiles = ['ConditionalWidth29', 'ConditionalWidth24', 'ConditionalWidth35', 'ConditionalPaint']
+    .map(name => gallery.find(sample => sample.kind === name).expected);
+  const identity = [...view.nodes.values()].find(node => node.name === 'B').identity;
+  await service.receive(view, main, { type: 'select', identity });
+  const results = [];
+  async function resize(target, mode) {
+    await target.evaluate('globalThis.__paintedRowInputs = [...document.querySelectorAll(".taxi-input")]; true');
+    for (const profile of profiles) {
+      await allocateFormViewport(target, profile.frame);
+      const width = await target.evaluate(`(() => {
+        const area = document.querySelector('.preview-scroll'), style = getComputedStyle(area);
+        return area.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 8;
+      })()`);
+      assert.equal(width, profile.frame[0]);
+      let actual, preferredWidth;
+      const name = mode + '-resize-' + width;
+      try {
+        await until(async () => {
+          actual = await geometry(target, keys, profile);
+          preferredWidth = await target.evaluate(
+            "parseFloat(document.querySelector('.taxi-form-frame').style.getPropertyValue('--taxi-form-preferred-width'))");
+          return matches(actual, profile) && preferredWidth === expected.frame[0];
+        }, name);
+      } catch (error) {
+        throw new Error(name + ' ' + JSON.stringify({ actual, preferredWidth }), { cause: error });
+      }
+      assert.equal(await target.evaluate('__paintedRowInputs.every(element => element.isConnected)'), true);
+      assert.deepEqual(view.selected, identity);
+      assert.deepEqual(target.scriptErrors(), []);
+      results.push({ name, ...actual });
     }
   }
+  await resize(ui, 'main');
+  await inDetachedPreview(service, view, main, ui, floating => resize(floating, 'detached'));
   return results;
 }
 
@@ -114,11 +158,14 @@ exports.run = async () => {
     const current = () => [...service.views.values()].find(view => sameSourcePath(view.path, form.path));
     await until(() => current()?.phase === 'ready', 'separation model ready');
     const view = current(), main = view.frames.get('main');
-    const ui = await frame({ fixedFormArea: true, state: { title: main.panel.title } });
+    const manualViewport = form.kind.startsWith('ConditionalWidth');
+    const frameOptions = { fixedFormArea: !manualViewport, state: { title: main.panel.title } };
+    const ui = await frame(frameOptions);
     try {
       const keys = Object.fromEntries([...view.nodes.values()].map(node =>
         [node.name, `${node.identity.source}:current:${node.identity.key.value}`]));
       const expected = form.expected;
+      if (manualViewport) await allocateFormViewport(ui, expected.frame);
       await ui.evaluate('document.fonts.ready.then(() => true)');
       let actual, previous, stable = 0;
       await until(async () => {
@@ -136,6 +183,10 @@ exports.run = async () => {
       if (change) {
         const control = fixture.formGallery.find(sample => sample.kind === change.control).expected;
         results.push(...await verifyUpdates({ document, service, view, main, ui, keys, original, expected, control, change }));
+      }
+      if (form.kind === 'ConditionalPaint' && process.platform === 'linux') {
+        frameOptions.fixedFormArea = false;
+        results.push(...await verifyReflow({ service, view, main, ui, keys, expected, gallery: fixture.formGallery }));
       }
       assert.deepEqual(await fs.readFile(form.path), disk);
     } finally {

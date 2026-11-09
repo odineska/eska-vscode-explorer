@@ -82,7 +82,7 @@ test('native separation gallery retains all 52 source hashes and comparable geom
 test('painted group references bind the canonical XML and both Linux captures', async () => {
   const root = new URL('tests/fixtures/forms/native-painted-group-spacing/', formReferenceRoot);
   const { rows } = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
-  assert.equal(rows.length, 45);
+  assert.equal(rows.length, 49);
   assert.equal(rows.filter(row => row.captures.ru).length, 30);
   assert.equal(new Set(rows.map(row => row.name)).size, rows.length);
   for (const row of rows) {
@@ -99,4 +99,7 @@ test('painted group references bind the canonical XML and both Linux captures', 
   assert.equal(cases.get('VerticalLeadingPaint').fields.B[1], 119);
   assert.equal(cases.get('VerticalTrailingPaint').fields.B[1], 124);
   assert.equal(cases.get('VerticalNestedOuter').fills.WrapperA[3], 49);
+  assert.deepEqual(cases.get('ConditionalWidth24').frame, [274,194]);
+  assert.deepEqual(cases.get('ConditionalWidth29').fields, cases.get('ConditionalVerticalControl').fields);
+  assert.equal(cases.get('ConditionalWidth35').fields.B[0], 174);
 });

@@ -13,10 +13,10 @@ export function setGroupSpacing(element, axis, amount, alignment) {
   alignment.style(element, margin, `${baseline + amount}px`);
 }
 
-function reservePaintedInsets(edge, axis, trailing, targets, alignment) {
+function reservePaintedInsets(insets, axis, trailing, targets, alignment) {
   const property = axis === 'x' ? (trailing ? 'padding-right' : 'padding-left')
     : (trailing ? 'padding-bottom' : 'padding-top');
-  for (const { key, distance } of edge.insets) {
+  for (const { key, distance } of insets) {
     const items = targets.containers.get(key);
     const original = pixels(getComputedStyle(items).getPropertyValue(property));
     alignment.style(items, property, `${original + distance}px`);
@@ -54,9 +54,21 @@ function alignPaintedRow(children, targets, alignment, scale) {
   for (const child of children) alignment.style(targets.elements.get(child.key), 'align-self', 'center');
 }
 
+function boundary(previous, next, axis) {
+  const before = previous[axis][1], after = next[axis][0];
+  // The earlier section owns the shared outside interval when it requests one.
+  return { distance: before.distance || after.distance, before: before.insets,
+    after: before.distance ? [] : after.insets };
+}
+
+function insetTotal(insets) {
+  return insets.reduce((total, inset) => total + inset.distance, 0);
+}
+
 /** Project separation through nested groups before measuring preferred and minimum sizes. */
 export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
-  if (os !== 'linux') return;
+  const conditional = new Map();
+  if (os !== 'linux') return conditional;
   function visit(node) {
     // Pages have an Items container but no ordinary element wrapper.
     const logicalEdges = new Map(node.children.map(child => [child.key, visit(child)]));
@@ -67,19 +79,31 @@ export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
     const insets = padding ? { x: [pixels(padding.paddingLeft), pixels(padding.paddingRight)],
       y: [pixels(padding.paddingTop), pixels(padding.paddingBottom)] } : {};
     if (items) {
-      const axis = horizontal ? 'x' : 'y', interval = horizontal ? undefined : groupSpacingInterval(node, 'y');
+      const axis = horizontal ? 'x' : 'y';
+      const verticalInterval = groupSpacingInterval(node, 'y');
+      const interval = horizontal ? undefined : verticalInterval;
+      const reflows = node.presentation?.grouping === 'HorizontalIfPossible';
+      let horizontalReserve = 0, directional = reflows && verticalInterval !== undefined;
       if (interval !== undefined) {
         alignment.style(items, 'row-gap', `${Math.max(0, interval - 2)}px`);
       }
       for (let index = 1; index < children.length; index++) {
-        const previous = edges[index - 1][axis][1], next = edges[index][axis][0];
-        reservePaintedInsets(previous, axis, true, targets, alignment);
-        if (!previous.distance) reservePaintedInsets(next, axis, false, targets, alignment);
-        // The earlier section owns the shared outside interval when it requests one.
-        const separation = previous.distance || next.distance;
+        const previous = edges[index - 1], next = edges[index];
+        const placement = boundary(previous, next, axis);
+        reservePaintedInsets(placement.before, axis, true, targets, alignment);
+        reservePaintedInsets(placement.after, axis, false, targets, alignment);
         const adjustment = axis === 'y' && interval === 0 ? -2 : 0;
-        setGroupSpacing(targets.elements.get(children[index].key), axis, separation + adjustment, alignment);
+        setGroupSpacing(targets.elements.get(children[index].key), axis, placement.distance + adjustment, alignment);
+        if (reflows) {
+          const row = horizontal ? placement : boundary(previous, next, 'x');
+          const column = horizontal ? boundary(previous, next, 'y') : placement;
+          const rowInsets = insetTotal(row.before) + insetTotal(row.after);
+          // Insets in the current row are already part of the measured child widths.
+          horizontalReserve += row.distance + (horizontal ? 0 : rowInsets);
+          directional ||= !!(row.distance || rowInsets || column.distance || column.before.length || column.after.length);
+        }
       }
+      if (directional) conditional.set(node.key, horizontalReserve);
       if (horizontal) alignPaintedRow(children, targets, alignment, scale);
       else shareSectionInset(children, targets, alignment);
     }
@@ -87,6 +111,7 @@ export function layoutGroupSpacing(model, { targets, alignment, os, scale }) {
     return groupSeparationEdges(node, edges, horizontal, insets, painted);
   }
   visit(model);
+  return conditional;
 }
 
 /** Exposed United rows use the largest boundary in any participating column. */

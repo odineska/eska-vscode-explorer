@@ -42,6 +42,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
   let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
+  let conditionalSpacing = new Map();
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -86,7 +87,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       allocateTableCommands = measureTableCommands(root, scale);
       const context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       decorationsLayout = measureDecorations(state.model.root, context, state);
-      layoutGroupSpacing(state.model.root, context);
+      conditionalSpacing = layoutGroupSpacing(state.model.root, context);
       unitedColumns = alignUnitedColumns(state.model.root, context);
       const throughScopes = alignThroughLabels(state.model.root, context);
       unitedColumns.alignColumns();
@@ -101,6 +102,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
       allocateGroupRows = authoredGroupRows(root, scale, alignment);
       allocateCommandBars = commandBarLayout(root, context);
       const nextPreferred = rect(root);
+      const rootNode = state.model.root;
+      if (wrapped().has(rootNode.key) && number(rootNode, 'Width') <= 0) {
+        nextPreferred.width += conditionalSpacing.get(rootNode.key) ?? 0;
+      }
       setPreferred(nextPreferred);
       needsMinimum = true;
       const widths = new Map();
@@ -173,13 +178,19 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const children = [...items.children];
       const gap = parseFloat(getComputedStyle(items).getPropertyValue('--taxi-horizontal-gap'));
       const dimension = items.hasAttribute('data-native-command-row') ? '--taxi-min-width' : '--taxi-preferred-width';
+      const key = items.dataset.layoutOwner;
       const required = children.reduce((sum, child) => sum + parseFloat(child.style.getPropertyValue(dimension) || '0'), 0)
-        + Math.max(0, children.length - 1) * gap;
-      if (rect(items).width + .5 < required) wrap.add(items.dataset.layoutOwner);
+        + Math.max(0, children.length - 1) * gap + (conditionalSpacing.get(key) ?? 0);
+      const width = rect(items).width;
+      const availableFrame = next.outerWidth / (state.ui.zoom / 100) - 8;
+      // A horizontal minimum can widen the root beyond its viewport before the row is stacked.
+      const available = state.os === 'linux' && items.parentElement === body
+        ? width - Math.max(0, rect(root).width - availableFrame) : width;
+      if (available + .5 < required) wrap.add(key);
     }
     setWrapped(previous => {
       if (previous.size === wrap.size && [...previous].every(key => wrap.has(key))) return previous;
-      if (unitedRows && [...unitedRows.owners].some(key => previous.has(key) !== wrap.has(key))) needsPreferred = true;
+      if ([...unitedRows.owners, ...conditionalSpacing.keys()].some(key => previous.has(key) !== wrap.has(key))) needsPreferred = true;
       needsMinimum = true; schedule(); return wrap;
     });
   }
