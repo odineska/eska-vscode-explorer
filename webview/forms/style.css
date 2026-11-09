@@ -749,7 +749,10 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-content-vertical-align]:not([data-united-columns]) {
   align-items: var(--taxi-content-vertical-align);
 }
-.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:where(:has(> .taxi-element > .taxi-field-row[data-multiline][data-title-location=Top])) { align-items: start; }
+/* A surrounding group's vertical alignment applies to the fields of a nested multiline row. */
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal:where(:has(> .taxi-element > .taxi-field-row[data-multiline][data-title-location=Top])) {
+  align-items: var(--taxi-inherited-vertical-align, start);
+}
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element { flex: 0 0 var(--taxi-preferred-width); width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element[data-stretch-x=true] { flex: var(--taxi-stretch-weight) 1 0 !important; width: auto; min-width: var(--taxi-min-width); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-layout-container=true][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
