@@ -293,12 +293,14 @@ async function verifyColumnSurplus(service, main, view, document) {
   async function observe(surface, file, { width, columns, inputs, dateBlock = null, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [width, 420]);
-    const expected = { width, columns, inputs, dateBlock, divider };
-    const description = `${file} matches native column widths at ${width}px`;
+    const expected = { width, divider };
+    if (columns) Object.assign(expected, { columns, inputs, dateBlock });
+    const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
     await until(async () => {
       actual = await measure(surface);
-      stable = isDeepStrictEqual(actual, expected) ? stable + 1 : 0;
+      const geometry = columns ? actual : actual && { width: actual.width, divider: actual.divider };
+      stable = isDeepStrictEqual(geometry, expected) ? stable + 1 : 0;
       return stable >= 2;
     }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
     assert.equal(view.snapshot.revision, revision);

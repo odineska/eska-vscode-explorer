@@ -19,9 +19,10 @@ export function createColumnDividers(schedule) {
       // The native outline and rounded CSS track widths can differ by one pixel.
       if (width + 1 >= preferred || width <= 0) continue;
       const minimum = Math.ceil(minima.get(left)?.width ?? 0);
-      const maximum = Math.max(minimum, Math.floor(width - (minima.get(right)?.width ?? 0)));
+      const maximum = Math.floor(width - (minima.get(right)?.width ?? 0));
+      if (maximum <= minimum) continue;
       const saved = positions.get(items);
-      const manual = saved?.left === left && saved.right === right && maximum > minimum;
+      const manual = saved?.left === left && saved.right === right;
       // The end of the range can move when wrapping adds or removes the viewport scrollbar.
       const edge = { minimum, maximum }[saved?.edge];
       const firstTrack = manual ? edge ?? saved.value : pixels(getComputedStyle(items).gridTemplateColumns);
@@ -41,7 +42,7 @@ export function createColumnDividers(schedule) {
 
   function move(key, value, edge) {
     const divider = dividers().get(key);
-    if (!divider || divider.minimum === divider.maximum) return;
+    if (!divider) return;
     const next = clamp(Math.round(value), divider.minimum, divider.maximum);
     positions.set(divider.items, { left: divider.left, right: divider.right, value: next, edge });
     schedule();

@@ -162,13 +162,18 @@ async function verifyColumnDivider(ui, original, replace) {
   assert.deepEqual(restored.tracks, initial.tracks);
   await allocateFormViewport(ui, narrow);
   await observe(result => result.range?.[1] === left.range[1], 'narrow viewport restores the local position');
+  await allocateFormViewport(ui, [narrow[0] - (maximum - minimum), narrow[1]]);
+  const collapsed = await observe(result => result.horizontal && !result.range, 'divider hides when both columns reach their minima');
+  assert.ok(collapsed.tracks[0] + collapsed.tracks[1] < left.tracks[0] + left.tracks[1]);
+  await allocateFormViewport(ui, narrow);
+  await observe(result => result.range?.[1] === left.range[1], 'expansion restores the position after reaching minimum widths');
   const uncombined = original.replace('<UsualGroup name="Column1" id="11">', '$&<United>false</United>');
   assert.notEqual(uncombined, original);
   await replace(uncombined);
   await observe(result => result.horizontal && !result.range, 'exposed rows have no column divider');
   await replace(original);
   await observe(result => result.range?.[1] === left.range[1], 'dirty undo restores the column divider');
-  return {label:'detached-column-divider', automatic, dragged, left, right, wide:restored};
+  return {label:'detached-column-divider', automatic, dragged, left, right, collapsed, wide:restored};
 }
 
 async function verifyDetached(service, view, main, ui, identity, run) {
