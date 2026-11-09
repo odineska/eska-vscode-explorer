@@ -346,6 +346,10 @@ function Group(props) {
   const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page');
   const painted = () => !!property(node(), 'BackColor');
   const heading = createMemo(() => state.os === 'linux' ? decorationCaptionProfile(caption(node(), state), node().presentation.titleFont) : undefined);
+  const headingMinimum = () => {
+    const profile = heading();
+    if (profile && profile.minimum < profile.preferred && groupCanShrink(node(), state.os, state.model.root)) return profile.minimum;
+  };
   let container;
   const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.sequence}));
   return <Switch>
@@ -355,7 +359,7 @@ function Group(props) {
     <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
     <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible() && title(), 'taxi-group--painted': painted() }}
       style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
-      <Show when={title()}><div class="taxi-group-title" data-native-text-width={heading()?.preferred} style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor),
+      <Show when={title()}><div class="taxi-group-title" data-native-text-width={heading()?.preferred} data-native-heading-minimum={headingMinimum()} style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor),
         width: heading() ? `${heading().preferred}px` : undefined, 'max-width': state.os === 'linux' ? '100%' : undefined,
         'font-size': state.os === 'linux' ? `${fontPixels(node().presentation.titleFont)}px` : undefined,
         'white-space': state.os === 'linux' ? 'var(--taxi-group-heading-space, pre)' : undefined,

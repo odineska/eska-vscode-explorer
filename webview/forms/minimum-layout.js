@@ -9,7 +9,7 @@ function reserveWidth(value, width, fullWidth = width) {
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingWidths, available, conditionalWidth }) {
+export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, minimumRows, headingHeights, available, conditionalWidth }) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -78,11 +78,11 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       value = items(group.querySelector(':scope > .taxi-items'));
       const title = group.querySelector(':scope > .taxi-group-title');
       if (title) {
-        const box = marginBox(title);
-        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, box.height);
-        else value.height += box.height;
-        const heading = headingWidths.get(group);
-        reserveWidth(value, heading?.minimum ?? textWidth(title, scale), heading?.preferred);
+        const height = (headingHeights.get(title) ?? size(title).height) + margins(title).height;
+        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, height);
+        else value.height += height;
+        const preferred = textWidth(title, scale);
+        reserveWidth(value, Number(title.dataset.nativeHeadingMinimum ?? preferred), preferred);
       }
       value = add(value, insets(group));
       if (element.hasAttribute('data-compact-command-bars')) {

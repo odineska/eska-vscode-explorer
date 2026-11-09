@@ -197,10 +197,10 @@ export function alignUnitedColumns(model, context) {
 
   const columns = [];
   for (const scope of scopes) {
-    const {node, items, lanes} = scope;
+    const {items, lanes} = scope;
     if (lanes.every(lane => lane.kind === 'group' && !lane.title && lane.children.every(entry => entry.kind !== 'group'))
       && lanes.some(lane => lane.children.some(entry => entry.kind === 'control'))) {
-      mixed.register(node, items, lanes, setCell, setLane);
+      mixed.register(items, lanes, setCell, setLane);
     } else columns.push(scope);
   }
 

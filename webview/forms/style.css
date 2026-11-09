@@ -747,6 +747,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-group { display: flex; flex-direction: column; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > :is(.taxi-group,.taxi-pages) { height: 100%; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-group-title { flex: none; overflow-wrap: anywhere; white-space: var(--taxi-group-heading-space, normal); }
+.taxi-preview[data-form-layout=allocated] .taxi-group-title[data-native-heading-minimum][data-native-heading-wrapped] { --taxi-group-heading-space: pre-wrap; }
 .taxi-preview[data-form-layout=allocated] .taxi-group > .taxi-items { flex: 1; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages { display: flex; flex-direction: column; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnBottom] { flex-direction: column-reverse; }

@@ -58,6 +58,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
   let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
   let natural, needsNatural = true;
+  let headingTitles = [];
+  const headingHeights = new Map();
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -93,6 +95,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
         .map(items => [items.dataset.layoutOwner, items]));
       const targets = { elements: elementByKey, containers, children: node => node.children.filter(child => elementByKey.has(child.key)) };
       content.dataset.formLayout = 'preferred';
+      headingTitles = [...root.querySelectorAll('.taxi-group-title[data-native-heading-minimum]')];
+      headingHeights.clear();
       clearAlignment();
       if (fieldCaptions().size) setFieldCaptions(new Map());
       if (aboveTitles().size) setAboveTitles(new Set());
@@ -154,7 +158,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
       const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, commandWidth: rootCommands?.minimumWidth, minimumRows,
-        headingWidths: unitedColumns.headingWidths, available, conditionalWidth: state.os === 'linux',
+        headingHeights, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
       content.dataset.formLayout = 'allocated';
@@ -171,11 +175,11 @@ export function createFormLayout(controller, viewport, preview, frame) {
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
     // Recheck fit against the resized area before scrollbars from the old arrangement settle.
     const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0);
+    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
     if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
     if (resized && previous.outerWidth !== undefined) setViewportResized(true);
     if (Object.keys(next).some(key => previous[key] !== next[key])) {
-      if (unitedColumns.headingWidths.size && next.width !== previous.width) needsMinimum = true;
+      if (headingTitles.length && next.width !== previous.width) needsMinimum = true;
       setSize(next); schedule();
     }
     rootCommands?.allocate();
@@ -189,6 +193,19 @@ export function createFormLayout(controller, viewport, preview, frame) {
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
+    for (const title of headingTitles) {
+      const bounds = rect(title);
+      if (bounds.height <= 0) continue;
+      // The native full width may be smaller than Chromium's glyph advances.
+      const wrap = bounds.width + .5 < Number(title.dataset.nativeTextWidth);
+      const changed = wrap !== title.hasAttribute('data-native-heading-wrapped');
+      if (changed) title.toggleAttribute('data-native-heading-wrapped', wrap);
+      const height = changed ? rect(title).height : bounds.height;
+      if (height === headingHeights.get(title)) continue;
+      headingHeights.set(title, height);
+      needsMinimum = true;
+      schedule();
+    }
     const nextDecorations = decorationsLayout.allocate();
     const previousDecorations = decorations();
     if (nextDecorations.size !== previousDecorations.size
