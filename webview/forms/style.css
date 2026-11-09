@@ -787,6 +787,7 @@ button { cursor: default; }
   .taxi-items[data-through-labels=leading] > .taxi-element--field:where(:first-child)) > .taxi-field-row[data-title-location=Left] {
   grid-template-columns: var(--taxi-through-label-width) max-content;
 }
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-through-input-stack] { max-width: var(--taxi-through-stack-width, none); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-through-mixed-field][data-stretch-x=true] > .taxi-field-row > .taxi-field-control > .taxi-input {
   max-width: min(var(--taxi-through-value-width, 100%), var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))));
 }

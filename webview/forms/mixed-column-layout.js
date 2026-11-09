@@ -136,7 +136,12 @@ export function mixedColumnLayout(context) {
       alignment.mark(element, 'data-through-mixed-field');
       alignment.style(element, '--taxi-through-value-width', '');
     }
-    throughAllocations.push({ lanes, references, fixedSiblings });
+    const members = [...lanes, ...references].map(entry => entry.element);
+    let column = lanes[0].element.parentElement;
+    while (column && !members.every(element => column.contains(element))) {
+      column = column.parentElement?.closest('.taxi-items');
+    }
+    throughAllocations.push({ column, lanes, references, fixedSiblings });
   }
 
   function allocateThrough({ lanes, references, fixedSiblings }) {
@@ -164,6 +169,7 @@ export function mixedColumnLayout(context) {
       const width = Math.max(entry.size.minimum, widths[0] - caption - entry.labelGap);
       updateStyle(entry.element, '--taxi-through-value-width', `${width}px`);
     }
+    return lanes[0].children[0].element.getBoundingClientRect().left / scale + widths[0];
   }
 
   function allocate(above) {
@@ -193,7 +199,7 @@ export function mixedColumnLayout(context) {
         }
       }
     }
-    for (const scope of throughAllocations) allocateThrough(scope);
+    return new Map(throughAllocations.map(scope => [scope.column, allocateThrough(scope)]));
   }
 
   return { register, registerThrough, allocate, minimumRows };

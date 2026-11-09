@@ -409,7 +409,7 @@ export async function createColumnWidthGallery(fixture, locale) {
   await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeUsers</Catalog>'));
   const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json',
     'title-location-metrics.json', 'checkbox-metrics.json', 'mixed-title-metrics.json', 'group-alignment-metrics.json',
-    'footer-allocation-metrics.json', 'footer-wrapped-metrics.json']
+    'footer-allocation-metrics.json', 'footer-wrapped-metrics.json', 'input-stack-metrics.json']
     .map(async file => JSON.parse(await readFile(join(input, file), 'utf8'))));
   const cases = new Map();
   for (const { fixtures } of measurements) {

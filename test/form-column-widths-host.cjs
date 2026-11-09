@@ -30,12 +30,17 @@ async function pose(ui, keys, expected) {
       actual.browserErrors=ui.scriptErrors();
       const tolerance = expected.tolerancePx ?? 0;
       const aligned = expected.alignedY?.map(name => actual.controls[name]?.[1]);
+      const trailing = expected.alignedEndX?.map(name => {
+        const [x, , width] = actual.controls[name] ?? [];
+        return x + width;
+      });
       return actual.layout === 'allocated' && actual.browserErrors.length === 0
         && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
         && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
         && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
         && (!aligned || Math.max(...aligned) - Math.min(...aligned) <= tolerance)
+        && (!trailing || Math.max(...trailing) - Math.min(...trailing) <= tolerance)
         && Object.entries(expected.controls ?? {}).every(([name, rect]) =>
           rect === null ? !actual.controls[name] : actual.controls[name]?.every((value,i) => rect[i] === null || Math.abs(value-rect[i]) <= tolerance))
         && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
@@ -63,6 +68,14 @@ function titleXml(values) {
     return `<v8:item><v8:lang>${language[index]}</v8:lang><v8:content>${content}</v8:content></v8:item>`;
   });
   return '<Title>' + items.join('') + '</Title>';
+}
+
+function editProperties(properties, settings) {
+  for (const [tag, value] of Object.entries(settings)) {
+    properties = properties.replace(new RegExp(`<${tag}>[^<]*</${tag}>`, 'u'), '');
+    if (value !== null) properties = `<${tag}>${value}</${tag}>` + properties;
+  }
+  return properties;
 }
 
 function sourceVariant(xml, edit) {
@@ -96,13 +109,10 @@ function sourceVariant(xml, edit) {
   for (const [name, settings] of Object.entries(edit.groups ?? {})) {
     const group = new RegExp(`(<UsualGroup name="${name}" id="\\d+">)([\\s\\S]*?)(<ChildItems>)`, 'u');
     assert.match(changed, group);
-    changed = changed.replace(group, (_, open, properties, items) => {
-      for (const [tag, value] of Object.entries(settings)) {
-        properties = properties.replace(new RegExp(`<${tag}>[^<]*</${tag}>`, 'u'), '');
-        if (value !== null) properties = `<${tag}>${value}</${tag}>` + properties;
-      }
-      return open + properties + items;
-    });
+    changed = changed.replace(group, (_, open, properties, items) => open + editProperties(properties, settings) + items);
+  }
+  for (const [name, settings] of Object.entries(edit.fields ?? {})) {
+    changed = editField(changed, name, properties => editProperties(properties, settings));
   }
   if (edit.maximum) {
     changed = editField(changed, 'B', properties => `<AutoMaxWidth>false</AutoMaxWidth><MaxWidth>${edit.maximum}</MaxWidth>` + properties);
@@ -176,7 +186,7 @@ async function verifyColumnDivider(ui, original, replace) {
   return {label:'detached-column-divider', automatic, dragged, left, right, collapsed, wide:restored};
 }
 
-async function verifyDetached(service, view, main, ui, identity, run) {
+async function verifyDetached(service, view, main, ui, identity, run, retainedKey) {
   await service.receive(view, main, {type:'select', identity});
   await until(() => view.selected?.key.value === identity.key.value, 'column field selected');
   const workbench = await ui.nativeWindow();
@@ -186,7 +196,9 @@ async function verifyDetached(service, view, main, ui, identity, run) {
   const floating = await frame({detached:true, state:{title:preview.panel.title}});
   assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
   await floating.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
-  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field,.taxi-label-field')];true");
+  const controls = '.taxi-input,.taxi-checkbox,.taxi-picture-field,.taxi-label-field';
+  const retained = retainedKey ? `[data-element=${JSON.stringify(retainedKey)}] :is(${controls})` : controls;
+  await floating.evaluate(`globalThis.__widthInputs=[...document.querySelectorAll(${JSON.stringify(retained)})];true`);
   await run(floating);
   assert.deepEqual(view.selected, identity);
   assert.equal(await floating.evaluate('__widthInputs.length>0 && __widthInputs.every(input=>input.isConnected)'), true);
@@ -217,8 +229,12 @@ exports.run = async () => {
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
     const placements = form.cases[0]?.locations;
-    if (process.platform === 'linux' && form.kind === 'FooterWrapped') {
-      const identity = nodes.find(node => node.name === 'Memo').identity;
+    if (process.platform === 'linux' && ['FooterWrapped', 'MixedInputStack'].includes(form.kind)) {
+      const stack = form.kind === 'MixedInputStack';
+      const field = stack ? 'Trace' : 'Memo';
+      const identity = nodes.find(node => node.name === field).identity;
+      // Hiding the neighboring groups unmounts their controls and keeps the selected input.
+      const retainedKey = stack ? keys[field] : undefined;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
         for (const expected of form.cases) {
           await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
@@ -227,9 +243,11 @@ exports.run = async () => {
           assert.equal(view.snapshot.revision, revision);
         }
         await replace(original);
-        results.push(await pose(floating, keys, { ...form.cases[0], name:'mixed row restores wide captions' }));
-      });
-      results.push({label:'detached-mixed-row-resize-and-dirty', ...observation});
+        const name = stack ? 'input stack restores wide captions' : 'mixed row restores wide captions';
+        results.push(await pose(floating, keys, { ...form.cases[0], name }));
+      }, retainedKey);
+      const label = stack ? 'detached-input-stack-resize-and-dirty' : 'detached-mixed-row-resize-and-dirty';
+      results.push({label, ...observation});
     } else if (process.platform === 'linux' && (placements || checkbox)) {
       const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {

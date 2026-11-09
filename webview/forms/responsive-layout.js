@@ -59,7 +59,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, throughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
   let allocateInlineRows, natural, needsNatural = true;
   let headingTitles = [];
   const headingHeights = new Map();
@@ -127,7 +127,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? []), ...dateBlocks.minimumCaptions]);
         // Rows that can move titles above their inputs own their resize allocation.
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
-        allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
+        throughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns(dateBlocks.titleFloors);
@@ -198,7 +198,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     rootCommands?.allocate();
     allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
-    allocateThroughCaptions(captions, geometry().minima);
+    throughCaptions.allocate(captions, geometry().minima);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     for (const [key, plan] of packedDates) {
@@ -213,7 +213,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates);
-    unitedColumns.allocate(above);
+    const leadingEdges = unitedColumns.allocate(above);
+    throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
     for (const title of headingTitles) {

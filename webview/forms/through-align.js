@@ -1,4 +1,4 @@
-import { fieldWidth, number, scalar } from './model.mjs';
+import { fieldWidth, inputRows, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
@@ -6,8 +6,17 @@ import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs'
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
 
-function labelScope(node) {
-  return node.presentation.grouping === 'Vertical' && (['Form', 'Page'].includes(node.kind) || ordinaryGroup(node));
+function labelScope(node, os) {
+  return node.presentation.grouping === 'Vertical' && (['Form', 'Page'].includes(node.kind) || ordinaryGroup(node)
+    || os === 'linux' && node.kind === 'UsualGroup' && scalar(node, 'Behavior') === 'Collapsible');
+}
+
+function localInputStack(track, children, os) {
+  if (track.node.kind !== 'UsualGroup' || track.horizontal) return false;
+  const fields = children(track.node);
+  return fields.length > 1 && fields.every(node => node.kind === 'InputField'
+    && node.presentation.titleLocation === 'Left' && inputRows(node) === 1
+    && (linuxReferenceInput(node, os) || textInputWidthBounds(node, os)));
 }
 
 /** Share the leading title track across ordinary vertical groups without changing their owners. */
@@ -17,7 +26,7 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     const items = containers.get(node.key);
     const horizontal = ordinaryGroup(node) && horizontalGrouping(node);
     const scope = items && !items.hasAttribute('data-united-flex-lane')
-      ? horizontal ? parentScope : labelScope(node) ? parentScope ?? [] : undefined : undefined;
+      ? horizontal ? parentScope : labelScope(node, os) ? parentScope ?? [] : undefined : undefined;
     const leading = horizontal ? items?.firstElementChild : undefined;
     if (scope) {
       const row = horizontal ? leading?.querySelector(`:scope > ${leftLabelRow}`)
@@ -33,19 +42,22 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     }
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {
-      if (scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) scopes.push({ owner: node, tracks: scope });
+      const local = os === 'linux' && scope.length === 1 && localInputStack(scope[0], children, os);
+      if (local || scope.length > 1 || os === 'linux' && children(scope[0].node).some(separatedRow)) {
+        scopes.push({ owner: node, tracks: scope, local });
+      }
     }
   }
   visit(model);
 
-  const aligned = scopes.map(({ owner, tracks }) => {
+  const aligned = scopes.map(({ owner, tracks, local }) => {
     const measured = tracks.map(({ node, container, track, horizontal }) => {
       const css = getComputedStyle(track);
       const width = parseFloat(css.gridTemplateColumns);
       const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
       return { node, container, horizontal, left, end: left + width };
     });
-    return { owner, tracks: measured };
+    return { owner, tracks: measured, local };
   }).filter(({ tracks }) => tracks.every(track => Number.isFinite(track.end)));
   for (const { tracks: scope } of aligned) {
     if (scope.length === 1) continue;
@@ -90,9 +102,8 @@ function captionTrack(track, { targets, os, scale }, minimumCaptions, adaptiveFi
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
-  if (os !== 'linux') return () => {};
-  const allocations = [];
-  for (const { tracks: scope } of scopes) {
+  const shared = [], stacks = [];
+  for (const { tracks: scope, local } of os === 'linux' ? scopes : []) {
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
       .map(node => targets.containers.get(node.key)).filter(Boolean);
@@ -105,7 +116,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     const fields = tracks.flatMap(track => track.fields);
     const width = metric => Math.max(...fields.map(field => field.caption[metric])) + inputCaptionInset;
     const preferred = width('preferred'), compact = width('compact'), minimum = width('minimum');
-    if (minimum >= preferred) continue;
+    if (minimum >= preferred && !local) continue;
     const end = Math.max(...tracks.map(track => track.end));
     for (const items of separated) alignment.mark(items, 'data-through-separated-row');
     for (const track of tracks) {
@@ -134,12 +145,27 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
       ? [...new Set(fields.map(field => field.caption.preferred + inputCaptionInset))]
         .filter(width => width > minimum).sort((a, b) => b - a)
       : undefined;
-    allocations.push({ tracks, preferred, compact, minimum, steps });
+    const allocation = { tracks, preferred, compact, minimum, steps };
+    if (local) {
+      const [track] = tracks;
+      alignment.mark(track.container, 'data-through-input-stack');
+      alignment.style(track.container, '--taxi-through-stack-width', '');
+      track.parent = targets.elements.get(track.node.key).parentElement;
+      stacks.push(allocation);
+    } else {
+      shared.push(allocation);
+    }
   }
 
-  return function allocateWidths(captions, minima) {
+  function allocateWidths(allocations, captions, minima, leadingEdges) {
     for (const { tracks, preferred, compact, minimum, steps } of allocations) {
-      const measured = tracks.map(({node, container, fields, horizontal, preferredValue}) => {
+      const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
+        // The stack has its own captions but occupies the leading track of the mixed rows.
+        const edge = leadingEdges?.get(parent);
+        if (edge !== undefined) {
+          const width = Math.max(0, Math.round(edge - container.getBoundingClientRect().left / scale));
+          updateStyle(container, '--taxi-through-stack-width', `${width}px`);
+        }
         const available = borderBoxSize(container, scale).width - boxInsets(getComputedStyle(container)).width;
         const reserve = horizontal ? (minima.get(node.key)?.width ?? 0) - fields[0].minimum
           : Math.max(...fields.map(field => (minima.get(field.key)?.width ?? 0) - field.minimum));
@@ -153,9 +179,9 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         const control = setsWidth ? Math.max(reserve, field.preferredValue) : reserve;
         return width + control <= measured[index].available + .5;
       })));
-      const full = steps ? step === preferred : measured.every(track => track.full);
       const shared = steps ? step ?? minimum
         : measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
+      const full = steps ? shared === preferred : measured.every(track => track.full);
       for (const [index, {container, horizontal, fields, fullWidth}] of tracks.entries()) {
         const [leading] = fields;
         const { capacity } = measured[index];
@@ -170,5 +196,9 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         }
       }
     }
+  }
+  return {
+    allocate: (captions, minima) => allocateWidths(shared, captions, minima),
+    allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, leadingEdges),
   };
 }
