@@ -200,6 +200,76 @@ async function verifyUnitedRowHeight(main, view, document, { A1, A2 }) {
   }
 }
 
+async function verifyDateBlock(main, view, document) {
+  const original = document.getText();
+  const source = await fs.readFile(path.join(process.env.ESKA_FORM_FIXTURES, 'DateBlock.xml'), 'utf8');
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = () => ui.evaluate(`(() => {
+    const frame = document.querySelector('.taxi-form-frame'), bounds = frame.getBoundingClientRect();
+    const find = id => frame.querySelector('[data-element$=":current:' + id + '"]');
+    const block = find(5)?.getBoundingClientRect();
+    if (!block) return null;
+    const fields = [51, 52].map(id => {
+      const row = find(id).querySelector('.taxi-field-row');
+      const input = row.querySelector('.taxi-input').getBoundingClientRect();
+      return { x:input.x-bounds.x, y:input.y-bounds.y, width:input.width, title:row.dataset.titleLocation };
+    });
+    return { width:bounds.width, block:[block.width,block.height], fields,
+      lines:find(53).querySelectorAll('.taxi-field-caption-line').length || 1,
+      columns:[81,82].map(id => find(id)?.getBoundingClientRect().width),
+      divider:!!frame.querySelector('.taxi-column-divider') };
+  })()`);
+  async function observe(width, matches, description) {
+    await allocateFormViewport(ui, [width, 260]);
+    let state, previous, stable = 0;
+    await until(async () => {
+      state = await measure();
+      const serialized = JSON.stringify(state);
+      stable = serialized === previous ? stable + 1 : 0;
+      previous = serialized;
+      return stable >= 2 && state?.width === width && matches(state);
+    }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify(state)}`, { cause: error }); });
+    return state;
+  }
+  const dateValues = state => state.fields.every(field => field.width === 181)
+    && state.fields[0].x === state.fields[1].x;
+  try {
+    await editFormSource(document, view, source);
+    const wide = await observe(654, state => dateValues(state) && Math.abs(state.fields[0].x - 175) <= 1
+      && state.fields[1].y === 78 && state.lines === 1 && state.block[0] === 604, 'full date block');
+    const wrapped = await observe(604, state => dateValues(state) && Math.abs(state.fields[0].x - wide.fields[0].x) <= 1
+      && state.fields[1].y === wide.fields[1].y && state.lines === 2 && state.block[0] === 570, 'checkbox wraps below the date baseline');
+    const top = await observe(384, state => dateValues(state) && state.fields.every(field => field.title === 'Top')
+      && state.fields[0].x === 18 && state.fields[1].y === 114 && state.lines === 3, 'automatic date titles move above');
+    await editFormSource(document, view, source.replace('<United>false</United>', '<United>true</United>'));
+    await observe(654, state => state.fields[0].x !== state.fields[1].x && state.fields.every(field => field.title === 'Left'),
+      'united row keeps its own title column');
+    await editFormSource(document, view, source);
+    await observe(654, state => dateValues(state) && state.lines === 1 && state.block[0] === 604, 'wide date block restored');
+
+    const contents = /<ChildItems>([\s\S]*?)<\/ChildItems>(?=\s*<Attributes>)/u.exec(source);
+    assert.ok(contents, 'fixture contains the date block');
+    const group = (name, id, body) => `<UsualGroup name="${name}" id="${id}"><Group>Vertical</Group>
+      <United>true</United><ShowTitle>false</ShowTitle><HorizontalStretch>true</HorizontalStretch><ChildItems>${body}</ChildItems></UsualGroup>`;
+    const textField = (kind, id) => `<${kind} name="Value${id}" id="${id}"><DataPath>Text</DataPath><TitleLocation>None</TitleLocation></${kind}>`;
+    const pair = `<UsualGroup name="Pair" id="80"><Group>AlwaysHorizontal</Group><ShowTitle>false</ShowTitle><ChildItems>
+      ${group('Left', 81, textField('InputField', 91))}${group('Right', 82, contents[1] + textField('LabelField', 92))}</ChildItems></UsualGroup>`;
+    const text = '<Attribute name="Text" id="5"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers>'
+      + '<v8:Length>210</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>';
+    await editFormSource(document, view, source.replace(contents[0], `<ChildItems>${pair}</ChildItems>`)
+      .replace('<Attributes>', '<Attributes>' + text).replace('<Width>62</Width>', '<Width>125</Width>'));
+    const pairWide = await observe(1284, state => dateValues(state) && !state.divider && state.block[0] === 604, 'paired columns fit');
+    const pairNarrow = await observe(920, state => dateValues(state) && state.divider && state.block[0] < pairWide.block[0]
+      && state.columns.every((width, index) => width < pairWide.columns[index]), 'both columns and the date block contract');
+    await observe(1284, state => !state.divider && state.block[0] === 604
+      && state.columns.every((width, index) => width === pairWide.columns[index]), 'paired columns restore their widths');
+    return { kind: 'DateBlock', wide, wrapped, top, pairWide, pairNarrow };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -253,6 +323,7 @@ exports.run = async () => {
     results.push({kind:input.kind,leftGap,rightGap,horizontalGap,widths:currentWidths});
     if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
       results.push(await verifyUnitedRowHeight(main, view, document, keys));
+      results.push(await verifyDateBlock(main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));

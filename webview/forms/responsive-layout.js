@@ -4,6 +4,7 @@ import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } 
 import { minimumFormLayout } from './minimum-layout.js';
 import { inputTitleLayout } from './input-title-layout.js';
 import { checkboxLayout } from './checkbox-layout.js';
+import { dateBlockLayout } from './date-block-layout.js';
 import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
@@ -58,7 +59,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
   let allocateInlineRows, natural, needsNatural = true;
   let headingTitles = [];
   const headingHeights = new Map();
@@ -122,12 +123,13 @@ export function createFormLayout(controller, viewport, preview, frame) {
         unitedRows = alignUnitedRows(model, context, wrap);
         allocateInlineRows = alignInlineFieldRows(model, context);
         numericRows = alignNumericLabelRows(model, context);
-        minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
+        dateBlocks = dateBlockLayout(model, context);
+        minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? []), ...dateBlocks.minimumCaptions]);
         // Rows that can move titles above their inputs own their resize allocation.
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
         allocateThroughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
         checkboxes = checkboxLayout(model, context);
-        minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows]);
+        minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns();
         allocateGroupRows = boundedGroupRows(root, scale, alignment);
         allocateCommandBars = commandBarLayout(root, context);
@@ -197,12 +199,13 @@ export function createFormLayout(controller, viewport, preview, frame) {
     allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
     allocateThroughCaptions(captions, geometry().minima);
-    unitedRows.allocateWidths(captions);
+    unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    dateBlocks.allocate(captions, above, unitedRows.columnFraction);
     unitedColumns.allocate(above);
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);

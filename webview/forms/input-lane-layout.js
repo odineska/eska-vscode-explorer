@@ -135,6 +135,7 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
     if (minimum !== undefined) style(items, '--taxi-input-lane-minimum', `${minimum}px`);
     allocations.push({ items, tracks, narrow, minimum });
     style(items, '--taxi-united-allocated-columns', '');
+    return true;
   }
 
   function allocateWidths(captions) {

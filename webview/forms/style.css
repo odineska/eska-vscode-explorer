@@ -947,6 +947,14 @@ button { cursor: default; }
 
 .taxi-preview .taxi-items[data-checkbox-row] { align-items: var(--taxi-inherited-vertical-align, start); }
 .taxi-preview .taxi-items[data-checkbox-row][data-auto-spacing] { --taxi-horizontal-gap: 10px; }
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-fixed-date-row] { align-items: center; }
+.taxi-preview:is([data-form-layout=minimum], [data-form-layout=allocated]) .taxi-items[data-fixed-date-row] { align-items: start; }
+.taxi-preview:is([data-form-layout=minimum], [data-form-layout=allocated]) .taxi-items[data-fixed-date-row] > .taxi-element {
+  margin-block-start: var(--taxi-fixed-date-top, 0px);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-block][data-stretch-x=false] {
+  width: min(100%, var(--taxi-fixed-date-width, var(--taxi-preferred-width)));
+}
 
 /* Fixed inputs retain their value width when a side caption moves above them. */
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-control {

@@ -47,6 +47,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       // Use the allocator's lower bound for this row, including independent captions.
       const laneMinimum = pixels(element.style.getPropertyValue('--taxi-input-lane-minimum'));
       if (laneMinimum && !reflows) value.width = value.fullWidth = laneMinimum + gap;
+    }
+    if (element.hasAttribute('data-united-columns') || element.hasAttribute('data-fixed-date-row')) {
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
     const minimum = minimumRows.get(element);
