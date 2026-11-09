@@ -1,7 +1,7 @@
 import { number, numericLabelMetrics } from './model.mjs';
 import { ordinaryGroup, automaticHorizontalSpacing, controlBounds, stretches } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
-import { narrowNumericTracks } from './numeric-label-model.mjs';
+import { narrowCaptionTracks } from './caption-track-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, throughCaptionWidth } from './field-caption-layout.js';
 
@@ -58,6 +58,7 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
     const owner = elements.get(node.key);
     const children = mountedChildren(node);
     if (group && owner && ordinaryGroup(node) && node.presentation.grouping === 'Horizontal'
+        && !items.hasAttribute('data-native-inline-row')
         && !group.querySelector(':scope > .taxi-group-title') && number(node, 'Width') <= 0
         && children.length && children.every(child => numericLabelMetrics(child, os))) row(node, items, group, owner, children);
     for (const child of node.children) visit(child);
@@ -67,7 +68,7 @@ export function alignNumericLabelRows(model, { targets, alignment, os, collapsed
   return {
     minimumCaptions,
     allocateWidths(captions) {
-      const widths = allocations.map(({items, tracks}) => narrowNumericTracks(availableTrackWidth(items, tracks.length, scale), tracks));
+      const widths = allocations.map(({items, tracks}) => narrowCaptionTracks(availableTrackWidth(items, tracks.length, scale), tracks));
       for (const [index, {items, tracks}] of allocations.entries()) {
         let wrapped = false;
         for (const [column, track] of tracks.entries()) {

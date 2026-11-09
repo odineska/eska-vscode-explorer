@@ -123,6 +123,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, commandWidth, 
       value = child ? marginBox(child) : { width: 0, height: 0 };
       if (child?.hasAttribute('data-native-decoration')) value.width = Number(child.dataset.decorationMinimum) + insets(child).width;
     }
+    const inlineMinimum = pixels(element.style.getPropertyValue('--taxi-inline-track-minimum'));
+    if (inlineMinimum) value.width = value.fullWidth = inlineMinimum;
     const columnWidth = pixels(element.style.getPropertyValue('--taxi-united-cell-min-width')
       || element.style.getPropertyValue('--taxi-united-cell-width'));
     reserveWidth(value, columnWidth);

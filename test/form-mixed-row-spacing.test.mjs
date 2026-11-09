@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { FORM_NS, fieldWidth, stringLabelMetrics } from '../webview/forms/model.mjs';
+import { FORM_NS, fieldWidth, numericLabelMetrics, textLabelMetrics } from '../webview/forms/model.mjs';
 import { formReferenceRoot } from './form-references.mjs';
 
 const root = new URL('tests/fixtures/forms/native-mixed-row-spacing/', formReferenceRoot);
@@ -38,10 +38,25 @@ test('explicit text label geometry retains native background insets without chan
     properties: Object.entries({ Width: '10', ...(painted ? { BackColor: '#C9E6F2' } : {}) })
       .map(([name, text]) => ({ key: { namespace: FORM_NS, name }, value: { kind: 'text', text } })),
   });
-  assert.deepEqual(stringLabelMetrics(label(true), 'linux'), { preferred: 102, height: 19 });
-  assert.deepEqual(stringLabelMetrics(label(false), 'linux'), { preferred: 100, height: 17 });
+  assert.deepEqual(textLabelMetrics(label(true), 'linux'), { preferred: 102, height: 19 });
+  assert.deepEqual(textLabelMetrics(label(false), 'linux'), { preferred: 100, height: 17 });
   assert.equal(fieldWidth(label(true), 'linux'), 102);
-  assert.equal(stringLabelMetrics(label(true), 'win32'), undefined);
+  assert.equal(textLabelMetrics(label(true), 'win32'), undefined);
   const numeric = label(true); numeric.presentation.valueType = { kind: 'number', digits: 8 };
-  assert.equal(stringLabelMetrics(numeric, 'linux'), undefined);
+  assert.equal(textLabelMetrics(numeric, 'linux'), undefined);
+});
+
+test('numeric labels in mixed rows quantize the formatted value width in Taxi units', () => {
+  const label = {
+    kind: 'LabelField',
+    presentation: { titleLocation: 'Left', font: { points: 10, weight: 700 } },
+    properties: [{ key: { namespace: FORM_NS, name: 'BackColor' }, value: { kind: 'text', text: '#E0FFFF' } }],
+  };
+  for (const [digits, fraction, preferred] of [
+    [5, 2, 52], [10, 2, 102], [14, 2, 132], [15, 2, 152], [16, 2, 152], [20, 2, 192],
+    [25, 2, 232], [38, 2, 352], [15, 0, 142], [15, 5, 142],
+  ]) {
+    label.presentation.valueType = { kind: 'number', digits, fraction, allowedSign: 'Any' };
+    assert.equal(numericLabelMetrics(label, 'linux', { characterUnits: true }).preferred, preferred);
+  }
 });

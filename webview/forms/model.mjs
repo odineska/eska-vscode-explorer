@@ -187,15 +187,17 @@ const numericInputUnits = [
 function scaledAutomaticInputWidth(node, units) {
   return Math.round(units * 10 * (fontPixels(node.presentation.font) - 1) / 12) + 11;
 }
-function linuxNumericInputWidth(node) {
-  const { digits, fraction = 0, allowedSign } = node.presentation.valueType;
-  if (!Number.isInteger(digits) || digits < 1 || digits > 38) return Math.round(20 * inputUnit(node) + 1);
+function numberWidthUnits({ digits, fraction = 0, allowedSign }, input = false) {
+  if (!Number.isInteger(digits) || digits < 1 || digits > 38) return;
   const decimals = Math.max(0, Math.min(digits, fraction));
   const groups = Math.floor(Math.max(0, digits - decimals - 1) / 3);
-  // A missing sign reduces the text length before Designer quantizes it to width units.
-  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits)
-    - Number(allowedSign === 'Nonnegative');
-  return scaledAutomaticInputWidth(node, numericInputUnits[length]);
+  // Nonnegative inputs omit the sign position from the native numeric width.
+  const length = digits + groups + Number(decimals > 0) + Number(decimals === digits);
+  return numericInputUnits[length - Number(input && allowedSign === 'Nonnegative')];
+}
+function linuxNumericInputWidth(node) {
+  const units = numberWidthUnits(node.presentation.valueType, true);
+  return units === undefined ? Math.round(20 * inputUnit(node) + 1) : scaledAutomaticInputWidth(node, units);
 }
 const inputChoiceWidth = 20;
 const referenceOpenWidth = 22;
@@ -204,17 +206,24 @@ export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
 }
-/** Explicit single-line text labels use fixed Taxi character units. */
-export function stringLabelMetrics(node, os) {
-  const width = Math.trunc(number(node, 'Width'));
-  if (os !== 'linux' || node.kind !== 'LabelField' || node.presentation.valueType?.kind !== 'string'
-      || width <= 0 || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
+export function referenceAlternatives(type) {
+  return type?.kind === 'composite' && type.types?.length > 0 && type.types.every(part =>
+    part.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && /Ref\./u.test(part.name));
+}
+
+/** Single-line text and reference labels use fixed Taxi character units. */
+export function textLabelMetrics(node, os) {
+  const type = node.presentation.valueType, width = Math.trunc(number(node, 'Width'));
+  if (os !== 'linux' || node.kind !== 'LabelField' || number(node, 'Height') > 1
+      || !['Left', 'None'].includes(node.presentation.titleLocation)
+      || !(['string', 'reference'].includes(type?.kind) || referenceAlternatives(type))) return;
   const painted = !!property(node, 'BackColor'), size = fontLineMetrics(node.presentation.font);
-  return { preferred: width * 10 + (painted ? 2 : 0), height: size.ascent + size.descent + (painted ? 4 : 2) };
+  return { preferred: (width > 0 ? width * 10 : 150) + (painted ? 2 : 0),
+    height: size.ascent + size.descent + (painted ? 4 : 2) };
 }
 
 /** Intrinsic size of a single-line numeric label in Linux Designer. */
-export function numericLabelMetrics(node, os) {
+export function numericLabelMetrics(node, os, { characterUnits = false } = {}) {
   const type = node.presentation.valueType;
   if (os !== 'linux' || node.kind !== 'LabelField' || type?.kind !== 'number' || !type.digits
       || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
@@ -226,7 +235,9 @@ export function numericLabelMetrics(node, os) {
   const separators = Math.floor(Math.max(0, type.digits - fraction - 1) / 3);
   const digits = type.digits * 8 + separators * 4 + (fraction ? 2 : 0);
   const authored = Math.trunc(number(node, 'Width'));
-  const preferred = (authored > 0 ? authored * 10 : Math.round(Math.max(50, digits) * scale)) + widthOutset;
+  const units = characterUnits ? numberWidthUnits(type) : undefined;
+  const automatic = units === undefined ? Math.max(50, digits) : Math.max(5, units) * 10;
+  const preferred = (authored > 0 ? authored * 10 : Math.round(automatic * scale)) + widthOutset;
   return {
     preferred,
     minimum: Math.min(preferred, Math.round(60 * scale) + widthOutset),
@@ -337,7 +348,7 @@ export function nativeReferenceInput(node, os) {
   return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
 }
 export function fieldWidth(node, os) {
-  const label = stringLabelMetrics(node, os);
+  const label = textLabelMetrics(node, os);
   if (label) return label.preferred;
   const text = textInputWidthBounds(node, os);
   if (text) return text.preferred;

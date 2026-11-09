@@ -128,7 +128,7 @@ button { cursor: default; }
 .taxi-disabled { color: #a0a0a0 !important; }
 .taxi-disabled .taxi-input { background: #fff !important; border-color: #d7d7d7 !important; }
 .taxi-disabled[data-kind=InputField] .taxi-field-label, .taxi-disabled .taxi-input input { color: #aaa !important; }
-.taxi-field-row { display: grid; grid-template-columns: var(--taxi-field-columns, subgrid); grid-column: 1 / -1; align-items: center; min-height: 19px; gap: 0 4px; }
+.taxi-field-row { display: grid; grid-template-columns: var(--taxi-field-columns, subgrid); grid-column: 1 / -1; align-items: center; min-height: var(--taxi-inline-label-height, 19px); gap: 0 4px; }
 .taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
 .taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
 .taxi-element[data-kind=CheckBoxField] > .taxi-field-row { column-gap: 6px; }
@@ -764,7 +764,7 @@ button { cursor: default; }
 }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-numeric-label-row-owner]:not(:has(> .taxi-group > .taxi-items[data-content-horizontal-align])) { max-width: var(--taxi-numeric-label-row-max); }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-content-horizontal-align] { justify-content: var(--taxi-content-horizontal-align); }
-.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-group-row]:not([data-united-columns]) > .taxi-element[data-stretch-x=true] {
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-group-row]:not([data-united-columns], [data-native-inline-row]) > .taxi-element[data-stretch-x=true] {
   max-width: min(100%, max(var(--taxi-group-width), var(--taxi-content-maximum-width, 100%)));
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-native-group-row]:not([data-united-columns]) > .taxi-element:last-of-type:has(> .taxi-group > .taxi-items[data-content-horizontal-align=end]) {
@@ -772,6 +772,19 @@ button { cursor: default; }
 }
 .taxi-preview[data-os=linux][data-form-layout=allocated] .taxi-items--horizontal:not([data-united-columns], [data-united-horizontal-lane], [data-numeric-label-row]) > .taxi-element[data-kind=LabelField][data-stretch-x=false] {
   min-width: var(--taxi-min-width);
+}
+.taxi-preview:is([data-form-layout=preferred], [data-form-layout=allocated]) .taxi-items[data-native-inline-row] > .taxi-element {
+  flex: 0 0 var(--taxi-inline-track-width) !important;
+  width: var(--taxi-inline-track-width);
+  min-width: 0;
+  max-width: none;
+}
+.taxi-items[data-native-inline-row] > .taxi-element[data-kind=LabelField] > .taxi-field-row {
+  column-gap: 5px;
+  align-items: var(--taxi-inline-label-align, center);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-native-inline-row] > .taxi-element[data-group-shrink-x][data-stretch-x=false] {
+  width: var(--taxi-inline-track-width);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-numeric-label-row] {
   align-items: var(--taxi-numeric-label-align, center);
@@ -804,7 +817,7 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { flex: 1; }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-control-min-width, 0px))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-inline-value-minimum, var(--taxi-control-min-width, 0px)))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Bottom] { grid-template-rows: minmax(0, 1fr) max-content; }

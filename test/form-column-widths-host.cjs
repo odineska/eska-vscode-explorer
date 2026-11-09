@@ -22,7 +22,8 @@ async function pose(ui, keys, expected) {
           const label=field.querySelector('.taxi-field-label');
           if (!label) continue;
           const wrapped=[...label.querySelectorAll('.taxi-field-caption-line')].map(line=>line.textContent);
-          captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : [label.textContent]};
+          const lines = field.dataset.kind === 'LabelField' ? label.textContent.split('\\n') : [label.textContent];
+          captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : lines};
         }
         return {frame:[origin.width,origin.height],controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
@@ -83,6 +84,10 @@ function sourceVariant(xml, edit) {
   }
   if (edit.hideTitle) {
     changed = editField(changed, edit.hideTitle, properties => properties.replace('<TitleLocation>Left</TitleLocation>', '<TitleLocation>None</TitleLocation>'));
+  }
+  for (const name of edit.fixedFields ?? []) {
+    changed = editField(changed, name, properties =>
+      '<HorizontalStretch>false</HorizontalStretch>' + properties.replace(/<HorizontalStretch>[^<]*<\/HorizontalStretch>/u, ''));
   }
   for (const name of edit.hiddenFields ?? []) {
     changed = editField(changed, name, properties => '<Visible>false</Visible>' + properties);
@@ -171,7 +176,7 @@ async function verifyDetached(service, view, main, ui, identity, run) {
   const floating = await frame({detached:true, state:{title:preview.panel.title}});
   assert.notEqual((await floating.nativeWindow({detached:true})).targetId, workbench.targetId);
   await floating.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
-  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field')];true");
+  await floating.evaluate("globalThis.__widthInputs=[...document.querySelectorAll('.taxi-input,.taxi-checkbox,.taxi-picture-field,.taxi-label-field')];true");
   await run(floating);
   assert.deepEqual(view.selected, identity);
   assert.equal(await floating.evaluate('__widthInputs.length>0 && __widthInputs.every(input=>input.isConnected)'), true);
@@ -202,7 +207,20 @@ exports.run = async () => {
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
     const placements = form.cases[0]?.locations;
-    if (process.platform === 'linux' && (placements || checkbox)) {
+    if (process.platform === 'linux' && form.kind === 'FooterWrapped') {
+      const identity = nodes.find(node => node.name === 'Memo').identity;
+      const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
+        for (const expected of form.cases) {
+          await replace(expected.edit ? sourceVariant(original, expected.edit) : original);
+          const revision = view.snapshot.revision;
+          results.push(await pose(floating, keys, expected));
+          assert.equal(view.snapshot.revision, revision);
+        }
+        await replace(original);
+        results.push(await pose(floating, keys, { ...form.cases[0], name:'mixed row restores wide captions' }));
+      });
+      results.push({label:'detached-mixed-row-resize-and-dirty', ...observation});
+    } else if (process.platform === 'linux' && (placements || checkbox)) {
       const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
         const wide = checkbox ? form.cases[0] : {name:'wide captions',frame:[1180,250],

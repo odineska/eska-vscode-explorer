@@ -8,6 +8,7 @@ import { alignUnitedRows } from './united-layout.js';
 import { alignUnitedColumns } from './united-columns.js';
 import { alignThroughLabels, layoutThroughCaptions } from './through-align.js';
 import { alignNumericLabelRows } from './numeric-label-layout.js';
+import { alignInlineFieldRows } from './inline-field-layout.js';
 import { borderBoxSize, boundingScale, boxInsets, pixels } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
@@ -58,7 +59,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
   let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, minimumRows, minimumCaptions, allocateThroughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
-  let natural, needsNatural = true;
+  let allocateInlineRows, natural, needsNatural = true;
   let headingTitles = [];
   const headingHeights = new Map();
   const undoAlignment = [];
@@ -119,6 +120,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         const throughScopes = alignThroughLabels(model, context);
         unitedColumns.alignColumns();
         unitedRows = alignUnitedRows(model, context, wrap);
+        allocateInlineRows = alignInlineFieldRows(model, context);
         numericRows = alignNumericLabelRows(model, context);
         minimumCaptions = new Map([...unitedRows.minimumCaptions, ...(numericRows?.minimumCaptions ?? [])]);
         // Rows that can move titles above their inputs own their resize allocation.
@@ -198,6 +200,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     unitedRows.allocateWidths(captions);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     numericRows?.allocateWidths(captions);
+    allocateInlineRows(captions);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
     unitedColumns.allocate(above);

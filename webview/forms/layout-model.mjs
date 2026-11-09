@@ -1,4 +1,4 @@
-import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, referenceAlternatives, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 import { additionKinds, additionStretches } from './addition-model.mjs';
@@ -85,16 +85,10 @@ export function stretches(node, axis, collapsed = {}, root = node) {
   if (axis === 'x' && (node.kind === 'CommandBar' || additionStretches(node))) return true;
   if (axis === 'x' && node.kind === 'InputField' && node.presentation.valueType?.kind === 'string') return textInputStretchesByDefault(node);
   if (axis === 'x') return ['InputField', 'LabelField'].includes(node.kind)
-    && (['string', 'reference'].includes(node.presentation.valueType?.kind)
-      || node.kind === 'InputField' && referenceAlternatives(node.presentation.valueType));
+    && (['string', 'reference'].includes(node.presentation.valueType?.kind) || referenceAlternatives(node.presentation.valueType));
   if (node.kind === 'InputField' && inputRows(node) > 1
     && !explicitNo(scalar(node, 'HorizontalStretch'))) return true;
   return ['InputField', 'LabelField'].includes(node.kind) && number(node, 'Height') > 1;
-}
-
-function referenceAlternatives(type) {
-  return type?.kind === 'composite' && type.types?.length > 0 && type.types.every(part =>
-    part.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && /Ref\./u.test(part.name));
 }
 
 /** An explicit dimension of a stretchable item is its proportional allocation weight. */

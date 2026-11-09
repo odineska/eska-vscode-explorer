@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, stringLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { StandaloneAddition } from './Additions.jsx';
 import { Splitter } from './Splitter.jsx';
@@ -671,6 +671,7 @@ function Field(props) {
   const allocatedCaption = () => layout?.captionFor(node());
   const inputCaption = () => node().kind === 'InputField' ? allocatedCaption() : undefined;
   const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
+  const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
       && sideTitle()) && flag(node(), 'Enabled'))}/>;
@@ -684,9 +685,9 @@ function Field(props) {
     }
   });
   const labelValueStyle = () => {
-    const size = numericLabel() ?? stringLabelMetrics(node(), state.os);
+    const size = numericLabel() ?? textLabelMetrics(node(), state.os);
     return size ? {
-      width: `${size.preferred}px`, height: `${size.height}px`, 'min-height': '0',
+      width: `var(--taxi-inline-value-width, ${size.preferred}px)`, height: `${size.height}px`, 'min-height': '0',
       'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
     } : fieldStyle(node(), state.os);
   };
@@ -696,11 +697,12 @@ function Field(props) {
       ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
-    const wrapped = checkboxCaption() || (inputCaption() && sideTitle());
+    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && sideTitle());
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-field-caption-width, ${titleWidth}px)`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
       'line-height': numericLabel() || wrapped ? `${fontLineHeight(labelFont())}px` : undefined,
+      'white-space': labelCaption() ? 'pre' : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };
   const control = () => <Switch fallback={<SpecialField node={node()} controller={props.controller}/>}>
@@ -718,7 +720,7 @@ function Field(props) {
     data-wrapped-input-caption={inputCaption() ? '' : undefined}
     data-wrapped-checkbox-caption={checkboxCaption() ? '' : undefined}
     data-numeric-label-title={numericLabel() ? '' : undefined}
-    data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? '0' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
+    data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? 'var(--taxi-inline-label-height, 0px)' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} classList={{ 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }}>
     <Show when={titleLocation() !== 'None'}>
       <label class="taxi-field-label" aria-label={label()} style={labelStyle()}>
         <Show when={inputCaption() || checkboxCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>

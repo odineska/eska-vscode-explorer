@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
+import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
@@ -23,6 +23,17 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
   assert.equal(stretches(node('UsualGroup',{},[table]),'y',{UsualGroup:true}),false);
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
+});
+
+test('a label with a union of reference types stretches automatically unless fixed', () => {
+  const namespace = 'http://v8.1c.ru/8.1/data/enterprise/current-config';
+  const type = { kind:'composite', types:[
+    { namespace, name:'CatalogRef.Goods' }, { namespace, name:'DocumentRef.Order' },
+  ] };
+  const automatic = node('LabelField'), fixed = node('LabelField', { HorizontalStretch:false });
+  automatic.presentation.valueType = fixed.presentation.valueType = type;
+  assert.equal(stretches(automatic, 'x'), true);
+  assert.equal(stretches(fixed, 'x'), false);
 });
 
 test('a picture with manual limits at its authored dimensions does not stretch by default', () => {
@@ -219,10 +230,10 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
   const tracks = ['Количество (итог):', 'Сумма (итог):'].map(title => ({
     caption:fieldCaptionProfile(title, font), reserve:5, value:{minimum:52, preferred:77, maximum:335},
   }));
-  assert.deepEqual(narrowNumericTracks(225, tracks), [{width:128, caption:71}, {width:97, caption:40}]);
-  assert.deepEqual(narrowNumericTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
-  assert.deepEqual(narrowNumericTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
-  assert.equal(narrowNumericTracks(357, tracks), undefined);
+  assert.deepEqual(narrowCaptionTracks(225, tracks), [{width:128, caption:71}, {width:97, caption:40}]);
+  assert.deepEqual(narrowCaptionTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
+  assert.deepEqual(narrowCaptionTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
+  assert.equal(narrowCaptionTracks(357, tracks), undefined);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
