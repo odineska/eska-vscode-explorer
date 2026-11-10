@@ -24,9 +24,10 @@ export function sideTabWidths(tabs, scale) {
   if (!widths.length || widths.some(width => width === 0)) return;
   const button = getComputedStyle(tabs.firstElementChild), stack = getComputedStyle(tabs.nextElementSibling);
   const borders = pixels(button.borderLeftWidth) + pixels(button.borderRightWidth);
-  const nominal = Math.max(Number(tabs.dataset.sideFitMinimum), Math.max(...widths) - borders);
-  const painted = borderBoxSize(tabs, scale).width + pixels(stack.marginLeft) + pixels(stack.marginRight);
-  return { nominal, painted };
+  const preferredButton = Math.max(...widths), strip = borderBoxSize(tabs, scale).width;
+  const nominal = Math.max(Number(tabs.dataset.sideFitMinimum), preferredButton - borders);
+  const painted = strip + pixels(stack.marginLeft) + pixels(stack.marginRight);
+  return { nominal, painted, captionExtra: Math.round(Math.max(0, strip - preferredButton) / 2) };
 }
 
 /** Fit a row using the nominal tab width and the extra width of the shared caption. */

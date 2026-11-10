@@ -20,7 +20,7 @@ import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
 import { sameDecorationLines } from './decoration-metrics.mjs';
-import { conditionalPageFits } from './page-fit-layout.js';
+import { conditionalPageFits, sideTabWidths } from './page-fit-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -156,6 +156,13 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const rows = [...containers.values()].filter(items => items.dataset.grouping === 'HorizontalIfPossible');
       const activeWrap = wrapped();
       function prepare(wrap) {
+        for (const tabs of root.querySelectorAll('.taxi-tabs[data-side-fit-minimum]')) {
+          const rail = sideTabWidths(tabs, scale);
+          if (!rail) continue;
+          alignment.style(tabs.parentElement, '--taxi-side-preferred-overlap', `${rail.nominal - rail.painted}px`);
+          // Only the surplus from the painted minimum moves every caption.
+          alignment.style(tabs.parentElement, '--taxi-side-caption-extra', `${rail.captionExtra}px`);
+        }
         rootCommands = measureRootCommands(commands, scale);
         decorationsLayout = measureDecorations(model, context, state);
         layoutGroupSpacing(model, context, bottomCommands);

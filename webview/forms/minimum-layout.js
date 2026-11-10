@@ -142,9 +142,10 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       if (tabs) {
         const box = marginBox(tabs);
         if (side) {
-          value.fullWidth += box.width;
-          value.sideWidth += box.width;
-          value.width += box.width;
+          const width = rail?.nominal ?? box.width;
+          value.fullWidth += width;
+          value.sideWidth += width;
+          value.width += width;
           if (rail) value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
         } else value.height += box.height;
       }

@@ -355,14 +355,16 @@ function Pages(props) {
   const selectedPage = createMemo(() => pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0]);
   const selected = () => selectedPage()?.key;
   const metrics = createMemo(() => tabMetrics(pages().map(page => page.presentation.titleFont)));
-  const side = () => state.os === 'linux' && !horizontal() && pages().length ? metrics().side : undefined;
-  return <div class="taxi-pages" data-representation={representation()}>
-    <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={side()?.fitMinimum}
+  const side = () => state.os === 'linux' && !horizontal()
+    ? representation() === 'TabsOnRightHorizontal' ? 'right' : 'left' : undefined;
+  const sideMetrics = () => side() && pages().length ? metrics().side : undefined;
+  return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}>
+    <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={sideMetrics()?.fitMinimum}
       style={{ height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined,
-        'min-width':side() ? `${side().buttonMinimum}px` : undefined }}>
+        'min-width':sideMetrics() ? `${sideMetrics().buttonMinimum}px` : undefined }}>
       <For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()}
         pageBackground={selectedPage()?.presentation.background} pageHasBackground={!!property(selectedPage(),'BackColor')}
-        pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} side={side()} active={page.key === selected()}/>}</For>
+        pages={node()} controller={props.controller} metrics={metrics()} representation={representation()} horizontal={horizontal()} side={side()} sideMetrics={sideMetrics()} active={page.key === selected()}/>}</For>
     </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
       style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained}/></div>}</For></div>
@@ -373,17 +375,23 @@ function PageTab(props) {
   let button;
   const [paint,setPaint]=createSignal();
   const width = createNativeButtonWidth(() => button, () => ({ text:caption(props.page,state), os:state.os,
-    automatic:true, wordCaption:!!props.side, font:font(props.page.presentation.titleFont,state.os), metrics:props.metrics }));
-  const padding = () => props.horizontal ? props.metrics.horizontalPadding * 2 : props.side?.padding;
-  createEffect(() => { if (props.side && width()) layout.invalidate(); });
-  const native = () => state.os === 'linux' && ['Auto', 'TabsOnTop', 'Swipe'].includes(scalar(props.pages, 'PagesRepresentation', 'Auto'));
+    automatic:true, wordCaption:!!props.sideMetrics, font:font(props.page.presentation.titleFont,state.os), metrics:props.metrics }));
+  const padding = () => props.horizontal ? props.metrics.horizontalPadding * 2 : props.sideMetrics?.padding;
+  createEffect(() => { if (props.sideMetrics && width()) layout.invalidate(); });
+  const native = () => state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'Swipe'].includes(props.representation));
+  const tabInset = () => props.side ? props.metrics.horizontalPadding + 1 + Number(props.side === 'right') : undefined;
+  const titleColorAuthored = () => {
+    const value = scalar(props.page, 'TitleTextColor', scalar(props.pages, 'TitleTextColor'));
+    return value !== '' && value !== 'Auto';
+  };
   return <button ref={button} data-native-tab-border={paint()?'ready':undefined} type="button" role="tab" aria-label={caption(props.page,state)} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active} classList={{active:props.active,'taxi-selected':state.selected===props.page.key}}
     style={{...font(props.page.presentation.titleFont,state.os),color:color(props.page.presentation.titleColor),width:width(),height:state.os === 'linux' ? `${props.metrics.height}px` : undefined,
       'padding-left':state.os === 'linux' && padding() !== undefined ? `${Math.ceil(padding() / 2)}px` : undefined,
       'padding-right':state.os === 'linux' && padding() !== undefined ? `${Math.floor(padding() / 2)}px` : undefined,
-      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'background-color':paint()?`rgb(${paint().background.join(',')})`:undefined,'border-bottom-color':paint()&&props.active?`rgb(${paint().background.join(',')})`:undefined}} onClick={event => {
+      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'--taxi-tab-fill':paint() ? `rgb(${paint().background.join(',')})` : undefined,
+      '--taxi-disabled-tab-text':paint()?.foreground ? `rgb(${paint().foreground.join(',')})` : undefined}} onClick={event => {
     event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page);
-  }}><NativeLabel enabled={native()} placement="tab" calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/><NativeTabBorder node={props.page} previous={props.previous} next={props.next} selected={props.selected} pageBackground={props.pageBackground} pageHasBackground={props.pageHasBackground} active={props.active} enabled={native()} button={()=>button} controller={props.controller} paint={paint()} setPaint={setPaint}/></button>;
+  }}><NativeLabel enabled={native()} placement="tab" tabInset={tabInset()} calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/><NativeTabBorder node={props.page} previous={props.previous} next={props.next} selected={props.selected} pageBackground={props.pageBackground} pageHasBackground={props.pageHasBackground} active={props.active} side={props.side} titleColorAuthored={titleColorAuthored()} enabled={native()} button={()=>button} controller={props.controller} paint={paint()} setPaint={setPaint}/></button>;
 }
 function Group(props) {
   const node = () => props.node, state = props.controller.state;
