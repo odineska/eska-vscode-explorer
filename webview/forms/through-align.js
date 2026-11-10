@@ -20,8 +20,8 @@ function movableNumber(node, os) {
   return node.presentation.valueType?.kind === 'number' && linuxFixedInputWidth(node, os) && automaticSideCaption(node);
 }
 
-function localInputStack(track, children, os) {
-  if (track.node.kind !== 'UsualGroup' || track.horizontal) return false;
+function singleLineInputStack(track, children, os) {
+  if (track.horizontal || !['UsualGroup', 'Page'].includes(track.node.kind)) return false;
   const fields = children(track.node);
   return fields.length > 1 && fields.every(node => node.kind === 'InputField'
     && node.presentation.titleLocation === 'Left' && inputRows(node) === 1
@@ -51,24 +51,25 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
     }
     // A vertical stack made of horizontal rows shares its columns in alignUnitedColumns.
     if (!parentScope && scope?.some(entry => !entry.horizontal)) {
-      const local = os === 'linux' && scope.length === 1 && localInputStack(scope[0], children, os);
+      const stack = os === 'linux' && scope.length === 1 && singleLineInputStack(scope[0], children, os)
+        ? scope[0].node.kind : undefined;
       const entries = children(scope[0].node);
-      if (local || scope.length > 1 || os === 'linux' && (entries.some(separatedRow)
+      if (stack || scope.length > 1 || os === 'linux' && (entries.some(separatedRow)
         || entries.length > 1 && entries.some(child => movableNumber(child, os)))) {
-        scopes.push({ tracks: scope, local });
+        scopes.push({ tracks: scope, local: stack === 'UsualGroup', page: stack === 'Page' });
       }
     }
   }
   visit(model);
 
-  const aligned = scopes.map(({ tracks, local }) => {
+  const aligned = scopes.map(({ tracks, local, page }) => {
     const measured = tracks.map(({ node, container, track, horizontal }) => {
       const css = getComputedStyle(track);
       const width = parseFloat(css.gridTemplateColumns);
       const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
       return { node, container, horizontal, left, end: left + width };
     });
-    return { tracks: measured, local };
+    return { tracks: measured, local, page };
   }).filter(({ tracks }) => tracks.every(track => Number.isFinite(track.end)));
   for (const { tracks: scope } of aligned) {
     if (scope.length === 1) continue;
@@ -144,7 +145,7 @@ function allocateIndependentCaption(field, available, minima, captions, above, p
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
   const shared = [], stacks = [], stackLimits = new Map(), minimumInputs = new Map();
-  for (const { tracks: scope, local } of os === 'linux' ? scopes : []) {
+  for (const { tracks: scope, local, page } of os === 'linux' ? scopes : []) {
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
       .map(node => targets.containers.get(node.key)).filter(Boolean);
@@ -212,7 +213,11 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
       ? [...new Set(fields.map(field => field.caption.preferred + inputCaptionInset))]
         .filter(width => width > minimum).sort((a, b) => b - a)
       : undefined;
-    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences };
+    // Each page uses the common stack width, even when another page is selected.
+    const pageField = page && fields.reduce((widest, field) =>
+      field.caption.preferred + inputCaptionInset === preferred && (!widest || field.preferredValue > widest.preferredValue)
+        ? field : widest, undefined);
+    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField };
     if (local) {
       const [track] = tracks;
       alignment.mark(track.container, 'data-through-input-stack');
@@ -236,7 +241,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
   }
 
   function allocateWidths(allocations, captions, minima, above, leadingEdges) {
-    for (const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences } of allocations) {
+    for (const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField } of allocations) {
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
         // The stack has its own captions but occupies the leading track of the mixed rows.
         const edge = leadingEdges?.get(parent);
@@ -250,7 +255,11 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         return { available, capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
       });
       const step = steps && captionStep(steps, tracks, minima, measured.map(track => track.available));
-      const shared = steps ? step ?? minimum
+      const compactWidth = pageField && step === undefined
+        ? Math.min(measured[0].capacity,
+          growFieldCaption({ minimum, preferred }, measured[0].available, minimum + pageField.preferredValue, pageField.gap))
+        : minimum;
+      const shared = steps ? step ?? Math.max(minimum, compactWidth)
         : measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
       const full = steps ? shared === preferred : measured.every(track => track.full);
       const separate = independentCaptions && measured.some(track => track.capacity + .5 < minimum);
