@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
+const { until } = require('./webview-host.cjs');
 
 /** Exercise object-scoped webview tabs and their XML action in VSCodium. */
 exports.run = async function () {
@@ -84,6 +85,9 @@ exports.run = async function () {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(first.state.language, 'ru-RU');
+  // A hidden tab can retain a pending refresh until the user reopens it.
+  first.panel.reveal();
+  await until(() => first.panel.active && first.state.status === 'ready', 'properties tab ready for source navigation');
   const comment = first.choices.find(choice => choice.label === 'Comment');
   await first.receive({ type: 'openXml', revision: first.state.revision, index: comment.index });
   const editor = vscode.window.activeTextEditor;
