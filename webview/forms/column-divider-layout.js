@@ -8,36 +8,49 @@ export function createColumnDividers(schedule) {
   const [dividers, setDividers] = createSignal(new Map());
   const positions = new WeakMap();
 
-  function allocate(pairs, minima, root) {
-    const previous = dividers();
-    if (!pairs.size && !previous.size) return;
-    const scale = pairs.size ? boundingScale(root) : 1;
+  function measure(pairs, minima, root) {
     const next = new Map();
-    let changed = false;
-    for (const [key, { items, left, right, preferred, minimumWidths }] of pairs) {
-      const width = availableTrackWidth(items, 2, scale);
-      // The native outline and rounded CSS track widths can differ by one pixel.
-      if (width + 1 >= preferred || width <= 0) continue;
-      const minimum = Math.ceil(minimumWidths?.[0] ?? minima.get(left)?.width ?? 0);
-      const maximum = Math.floor(width - (minimumWidths?.[1] ?? minima.get(right)?.width ?? 0));
-      if (maximum <= minimum) continue;
+
+    function resolve(key, { items, left, right }, width, low, high, readPosition) {
+      const minimum = Math.ceil(low), maximum = Math.floor(high);
+      if (maximum <= minimum) return;
       const saved = positions.get(items);
       const manual = saved?.left === left && saved.right === right;
       // The end of the range can move when wrapping adds or removes the viewport scrollbar.
       const edge = { minimum, maximum }[saved?.edge];
-      const firstTrack = manual ? edge ?? saved.value : pixels(getComputedStyle(items).gridTemplateColumns);
+      const firstTrack = manual ? edge ?? saved.value : readPosition();
       const value = clamp(Math.round(firstTrack), minimum, maximum);
       const tracks = manual ? `${value}px ${width - value}px` : undefined;
-      const before = previous.get(key);
-      if (!before || before.value !== value || before.minimum !== minimum || before.maximum !== maximum
-        || before.tracks !== tracks || before.items !== items || before.left !== left || before.right !== right) changed = true;
-      next.set(key, { minimum, maximum, value, tracks, items, left, right });
+      const divider = { minimum, maximum, value, tracks, items, left, right };
+      next.set(key, divider);
+      return divider;
     }
-    if (changed || previous.size !== next.size) {
-      setDividers(next);
-      // Caption and nested column allocation use the resulting grid tracks.
-      schedule();
+
+    const scale = pairs.size ? boundingScale(root) : 1;
+    for (const [key, pair] of pairs) {
+      const { items, left, right, preferred, minimumWidths } = pair;
+      const width = availableTrackWidth(items, 2, scale);
+      // The native outline and rounded CSS track widths can differ by one pixel.
+      if (width + 1 >= preferred || width <= 0) continue;
+      const minimum = minimumWidths?.[0] ?? minima.get(left)?.width ?? 0;
+      const maximum = width - (minimumWidths?.[1] ?? minima.get(right)?.width ?? 0);
+      resolve(key, pair, width, minimum, maximum, () => pixels(getComputedStyle(items).gridTemplateColumns));
     }
+
+    function publish() {
+      const previous = dividers();
+      const changed = previous.size !== next.size || [...next].some(([key, current]) => {
+        const before = previous.get(key);
+        return !before || Object.keys(current).some(name => before[name] !== current[name]);
+      });
+      if (changed) {
+        setDividers(next);
+        // Caption and nested column allocation use the resulting tracks.
+        schedule();
+      }
+    }
+
+    return { resolve, get: key => next.get(key), publish };
   }
 
   function move(key, value, edge) {
@@ -48,5 +61,5 @@ export function createColumnDividers(schedule) {
     schedule();
   }
 
-  return { allocate, get: key => dividers().get(key), move };
+  return { measure, get: key => dividers().get(key), move };
 }

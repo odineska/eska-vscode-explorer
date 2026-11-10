@@ -44,6 +44,9 @@ async function geometry(ui, keys, expected) {
     }));
     return {
       frame: [origin.width, origin.height],
+      dividers: ${JSON.stringify(expected.dividers !== undefined)} ? [...root.querySelectorAll('.taxi-column-divider')]
+        .map(box).filter(([, , , height]) => height > 0)
+        .map(([x,y,w,h]) => [Math.floor(x + (w - 2) / 2),y,h]) : undefined,
       pageGroups,
       fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
       groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
@@ -66,7 +69,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines', 'captionLocations', 'pageGroups'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'captionLocations', 'pageGroups', 'dividers'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
@@ -136,6 +139,49 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
   return results;
 }
 
+async function verifyPageDivider(ui, narrow, hidden, observe) {
+  const selector = '.taxi-form-frame .taxi-column-divider';
+  const read = () => ui.evaluate(`(() => {
+    const separator = document.querySelector(${JSON.stringify(selector)});
+    if (!separator?.getBoundingClientRect().height) return null;
+    const row = separator.parentElement;
+    return { label: separator.getAttribute('aria-label'),
+      range: ['min', 'now', 'max'].map(name => Number(separator.getAttribute('aria-value'+name))),
+      x: separator.getBoundingClientRect().left - row.getBoundingClientRect().left,
+      tracks: [...row.querySelectorAll(':scope > .taxi-element')].map(element => element.getBoundingClientRect().width),
+    };
+  })()`);
+  const initial = await read();
+  assert.equal(initial.label, vscode.env.language.startsWith('ru') ? 'Изменить ширину колонок формы' : 'Resize form columns');
+  const [minimum, value, maximum] = initial.range;
+  async function at(next, label) {
+    let current;
+    await until(async () => {
+      current = await read();
+      return current?.range[1] === next && current.tracks[0] === next;
+    }, label);
+    const shift = next - value;
+    assert.equal(current.x, initial.x + shift);
+    assert.deepEqual(current.tracks, [initial.tracks[0] + shift, initial.tracks[1] - shift]);
+    return current;
+  }
+  const delta = Math.min(10, maximum - value);
+  assert.ok(delta > 0, 'automatic position leaves room for dragging');
+  await ui.dragHorizontally(selector, delta);
+  await at(value + delta, 'dragged page divider');
+  for (const [key, bound] of [['Home', minimum], ['End', maximum]]) {
+    await ui.evaluate(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(
+      new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true})); true`);
+    await at(bound, 'page divider reaches '+key);
+  }
+  for (const profile of hidden) {
+    await allocateFormViewport(ui, profile.frame);
+    await observe(profile);
+  }
+  await allocateFormViewport(ui, narrow.frame);
+  return at(maximum, 'page divider restores the manual position');
+}
+
 async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
   const profiles = plan.cases.map(name => gallery.find(sample => sample.kind === name).expected);
   const identity = [...view.nodes.values()].find(node => node.name === (plan.selected ?? 'B')).identity;
@@ -186,6 +232,14 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
             await observe(target, profile, mode + '-restored-' + width);
           }
         }
+      }
+      if (plan.resizeDivider) {
+        const hidden = profiles.filter(profile => profile.dividers?.length === 0);
+        const divider = await verifyPageDivider(target, profiles.at(-1), hidden,
+          profile => observe(target, profile, mode + '-divider-hidden-' + profile.frame[0]));
+        assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
+        assert.deepEqual(view.selected, identity);
+        results.push({ name: mode + '-divider-moved', divider });
       }
     } finally {
       if (changed) await editFormSource(document, view, original);

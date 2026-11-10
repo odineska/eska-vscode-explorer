@@ -264,10 +264,10 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const alignedAbove = new Set();
     throughCaptions.allocate(captions, geometry().minima, alignedAbove);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
-    if (!reference) {
-      columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
+    const dividers = reference ? undefined : columnDividers.measure(unitedRows.columnPairs, geometry().minima, root);
+    if (dividers) {
       for (const [key, plan] of packedDates) {
-        const divider = columnDividers.get(plan.owner);
+        const divider = dividers.get(plan.owner);
         if (!divider?.tracks) continue;
         const manual = plan.manual?.(divider.value);
         if (manual) packedDates.set(key, manual);
@@ -277,7 +277,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions, alignedAbove);
     checkboxes.allocate(captions);
-    const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve);
+    dividers?.publish();
     for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
