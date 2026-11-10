@@ -53,6 +53,7 @@ export async function createInspectorNavigationSource(fixture) {
     </ChildObjects></TabularSection>`;
   await writeFile(owner, descriptor('Document', 'InspectorReceipt', children, '<NumberLength>11</NumberLength><NumberType>String</NumberType>'));
   const attributes = `<Attributes>
+    <Attribute name="Date" id="4">${typed('string')}</Attribute>
     <Attribute name="Object" id="1"><Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config"><v8:Type>cfg:DocumentObject.InspectorReceipt</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute>
     <Attribute name="Amount" id="2">${typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>')}</Attribute>
     <Attribute name="MixedType" id="3"><Type xmlns:v8="${core}" xmlns:xs="${schema}" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
@@ -60,7 +61,12 @@ export async function createInspectorNavigationSource(fixture) {
     <v8:StringQualifiers><v8:Length>80</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>
     <v8:DateQualifiers><v8:DateFractions>Time</v8:DateFractions></v8:DateQualifiers></Type></Attribute>
     </Attributes>`;
-  const xml = form.text.replace('<DataPath>Name</DataPath>', '<DataPath>Object.Amount</DataPath>')
+  const hints = `<Font xmlns:style="http://v8.1c.ru/8.1/data/ui/style" ref="style:normaltextfont" bold="true" italic="false"/>
+    <FutureSettings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xs="${schema}">
+      <Enabled xsi:type="xs:boolean">true</Enabled><ReadOnly xsi:type="xs:boolean">false</ReadOnly>
+      <Text xsi:type="xs:string">false</Text>
+    </FutureSettings>`;
+  const xml = form.text.replace('<DataPath>Name</DataPath>', `<DataPath>Object.Amount</DataPath>${hints}`)
     .replace('<LabelDecoration name="SecondLabel" id="8"><Title>Other page</Title></LabelDecoration>',
       '<InputField name="SecondAmount" id="8"><Title>Second amount</Title><DataPath>Object.Amount</DataPath></InputField>')
     .replace(/<Attributes>[\s\S]*?<\/Attributes>/u, attributes);

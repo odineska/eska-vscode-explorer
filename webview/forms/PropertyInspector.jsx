@@ -2,7 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js'
 import { PropertyPalette } from './PropertyPalette.jsx';
 import { PropertyValue } from './PropertyValue.jsx';
 import { DataTypeLabel } from './InspectorLists.jsx';
-import { InspectorIcon, InspectorIconButton, nodeGlyph } from './InspectorIcon.jsx';
+import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { FORM_NS, key } from './model.mjs';
 import { inspectorType, inspectorTypeDetails, technicalType } from './inspector-type.mjs';
 
@@ -149,9 +149,9 @@ export function PropertyInspector(props) {
     <header class="form-pane-heading"><h2>{state.strings.properties}</h2></header>
     <div class="form-table-scroll form-property-scroll">
       <div class="form-property-context">
-        <div class="form-context-kind"><InspectorIcon name={data() ? data().section === 'commands' ? 'command' : 'data' : nodeGlyph(node().kind)}/>{kind()}</div>
-        <h3 title={data()?.name ?? props.selected?.label}>{data()?.name ?? props.selected?.label ?? state.strings.form}</h3>
-        <Show when={path()}><div class="form-context-path" title={path()}>{path()}</div></Show>
+        <div class="form-context-kind"><InspectorIcon name={data() ? dataGlyph(data(), props.index) : nodeGlyph(node().kind)}/>{kind()}</div>
+        <h3 title={data()?.name ?? props.selected?.label}>{data()?.label ?? props.selected?.label ?? state.strings.form}</h3>
+        <Show when={path()}><div class="form-context-path" title={path()}>{data()?.displayPath ?? path()}</div></Show>
         <div class="form-property-actions">
           <Show when={canShow()}><button type="button" onClick={() => props.showOnForm(node())}><InspectorIcon name="preview"/>{state.strings.showOnForm}</button></Show>
           <Show when={canLocate()}><button type="button" onClick={() => data() ? props.locateData(data()) : locate({ kind: 'element' })}><InspectorIcon name="xml"/>{state.strings.source}</button></Show>
@@ -160,7 +160,7 @@ export function PropertyInspector(props) {
         <Show when={!data() && props.selected?.binding}><dl class="form-context-facts"><div>
           <dt>{state.strings.dataPath}</dt>
           <dd><Show when={related()} fallback={<code>{props.selected.binding}</code>}>
-            <button type="button" class="form-handler" title={state.strings.showInData} onClick={() => props.showData(related())}>{props.selected.binding}</button>
+            <button type="button" class="form-handler" title={`${state.strings.showInData} · ${props.selected.binding}`} onClick={() => props.showData(related())}>{related().displayPath}</button>
           </Show></dd>
         </div></dl></Show>
         <Show when={!data() && props.selected?.command && related()}><button type="button" class="form-handler" onClick={() => props.showData(related())}>{related().name}</button></Show>

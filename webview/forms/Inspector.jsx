@@ -24,26 +24,32 @@ export function Inspector(props) {
   let search;
   const selectData = row => c.ui('inspectedData', row.id);
 
-  function reveal(row, lookup, foldName, select) {
-    batch(() => {
-      const folds = { ...state.ui[foldName] };
-      for (let parent = lookup.get(row.parent); parent; parent = lookup.get(parent.parent)) {
-        delete folds[parent.key ?? parent.id];
-      }
-      c.ui(foldName, folds);
-      if (!terms().every(term => row.search.includes(term))) c.ui('search', '');
-      select();
-    });
+  const revealedData = createMemo(() => {
+    const row = relatedData() ?? activeData();
+    const open = new Set();
+    if (row?.id === dataReveal()) {
+      const rows = index().byData;
+      for (let parent = rows.get(row.parent); parent; parent = rows.get(parent.parent)) open.add(parent.id);
+    }
+    return open;
+  });
+  function clearUnmatchedSearch(row) {
+    if (!terms().every(term => row.search.includes(term))) c.ui('search', '');
   }
   function showData(row) {
-    reveal(row, index().byData, 'dataFolded', () => {
+    batch(() => {
+      clearUnmatchedSearch(row);
       c.ui('tab', row.section);
       c.ui('compactPane', 'data');
       setDataReveal(row.id);
     });
   }
   function showElement(row) {
-    reveal(row, index().nodes, 'folded', () => {
+    batch(() => {
+      const folds = { ...state.ui.folded }, nodes = index().nodes;
+      for (let parent = nodes.get(row.parent); parent; parent = nodes.get(parent.parent)) delete folds[parent.key];
+      c.ui('folded', folds);
+      clearUnmatchedSearch(row);
       c.ui('treeTab', 'elements');
       c.ui('compactPane', 'elements');
       c.select(row.node);
@@ -60,14 +66,18 @@ export function Inspector(props) {
     const target = dataTarget(row);
     if (target && state.phase === 'ready') c.post({ type: 'locate', target, revision: state.revision, formSessionId: state.formSessionId });
   }
-  const clearSearch = () => { c.ui('search', ''); search.focus(); };
+  const searchFor = value => batch(() => {
+    setDataReveal('');
+    c.ui('search', value);
+  });
+  const clearSearch = () => { searchFor(''); search.focus(); };
   const resize = (key, minimum, maximum, value) => c.ui(key, Math.max(minimum, Math.min(maximum, value)));
   return <div class="form-inspectors" data-inspector-layout={props.layout.mode}
     style={{ height: `${props.layout.height}px`, 'grid-template-columns': props.layout.tracks }}>
     <div class="form-inspector-header">
       <div class="form-inspector-search"><InspectorIcon name="search"/>
         <input ref={search} type="search" aria-label={state.strings.inspectorSearch} placeholder={state.strings.inspectorSearch}
-          value={state.ui.search} maxLength="512" onInput={event => c.ui('search', event.currentTarget.value)}
+          value={state.ui.search} maxLength="512" onInput={event => searchFor(event.currentTarget.value)}
           onKeyDown={event => { if (event.key === 'Escape' && state.ui.search) { event.stopPropagation(); clearSearch(); } }}/>
         <Show when={state.ui.search}><InspectorIconButton icon="clear" label={state.strings.clearSearch} onClick={clearSearch}/></Show>
       </div>
@@ -83,7 +93,7 @@ export function Inspector(props) {
         change={value => resize('left', props.layout.leftMinimum, props.layout.leftMaximum, value)}/>
     </Show>
     <DataPane controller={c} index={index()} terms={terms()} activeData={activeData()} relatedData={relatedData()}
-      reveal={dataReveal()} select={selectData} locate={locateData} pluralRules={pluralRules()} hidden={compact() && state.ui.compactPane !== 'data'}/>
+      reveal={dataReveal()} revealed={revealedData()} clearReveal={() => setDataReveal('')} select={selectData} locate={locateData} pluralRules={pluralRules()} hidden={compact() && state.ui.compactPane !== 'data'}/>
     <Show when={props.layout.mode === 'columns' || props.layout.mode === 'compact'}>
       <Splitter vertical class="form-splitter form-splitter--vertical form-inspector-sash--properties"
         label={state.strings.resizeProperties} range={{ minimum: props.layout.rightMinimum, maximum: props.layout.rightMaximum }}

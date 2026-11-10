@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { inspectorType, inspectorTypeDetails, technicalType } from '../webview/forms/inspector-type.mjs';
 import { attributeFor, commandFor, dataRows, indexInspector, inspectorTerms, treeRows } from '../webview/forms/inspector-model.mjs';
 import { prepare, FORM_NS } from '../webview/forms/model.mjs';
+import { parseInspectorState } from '../out/form-preview/inspector-state.js';
 
 const schema = 'http://www.w3.org/2001/XMLSchema';
 const config = 'http://v8.1c.ru/8.1/data/enterprise/current-config';
@@ -104,6 +105,7 @@ function fixture() {
     commands: [{ name: 'Save', xmlName: qname('Command', FORM_NS), properties: [field('Action', 'SaveAction')] }],
     parameters: [],
     dataFields: [
+      { path: ['Object', 'Ref'], valueType: { kind: 'reference', types: [] }, caption: { kind: 'standard', key: 'attribute.Ref' } },
       { path: ['Object', 'Amount'], valueType: { kind: 'number', digits: 15, fraction: 2, types: [qname('decimal')] } },
       { path: ['Object', 'Lines'], valueType: { kind: 'table', types: [] } },
       { path: ['Object', 'Lines', 'Quantity'], valueType: { kind: 'number', types: [qname('decimal')] } },
@@ -129,4 +131,25 @@ test('form paths and command uses index every reference with the original hierar
   assert.deepEqual(visible('missing'), []);
   assert.deepEqual(dataRows(index, 'attributes', { 'attributes:Object': true }, ['quantity'])
     .filter(row => !row.heading).map(row => row.path), ['Object', 'Object.Lines', 'Object.Lines.Quantity']);
+});
+
+test('data groups open only through a saved expansion, search or a transient reveal', () => {
+  const index = indexInspector(fixture(), 'ru-RU', { ...strings, 'attribute.Ref': 'Ссылка' });
+  const state = parseInspectorState({ ui: { dataFolded: {
+    'attributes:Object': false, 'attributes:Object.Lines': true, 'attributes:Invalid': 'false',
+  } } });
+  assert.deepEqual(state.ui.dataFolded, { 'attributes:Object': false, 'attributes:Object.Lines': true });
+  const visible = (folded, terms = [], revealed) => dataRows(index, 'attributes', folded, terms, revealed)
+    .filter(row => !row.heading).map(row => row.path);
+  assert.deepEqual(visible({}), ['Object', 'Amount', 'Table']);
+  assert.ok(visible(state.ui.dataFolded).includes('Object.Lines'));
+  assert.ok(!visible(state.ui.dataFolded).includes('Object.Lines.Quantity'));
+  assert.ok(visible(state.ui.dataFolded, [], new Set(['attributes:Object.Lines'])).includes('Object.Lines.Quantity'));
+  assert.deepEqual(visible({}, ['quantity']), ['Object', 'Object.Lines', 'Object.Lines.Quantity']);
+  assert.deepEqual(visible({}, ['ссылка']), ['Object', 'Object.Ref']);
+  assert.deepEqual(visible({}, ['object.ref']), ['Object', 'Object.Ref']);
+  const reference = attributeFor(index, 'Object.Ref');
+  assert.equal(reference.label, 'Ссылка');
+  assert.equal(reference.displayPath, 'Object.Ссылка');
+  assert.equal(reference.path, 'Object.Ref');
 });

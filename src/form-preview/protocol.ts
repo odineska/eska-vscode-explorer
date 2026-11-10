@@ -51,18 +51,18 @@ export interface FormNode { identity: ElementIdentity; origin: Origin; kind: str
 type PaletteCaption = { "ru-RU": string; "en-US": string };
 type PaletteDefault = { kind: "boolean"; value: boolean } | { kind: "number"; value: number } | { kind: "choice"; value: string }
   | { kind: "auto" | "autoStretch" | "empty" | "dialog" | "unknown" };
-type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: number; sourceKind: "form" | "extension"; caption?: PaletteCaption }
+type PaletteValue = { kind: "declared"; propertyIndex: number; occurrence: number; sourceKind: "form" | "extension"; caption?: PaletteCaption; scalarType?: "boolean" }
   | { kind: "declaredEvent"; propertyIndex: number; occurrence: number; entryIndex: number; sourceKind: "form" | "extension" }
   | { kind: "absent"; default: PaletteDefault; caption: PaletteCaption | null }
   | { kind: "name"; value: string | null } | { kind: "elementKind"; value: string; caption: PaletteCaption }
-  | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin; caption?: PaletteCaption };
+  | { kind: "qualifier"; key: PropertyKey; text: string; sourceKind: "form" | "extension"; origin: Origin; caption?: PaletteCaption; scalarType?: "boolean" };
 export interface PaletteRow { id: string; category: string | null; editor: string | null; caption: PaletteCaption | null; available?: boolean; value: PaletteValue }
 export interface FormPalette {
   formSessionId: string; revision: string; identity: ElementIdentity;
   categories: { id: string; caption: PaletteCaption }[] | null; rows: PaletteRow[] | null;
 }
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[]; valueType?: FieldType }
-export interface FormDataField { path: string[]; valueType: FieldType; type: PropertyField | null; origin: Origin | null }
+export interface FormDataField { path: string[]; caption?: FormText; valueType: FieldType; type: PropertyField | null; origin: Origin | null }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
@@ -90,12 +90,16 @@ function origin(value: unknown): boolean { return isRecord(value) && hash(value.
 function range(value: unknown): boolean { return isRecord(value) && Number.isSafeInteger(value.start) && Number.isSafeInteger(value.end) && (value.start as number) >= 0 && (value.end as number) >= (value.start as number); }
 function key(value: unknown): boolean { return isRecord(value) && typeof value.name === "string" && (value.namespace === null || typeof value.namespace === "string"); }
 function caption(value: unknown): boolean { return value === undefined || isRecord(value) && ["ru-RU", "en-US"].every(locale => typeof value[locale] === "string" && (value[locale] as string).trim().length > 0); }
+function scalarHint(type: unknown, value: unknown): boolean {
+  return type === undefined || type === "boolean" && typeof value === "string" && ["true", "false", "1", "0"].includes(value.trim());
+}
 function field(value: unknown, depth = 0): boolean {
   if (!isRecord(value) || !key(value.key) || !caption(value.caption) || !isRecord(value.value) || depth > 64 || !Array.isArray(value.qualifiers)
-    || !value.qualifiers.every(qualifier => isRecord(qualifier) && key(qualifier.key) && typeof qualifier.value === "string" && caption(qualifier.caption))) return false;
+    || !value.qualifiers.every(qualifier => isRecord(qualifier) && key(qualifier.key) && typeof qualifier.value === "string" && caption(qualifier.caption) && caption(qualifier.keyCaption)
+      && scalarHint(qualifier.scalarType, qualifier.value))) return false;
   const data = value.value;
   if (data.kind === "text") return typeof data.text === "string" && caption(data.caption)
-    && (data.scalarType === undefined || data.scalarType === "boolean" && ["true", "false", "1", "0"].includes(data.text.trim()));
+    && scalarHint(data.scalarType, data.text);
   if (data.kind === "localized") return Array.isArray(data.items) && data.items.every(item => isRecord(item) && typeof item.language === "string" && typeof item.content === "string");
   if (data.kind === "record") return Array.isArray(data.fields) && data.fields.every(value => field(value, depth + 1));
   return data.kind === "unsupported" && typeof data.issue === "string";
@@ -230,7 +234,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
     const attributes = new Set((value.model.attributes as FormDefinition[]).map(item => item.name));
     for (const item of value.model.dataFields) {
       if (!isRecord(item) || !isDataPath(item.path) || !attributes.has(item.path[0]!)
-        || !fieldType(item.valueType) || !(item.type === null || field(item.type))
+        || item.caption !== undefined && !text(item.caption) || !fieldType(item.valueType) || !(item.type === null || field(item.type))
         || !(item.origin === null || origin(item.origin) && ids.has((item.origin as Origin).source))) invalid();
       const path = item.path.join(".");
       if (paths.has(path)) invalid();
@@ -278,6 +282,8 @@ export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, nod
         if (typeof index !== "number" || !Number.isSafeInteger(index) || !node.properties[index] || indices.has(index)
           || data.occurrence !== occurrences[index] || !["form", "extension"].includes(String(data.sourceKind))
           || !caption(data.caption)) invalid();
+        const property = node.properties[index]!.value;
+        if (!scalarHint(data.scalarType, property?.kind === "text" ? property.text : undefined)) invalid();
         indices.add(index); break;
       }
       case "declaredEvent": {
@@ -305,7 +311,7 @@ export function parsePropertyPalette(value: unknown, snapshot: FormSnapshot, nod
       case "elementKind": if (data.value !== node.kind || data.caption === undefined || !caption(data.caption)) invalid(); break;
       case "qualifier":
         if (!key(data.key) || typeof data.text !== "string" || !(data.sourceKind === "form" || data.sourceKind === "extension")
-          || !origin(data.origin) || !caption(data.caption)) invalid();
+          || !origin(data.origin) || !caption(data.caption) || !scalarHint(data.scalarType, data.text)) invalid();
         break;
       default: invalid();
     }
