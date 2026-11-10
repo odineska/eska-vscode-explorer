@@ -13,7 +13,7 @@ export function inputCornerBackground(corners) {
 
 export function NativeInputCorners(props) {
   // Choice inputs extend one pixel; search controls allocate their complete width.
-  const right = () => props.rightOffset ?? (props.paint.outset ? '-2px' : '-1px');
+  const right = () => props.rightOffset ?? 'calc(-1px - var(--taxi-input-outset, 0px))';
   return <Show when={props.paint}>{paint =>
     <span class="taxi-input-corner" aria-hidden="true" style={{
       right: right(), background: paint().cornerBackground ?? inputCornerBackground(paint().corners),
