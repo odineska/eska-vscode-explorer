@@ -6,8 +6,12 @@ import { paintCanvas } from './native-control-paint.js';
 function ChoicePictureRaster(props) {
   let canvas;
   const [common, setCommon] = createSignal();
-  const asset = createMemo(() => props.picture.kind === 'common'
-    ? props.assets.find(asset => asset.id === props.picture.source)?.picture : undefined);
+  const asset = createMemo(() => {
+    if (props.picture.kind !== 'common') return;
+    const picture = props.assets.find(asset => asset.id === props.picture.source)?.picture;
+    // Reconciliation preserves the resource identity when an external file changes.
+    return picture && { source: `data:${picture.mimeType};base64,${picture.data}`, isTemplate: picture.isTemplate };
+  });
   const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
   createEffect(on(asset, value => {
     setCommon(undefined);
@@ -16,7 +20,7 @@ function ChoicePictureRaster(props) {
     image.onload = () => setCommon({
       image, width: image.naturalWidth, height: image.naturalHeight, isTemplate: value.isTemplate,
     });
-    image.src = `data:${value.mimeType};base64,${value.data}`;
+    image.src = value.source;
     onCleanup(() => { image.onload = null; });
   }));
   const source = () => standard() ?? common();
