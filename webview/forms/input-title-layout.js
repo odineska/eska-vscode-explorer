@@ -4,6 +4,7 @@ import { borderBoxSize, boundingScale, boxInsets, pixels, updateStyle } from './
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
 import { inputLaneFields } from './input-lane-layout.js';
+import { sideTabWidths } from './page-fit-layout.js';
 
 const total = widths => widths.reduce((sum, width) => sum + width, 0);
 const kinds = new Set(['number', 'date', 'reference']);
@@ -141,23 +142,28 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     const align = children.every(child => scalar(child, 'GroupVerticalAlign', 'Auto') === 'Auto')
       && first.every(field => !field.element.dataset.groupVerticalAlign || field.element.dataset.groupVerticalAlign === 'Auto');
     if (align) for (const field of first) alignment.style(field.element, '--taxi-input-title-offset', '');
-    rows.push({ items, columns, gap, spacing, preferred, plans, page, first: align ? first : [] });
+    const pair = page && columns.length === 2 ? { items, left: first[0].key, right: first[1].key } : undefined;
+    const tabs = page ? items.closest('.taxi-pages')?.querySelector(':scope > .taxi-tabs[data-side-fit-minimum]') : undefined;
+    rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, first: align ? first : [] });
   }
 
   if (os === 'linux') visit(model);
   return {
     minimumRows, captionFields,
-    allocate(captions) {
+    allocate(captions, resolveDivider) {
       const above = new Set();
       let heightChanged = false;
-      for (const {items, columns, gap, spacing, preferred, plans, page, first} of rows) {
+      for (const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, first} of rows) {
         const css = getComputedStyle(items);
         const available = borderBoxSize(items, scale).width - boxInsets(css).width;
-        const fit = plans.find(plan => plan.width + spacing <= available + .5) ?? plans.at(-1);
+        const rail = sideTabWidths(tabs, scale);
+        // As for conditional rows, Designer tests the title fit against the nominal tab width.
+        const fitWidth = available + (rail ? rail.painted - rail.nominal : 0);
+        const fit = plans.find(plan => plan.width + spacing <= fitWidth + .5) ?? plans.at(-1);
         const plan = fit.above.size || available + .5 < preferred ? fit : undefined;
         const abovePage = page && plan && columns.some(({fields}) => fields.some(field =>
           field.location === 'Top' || plan.above.has(field.key)));
-        const sizes = plan && allocateLaneSizes(available - spacing, columns.map(({fields}, index) => {
+        const lanes = plan && columns.map(({fields}, index) => {
           const width = (bound, captionMetric) => Math.max(...fields.map(field => widthFor(field, field[bound], plan.above,
             page ? field.caption[captionMetric] : plan.captionWidths[index],
             page ? field.caption[captionMetric] : field.caption.minimum)));
@@ -165,7 +171,16 @@ export function inputTitleLayout(model, context, minimumCaptions) {
           // Once a page moves its titles above, distribute space from the compact column widths.
           return abovePage ? { reserve: 0, minimum, preferred: minimum, maximum: width('maximum', 'preferred'), growthWeight: minimum }
             : { reserve: 0, minimum, preferred, maximum: preferred };
-        }));
+        });
+        let sizes = lanes && allocateLaneSizes(available - spacing, lanes);
+        if (pair && plan?.above.size === 2 && resolveDivider) {
+          // Once both automatic titles move above, the columns can share their remaining width.
+          const [left, right] = lanes, width = Math.round(available - spacing);
+          const minimum = Math.max(left.minimum, width - right.maximum);
+          const maximum = Math.min(left.maximum, width - right.minimum);
+          const divider = resolveDivider(owner, pair, width, minimum, maximum, () => sizes[0]);
+          if (divider?.tracks) sizes = [divider.value, width - divider.value];
+        }
         if (items.dataset.inputTitleReflow !== String(!!plan)) items.dataset.inputTitleReflow = String(!!plan);
         updateStyle(items, '--taxi-input-title-columns', sizes ? sizes.map(width => `${width}px`).join(' ') : '');
         updateStyle(items, '--taxi-input-title-gap', plan ? `${gap}px` : '');
