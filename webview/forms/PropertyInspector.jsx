@@ -67,8 +67,8 @@ function TypeDetails(props) {
         <For each={members()}>{member => <li class="form-type-member">
           <div class="form-type-member-title">
             <InspectorIcon name="data"/>
-            <div><strong>{member.label}</strong>
-              <Show when={member.category}><small>{member.category}</small></Show>
+            <div class="form-truncate" title={[member.category, member.label].filter(Boolean).join('.')}>
+              <Show when={member.category}><small>{member.category}.</small></Show><strong>{member.label}</strong>
             </div>
           </div>
           <Show when={member.facts.length}><dl class="form-type-facts">

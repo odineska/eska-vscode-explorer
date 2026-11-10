@@ -4,7 +4,7 @@ import { dataRowExpanded, dataRows, definitionSections, treeRows } from './inspe
 import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { Splitter } from './Splitter.jsx';
 
-const treeHeight = 24, dataHeight = 32;
+const treeHeight = 24, dataHeight = 24;
 const noRows = [];
 const hasModifier = event => event.altKey || event.metaKey || event.shiftKey || event.ctrlKey;
 const bound = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -170,15 +170,12 @@ export function DataTypeLabel(props) {
   const summary = () => {
     const type = props.type;
     const count = type.count;
-    if (count <= 1) return type.label;
+    if (count <= 1) return [type.category, type.label].filter(Boolean).join('.');
     const unit = props.pluralRules.select(count);
     return `${type.label} · ${props.strings[`typeCount.${unit}`].replace('{0}', String(count))}`;
   };
   return <Show when={props.type} fallback={<span class="form-truncate">{props.action}</span>}>{type =>
-    <div class="form-type-label" title={type().count > 1 ? summary() : [type().category, type().label].filter(Boolean).join('.')}>
-      <span class="form-truncate">{summary()}</span>
-      <Show when={type().count <= 1 && type().category}><small class="form-truncate">{type().category}</small></Show>
-    </div>
+    <span class="form-type-label form-truncate" title={summary()}>{summary()}</span>
   }</Show>;
 }
 
