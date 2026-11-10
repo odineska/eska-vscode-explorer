@@ -48,7 +48,7 @@ test('Linux read-only fields omit the automatic picker and its date width', () =
   assert.equal(inputChoiceButton(reference, 'linux'), false);
   assert.equal(inputChoiceButton(reference, 'win32'), true);
   reference.properties.push({key:{namespace:FORM_NS,name:'Width'},value:{kind:'text',text:'8'}});
-  assert.equal(fieldWidth(reference, 'linux'), 113);
+  assert.equal(fieldWidth(reference, 'linux'), 112);
   date.properties.push({key:{namespace:FORM_NS,name:'ChoiceButton'},value:{kind:'text',text:'true'}});
   assert.equal(fieldWidth(date, 'linux'), 121);
 });

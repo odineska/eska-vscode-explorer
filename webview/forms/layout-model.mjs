@@ -1,4 +1,4 @@
-import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, inputChoiceButton, inputOpenButton, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, referenceAlternatives, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceInputButtons, referenceButtonSlotWidth, automaticTextWidth, numericLabelMetrics, referenceAlternatives, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 import { additionKinds, additionStretches } from './addition-model.mjs';
@@ -173,7 +173,8 @@ export function horizontalInputMaximum(node, os) {
   if (nativeReferenceInput(node, os)) {
     // A cap that accommodates the native value area preserves the preferred buttons.
     // Smaller caps include the buttons and the trailing border in the capped box.
-    return maximum >= intrinsic - referenceButtonWidth
+    const buttons = referenceInputButtons(node, os).length * referenceButtonSlotWidth;
+    return maximum >= intrinsic - buttons
       ? Math.max(intrinsic, maximum) : Math.max(minimum, maximum + 1);
   }
   if (node.presentation.valueType.kind === 'string' && linuxFixedInputWidth(node, os)) return Math.max(maximum, minimum);
@@ -181,9 +182,9 @@ export function horizontalInputMaximum(node, os) {
 
 /** A Linux reference value retains 71 px and 21 px per button at the standard font size. */
 export function referenceInputMinimum(node, os) {
-  if (!linuxReferenceInput(node, os) || (node.presentation.font?.points ?? 10) !== 10) return;
-  const buttons = Number(inputChoiceButton(node, os)) + Number(inputOpenButton(node, os));
-  return Math.min(fieldWidth(node, os), 71 + buttons * 21);
+  const buttons = referenceInputButtons(node, os);
+  if (!buttons || flag(node, 'MultiLine', false) || (node.presentation.font?.points ?? 10) !== 10) return;
+  return Math.min(fieldWidth(node, os), 71 + buttons.length * referenceButtonSlotWidth);
 }
 
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */

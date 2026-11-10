@@ -126,9 +126,44 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-input-button--number::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] { border-radius: 0; overflow: visible; border-color: var(--taxi-input-native-border) !important; background-color: var(--taxi-input-native-background) !important; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready][data-native-disabled-foreground] > input { color: var(--taxi-input-disabled-foreground) !important; }
-.taxi-input-corner { display: block; position: absolute; pointer-events: none; z-index: 2; }
-.taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] > .taxi-input-button { position: relative; width: 20px; flex-basis: 20px; border-color: inherit; border-left-color: var(--taxi-input-button-border); background: #fff; }
-.taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] > .taxi-input-button:last-of-type::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
+.taxi-input-corner { display: block; position: absolute; inset: -1px; pointer-events: none; z-index: 2; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] > .taxi-input-button { border-color: inherit; border-left-color: var(--taxi-input-button-border); background: #fff; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] > .taxi-input-button { position: relative; width: 20px; flex-basis: 20px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] > .taxi-input-button:last-of-type::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
+.taxi-preview[data-os=linux] .taxi-input > .taxi-input-button[data-reference-button] { background: var(--taxi-reference-button-paint), #fff; }
+.taxi-input[data-native-reference].taxi-input--incomplete::after {
+  right: calc(3px + var(--taxi-reference-buttons-width));
+  height: 1px;
+  border: none;
+  background: repeating-linear-gradient(to right, #f00 0 1px, transparent 1px 2px);
+}
+.taxi-disabled .taxi-input[data-native-reference].taxi-input--incomplete::after { content: none; }
+/* The multiline value continues below the single-height row of buttons. */
+.taxi-preview[data-os=linux] .taxi-input[data-native-reference-multiline] {
+  border-color: transparent !important;
+  background: transparent !important;
+  border-radius: 0;
+  overflow: visible;
+}
+.taxi-input[data-native-reference-multiline] > textarea {
+  margin: -1px;
+  border: 1px solid var(--taxi-input-native-border, #a0a0a0);
+  border-radius: 2px;
+  background-color: var(--taxi-input-native-background, #fff);
+}
+.taxi-input[data-native-reference-multiline]:has(> .taxi-input-button) > textarea { border-top-right-radius: 0; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-reference-multiline] > .taxi-input-button {
+  height: var(--taxi-reference-button-height);
+  margin-top: -1px;
+  border-top: 1px solid var(--taxi-input-native-border, #a0a0a0);
+  border-bottom: 1px solid var(--taxi-input-native-border, #a0a0a0);
+}
+.taxi-preview[data-os=linux] .taxi-input[data-native-reference-multiline] > .taxi-input-button:last-child {
+  margin-right: -1px;
+  flex-basis: 22px;
+  border-right: 1px solid var(--taxi-input-native-border, #a0a0a0);
+  border-radius: 0 2px 2px 0;
+}
 .taxi-input-calculator { display: block; flex: none; width: 9px; height: 11px; transform: translateY(-1px); }
 .taxi-spin { display: block; text-align: center; font-size: 9px; line-height: 10px; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-spin] > .taxi-input-button--number { width: 21px; flex-basis: 21px; }
@@ -555,7 +590,7 @@ button { cursor: default; }
 .taxi-items[data-numeric-label-auto-spacing] { --taxi-horizontal-gap: 10px; }
 
 /* Include the choice border outset when the field determines an intrinsic column. */
-.taxi-preview[data-os=linux] .taxi-input[data-native-border=ready]:has(> .taxi-input-button) { margin-right: 1px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] { margin-right: 1px; }
 /* The help gap already includes the choice input's border outset. */
 .taxi-preview[data-os=linux] .taxi-field-control[data-tooltip-button] > .taxi-input[data-native-border=ready] { margin-right: 0; }
 

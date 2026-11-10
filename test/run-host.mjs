@@ -86,6 +86,7 @@ try {
     fixture.tablePalette = { profiles, captions };
   }
   if (basename(suite) === "form-reference-widths-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createReferenceWidthGallery(fixture);
+  if (basename(suite) === "form-reference-buttons-host.cjs") fixture.referenceButtons = await (await import("./form-fixture.mjs")).createReferenceButtonGallery(fixture);
   if (basename(suite) === "form-tables-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createTableGallery(fixture);
   if (basename(suite) === "form-pictures-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createPictureFormSource(fixture);
   if (basename(suite) === "form-dependencies-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createDependencyFormSource(fixture);

@@ -203,8 +203,7 @@ function linuxNumericInputWidth(node) {
   return units === undefined ? Math.round(20 * inputUnit(node) + 1) : scaledAutomaticInputWidth(node, units);
 }
 const inputChoiceWidth = 20;
-const referenceOpenWidth = 22;
-export const referenceButtonWidth = inputChoiceWidth + referenceOpenWidth;
+export const referenceButtonSlotWidth = 21;
 
 export function automaticTextWidth(node) {
   return Math.round((fontPixels(node.presentation.font) - 1) * 100 / 3 + 10);
@@ -309,6 +308,8 @@ function requestedInputChoice(node, os) {
   return inputListChoice(node, os) || flag(node, 'ChoiceButton', automatic && !readOnly);
 }
 export function inputChoiceButton(node, os) {
+  const reference = referenceInputButtons(node, os);
+  if (reference) return reference.some(referenceSelectionButton);
   return textInputWidthBounds(node, os)?.choice ?? requestedInputChoice(node, os);
 }
 export function textInputStretchesByDefault(node) {
@@ -350,14 +351,36 @@ export function inputPaintedOutset(node, os) {
   return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
 }
 export function linuxReferenceInput(node, os) {
-  return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind)
-    && !flag(node, 'MultiLine', false) && !flag(node, 'ClearButton', false) && !flag(node, 'SpinButton', false);
+  return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind);
 }
+
+const referenceSelectionButton = button => button === 'dropdown' || button === 'choice';
+
+/** Physical buttons in native display order. ListChoiceMode also controls the offered values. */
+export function referenceInputButtons(node, os) {
+  if (!linuxReferenceInput(node, os)) return;
+  const composite = node.presentation.valueType.kind === 'composite';
+  const readOnly = flag(node, 'ReadOnly', false);
+  const listMode = flag(node, 'ListChoiceMode', false);
+  const representation = scalar(node, 'ChoiceButtonRepresentation');
+  const inlineChoice = ['ShowInInputField', 'ShowInDropListAndInInputField'].includes(representation);
+  const dropdown = flag(node, 'DropListButton', !readOnly && (!composite || listMode));
+  const picker = (composite || inlineChoice) && flag(node, 'ChoiceButton', composite || !readOnly && !listMode);
+  return [
+    dropdown && 'dropdown',
+    picker && 'choice',
+    flag(node, 'ClearButton', false) && 'clear',
+    flag(node, 'SpinButton', false) && 'spin',
+    inputOpenButton(node, os) && 'open',
+  ].filter(Boolean);
+}
+
 function linuxReferenceWithOpenButton(node, os) {
   return linuxReferenceInput(node, os) && inputOpenButton(node, os);
 }
 export function nativeReferenceInput(node, os) {
-  return linuxReferenceWithOpenButton(node, os) && inputChoiceButton(node, os);
+  const buttons = referenceInputButtons(node, os);
+  return !!buttons && !flag(node, 'MultiLine', false) && buttons.includes('open') && buttons.some(referenceSelectionButton);
 }
 export function fieldWidth(node, os) {
   const label = textLabelMetrics(node, os);
@@ -365,13 +388,13 @@ export function fieldWidth(node, os) {
   const text = textInputWidthBounds(node, os);
   if (text) return text.preferred;
   const unit = inputUnit(node);
-  const reference = linuxReferenceInput(node, os), open = reference && inputOpenButton(node, os);
-  const native = reference || linuxFixedInputWidth(node, os);
+  const reference = referenceInputButtons(node, os);
+  const native = !!reference || linuxFixedInputWidth(node, os);
   const spin = native && flag(node, 'SpinButton', false);
   // Multiline controls include the choice button's trailing edge in their own box.
-  const choiceInset = Number(reference && !open || native && flag(node, 'MultiLine', false));
-  const buttons = (open ? referenceOpenWidth : 0) + (spin ? 21 : 0)
-    + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + choiceInset : 0);
+  const choiceInset = Number(native && flag(node, 'MultiLine', false));
+  const buttons = reference ? reference.length * referenceButtonSlotWidth
+    : (spin ? 21 : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + choiceInset : 0);
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { formReferenceRoot } from './form-references.mjs';
-import { FORM_NS, fieldWidth, inputOpenButton, inputListChoice } from '../webview/forms/model.mjs';
+import { FORM_NS, fieldWidth, inputControlHeight, inputOpenButton, inputListChoice, referenceInputButtons } from '../webview/forms/model.mjs';
 
 const root = new URL('tests/fixtures/forms/native-reference-widths/', formReferenceRoot);
 const metrics = JSON.parse(await readFile(new URL('metrics.json', root), 'utf8'));
@@ -53,4 +53,22 @@ test('enumeration button defaults are profile-scoped and explicit XML keeps prio
   node.properties.push({ key: { namespace: FORM_NS, name: 'ListChoiceMode' }, value: { kind: 'text', text: 'false' } });
   assert.equal(inputOpenButton(node, 'linux'), true);
   assert.equal(inputListChoice(node, 'linux'), false);
+});
+
+test('native reference button order and input size match 110 recorded states', async () => {
+  const directory = new URL('../native-reference-buttons/', root);
+  const { forms } = JSON.parse(await readFile(new URL('metrics.json', directory), 'utf8'));
+  assert.equal(forms.reduce((count, form) => count + form.fields.length, 0), 110);
+  for (const form of forms) {
+    const source = await readFile(new URL(form.file, directory));
+    assert.equal(createHash('sha256').update(source).digest('hex'), form.sourceSha256, form.name);
+    for (const field of form.fields) {
+      const label = `${form.name}/${field.name}`;
+      const node = nodeFor({ ...field, valueType: form.valueType });
+      assert.deepEqual(referenceInputButtons(node, 'linux'), field.buttons, label);
+      assert.equal(fieldWidth(node, 'linux'), field.rect[2], label);
+      assert.equal(inputControlHeight(node, 'linux'), field.rect[3], label);
+      assert.equal(referenceInputButtons(node, 'win32'), undefined, label);
+    }
+  }
 });
