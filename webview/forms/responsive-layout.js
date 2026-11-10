@@ -331,7 +331,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         const required = items.hasAttribute('data-native-command-row')
           ? [...items.children].reduce((width, child) => width + pixels(child.style.getPropertyValue('--taxi-min-width')), footprint.spacing)
           : footprint.width;
-        const available = rect(items).width - boxInsets(getComputedStyle(items)).width;
+        const reserve = throughCaptions.pageWidthReserves.get(key)?.() ?? 0;
+        const available = rect(items).width - boxInsets(getComputedStyle(items)).width - reserve;
         if (available + .5 < required) wrap.add(key);
       }
     } finally {
