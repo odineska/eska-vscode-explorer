@@ -54,7 +54,8 @@ test('real backend formats standalone native buffers and releases chunk uploads 
   const formatted = await withFormatText(endpoint, text, input => endpoint.request('format/document', { ...params, ...input }));
   let result = text;
   for (const edit of formatEdits(formatted, text, 1).reverse()) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
-  assert.equal(result, 'Процедура Test()\r\n\tЗначение = 2;\r\nКонецПроцедуры\r\n');
+  const methodGap = '\r\n'.repeat(1 + (formatted.effective.options.blank_lines_inside_methods ?? 0));
+  assert.equal(result, `Процедура Test()${methodGap}\tЗначение = 2;${methodGap}КонецПроцедуры\r\n`);
   assert.deepEqual(formatted.effective.origins, (await withFormatText(endpoint, text, input => endpoint.request('format/document', { ...params, ...input }))).effective.origins);
   assert.equal(await readFile(path, 'utf8'), original);
   await assert.rejects(endpoint.request('format/document', { ...params, text, userReadOnly: true }), error => error.domain === 'formatting_failed' && error.details.code === 'source_read_only');
