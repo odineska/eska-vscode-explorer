@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onMount, onCleanup } from 'solid-js';
 import { automaticCommands, text } from './model.mjs';
-import { dataRows, definitionSections, treeRows } from './inspector-model.mjs';
-import { InspectorIcon, InspectorIconButton, nodeGlyph } from './InspectorIcon.jsx';
+import { dataRowExpanded, dataRows, definitionSections, treeRows } from './inspector-model.mjs';
+import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { Splitter } from './Splitter.jsx';
 
 const treeHeight = 24, dataHeight = 32;
@@ -184,7 +184,10 @@ export function DataTypeLabel(props) {
 
 export function DataPane(props) {
   const c = props.controller, state = c.state;
-  const rows = createMemo(() => dataRows(props.index, state.ui.tab, state.ui.dataFolded, props.terms));
+  const rows = createMemo(() => dataRows(props.index, state.ui.tab, state.ui.dataFolded, props.terms, props.revealed));
+  const visibleParents = createMemo(() => new Set(rows().map(row => row.parent)));
+  const expanded = row => props.terms.length ? visibleParents().has(row.id)
+    : dataRowExpanded(state.ui.dataFolded, row.id, props.revealed);
   const virtual = virtualRows(rows, dataHeight, 180, 24);
   const current = () => props.activeData ?? props.relatedData;
   const isSelected = row => props.activeData?.id === row.id;
@@ -192,7 +195,8 @@ export function DataPane(props) {
   let grid;
   const fold = row => {
     if (props.terms.length) return;
-    c.ui('dataFolded', { ...state.ui.dataFolded, [row.id]: !state.ui.dataFolded[row.id] });
+    c.ui('dataFolded', { ...state.ui.dataFolded, [row.id]: expanded(row) });
+    props.clearReveal();
   };
   function keyboard(event) {
     if (event.target.closest('button,[role=separator]') || hasModifier(event)) return;
@@ -207,12 +211,12 @@ export function DataPane(props) {
       case 'End': next = list.at(-1); break;
       case 'ArrowRight':
         if (row && props.index.children.get(row.id)?.length) {
-          if (state.ui.dataFolded[row.id]) fold(row);
+          if (!expanded(row)) fold(row);
           else if (list[index + 1]?.parent === row.id) next = list[index + 1];
         }
         break;
       case 'ArrowLeft':
-        if (row && !state.ui.dataFolded[row.id] && props.index.children.get(row.id)?.length) fold(row);
+        if (row && !props.terms.length && expanded(row) && props.index.children.get(row.id)?.length) fold(row);
         else if (row?.parent) next = props.index.byData.get(row.parent);
         break;
       case 'Enter': if (row) props.select(row); break;
@@ -249,18 +253,18 @@ export function DataPane(props) {
           }>
             <tr classList={{ 'form-data-row': true, selected: isSelected(row), related: linked(row) }} id={`form-data-${row.id}`}
               role="row" aria-level={row.depth + 1} aria-selected={isSelected(row)} aria-rowindex={virtual.start() + index() + 2}
-              aria-expanded={props.index.children.get(row.id)?.length ? !state.ui.dataFolded[row.id] || !!props.terms.length : undefined}
+              aria-expanded={props.index.children.get(row.id)?.length ? expanded(row) : undefined}
               data-form-data-path={row.path} title={row.path}
               onClick={() => { props.select(row); virtual.focus(); }} onDblClick={() => props.locate(row)}>
               <td role="gridcell"><div class="form-data-name" style={{ '--form-depth': row.depth }}>
-                <Show when={props.index.children.get(row.id)?.length}>
-                  <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={state.ui.dataFolded[row.id] ? state.strings.expand : state.strings.collapse}
-                    onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
-                    <InspectorIcon name={state.ui.dataFolded[row.id] && !props.terms.length ? 'right' : 'down'}/>
+                <Show when={props.index.children.get(row.id)?.length} fallback={<span class="form-tree-expander" aria-hidden="true"/>}>
+                  <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded(row) ? state.strings.collapse : state.strings.expand}
+                    disabled={!!props.terms.length} onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
+                    <InspectorIcon name={expanded(row) ? 'down' : 'right'}/>
                   </button>
                 </Show>
-                <InspectorIcon name={row.section === 'commands' ? 'command' : row.section === 'parameters' ? 'parameter' : row.depth ? 'field' : 'data'}/>
-                <span class="form-truncate">{row.name}</span>
+                <InspectorIcon name={dataGlyph(row, props.index)}/>
+                <span class="form-truncate">{row.label}</span>
                 <Show when={linked(row)}><span class="form-row-link" title={state.strings.related}><InspectorIcon name="link"/></span></Show>
               </div></td>
               <td role="gridcell"><DataTypeLabel type={row.type} action={row.action} pluralRules={props.pluralRules} strings={state.strings}/></td>

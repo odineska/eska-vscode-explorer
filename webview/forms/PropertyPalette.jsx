@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match } from 'solid-js';
-import { PropertyValue } from './PropertyValue.jsx';
+import { PropertyScalar, PropertyValue, ReadonlyFlag } from './PropertyValue.jsx';
 
 function caption(value, state) {
   return value?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
@@ -46,12 +46,14 @@ function Row(props) {
       <Switch>
         <Match when={handler()}><button class="form-handler" type="button" title={state.strings.handler} onClick={() => props.openHandler(handler().index)}>{handler().handler.name}</button></Match>
         <Match when={eventText() !== undefined}>{eventText()}</Match>
-        <Match when={field()}><PropertyValue field={field()} state={state} valueCaption={caption(value().caption, state)}/></Match>
+        <Match when={field()}><PropertyValue field={field()} state={state} valueCaption={caption(value().caption, state)} scalarType={value().scalarType}/></Match>
         <Match when={value().kind === 'absent' && value().default.kind === 'boolean'}>
-          <input type="checkbox" disabled checked={value().default.value} aria-label={label()}/>
+          <ReadonlyFlag checked={value().default.value} label={label()}/>
         </Match>
         <Match when={value().kind === 'absent'}>{caption(value().caption, state) ?? value().default.value}</Match>
-        <Match when={value().kind === 'qualifier'}><span title={value().text}>{caption(value().caption, state) ?? value().text}</span></Match>
+        <Match when={value().kind === 'qualifier'}>
+          <PropertyScalar raw={value().text} scalarType={value().scalarType} label={label()} caption={caption(value().caption, state)}/>
+        </Match>
         <Match when={true}>{caption(value().caption, state) ?? value().value ?? state.strings.form}</Match>
       </Switch>
     </td>
