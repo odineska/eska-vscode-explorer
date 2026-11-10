@@ -1031,6 +1031,27 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] .taxi-field-control {
   padding-top: var(--taxi-input-title-offset, 0px);
 }
+/* Align the final line of top titles and center retained side titles with the shifted input. */
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-input-title-reflow=true] > .taxi-element
+  > .taxi-field-row[data-title-location=Top]:not([data-wrapped-input-caption]) > .taxi-field-label {
+  top: var(--taxi-input-title-offset, 0px);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-input-title-reflow=true] > .taxi-element
+  > .taxi-field-row[data-title-location=Top][data-wrapped-input-caption] > .taxi-field-label {
+  padding-top: var(--taxi-input-title-offset, 0px);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-input-title-reflow=true] > .taxi-element
+  > .taxi-field-row[data-title-location=Top][data-wrapped-input-caption] > .taxi-field-control {
+  padding-top: 0;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-input-title-reflow=true] > .taxi-element
+  > .taxi-field-row[data-title-location=Left] > .taxi-field-label {
+  top: round(up, calc(var(--taxi-input-title-offset, 0px) / 2), 1px);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-input-title-reflow=true] > .taxi-element
+  > .taxi-field-row[data-title-location=Top][data-wrapped-input-caption] {
+  padding-block-end: 0;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true] {
   align-items: start;
   column-gap: var(--taxi-input-title-gap);

@@ -56,6 +56,8 @@ async function geometry(ui, keys, expected) {
         const label = nodes.get(keys[name])?.querySelector('.taxi-field-label');
         return [name, label ? label.querySelectorAll('.taxi-field-caption-line').length || 1 : 0];
       })),
+      captionLocations: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLocations ?? {}))}.map(name =>
+        [name, nodes.get(keys[name])?.querySelector('.taxi-field-row')?.dataset.titleLocation])),
     };
   })()`);
 }
@@ -64,7 +66,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines', 'pageGroups'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'captionLocations', 'pageGroups'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));

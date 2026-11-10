@@ -338,6 +338,7 @@ export function Items(props) {
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
       '--taxi-resized-columns': divider()?.tracks, '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
+      forcedPageRow={props.node.kind === 'Page' && props.node.presentation.grouping === 'Horizontal'}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
     <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
@@ -756,8 +757,10 @@ function Field(props) {
       || localizedProperty(property(node().auxiliary.find(item=>item.kind==='ExtendedTooltip'), 'Title')?.value, state.locale)
     : '';
   const layout = useFormLayout();
-  const titleLocation = () => layout?.titleAbove(node()) ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const automaticTop = () => layout?.titleAbove(node());
+  const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
+  const movedPageTitle = () => props.forcedPageRow && automaticTop();
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
@@ -767,7 +770,7 @@ function Field(props) {
   const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
-      && sideTitle()) && flag(node(), 'Enabled'))}/>;
+      && (sideTitle() || movedPageTitle())) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const inputTitleWidth = createMemo(() => {
@@ -790,7 +793,7 @@ function Field(props) {
       ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
-    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && sideTitle());
+    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || movedPageTitle()));
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
