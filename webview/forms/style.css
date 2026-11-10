@@ -793,11 +793,19 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnBottom] { flex-direction: column-reverse; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages:is([data-representation=TabsOnLeftHorizontal],[data-representation=TabsOnRightHorizontal]) { flex-direction: row; }
 .taxi-preview[data-form-layout=allocated] .taxi-pages[data-representation=TabsOnRightHorizontal] { flex-direction: row-reverse; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages:has(> .taxi-tabs[data-side-fit-minimum]) {
+  max-width: var(--taxi-side-page-maximum, none);
+}
 .taxi-preview[data-form-layout=allocated] .taxi-tabs { flex: none; overflow: auto; }
 .taxi-preview[data-form-layout=allocated] .taxi-tabs > button { flex: none; }
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items { flex: 1; }
+/* Fixed rows keep their intrinsic height beside a taller side tab strip. */
+.taxi-preview[data-form-layout=allocated] .taxi-tabs[data-side-fit-minimum] + .taxi-page-stack
+  > .taxi-page > .taxi-items--horizontal:not(:has(> .taxi-element[data-stretch-y=true])) {
+  flex: 0 1 auto;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-inline-value-minimum, var(--taxi-control-min-width, 0px)))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }

@@ -37,8 +37,14 @@ async function geometry(ui, keys, expected) {
         const [x,y,w,h] = box(surface);
         return [name, surface.dataset.nativeGroupBackground === 'ready' ? [x,y+1,w,h-2] : null];
       }));
+    const pageGroups = Object.fromEntries(${JSON.stringify(Object.keys(expected.pageGroups ?? {}))}.map(name => {
+      const pages = nodes.get(keys[name])?.querySelector(':scope > .taxi-pages');
+      return [name, { width: pages?.getBoundingClientRect().width ?? null,
+        tabs: pages?.querySelectorAll(':scope > .taxi-tabs > [role=tab]').length ?? 0 }];
+    }));
     return {
       frame: [origin.width, origin.height],
+      pageGroups,
       fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
       groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
       fills,
@@ -58,7 +64,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'pageGroups'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
