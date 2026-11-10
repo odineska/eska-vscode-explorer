@@ -3,7 +3,7 @@ import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
 const nativeRowHeight = 28;
-const dynamicToolbarMinimum = 300;
+const viewStatusBandMinimum = 300;
 const bandHeight = value => fontLineHeight(value) + 15;
 
 function groupGridMinimum(height, headerDepth, footer, headerExtra, rowCount, heightUnits, rowHeight = nativeRowHeight) {
@@ -316,16 +316,18 @@ export function tableLayout(table, state = {}, additions) {
   const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
     ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
   const foldableToolbar = linux && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
-  const adaptiveToolbar = nativeDynamicList && foldableToolbar;
-  const compactToolbar = adaptiveToolbar && chips ? dynamicToolbarMinimum : 0;
+  const adaptiveToolbar = foldableToolbar && (nativeDynamicList || nativeWidth > 0);
+  const viewStatusMinimum = chips && (nativeColumns || adaptiveToolbar) ? viewStatusBandMinimum : 0;
   const controlMinWidth = nativeWidth
-    ? Math.max(compactToolbar, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
-  // The native table viewport has its own preferred width, independent of the scrolling grid.
-  const automaticWidth = nativeColumns ? Math.max(controlMinWidth, Math.min(880, 40 + columns.length * 120))
+    ? Math.max(viewStatusMinimum, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
+  // A fixed grid can be narrower than the bands above it, even with automatic Width.
+  const nativeGridWidth = nativeColumns ? Math.max(400, Math.min(880, 40 + columns.length * 120))
+    : Math.max(400, contentMinWidth + 2);
+  const automaticWidth = nativeColumns ? Math.max(controlMinWidth, nativeGridWidth)
     : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
-  const preferredWidth = nativeWidth ? Math.max(nativeWidth, compactToolbar) : automaticWidth;
-  const fixedGridWidth = nativeDynamicList && flag(table, 'HorizontalStretch', null) === false
-    ? nativeWidth || Math.max(400, contentMinWidth + 2) : undefined;
+  const preferredWidth = nativeWidth ? Math.max(nativeWidth, viewStatusMinimum) : automaticWidth;
+  const fixedGridWidth = linux && flag(table, 'HorizontalStretch', null) === false
+    ? nativeWidth || nativeGridWidth : undefined;
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');

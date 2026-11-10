@@ -129,6 +129,28 @@ test('an automatic dynamic toolbar can be wider than its fixed grid', () => {
   assert.deepEqual(dimensions(), [240, 240, false]);
 });
 
+test('a static table uses independent Linux sizes for the grid and the command and filter bands', () => {
+  const table = fixture();
+  table.properties = [prop('HorizontalStretch', false)];
+  table.auxiliary.push(field('Search', 'SearchStringAddition', 'unknown'), field('Status', 'ViewStatusAddition', 'unknown'));
+  const dimensions = (locale = 'ru') => {
+    const { preferredWidth, fixedGridWidth } = tableLayout(table, { os: 'linux', locale });
+    return [preferredWidth, fixedGridWidth];
+  };
+  assert.deepEqual(dimensions(), [415, 400]);
+  assert.deepEqual(dimensions('en'), [429, 400]);
+  table.children.push(field('Extra', 'InputField', 'string'));
+  assert.deepEqual(dimensions(), [520, 520]);
+  table.properties.push(prop('Width', 4));
+  assert.deepEqual(dimensions(), [300, 40]);
+  table.properties.push(prop('CommandBarLocation', 'None'));
+  assert.deepEqual(dimensions(), [300, 40]);
+  table.properties.push(prop('ViewStatusLocation', 'None'));
+  assert.deepEqual(dimensions(), [40, 40]);
+  table.properties[0] = prop('HorizontalStretch', true);
+  assert.deepEqual(dimensions(), [40, undefined]);
+});
+
 test('an explicit table toolbar preserves its groups without adding the automatic menu', () => {
   const root = fixture(); root.presentation.autoCommandItems = [];
   const popup = field('Actions', 'Popup', 'unknown');

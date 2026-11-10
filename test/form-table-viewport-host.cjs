@@ -103,6 +103,7 @@ async function resizeAndEdit(service, view, main, ui, document, forms, results) 
 
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), results = [];
+  const english = vscode.env.language.startsWith('en');
   const extension = vscode.extensions.all.find(entry => entry.packageJSON.name === 'eska-explorer');
   const explorer = await extension.activate(), service = explorer.formPreview;
   await vscode.commands.executeCommand('eska.explorer.connect');
@@ -117,18 +118,19 @@ exports.run = async () => {
     const view = current(), main = view.frames.get('main');
     const ui = await frame({ state: { title: main.panel.title } });
     try {
-      const actual = await allocate(ui, form.expected.native);
+      const native = (english ? form.expected.nativeEn : undefined) ?? form.expected.native;
+      const actual = await allocate(ui, native);
       results.push({ name: form.kind, ...actual });
       if (process.platform === 'linux') {
-        assert.equal(actual.preferredWidth, form.expected.native.frame[0], 'preferred frame width');
-        if (form.kind === 'Table6') {
+        assert.equal(actual.preferredWidth, native.frame[0], 'preferred frame width');
+        if (['Table6', 'Fixed4NoStatus'].includes(form.kind)) {
           assert.ok(actual.search && !actual.more && !actual.movement, 'search occupies the narrow toolbar');
         } else if (form.kind === 'Table30') {
           assert.ok(actual.search && actual.more && !actual.movement, 'commands fold into the menu');
           await resizeAndEdit(service, view, main, ui, document, fixture.formGallery, results);
         } else if (form.kind === 'Table45') {
           assert.ok(actual.search && actual.more && actual.movement, 'movement buttons return together');
-        } else if (form.kind === 'Bare6') {
+        } else if (['Bare6', 'Fixed4BareStatus'].includes(form.kind)) {
           assert.ok(!actual.search && !actual.more && !actual.movement, 'hidden toolbar stays hidden');
         }
       }

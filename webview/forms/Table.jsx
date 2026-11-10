@@ -156,7 +156,7 @@ export function Table(props) {
     data-search-location={scalar(node(), 'SearchStringLocation') || undefined} style={{
       'min-width': 'var(--taxi-table-preferred-width)',
       '--taxi-table-preferred-width': `${layout().preferredWidth}px`,
-      '--taxi-dynamic-grid-width': layout().fixedGridWidth ? `${layout().fixedGridWidth}px` : undefined,
+      '--taxi-table-grid-width': layout().fixedGridWidth ? `${layout().fixedGridWidth}px` : undefined,
       '--taxi-table-control-min-width': `${layout().controlMinWidth}px`,
       '--taxi-table-content-min-width': `${layout().contentMinWidth}px`,
       '--taxi-table-preferred-height': `${layout().height}px`,
