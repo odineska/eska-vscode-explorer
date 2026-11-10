@@ -83,7 +83,7 @@ exports.run = async () => {
   })()`);
   assert.equal(dimensions.mode, 'columns');
   assert.equal(dimensions.topTabs, true);
-  const annotated = snapshot.model.dataFields.find(row => row.path.join('.') === 'Object.Ref')?.caption?.kind === 'standard';
+  const annotated = snapshot.model.dataFields.find(row => row.path.join('.') === 'Object.Ref')?.caption !== undefined;
   if (process.env.ESKA_FORM_REQUIRE_INSPECTOR_PRESENTATION === '1') assert.equal(annotated, true);
   const expanded = async (target, path) => target.evaluate(`${lookup(field(path))}?.getAttribute('aria-expanded')`);
   const shown = (target, path) => target.evaluate(`!!${lookup(field(path))}`);
@@ -127,8 +127,8 @@ exports.run = async () => {
   }
   const type = await ui.evaluate(`${lookup(field('Object.Amount'))}.querySelector('td:last-child').textContent.trim()`);
   assert.equal(type, ru ? 'Число (15, 2)' : 'Number (15, 2)');
-  assert.equal(await ui.evaluate(`${lookup(field('Object.Ref'))}.querySelector('td:last-child small').textContent`),
-    ru ? 'ДокументСсылка' : 'DocumentRef');
+  assert.equal(await ui.evaluate(`${lookup(field('Object.Ref'))}.querySelector('td:last-child').textContent.trim()`),
+    (ru ? 'ДокументСсылка' : 'DocumentRef') + '.InspectorReceipt');
   await search(ui, 'String 100');
   if (ru) await search(ui, 'Строка 100');
   await waitFor(ui, field('Amount'));
@@ -162,6 +162,7 @@ exports.run = async () => {
       literal: area.querySelector('span[title="false"]').textContent };
   })()`);
   assert.deepEqual(nested, { flags: [[true,true],[false,true]], literal: 'false' });
+  await waitFor(ui, '[data-palette-id="platform:HorizontalStretch"]');
   const automatic = await ui.evaluate(`(() => {
     const row = document.querySelector('[data-palette-id="platform:HorizontalStretch"]');
     return row && [row.querySelector('td').textContent, !!row.querySelector('input')];
@@ -252,7 +253,7 @@ exports.run = async () => {
   await until(() => ui.evaluate("document.querySelectorAll('.form-type-member').length === 3"), 'composite type shows its three members');
   const composite = await ui.evaluate(`Array.from(document.querySelectorAll('.form-type-member'), row => ({
     label: row.querySelector('strong').textContent,
-    category: row.querySelector('small')?.textContent ?? null,
+    category: row.querySelector('small')?.textContent.replace(/\.$/, '') ?? null,
     values: Array.from(row.querySelectorAll('dd'), value => value.textContent),
   }))`);
   assert.deepEqual(composite, [

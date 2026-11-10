@@ -34,14 +34,16 @@ exports.run = async () => {
     return {visibleTitle:visible.querySelector('th').textContent,checked:visible.querySelector('input').checked,disabled:visible.querySelector('input').disabled,
       literal:literal.querySelector('td').textContent,literalCheckbox:!!literal.querySelector('input'),
       foreignTitle:foreign.querySelector('th').textContent,foreign:foreign.querySelector('td').textContent,foreignCheckbox:!!foreign.querySelector('input'),
-      font:row('Font').querySelector('td').textContent,events:events.textContent,
+      font:row('Font').querySelector('td').textContent,fontFlags:[...row('Font').querySelectorAll('input[type=checkbox]')].map(input=>[input.checked,input.disabled]),events:events.textContent,
       types:document.querySelector('.form-definitions tbody tr td:nth-child(2)').textContent};})()`);
   assert.equal(shown.visibleTitle, ru ? 'Видимость' : catalogued ? 'Visible' : 'Visibility');
   assert.equal(shown.checked, true); assert.equal(shown.disabled, true);
   assert.equal(shown.literal, 'true'); assert.equal(shown.literalCheckbox, false);
   assert.equal(shown.foreignTitle, 'Width'); assert.equal(shown.foreign, 'false'); assert.equal(shown.foreignCheckbox, false);
-  assert.match(shown.font, /faceNameLiberation Sans/); assert.match(shown.font, /height12/); assert.match(shown.font, /boldfalse/);
-  assert.match(shown.events, /NameChanged/); assert.match(shown.events, /NameChangedAfter/); assert.match(shown.events, /callTypeAfter/);
+  assert.match(shown.font, ru ? /ГарнитураLiberation Sans/ : /TypefaceLiberation Sans/);
+  assert.match(shown.font, ru ? /Размер шрифта12/ : /Font size12/);
+  assert.deepEqual(shown.fontFlags, [[false,true]]);
+  assert.match(shown.events, /NameChanged/); assert.match(shown.events, /NameChangedAfter/); assert.ok(shown.events.includes(ru ? 'Тип вызоваПосле' : 'Call typeAfter'));
   assert.match(shown.types, ru ? /Строка/ : /String/);
   await ui.screenshot(`form-inspectors-${vscode.env.language}.png`);
   const received = [], failures = [], receive = service.receive.bind(service), failure = service.failure.bind(service);
