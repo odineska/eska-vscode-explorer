@@ -7,12 +7,12 @@ export function createCaptionRaster(props, { target, mode, paint, dependencies, 
   const [status, setStatus] = createSignal('browser');
   const owner = {};
   createEffect(on(
-    () => [props.runtime, props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground), ...dependencies()],
+    () => [props.runtime, props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground), props.runtime?.pixelAligned?.(), ...dependencies()],
     () => {
       const { runtime, enabled, text, font } = props;
       runtime?.issue(owner, false);
       setStatus('browser');
-      if (!enabled || !text || !runtime) return;
+      if (!enabled || !text || !runtime || runtime.pixelAligned?.() === false) return;
 
       const element = target();
       const metrics = fontLineMetrics(font);

@@ -5,8 +5,17 @@ import regular from '../../resources/forms/fonts/LiberationSans-Regular.ttf';
 import bold from '../../resources/forms/fonts/LiberationSans-Bold.ttf';
 
 /** A webview owns one lazy module and at most two immutable font faces. */
-export function createNativeTextRuntime(scriptUrl) {
+export function createNativeTextRuntime(scriptUrl, zoom = () => 100) {
   const [failed, setFailed] = createSignal(false);
+  const [density, setDensity] = createSignal(window.devicePixelRatio);
+  let resolution;
+  const observeDensity = () => {
+    resolution?.removeEventListener('change', observeDensity);
+    setDensity(window.devicePixelRatio);
+    resolution = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    resolution.addEventListener('change', observeDensity);
+  };
+  observeDensity();
   const issues = new Set(), pending = new AbortController(), fonts = new Map();
   let engine, loading, disposed = false;
   const read = async asset => {
@@ -16,6 +25,9 @@ export function createNativeTextRuntime(scriptUrl) {
   };
   return {
     failed,
+    // Native glyph bitmaps are calibrated for one physical pixel per CSS pixel.
+    // Browser text retains the same layout while remaining sharp on scaled displays.
+    pixelAligned: () => density() === 1 && zoom() === 100,
     issue(owner, value) {
       if (disposed) return;
       if (value) issues.add(owner); else issues.delete(owner);
@@ -36,6 +48,7 @@ export function createNativeTextRuntime(scriptUrl) {
     },
     dispose() {
       if (disposed) return;
+      resolution?.removeEventListener('change', observeDensity);
       disposed = true; pending.abort(); engine?.dispose(); engine = undefined;
       fonts.clear(); issues.clear(); setFailed(false);
     },
