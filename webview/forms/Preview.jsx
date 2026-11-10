@@ -661,7 +661,18 @@ function Input(props) {
     <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}
       choice={choice()} referenceButtons={referenceButtons()}/>
     <Switch><Match when={multiline()}><textarea readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1"/></Match>
-      <Match when={true}><input ref={valueInput} readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1" style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/><NativeLabel enabled={state.os === 'linux' && ['number','date'].includes(kind()) && ((flag(node(),'Enabled') && !flag(node(),'ReadOnly',false)) || !!paint())} placement="input" mask={kind()==='date'} target={()=>valueInput} text={value()} font={node().presentation.font} foreground={node().presentation.foreground} runtime={props.controller.nativeText}/></Match></Switch>
+      <Match when={true}>
+        <input ref={valueInput} readOnly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabIndex="-1"
+          style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/>
+        <Show when={state.os === 'linux' && ['number', 'date'].includes(kind())}>
+          <span class="taxi-input-raster" aria-hidden="true">
+            <NativeLabel enabled={!disabled() && !readOnly() || !!paint()} placement="input" mask={kind() === 'date'}
+              target={() => valueInput} text={value()} font={node().presentation.font}
+              foreground={node().presentation.foreground} runtime={props.controller.nativeText}/>
+          </span>
+        </Show>
+      </Match>
+    </Switch>
     <Show when={referenceButtons()} fallback={<>
       <Show when={choice()}><span class="taxi-input-button" data-choice-kind={choiceKind()} classList={{'taxi-input-button--choice':true,'taxi-input-button--number':choiceKind() === 'calculator'}}>{choiceKind() === 'calendar' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (readOnly() || disabled())} fallback={<Icon name="Calendar"/>}/></Show> : choiceKind() === 'calculator' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (readOnly() || disabled())}/></Show> : listChoice() ? '▾' : '...'}</span></Show>
       <Show when={inputOpenButton(node(), state.os)}><span class="taxi-input-button taxi-input-button--open"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>

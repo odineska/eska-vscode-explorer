@@ -85,7 +85,9 @@ button { cursor: default; }
 .taxi-field-label { grid-column: 1; white-space: nowrap; line-height: 16px; }
 .taxi-field-label { position: relative; }
 .taxi-native-label { position: absolute; pointer-events: none; }
-.taxi-input:has(> [data-native-value=ready]) > input { -webkit-text-fill-color: transparent; }
+/* A clipped glyph bitmap must not enlarge the form's scrollable area. */
+.taxi-input-raster { position: absolute; inset: 0; overflow: clip; pointer-events: none; }
+.taxi-input:has(> .taxi-input-raster > [data-native-value=ready]) > input { -webkit-text-fill-color: transparent; }
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left], [data-title-location=Right]) > .taxi-field-label {
   width: var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, calc-size(max-content, round(nearest, size, 1px))));
 }
