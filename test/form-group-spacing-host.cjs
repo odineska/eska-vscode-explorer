@@ -131,17 +131,20 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
 async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
   const profiles = plan.cases.map(name => gallery.find(sample => sample.kind === name).expected);
   const identity = [...view.nodes.values()].find(node => node.name === (plan.selected ?? 'B')).identity;
-  const changed = plan.edit && original.replace(plan.edit.from, plan.edit.to);
+  const edited = plan.edit?.case ? gallery.find(sample => sample.kind === plan.edit.case) : undefined;
+  if (plan.edit?.case) assert.ok(edited, 'dirty edit has an observed reference');
+  const changed = edited ? await fs.readFile(edited.path, 'utf8')
+    : plan.edit && original.replace(plan.edit.from, plan.edit.to);
   if (plan.edit) assert.notEqual(changed, original);
   await service.receive(view, main, { type: 'select', identity });
   const results = [];
-  async function observe(target, profile, name) {
+  async function observe(target, profile, name, reference = expected) {
     let actual, preferred;
     try {
       await until(async () => {
         actual = await geometry(target, keys, profile);
         preferred = await preferredFrame(target);
-        return matches(actual, profile) && (verifyPreferredFrame ? sameFrame(preferred, expected.frame) : preferred?.[0] === expected.frame[0]);
+        return matches(actual, profile) && (verifyPreferredFrame ? sameFrame(preferred, reference.frame) : preferred?.[0] === reference.frame[0]);
       }, name);
     } catch (error) {
       throw new Error(name + ' ' + JSON.stringify({ actual, preferred }), { cause: error });
@@ -166,14 +169,20 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
           await editFormSource(document, view, changed);
           await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
             'resized form received the dirty edit');
+          if (edited) await allocateFormViewport(target, edited.expected.frame);
           await target.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-          await observe(target, profile, mode + '-folded-dirty-' + width);
+          await observe(target, edited?.expected ?? profile, mode + '-dirty-' + width, edited?.expected ?? expected);
+          if (edited) {
+            await editFormSource(document, view, original);
+            await allocateFormViewport(target, profile.frame);
+            await observe(target, profile, mode + '-restored-' + width);
+          }
         }
       }
     } finally {
       if (changed) await editFormSource(document, view, original);
     }
-    if (verifyPreferredFrame && changed) {
+    if (verifyPreferredFrame && changed && !edited) {
       const differentWidth = profiles.find(profile => profile.frame[0] !== expected.frame[0]);
       const resized = gallery.find(sample => sample.expected === differentWidth);
       assert.ok(resized, 'a fixture with a different preferred width');
