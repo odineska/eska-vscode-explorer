@@ -222,8 +222,9 @@ export function Preview(props) {
   const state = props.controller.state, root = () => state.model.root;
   const placement = createMemo(() => rootCommandPlacement(root(), state));
   const hasCommands = () => placement().position !== 'None' && (placement().inline.length > 0 || placement().more || placement().help);
+  const commandPosition = () => hasCommands() ? placement().position : undefined;
   let viewport, preview, frame;
-  const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame);
+  const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame, commandPosition);
   const frameStyle = () => ({
     ...font(root().presentation.font, state.os),
     width: `${Math.max(28, layout.allocation().width - 4)}px`,
@@ -244,7 +245,7 @@ export function Preview(props) {
         <div class="taxi-form-shadow" aria-hidden="true"/>
         <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
         <div class="taxi-form-content" classList={{ 'taxi-form-content--commands': hasCommands() }}
-          data-root-command-position={hasCommands() ? placement().position : undefined} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
+          data-root-command-position={commandPosition()} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <Show when={hasCommands()}><RootCommands placement={placement()} controller={props.controller}/></Show>
           <div class="taxi-form-scrollport" data-scrollable={layout.bodyOverflows() ? '' : undefined}>
             <Items node={root()} controller={props.controller}/>

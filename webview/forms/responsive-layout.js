@@ -39,7 +39,7 @@ function naturalFormSize(root, rows, widths) {
 }
 
 /** One local geometry owner per webview. Resize never changes the source model or the shared session. */
-export function createFormLayout(controller, viewport, preview, frame) {
+export function createFormLayout(controller, viewport, preview, frame, commandPosition) {
   const state = controller.state;
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
   const [geometry, setGeometry] = createSignal({
@@ -50,7 +50,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
     const units = number(state.model.root, 'Height');
-    return state.os === 'linux' && units > 0 ? 52 + linuxContainerHeightUnit * units : 0;
+    if (state.os !== 'linux' || units <= 0) return 0;
+    const position = commandPosition();
+    const frameInsets = position && position !== 'Bottom' ? 43 : 52;
+    return frameInsets + linuxContainerHeightUnit * units;
   });
   const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
   const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));

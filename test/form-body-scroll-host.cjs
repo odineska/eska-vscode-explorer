@@ -128,6 +128,32 @@ async function checkFieldsOnly(ui, view, document, source, bar, declared, role, 
   await ui.evaluate("delete globalThis.__scrollOwners;true");
 }
 
+async function checkDeclaredHeight(ui, view, document, source, bar, declared, results) {
+  const cases = [
+    { name: 'auto-top-height', position: 'Auto', units: 18, height: 331, last: 295 },
+    { name: 'explicit-top-height', position: 'Top', units: 10, height: 203, last: 167 },
+    { name: 'hidden-command-height', position: 'Auto', units: 18, height: 340, last: 304, hidden: true },
+    { name: 'bottom-height', position: 'Bottom', units: 18, height: 340, last: 268 },
+  ];
+  for (const { name, position, units, height, last, hidden } of cases) {
+    const commands = hidden ? declared.replace('<CommandName>', '<Visible>false</Visible><CommandName>') : declared;
+    const xml = fieldsOnly(source, bar, commands, position)
+      .replace('<Width>42</Width>', `<Width>42</Width><Height>${units}</Height>`);
+    await allocateFormViewport(ui, [454, height]);
+    await editFormSource(document, view, xml);
+    await scrollTo(ui, 0);
+    const before = await settled(ui);
+    assert.deepEqual(before.frame, [454, height], name);
+    assert.deepEqual(before.outerScroll, [false, false]);
+    assert.equal(!!before.bar, !hidden);
+    await scrollTo(ui, 1e6);
+    const end = await settled(ui);
+    assert.deepEqual(end.last, [13, last, 171, 23], name);
+    assert.deepEqual(end.bar, before.bar);
+    results.push({ name, before, end });
+  }
+}
+
 exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),form=fixture.formGallery[0],disk=await fs.readFile(form.path);
   if(process.platform!=='linux'){await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,profileApplicable:false,profile:'linux-native-scroll',results:[]}));return;}
@@ -144,6 +170,7 @@ exports.run=async()=>{
   const withTable=source.replace('<CommandBarLocation>None</CommandBarLocation>','<CommandBarLocation>Auto</CommandBarLocation>').replace(bar,declared);
   try {
     await checkFieldsOnly(ui,view,doc,source,bar,declared,'main',results);
+    await checkDeclaredHeight(ui,view,doc,source,bar,declared,results);
     await editFormSource(doc,view,withTable);
     const selected=[...view.nodes.values()].find(n=>n.name==='Code').identity;
     await service.receive(view,main,{type:'select',identity:selected});
