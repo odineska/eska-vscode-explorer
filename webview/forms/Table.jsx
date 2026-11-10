@@ -142,9 +142,10 @@ export function Table(props) {
   const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
   const menu = createMemo(() => {
-    if (!layout().adaptiveToolbar && !node().presentation.tableCommandMenu) return [];
+    if (!layout().foldableToolbar && !node().presentation.tableCommandMenu) return [];
     return tableCommandRows(node(), layout().bar?.children.filter(item => item.presentation.displayed) ?? [], layout().commands);
   });
+  const moreButton = () => <CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>;
   const title = () => layout().nativeDynamicList && scalar(node(), 'TitleLocation') === 'Top' && caption(node(), state);
   const compressedHeight = () => layout().nativeDynamicList ? layout().groupMinimumHeight
     : Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25);
@@ -171,18 +172,19 @@ export function Table(props) {
         foreground={node().presentation.titleColor} runtime={props.controller.nativeText}/>
     </div></Show>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? '' : undefined}
-      data-adaptive-table-toolbar={layout().adaptiveToolbar ? '' : undefined} data-table-lookup={lookup() ? '' : undefined}>
+      data-adaptive-table-toolbar={layout().adaptiveToolbar ? '' : undefined}
+      data-foldable-table-toolbar={layout().foldableToolbar ? '' : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
       <TableToolbarSearch search={layout().search} control={layout().searchControl} controller={props.controller} spacer/>
       <Show when={layout().more}>
-        <Show when={menu().length} fallback={<CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>}>
+        <Show when={menu().length} fallback={layout().foldableToolbar ? <span data-table-more="">{moreButton()}</span> : moreButton()}>
           <PopupMenu controller={props.controller} label={state.strings.more} rows={menu()} tableBar tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
         </Show>
       </Show>
     </div></Show>
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} placement="top"/>}</Show>
-    <ViewStatus node={node()} controller={props.controller}/>
+    <ViewStatus node={node()} controller={props.controller} fitTable/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
       aria-disabled={inactive() || undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>
       <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" data-clip-header={layout().clipHeader ? '' : undefined} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>

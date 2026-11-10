@@ -315,7 +315,8 @@ export function tableLayout(table, state = {}, additions) {
   const nativeWidth = linux && explicit > 0 ? explicit * 10 : 0;
   const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
     ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
-  const adaptiveToolbar = nativeDynamicList && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
+  const foldableToolbar = linux && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
+  const adaptiveToolbar = nativeDynamicList && foldableToolbar;
   const compactToolbar = adaptiveToolbar && chips ? dynamicToolbarMinimum : 0;
   const controlMinWidth = nativeWidth
     ? Math.max(compactToolbar, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
@@ -328,7 +329,7 @@ export function tableLayout(table, state = {}, additions) {
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, foldableToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

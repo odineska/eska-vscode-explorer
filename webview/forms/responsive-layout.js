@@ -13,6 +13,7 @@ import { alignInlineFieldRows } from './inline-field-layout.js';
 import { borderBoxSize, boundingScale, boxInsets, pixels } from './layout-box.mjs';
 import { measureRootCommands } from './root-command-layout.mjs';
 import { measureTableCommands } from './table-command-layout.mjs';
+import { layoutTableWidths } from './table-width-layout.js';
 import { boundedGroupRows } from './authored-group-rows.js';
 import { createColumnDividers } from './column-divider-layout.js';
 import { commandBarLayout } from './command-bar-layout.js';
@@ -121,7 +122,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       needsPreferred = true;
       for (let pass = 0; pass < 6 && (needsPreferred || needsMinimum); pass++) measureLayout(target);
       if (!needsPreferred && !needsMinimum) {
-        referenceFrame = { width: natural.frame.width, height: rect(target.root).height };
+        referenceFrame = rect(target.root);
       }
     } finally {
       setMeasuringReference(false);
@@ -155,9 +156,13 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const activeWrap = wrapped();
       function prepare(wrap) {
         rootCommands = measureRootCommands(commands, scale);
-        allocateTableCommands = measureTableCommands(root, scale);
         decorationsLayout = measureDecorations(model, context, state);
         layoutGroupSpacing(model, context, bottomCommands);
+        if (root.querySelector('.taxi-table-field')) {
+          const width = authoredWidth() ? authoredWidth() - boxInsets(getComputedStyle(body)).width : undefined;
+          layoutTableWidths(model, context, width);
+        }
+        allocateTableCommands = measureTableCommands(root, scale);
         unitedColumns = alignUnitedColumns(model, context);
         const throughScopes = alignThroughLabels(model, context);
         unitedColumns.alignColumns(throughScopes);

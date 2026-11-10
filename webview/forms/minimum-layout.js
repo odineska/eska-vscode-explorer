@@ -107,7 +107,10 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       }
     } else if (table) {
       const children = [...table.children].map(marginBox), spacing = insets(table);
-      value = { width: Math.max(pixels(getComputedStyle(table).minWidth), ...children.map(value => value.width + spacing.width)),
+      const controlWidth = pixels(getComputedStyle(table).minWidth);
+      const width = element.hasAttribute('data-table-width-bounded') ? controlWidth
+        : Math.max(controlWidth, ...children.map(value => value.width + spacing.width));
+      value = { width,
         height: children.reduce((sum, value) => sum + value.height, spacing.height) };
     } else if (group) {
       value = items(group.querySelector(':scope > .taxi-items'));

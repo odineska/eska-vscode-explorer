@@ -864,7 +864,7 @@ button { cursor: default; }
   min-height: var(--taxi-min-height);
 }
 .taxi-preview[data-form-layout=preferred] .taxi-element[data-kind=Table][data-stretch-x=false] { width: max-content; }
-.taxi-preview:is([data-form-layout=minimum][data-os=linux],[data-form-layout=allocated]) .taxi-element[data-kind=Table][data-stretch-x=false] { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
+.taxi-preview:is([data-form-layout=minimum][data-os=linux],[data-form-layout=allocated]) .taxi-element[data-kind=Table][data-stretch-x=false]:not([data-table-width-bounded]) { width: var(--taxi-preferred-width); min-width: var(--taxi-preferred-width); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-button { width: 100% !important; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-button { height: 100%; }
 .taxi-preview[data-form-layout=allocated] .taxi-field-control > .taxi-input { max-width: var(--taxi-input-title-value-max, var(--taxi-control-max-width, 100%)); }
@@ -882,10 +882,43 @@ button { cursor: default; }
   max-width: var(--taxi-lane-input-max-width) !important;
 }
 .taxi-preview[data-form-layout=preferred] .taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list]) { width: var(--taxi-table-preferred-width); }
+.taxi-preview[data-form-layout=preferred] .taxi-element[data-table-width-bounded=group] > .taxi-table-field {
+  width: min(var(--taxi-table-preferred-width), var(--taxi-table-width-budget));
+  min-width: min(var(--taxi-table-preferred-width), var(--taxi-table-width-budget)) !important;
+}
 
 /* The table control can shrink while its column grid remains horizontally scrollable. */
-.taxi-preview[data-form-layout=minimum] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { width: var(--taxi-table-control-min-width); min-width: var(--taxi-table-control-min-width) !important; }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-kind=Table][data-stretch-x=true] > .taxi-table-field { min-width: var(--taxi-table-control-min-width) !important; }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-kind=Table]:is([data-stretch-x=true],[data-table-width-bounded]) > .taxi-table-field {
+  width: var(--taxi-table-viewport-min-width, var(--taxi-table-control-min-width));
+}
+.taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-element[data-kind=Table]:is([data-stretch-x=true],[data-table-width-bounded]) > .taxi-table-field {
+  min-width: var(--taxi-table-viewport-min-width, var(--taxi-table-control-min-width)) !important;
+}
+.taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-element[data-table-width-bounded] > .taxi-table-field {
+  --taxi-table-viewport-min-width: min(var(--taxi-table-control-min-width), var(--taxi-table-width-budget));
+}
+.taxi-preview:is([data-form-layout=minimum],[data-form-layout=allocated]) .taxi-element[data-table-width-bounded][data-stretch-x=false] > .taxi-table-field {
+  --taxi-table-viewport-min-width: min(var(--taxi-table-preferred-width), var(--taxi-table-width-budget));
+}
+.taxi-preview[data-form-layout=minimum][data-os=linux] .taxi-element[data-table-width-bounded][data-stretch-x=false] {
+  width: min-content;
+  min-width: 0;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-table-width-bounded][data-stretch-x=false] {
+  width: min(100%, var(--taxi-preferred-width));
+  min-width: var(--taxi-min-width);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items--horizontal > .taxi-element[data-table-width-bounded][data-stretch-x=false] {
+  flex: 0 1 var(--taxi-preferred-width);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-table-width-bounded] :is(.taxi-table-command-bar, .taxi-table-search-controls) {
+  overflow-x: clip;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-table-width-bounded] .taxi-table-command-bar > .taxi-table-search {
+  min-width: min(80px, 100%);
+}
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-table-width-bounded] .taxi-view-status-chip[data-compact-view-status] { overflow: clip; }
+.taxi-preview[data-form-layout=allocated] .taxi-element[data-table-width-bounded] .taxi-table-content { scrollbar-width: none; }
 .taxi-preview[data-form-layout=allocated] .taxi-table-content { overflow-x: auto; overflow-y: hidden; }
 .taxi-preview[data-form-layout=allocated] .taxi-table-content > :is(.taxi-table-head,.taxi-table-empty,.taxi-table-footer) { min-width: var(--taxi-table-content-min-width); }
 
