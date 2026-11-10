@@ -7,6 +7,11 @@ test("picture transport accepts only bounded base64 image data", () => {
   assert.deepEqual(picturePreview(ready), ready);
   const template = { ...ready, isTemplate: true };
   assert.deepEqual(picturePreview(template), template);
+  const atlas = { ...ready, glyph: { width: 16, height: 16 } };
+  assert.deepEqual(picturePreview(atlas), atlas);
+  for (const glyph of [null, {}, {width:0,height:16}, {width:16.5,height:16}, {width:16,height:16385}]) {
+    assert.equal(picturePreview({...ready,glyph}).status, 'invalid');
+  }
   assert.equal(picturePreview(undefined), undefined);
   for (const bad of [null, {}, { ...ready, mimeType: "text/html" }, { ...ready, data: "data:evil" },
     { ...ready, isTemplate: "true" }, { ...ready, data: "" }, { ...ready, data: "====" }, { ...ready, data: "a".repeat(11_184_816) }]) {

@@ -7,8 +7,9 @@ function paint(canvas, image) {
 }
 
 export function TemplatePicture(props) {
-  return <span class="taxi-picture-template" style={{ '--taxi-picture-mask': `url("${props.source}")` }}>
-    <img class="taxi-picture-resource" src={props.source} data-native-picture={props.native ? 'ready' : undefined} alt="" draggable="false"/>
+  const glyphStyle = () => props.glyph ? { width: `${props.glyph.width}px`, height: `${props.glyph.height}px` } : {};
+  return <span class="taxi-picture-template" style={{ '--taxi-picture-mask': `url("${props.source}")`, '--taxi-picture-mask-size': props.glyph ? 'auto' : undefined, '--taxi-picture-mask-position': props.glyph ? 'left top' : undefined, ...glyphStyle() }}>
+    <img class="taxi-picture-resource" style={{ ...glyphStyle(), 'object-fit': props.glyph ? 'none' : undefined, 'object-position': props.glyph ? 'left top' : undefined }} data-picture-index={props.glyph ? '0' : undefined} src={props.source} data-native-picture={props.native ? 'ready' : undefined} alt="" draggable="false"/>
   </span>;
 }
 
