@@ -62,9 +62,10 @@ function BrowserIcon(props) {
 }
 function CommonPicture(props) {
   const source = () => `data:${props.image.mimeType};base64,${props.image.data}`;
-  const image = () => <img class="taxi-picture-resource" src={source()} alt="" draggable="false"/>;
+  const glyphStyle = () => props.image.glyph ? { width: `${props.image.glyph.width}px`, height: `${props.image.glyph.height}px`, 'object-fit': 'none', 'object-position': 'left top' } : undefined;
+  const image = () => <img class="taxi-picture-resource" style={glyphStyle()} data-picture-index={props.image.glyph ? '0' : undefined} src={source()} alt="" draggable="false"/>;
   return <Show when={props.image.isTemplate} fallback={image()}>
-    <TemplatePicture source={source()}/>
+    <TemplatePicture source={source()} glyph={props.image.glyph}/>
   </Show>;
 }
 function Picture(props) {
