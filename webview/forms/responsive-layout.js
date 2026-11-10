@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
+import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from 'solid-js';
 import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
@@ -48,6 +48,12 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   const nativeFormScroll = () => state.os === 'linux';
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   const [viewportResized, setViewportResized] = createSignal(false);
+  const [measuringReference, setMeasuringReference] = createSignal(false);
+  const authoredWidth = createMemo(() => {
+    const units = number(state.model.root, 'Width');
+    if (units <= 0) return 0;
+    return state.os === 'linux' ? units * 10 + 30 : units * 10.5;
+  });
   const authoredHeight = createMemo(() => {
     const units = number(state.model.root, 'Height');
     if (state.os !== 'linux' || units <= 0) return 0;
@@ -55,8 +61,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const frameInsets = position && position !== 'Bottom' ? 43 : 52;
     return frameInsets + linuxContainerHeightUnit * units;
   });
-  const preferredX = createMemo(() => atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
-  const preferredY = createMemo(() => authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
+  const preferredX = createMemo(() => measuringReference() || atPreferredAxis(size().outerWidth, preferred().width, state.ui.zoom));
+  const preferredY = createMemo(() => measuringReference() || authoredHeight() > 0 || atPreferredAxis(size().outerHeight, preferred().height, state.ui.zoom));
   const [preferredWidths, setPreferredWidths] = createSignal(new Map());
   const [wrapped, setWrapped] = createSignal(new Set());
   const [fieldCaptions, setFieldCaptions] = createSignal(new Map());
@@ -64,7 +70,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
   let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, throughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
-  let allocateInlineRows, natural, needsNatural = true;
+  let allocateInlineRows, natural, referenceFrame, needsNatural = true, referencePending = true;
   let headingTitles = [];
   const headingHeights = new Map();
   const undoAlignment = [];
@@ -82,7 +88,9 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     for (const undo of undoAlignment) undo();
     undoAlignment.length = 0;
   };
-  const schedule = () => { if (active && mounted && scheduled === undefined) scheduled = requestAnimationFrame(measure); };
+  const schedule = () => {
+    if (active && mounted && scheduled === undefined && !untrack(measuringReference)) scheduled = requestAnimationFrame(measure);
+  };
   const columnDividers = createColumnDividers(schedule);
   const rect = borderBoxSize;
   function measure() {
@@ -94,6 +102,35 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const body = root.querySelector(':scope > .taxi-form-content');
     const bodyScroll = body.querySelector(':scope > .taxi-form-scrollport');
     const scroll = [surface.scrollLeft, surface.scrollTop, bodyScroll.scrollLeft, bodyScroll.scrollTop];
+    const target = { surface, content, root, body, bodyScroll };
+    measureLayout(target, scroll);
+    // A form that already exceeds the screen uses viewport allocation and body scrolling.
+    const fitsScreen = natural.frame.height * state.ui.zoom / 100 <= window.screen.availHeight;
+    if (referencePending && nativeFormScroll() && authoredWidth() && !authoredHeight() && fitsScreen) {
+      referencePending = false;
+      measureReference(target);
+      measureLayout(target, scroll);
+    }
+  }
+  function measureReference(target) {
+    // Resolve wrapping at the form's own width, then restore the live viewport before painting.
+    const liveWrap = wrapped();
+    setMeasuringReference(true);
+    try {
+      if (liveWrap.size) setWrapped(new Set());
+      needsPreferred = true;
+      for (let pass = 0; pass < 6 && (needsPreferred || needsMinimum); pass++) measureLayout(target);
+      if (!needsPreferred && !needsMinimum) {
+        referenceFrame = { width: natural.frame.width, height: rect(target.root).height };
+      }
+    } finally {
+      setMeasuringReference(false);
+      setWrapped(liveWrap);
+      needsPreferred = needsMinimum = true;
+    }
+  }
+  function measureLayout({ surface, content, root, body, bodyScroll }, scroll) {
+    const reference = measuringReference();
     const refresh = needsPreferred;
     if (refresh) {
       needsPreferred = false;
@@ -162,7 +199,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       // Conditional rows can form an intrinsic line wider than the whole screen.
       // Keep that footprint for reflow, and report the size of the stacked form.
       const oversized = state.os === 'linux' && natural.frame.width > window.screen.availWidth && activeWrap.size > 0;
-      setPreferred(oversized ? rect(root) : natural.frame);
+      if (!reference) setPreferred(referenceFrame ?? (oversized ? rect(root) : natural.frame));
       needsMinimum = true;
       for (const [element, size] of measured) {
         element.style.setProperty('--taxi-preferred-width', `${size.width}px`);
@@ -173,7 +210,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     if (needsMinimum) {
       needsMinimum = false;
       content.dataset.formLayout = 'minimum';
-      const available = size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
+      const available = reference ? authoredWidth() + 4
+        : size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, minimumInputs: throughCaptions.minimumInputs,
         commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
@@ -181,25 +219,29 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       });
       setGeometry(measured);
       content.dataset.formLayout = 'allocated';
-      surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
-      bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
+      if (scroll) {
+        surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
+        bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
+      }
     }
-    const style = getComputedStyle(surface);
-    const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-      height: surface.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
-      outerWidth: surface.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-      outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
-    const previous = size();
-    const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
     const conditionalGroups = root.querySelectorAll('.taxi-items[data-grouping=HorizontalIfPossible]');
-    // Recheck fit against the resized area before scrollbars from the old arrangement settle.
-    const recheckGroups = resized && conditionalGroups.length > 0;
-    const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
-    if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
-    if (resized && previous.outerWidth !== undefined) setViewportResized(true);
-    if (Object.keys(next).some(key => previous[key] !== next[key])) {
-      if (headingTitles.length && next.width !== previous.width) needsMinimum = true;
-      setSize(next); schedule();
+    if (!reference) {
+      const style = getComputedStyle(surface);
+      const next = { width: surface.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        height: surface.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+        outerWidth: surface.offsetWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        outerHeight: surface.offsetHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
+      const previous = size();
+      const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
+      // Recheck fit against the resized area before scrollbars from the old arrangement settle.
+      const recheckGroups = resized && conditionalGroups.length > 0;
+      const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
+      if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
+      if (resized && previous.outerWidth !== undefined) setViewportResized(true);
+      if (Object.keys(next).some(key => previous[key] !== next[key])) {
+        if (headingTitles.length && next.width !== previous.width) needsMinimum = true;
+        setSize(next); schedule();
+      }
     }
     rootCommands?.allocate();
     allocateTableCommands?.();
@@ -207,13 +249,15 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const alignedAbove = new Set();
     throughCaptions.allocate(captions, geometry().minima, alignedAbove);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
-    columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
-    for (const [key, plan] of packedDates) {
-      const divider = columnDividers.get(plan.owner);
-      if (!divider?.tracks) continue;
-      const manual = plan.manual?.(divider.value);
-      if (manual) packedDates.set(key, manual);
-      else packedDates.delete(key);
+    if (!reference) {
+      columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
+      for (const [key, plan] of packedDates) {
+        const divider = columnDividers.get(plan.owner);
+        if (!divider?.tracks) continue;
+        const manual = plan.manual?.(divider.value);
+        if (manual) packedDates.set(key, manual);
+        else packedDates.delete(key);
+      }
     }
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions, alignedAbove);
@@ -294,7 +338,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     return wrap;
   }
   function invalidatePreferred() {
-    needsPreferred = needsNatural = true;
+    needsPreferred = needsNatural = referencePending = true;
+    referenceFrame = undefined;
     schedule();
   }
   createEffect(() => {
@@ -323,6 +368,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   });
   const allocation = () => {
     const { minimum, chromeHeight } = geometry();
+    if (measuringReference()) return { width: Math.max(authoredWidth() + 4, minimum.width), height: 0 };
     const viewport = size(), zoom = state.ui.zoom;
     // Keep the natural height of a form that only needs to scroll horizontally.
     const fitsHeight = minimum.height <= viewport.outerHeight * 100 / zoom - 8 + .5;
@@ -334,11 +380,11 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
     allocation,
     columnDivider: columnDividers.get, moveColumnDivider: columnDividers.move,
-    authoredHeight, nativeFormScroll,
+    authoredHeight, nativeFormScroll, measuringReference,
     // A painted border outside the logical rows must not create a scrollbar.
-    bodyOverflows: () => nativeFormScroll() && geometry().minimum.height > allocation().height + .5,
+    bodyOverflows: () => nativeFormScroll() && !measuringReference() && geometry().minimum.height > allocation().height + .5,
     itemsMinimumHeight: () => geometry().itemsHeight,
-    viewportResized,
+    viewportResized: () => !measuringReference() && viewportResized(),
     invalidate: invalidatePreferred,
     preferred, minimumFor: node => geometry().minima.get(node.key),
     preferredWidthFor: node => preferredWidths().get(node.key),
@@ -347,6 +393,6 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     captionFor: node => fieldCaptions().get(node.key),
     titleAbove: node => aboveTitles().has(node.key),
     decorationFor: node => decorations().get(node.key),
-    initialWidth: () => number(state.model.root, 'Width') > 0 ? `${number(state.model.root, 'Width') * (state.os === 'linux' ? 10 : 10.5) + (state.os === 'linux' ? 30 : 0)}px` : 'max-content',
+    initialWidth: () => authoredWidth() ? `${authoredWidth()}px` : 'max-content',
   };
 }

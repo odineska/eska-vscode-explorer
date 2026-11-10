@@ -230,7 +230,7 @@ export function Preview(props) {
   const frameStyle = () => ({
     ...font(root().presentation.font, state.os),
     width: `${Math.max(28, layout.allocation().width - 4)}px`,
-    height: `${Math.max(0, layout.allocation().height - 4)}px`,
+    height: layout.measuringReference() ? 'auto' : `${Math.max(0, layout.allocation().height - 4)}px`,
     '--taxi-form-initial-width': layout.initialWidth(),
     '--taxi-form-initial-height': layout.authoredHeight() ? `${layout.authoredHeight() - 4}px` : undefined,
     '--taxi-form-preferred-width': `${layout.preferred().width}px`,
@@ -239,7 +239,8 @@ export function Preview(props) {
     'min-width': '28px',
   });
   return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
-    <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
+    <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined}
+      data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }}
         data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.nativeFormScroll() ? '' : undefined}
         style={frameStyle()}

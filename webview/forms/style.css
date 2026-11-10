@@ -992,7 +992,7 @@ button { cursor: default; }
 /* The divider occupies the existing column gap without adding a measured item. */
 .taxi-column-divider { display: none; }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns][data-column-divider] { position: relative; }
-.taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns][data-column-divider=manual] {
+.taxi-preview[data-form-layout=allocated]:not([data-reference-layout]) .taxi-items[data-united-columns][data-column-divider=manual] {
   grid-template-columns: var(--taxi-resized-columns);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-united-columns] > .taxi-column-divider {
