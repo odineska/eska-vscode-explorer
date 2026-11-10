@@ -10,13 +10,17 @@ const readGeometry = `(() => {
   const table = root.querySelector('[data-kind=Table]'), grid = table?.querySelector('.taxi-table-scroll');
   if (!grid) return null;
   const origin = root.getBoundingClientRect(), rect = grid.getBoundingClientRect();
+  const body = root.querySelector('.taxi-form-scrollport');
+  const footer = root.querySelector('.taxi-root-commands button')?.getBoundingClientRect();
   const content = grid.querySelector('.taxi-table-content');
   const columns = [...grid.querySelectorAll('[data-column]')];
   const shown = selector => !!table.querySelector(selector)?.getClientRects().length;
   const owners = globalThis.__tableViewportOwners;
   return {
     frame: [origin.width, origin.height], grid: [rect.x - origin.x, rect.y - origin.y, rect.width, rect.height],
-    preferredWidth: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),
+    preferred: ['width', 'height'].map(axis => parseFloat(root.style.getPropertyValue('--taxi-form-preferred-' + axis))),
+    bodyScroll: [body.scrollTop, body.scrollHeight - body.clientHeight],
+    footerButton: footer ? [footer.x - origin.x, footer.y - origin.y, footer.width, footer.height] : null,
     content: [content.clientWidth, content.scrollWidth], columnWidths: columns.map(e => e.getBoundingClientRect().width),
     scrollLeft: content.scrollLeft, selected: table.classList.contains('taxi-selected'),
     search: shown('.taxi-table-search'), more: shown('[data-table-more]'), movement: shown('.taxi-table-move'),
@@ -43,7 +47,13 @@ async function allocate(ui, native) {
   const actual = await geometry(ui);
   if (process.platform === 'linux') {
     assert.deepEqual(actual.frame, native.frame, 'form frame');
-    assert.deepEqual(actual.grid, native.grid, 'table grid');
+    if (native.grid[3] === null) {
+      assert.deepEqual(actual.grid.slice(0, 3), native.grid.slice(0, 3), 'clipped grid position and width');
+      assert.ok(actual.bodyScroll[1] > 0, 'clipped grid can be scrolled');
+    } else {
+      assert.deepEqual(actual.grid, native.grid, 'table grid');
+    }
+    if (native.footerButton) assert.deepEqual(actual.footerButton, native.footerButton, 'bottom command');
   }
   return actual;
 }
@@ -73,7 +83,7 @@ async function resizeAndEdit(service, view, main, ui, document, forms, results) 
     assert.equal((await geometry(floating)).scrollLeft, 24, 'column content scrolls independently');
     const wideFrame = native('Table65').frame;
     const wide = await allocate(floating, { frame: wideFrame, grid: initial.grid });
-    assert.equal(wide.preferredWidth, initial.preferredWidth, 'resize keeps the authored size');
+    assert.deepEqual(wide.preferred, initial.preferred, 'resize keeps the authored size');
     assert.deepEqual(wide.content, initial.content, 'the fixed grid viewport stays the same in a wider window');
     const narrow = await allocate(floating, native('Table30'));
     assert.deepEqual(narrow.columnWidths, initial.columnWidths, 'resize restores column widths');
@@ -81,7 +91,7 @@ async function resizeAndEdit(service, view, main, ui, document, forms, results) 
       await editFormSource(document, view, xml);
       await until(() => floating.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'floating table XML revision');
       const actual = await allocate(floating, native(name));
-      assert.equal(actual.preferredWidth, native(name).frame[0], 'source width changes the preferred frame');
+      assert.deepEqual(actual.preferred, native(name).frame, 'source width changes the preferred frame');
       assert.ok(actual.selected && actual.stableOwners, 'dirty layout preserves selection and DOM owners');
       results.push({ name: label, ...actual });
     };
@@ -119,10 +129,12 @@ exports.run = async () => {
     const ui = await frame({ state: { title: main.panel.title } });
     try {
       const native = (english ? form.expected.nativeEn : undefined) ?? form.expected.native;
+      if (process.platform === 'linux') {
+        assert.deepEqual((await geometry(ui)).preferred, native.frame, 'preferred frame at opening');
+      }
       const actual = await allocate(ui, native);
       results.push({ name: form.kind, ...actual });
       if (process.platform === 'linux') {
-        assert.equal(actual.preferredWidth, native.frame[0], 'preferred frame width');
         if (['Table6', 'Fixed4NoStatus'].includes(form.kind)) {
           assert.ok(actual.search && !actual.more && !actual.movement, 'search occupies the narrow toolbar');
         } else if (form.kind === 'Table30') {
@@ -132,6 +144,13 @@ exports.run = async () => {
           assert.ok(actual.search && actual.more && actual.movement, 'movement buttons return together');
         } else if (['Bare6', 'Fixed4BareStatus'].includes(form.kind)) {
           assert.ok(!actual.search && !actual.more && !actual.movement, 'hidden toolbar stays hidden');
+        } else if (form.kind === 'TableHeight30') {
+          await ui.evaluate("document.querySelector('.taxi-form-scrollport').scrollTop = 1e6; true");
+          const end = await geometry(ui);
+          assert.equal(end.bodyScroll[0], end.bodyScroll[1], 'body scroll reaches the end');
+          assert.equal(end.grid[1], actual.grid[1] - end.bodyScroll[0], 'the table moves with the body');
+          assert.deepEqual(end.footerButton, native.footerButton, 'bottom command stays in place');
+          results.push({ name: 'TableHeight30-scrolled', ...end });
         }
       }
       assert.deepEqual(await fs.readFile(form.path), disk, 'source file remains unchanged');

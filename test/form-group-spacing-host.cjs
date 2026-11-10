@@ -174,12 +174,14 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
       if (changed) await editFormSource(document, view, original);
     }
     if (verifyPreferredFrame && changed) {
-      const narrower = gallery.find(sample => sample.kind === plan.cases[0]);
-      const source = await fs.readFile(narrower.path, 'utf8');
+      const differentWidth = profiles.find(profile => profile.frame[0] !== expected.frame[0]);
+      const resized = gallery.find(sample => sample.expected === differentWidth);
+      assert.ok(resized, 'a fixture with a different preferred width');
+      const source = await fs.readFile(resized.path, 'utf8');
       assert.notEqual(source, original);
       try {
         await editFormSource(document, view, source);
-        await waitForPreferredFrame(target, narrower.expected.frame, mode + ' measures dirty Width in the wide viewport');
+        await waitForPreferredFrame(target, differentWidth.frame, mode + ' measures dirty Width');
         assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
         assert.deepEqual(view.selected, identity);
         assert.deepEqual(target.scriptErrors(), []);

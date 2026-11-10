@@ -456,7 +456,8 @@
         "ESKA_FORM_FIXTURES": "native-page-captions"
       },
       "environment": {
-        "ESKA_FORM_MANUAL_VIEWPORT": "1"
+        "ESKA_FORM_MANUAL_VIEWPORT": "1",
+        "ESKA_FORM_VERIFY_PREFERRED_FRAME": "1"
       },
       "dependencies": [
         "backend",
