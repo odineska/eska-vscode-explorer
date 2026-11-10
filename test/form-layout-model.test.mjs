@@ -6,6 +6,7 @@ import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs
 import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
+import { isolatedInputCaptionWidth } from '../webview/forms/field-caption-layout.js';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
   presentation:{displayed:true,valueType:{kind:'string'},font:{points:10,weight:400}}});
@@ -357,4 +358,27 @@ test('fixed date fields allow independent captions before shared columns fit', (
   assert.deepEqual(narrowInputLaneWidths(480, tracks), [
     { width: 268, caption: 80 }, { width: 212, caption: 94 },
   ]);
+});
+
+test('an isolated input beside pages wraps and grows its native caption track', () => {
+  const font = { face: 'Arial', points: 10, weight: 400 };
+  const title = fieldCaptionProfile('Подключение к кластеру серверов:', font);
+  // Widths and caption tracks measured in Designer 8.3.27.2342.
+  const samples = [
+    { available: 310, minimum: 101, preferred: 292, expected: 119 },
+    { available: 350, minimum: 101, preferred: 292, expected: 119 },
+    { available: 360, minimum: 101, preferred: 292, expected: 151 },
+    { available: 450, minimum: 101, preferred: 292, expected: 152 },
+    { available: 470, minimum: 101, preferred: 292, expected: 159 },
+    { available: 510, minimum: 101, preferred: 292, expected: 172 },
+    { available: 520, minimum: 101, preferred: 292, expected: undefined },
+    { available: 390, minimum: 101, preferred: 192, expected: 169 },
+    { available: 450, minimum: 101, preferred: 392, expected: 151 },
+    { available: 450, minimum: 80, preferred: 271, expected: 159 },
+  ];
+  for (const { available, minimum, preferred, expected } of samples) {
+    assert.equal(isolatedInputCaptionWidth(title, available, 4, minimum, preferred), expected, JSON.stringify({ available, minimum, preferred }));
+  }
+  const remote = fieldCaptionProfile('Подключение к удалённому серверу:', font);
+  assert.equal(isolatedInputCaptionWidth(remote, 390, 4, 101, 292), 169);
 });

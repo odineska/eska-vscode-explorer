@@ -132,7 +132,7 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   // With an explicit fixed size, Designer ignores maximum-size properties.
   if (explicit > 0 && !stretch) return {};
   const text = axis === 'x' ? textInputWidthBounds(node, os) : undefined;
-  if (text) return { minimum: Math.min(80, text.preferred), maximum: text.maximum };
+  if (text) return { minimum: text.minimum, maximum: text.maximum };
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
