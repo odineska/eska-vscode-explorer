@@ -62,7 +62,9 @@ export function TableSearch(props) {
       setPaint({
         ...inputBorderPixels(border, background, outside, { choice: true, inactive }),
         clear: searchClearPixels(foreground, standalone() ? [255, 255, 255] : background, inactive),
-        hint: standalone() ? fitHint(placeholder(), font(), parseFloat(css.width) - 26) : placeholder(),
+        hint: standalone() || !props.placement && surface.closest('[data-table-width-bounded], [data-adaptive-table-toolbar]')
+          ? fitHint(placeholder(), compact() ? { ...font(), points: 8.25 } : font(), parseFloat(css.width) - 26)
+          : placeholder(),
         hintColor: shade === undefined ? undefined : `rgb(${shade}, ${shade}, ${shade})`,
       });
       runtime?.issue(owner, false);

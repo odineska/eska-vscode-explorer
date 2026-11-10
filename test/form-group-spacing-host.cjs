@@ -4,6 +4,18 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
 
+const verifyPreferredFrame = process.platform === 'linux' && process.env.ESKA_FORM_VERIFY_PREFERRED_FRAME === '1';
+const preferredFrame = ui => ui.evaluate(`(() => {
+  const root = document.querySelector('.taxi-form-frame');
+  if (root?.closest('.taxi-preview').dataset.formLayout !== 'allocated') return null;
+  return ['width','height'].map(axis => parseFloat(root.style.getPropertyValue('--taxi-form-preferred-' + axis)));
+})()`);
+const sameFrame = (left, right) => left?.[0] === right[0] && left?.[1] === right[1];
+
+async function waitForPreferredFrame(ui, expected, label) {
+  await until(async () => sameFrame(await preferredFrame(ui), expected), label);
+}
+
 async function geometry(ui, keys, expected) {
   return ui.evaluate(`(() => {
     const root = document.querySelector('.taxi-form-frame');
@@ -124,21 +136,20 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
   await service.receive(view, main, { type: 'select', identity });
   const results = [];
   async function observe(target, profile, name) {
-    let actual, preferredWidth;
+    let actual, preferred;
     try {
       await until(async () => {
         actual = await geometry(target, keys, profile);
-        preferredWidth = await target.evaluate(
-          "parseFloat(document.querySelector('.taxi-form-frame').style.getPropertyValue('--taxi-form-preferred-width'))");
-        return matches(actual, profile) && preferredWidth === expected.frame[0];
+        preferred = await preferredFrame(target);
+        return matches(actual, profile) && (verifyPreferredFrame ? sameFrame(preferred, expected.frame) : preferred?.[0] === expected.frame[0]);
       }, name);
     } catch (error) {
-      throw new Error(name + ' ' + JSON.stringify({ actual, preferredWidth }), { cause: error });
+      throw new Error(name + ' ' + JSON.stringify({ actual, preferred }), { cause: error });
     }
     assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
     assert.deepEqual(view.selected, identity);
     assert.deepEqual(target.scriptErrors(), []);
-    results.push({ name, ...actual });
+    results.push({ name, ...actual, ...(verifyPreferredFrame ? { preferred } : {}) });
   }
   async function resize(target, mode) {
     await target.evaluate('globalThis.__resizedFormInputs = [...document.querySelectorAll(".taxi-input")]; true');
@@ -161,6 +172,24 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
       }
     } finally {
       if (changed) await editFormSource(document, view, original);
+    }
+    if (verifyPreferredFrame && changed) {
+      const differentWidth = profiles.find(profile => profile.frame[0] !== expected.frame[0]);
+      const resized = gallery.find(sample => sample.expected === differentWidth);
+      assert.ok(resized, 'a fixture with a different preferred width');
+      const source = await fs.readFile(resized.path, 'utf8');
+      assert.notEqual(source, original);
+      try {
+        await editFormSource(document, view, source);
+        await waitForPreferredFrame(target, differentWidth.frame, mode + ' measures dirty Width');
+        assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
+        assert.deepEqual(view.selected, identity);
+        assert.deepEqual(target.scriptErrors(), []);
+        results.push({ name: mode + '-dirty-width', preferred: await preferredFrame(target) });
+      } finally {
+        await editFormSource(document, view, original);
+      }
+      await waitForPreferredFrame(target, expected.frame, mode + ' restores the original preferred frame');
     }
   }
   await resize(ui, 'main');
@@ -189,6 +218,7 @@ exports.run = async () => {
       const keys = Object.fromEntries([...view.nodes.values()].map(node =>
         [node.name, `${node.identity.source}:current:${node.identity.key.value}`]));
       const expected = form.expected;
+      if (verifyPreferredFrame) await waitForPreferredFrame(ui, expected.frame, 'preferred frame on open ' + form.kind);
       if (manualViewport) await allocateFormViewport(ui, expected.frame);
       await ui.evaluate('document.fonts.ready.then(() => true)');
       let actual, previous, stable = 0;

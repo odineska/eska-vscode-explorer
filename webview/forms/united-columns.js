@@ -5,14 +5,14 @@ import { mixedColumnLayout } from './mixed-column-layout.js';
 
 const total = values => values.reduce((sum, value) => sum + value, 0);
 
-function ordinaryRow(node) {
+function ordinaryRow(node, allowWidth = false) {
   return ordinaryGroup(node) && (node.presentation.grouping === 'Horizontal'
       || node.presentation.grouping === 'HorizontalIfPossible' && node.presentation.united === false
         && node.children.every(child => child.kind === 'CommandBar'))
     && typeof node.presentation.united === 'boolean'
     && ['Auto', 'None'].includes(scalar(node, 'Representation', 'Auto'))
     && automaticHorizontalSpacing(node)
-    && number(node, 'Width') <= 0 && !property(node, 'BackColor');
+    && (allowWidth || number(node, 'Width') <= 0) && !property(node, 'BackColor');
 }
 
 function leadingField(entry) {
@@ -47,9 +47,9 @@ export function alignUnitedColumns(model, context) {
   const { targets, alignment, os, collapsed, scale } = context;
   const { elements, containers, children: mountedChildren } = targets;
   const { mark, style } = alignment;
-  const scopes = [], mixed = mixedColumnLayout(context);
+  const scopes = [], columnModels = new Map(), mixed = mixedColumnLayout(context);
 
-  function entryFor(node, mixedRow = false, commandColumns = false) {
+  function entryFor(node, { mixedRow = false, commandColumns = false, allowWidth = false } = {}) {
     const element = elements.get(node.key), location = node.presentation.titleLocation;
     const choice = ['RadioButtonField', 'CheckBoxField'].includes(node.kind);
     if ((node.kind === 'InputField' || choice) && (location === 'Left' || mixedRow && location === 'Top')) {
@@ -78,12 +78,12 @@ export function alignUnitedColumns(model, context) {
       const control = element.querySelector(':scope > .taxi-field-row > .taxi-field-control')?.firstElementChild;
       if (control) return { kind: 'control', node, element, width: borderBoxSize(control, scale).width };
     }
-    if (!ordinaryRow(node)) return;
+    if (!ordinaryRow(node, allowWidth)) return;
     const items = containers.get(node.key), group = items?.parentElement;
     if (!items) return;
     const nodes = mountedChildren(node);
     const mixed = os === 'linux' && nodes.some(child => ['LabelField', 'PictureField'].includes(child.kind));
-    const children = nodes.map(child => entryFor(child, mixed, commandColumns));
+    const children = nodes.map(child => entryFor(child, { mixedRow: mixed, commandColumns }));
     if (!children.length || children.some(child => !child)) return;
     const titleElement = group.querySelector(':scope > .taxi-group-title');
     if (!titleElement) return { kind: 'group', node, element, items, group, children };
@@ -116,7 +116,7 @@ export function alignUnitedColumns(model, context) {
     const nodes = columnNodes(node, exposed);
     const commandColumns = nodes.some(child => ordinaryRow(child) && !child.presentation.united
       && mountedChildren(child).some(item => item.kind === 'CommandBar'));
-    return nodes.map(child => entryFor(child, false, commandColumns));
+    return nodes.map(child => entryFor(child, { commandColumns }));
   }
 
   const covered = new Set();
@@ -139,6 +139,8 @@ export function alignUnitedColumns(model, context) {
     scopes.push({ node, items, lanes, gap, preserveAlignment: !rowsOnly || lanes.some(hasUnlabeledCheckbox) });
   }
   function visit(node) {
+    const items = containers.get(node.key);
+    if (items) columnModels.set(items, node);
     registerColumns(node);
     // Page panels own an Items container without an element wrapper.
     for (const child of node.children) visit(child);
@@ -212,7 +214,44 @@ export function alignUnitedColumns(model, context) {
     for (const child of entry.children ?? []) captureCaption(child);
   }
 
-  function alignColumns() {
+  function inputSurface(node) {
+    const element = elements.get(node.key).querySelector(':scope > .taxi-field-row > .taxi-field-control > .taxi-input');
+    return element && { element, outset: inputPaintedOutset(node, os) };
+  }
+
+  function leadingPeers(column, stackNodes) {
+    const fixedSiblings = [], stacks = [];
+    const owner = columnModels.get(column);
+    for (const node of owner ? mountedChildren(owner) : []) {
+      const element = elements.get(node.key);
+      if (element.dataset.stretchX === 'true') {
+        if (stackNodes.has(node.key)) {
+          stacks.push({ items: containers.get(node.key), fields: mountedChildren(node).map(inputSurface).filter(Boolean) });
+        }
+      } else if (ordinaryGroup(node) && node.presentation.grouping === 'Vertical') {
+        fixedSiblings.push({ element, outset: 0 });
+      } else if (node.kind === 'InputField' && node.presentation.titleLocation === 'None') {
+        const value = inputSurface(node);
+        if (value) fixedSiblings.push({ ...value, rigid: true, width: fieldWidth(node, os) });
+      }
+    }
+    return { fixedSiblings, stacks };
+  }
+
+  function registerThroughColumns({ tracks }, stackNodes) {
+    if (tracks.some(track => Math.abs(track.left - tracks[0].left) > .5)) return;
+    const lanes = tracks.filter(track => track.horizontal).map(({node}) => entryFor(node, { allowWidth: true }));
+    if (!lanes.length || lanes.some(lane => !lane || lane.title || lane.node.presentation.united
+      || lane.items.matches('[data-united-horizontal-lane]'))) return;
+    for (const lane of lanes) captureCaption(lane);
+    // A width below the row's intrinsic size does not create a separate column in Designer.
+    if (lanes.some(lane => number(lane.node, 'Width') * 10 > intrinsic(lane, 10))) return;
+    const fields = tracks.filter(track => !track.horizontal).flatMap(({ node }) => mountedChildren(node).map(child => entryFor(child)))
+      .filter(entry => entry?.kind === 'field' && entry.location === 'Left');
+    mixed.registerThrough(lanes, fields, column => leadingPeers(column, stackNodes));
+  }
+
+  function alignColumns(throughScopes) {
     // Through-align may contribute a caption from a different vertical branch.
     for (const {lanes, gap, preserveAlignment} of columns) {
       for (const lane of lanes) {
@@ -228,6 +267,10 @@ export function alignUnitedColumns(model, context) {
       });
       // Standalone fields already use their vertical grid and remain free to resize.
       for (const lane of lanes) if (lane.kind === 'group') placeLane(lane, 0, tracks, gap);
+    }
+    if (os === 'linux') {
+      const stackNodes = new Set(throughScopes.filter(scope => scope.local).map(scope => scope.tracks[0].node.key));
+      for (const scope of throughScopes) registerThroughColumns(scope, stackNodes);
     }
   }
   return { ...mixed, alignColumns };

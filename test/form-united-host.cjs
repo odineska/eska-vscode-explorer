@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
@@ -170,6 +172,350 @@ async function verifyMixedColumns(main, view, document) {
   }
 }
 
+async function verifyUnitedRowHeight(main, view, document, { A1, A2 }) {
+  const original = document.getText();
+  const footer = '<InputField name="Footer" id="19"><DataPath>Name</DataPath><TitleLocation>None</TitleLocation></InputField>';
+  const capped = original.replace('<Height>2</Height><MultiLine>true</MultiLine>',
+    '<MultiLine>true</MultiLine><AutoMaxHeight>false</AutoMaxHeight><MaxHeight>4</MaxHeight>');
+  const xml = capped.replace('</ChildItems><Attributes>', `${footer}</ChildItems><Attributes>`);
+  const ui = await frame({ state: { title: main.panel.title } });
+  try {
+    await editFormSource(document, view, xml);
+    const keys = { A1, A2, Footer: key(named(view.snapshot.model.root, 'Footer')) };
+    const resize = async (height, matches, message) => {
+      await allocateFormViewport(ui, [720, height]);
+      let boxes;
+      await until(async () => {
+        boxes = await measure(ui, keys);
+        return boxes && matches(boxes);
+      }, message).catch(error => { throw new Error(`${message}: ${JSON.stringify(boxes)}`, {cause:error}); });
+      return boxes;
+    };
+    const tall = await resize(400, boxes => boxes.A1.height === 80 && boxes.Footer.y - boxes.A2.y > 60,
+      'the multiline field reaches its height limit');
+    const short = await resize(100, boxes => boxes.A1.height === 51 && boxes.A2.y + boxes.A2.height <= boxes.Footer.y,
+      'united columns shrink without overlapping the footer');
+    return { kind: 'UnitedRowHeight', tall, short };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
+async function verifyDateBlock(main, view, document) {
+  const original = document.getText();
+  const source = await fs.readFile(path.join(process.env.ESKA_FORM_FIXTURES, 'DateBlock.xml'), 'utf8');
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = () => ui.evaluate(`(() => {
+    const frame = document.querySelector('.taxi-form-frame'), bounds = frame.getBoundingClientRect();
+    const find = id => frame.querySelector('[data-element$=":current:' + id + '"]');
+    const block = find(5)?.getBoundingClientRect();
+    if (!block) return null;
+    const fields = [51, 52].map(id => {
+      const row = find(id).querySelector('.taxi-field-row');
+      const input = row.querySelector('.taxi-input').getBoundingClientRect();
+      return { x:input.x-bounds.x, y:input.y-bounds.y, width:input.width, title:row.dataset.titleLocation };
+    });
+    return { width:bounds.width, block:[block.width,block.height], fields,
+      lines:find(53).querySelectorAll('.taxi-field-caption-line').length || 1,
+      columns:[81,82].map(id => find(id)?.getBoundingClientRect().width),
+      divider:!!frame.querySelector('.taxi-column-divider') };
+  })()`);
+  async function observe(width, matches, description) {
+    await allocateFormViewport(ui, [width, 260]);
+    let state, previous, stable = 0;
+    await until(async () => {
+      state = await measure();
+      const serialized = JSON.stringify(state);
+      stable = serialized === previous ? stable + 1 : 0;
+      previous = serialized;
+      return stable >= 2 && state?.width === width && matches(state);
+    }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify(state)}`, { cause: error }); });
+    return state;
+  }
+  const dateValues = state => state.fields.every(field => field.width === 181)
+    && state.fields[0].x === state.fields[1].x;
+  try {
+    await editFormSource(document, view, source);
+    const wide = await observe(654, state => dateValues(state) && Math.abs(state.fields[0].x - 175) <= 1
+      && state.fields[1].y === 78 && state.lines === 1 && state.block[0] === 604, 'full date block');
+    const wrapped = await observe(604, state => dateValues(state) && Math.abs(state.fields[0].x - wide.fields[0].x) <= 1
+      && state.fields[1].y === wide.fields[1].y && state.lines === 2 && state.block[0] === 570, 'checkbox wraps below the date baseline');
+    const top = await observe(384, state => dateValues(state) && state.fields.every(field => field.title === 'Top')
+      && state.fields[0].x === 18 && state.fields[1].y === 114 && state.lines === 3, 'automatic date titles move above');
+    await editFormSource(document, view, source.replace('<United>false</United>', '<United>true</United>'));
+    await observe(654, state => state.fields[0].x !== state.fields[1].x && state.fields.every(field => field.title === 'Left'),
+      'united row keeps its own title column');
+    await editFormSource(document, view, source);
+    await observe(654, state => dateValues(state) && state.lines === 1 && state.block[0] === 604, 'wide date block restored');
+
+    const contents = /<ChildItems>([\s\S]*?)<\/ChildItems>(?=\s*<Attributes>)/u.exec(source);
+    assert.ok(contents, 'fixture contains the date block');
+    const group = (name, id, body) => `<UsualGroup name="${name}" id="${id}"><Group>Vertical</Group>
+      <United>true</United><ShowTitle>false</ShowTitle><HorizontalStretch>true</HorizontalStretch><ChildItems>${body}</ChildItems></UsualGroup>`;
+    const textField = (kind, id) => `<${kind} name="Value${id}" id="${id}"><DataPath>Text</DataPath><TitleLocation>None</TitleLocation></${kind}>`;
+    const pair = `<UsualGroup name="Pair" id="80"><Group>AlwaysHorizontal</Group><ShowTitle>false</ShowTitle><ChildItems>
+      ${group('Left', 81, textField('InputField', 91))}${group('Right', 82, contents[1] + textField('LabelField', 92))}</ChildItems></UsualGroup>`;
+    const text = '<Attribute name="Text" id="5"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers>'
+      + '<v8:Length>210</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>';
+    await editFormSource(document, view, source.replace(contents[0], `<ChildItems>${pair}</ChildItems>`)
+      .replace('<Attributes>', '<Attributes>' + text).replace('<Width>62</Width>', '<Width>125</Width>'));
+    const pairWide = await observe(1284, state => dateValues(state) && !state.divider && state.block[0] === 604, 'paired columns fit');
+    const pairNarrow = await observe(920, state => dateValues(state) && state.divider && state.block[0] < pairWide.block[0]
+      && state.columns.every((width, index) => width < pairWide.columns[index]), 'both columns and the date block contract');
+    await observe(1284, state => !state.divider && state.block[0] === 604
+      && state.columns.every((width, index) => width === pairWide.columns[index]), 'paired columns restore their widths');
+    return { kind: 'DateBlock', wide, wrapped, top, pairWide, pairNarrow };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
+async function verifyColumnSurplus(service, main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const { fixtures } = JSON.parse(await fs.readFile(path.join(directory, 'column-surplus-metrics.json'), 'utf8'));
+  const original = document.getText();
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = surface => surface.evaluate(`(() => {
+    const form = document.querySelector('.taxi-form-frame');
+    if (!form?.closest('[data-form-layout=allocated]')) return null;
+    const frame = form.getBoundingClientRect();
+    const find = id => form.querySelector('[data-element$=":current:' + id + '"]');
+    const box = element => {
+      const rect = element?.getBoundingClientRect();
+      return rect ? [rect.x - frame.x, rect.width] : null;
+    };
+    const dateFields = [41, 42].map(id => {
+      const row = find(id)?.querySelector('.taxi-field-row');
+      const rect = row?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return rect ? [row.dataset.titleLocation, rect.x - frame.x, rect.y - frame.y] : null;
+    });
+    const caption = find(44)?.querySelector('.taxi-field-label');
+    const checkCaption = caption ? [...box(caption), caption.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
+    const labelRow = find(43)?.querySelector('.taxi-field-row');
+    const label = labelRow?.querySelector('.taxi-label-field');
+    const labelRect = label?.getBoundingClientRect();
+    const dateLabel = labelRect ? {
+      location: labelRow.dataset.titleLocation, background: getComputedStyle(label).backgroundColor, valueText: label.textContent,
+      control: [labelRect.x - frame.x, labelRect.y - frame.y, labelRect.width, labelRect.height],
+    } : null;
+    const divider = form.querySelector('.taxi-column-divider');
+    const throughFields = [[1051, '.taxi-input'], [1071, '.taxi-input'], [1072, '.taxi-picture-field'], [1073, '.taxi-label-field']];
+    const through = throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector)));
+    const referenceLabel = find(1051)?.querySelector('.taxi-field-label');
+    const referenceCaption = through[0] && referenceLabel
+      ? [through[0][0] - box(referenceLabel)[0], referenceLabel.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
+    const referenceLabelFits = referenceCaption
+      && box(referenceLabel)[1] + parseFloat(getComputedStyle(referenceLabel.parentElement).columnGap) <= referenceCaption[0];
+    const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
+    return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
+      inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
+      dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
+      dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
+      dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
+      through, referenceCaption, referenceLabelFits };
+  })()`);
+  async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
+    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
+    checkCaption, dateLabel, referenceRow, referenceCaption, divider }) {
+    const revision = view.snapshot.revision;
+    await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
+    const expected = { width, divider };
+    if (columns) Object.assign(expected, { columns, inputs, dateBlock });
+    if (dateBlockWidth !== undefined) expected.dateBlockWidth = dateBlockWidth;
+    if (traceOffset !== undefined) expected.traceOffset = traceOffset;
+    if (dateFields) expected.dateFields = dateFields;
+    if (dateLocations) expected.dateLocations = dateLocations;
+    if (checkCaption) expected.checkCaption = checkCaption;
+    if (dateLabel) expected.dateLabel = dateLabel;
+    if (referenceRow) expected.through = referenceRow;
+    if (referenceCaption) {
+      expected.referenceCaption = referenceCaption;
+      if (referenceCaption[1] > 1) expected.referenceLabelFits = true;
+    }
+    const keys = Object.keys(expected);
+    const description = `${file} matches the native preview at ${width}px`;
+    let actual, stable = 0;
+    await until(async () => {
+      actual = await measure(surface);
+      stable = keys.every(key => isDeepStrictEqual(actual?.[key], expected[key])) ? stable + 1 : 0;
+      return stable >= 2;
+    }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
+    assert.equal(view.snapshot.revision, revision);
+    return actual;
+  }
+
+  async function verifyThroughEnd(surface, width) {
+    const revision = view.snapshot.revision;
+    await until(async () => {
+      const state = await measure(surface);
+      return state?.width === width && state.divider;
+    }, 'the mixed columns and their divider are visible');
+    await surface.evaluate(`document.querySelector('.taxi-column-divider').dispatchEvent(
+      new KeyboardEvent('keydown', {key:'End', bubbles:true}));true`);
+    let endpoint;
+    await until(async () => {
+      endpoint = await measure(surface);
+      const range = endpoint?.dividerRange;
+      return range && range[1] === range[2] && endpoint.columns[0][1] === range[2];
+    }, 'the divider stops at the shared date and trailing controls minimum');
+    assert.equal(endpoint.width, width);
+    const [court, reference, picture, label] = endpoint.through;
+    const rightEdge = ([x, width]) => x + width;
+    assert.ok(Math.abs(rightEdge(endpoint.dateBlock) - rightEdge(reference)) <= 1);
+    assert.equal(rightEdge(court), rightEdge(reference));
+    assert.equal(picture[0], rightEdge(reference) + 10);
+    assert.equal(label[0], rightEdge(picture) + 10);
+    assert.ok(rightEdge(label) <= rightEdge(endpoint.columns[1]));
+    assert.equal(view.snapshot.revision, revision);
+    return endpoint;
+  }
+
+  const results = [];
+  try {
+    for (const { file, sourceSha256, cases, leftTitles, titleVariants, through, throughVariants } of fixtures) {
+      const source = await fs.readFile(path.join(directory, file), 'utf8');
+      assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+      await editFormSource(document, view, source);
+      await ui.evaluate('document.fonts.ready.then(()=>true)');
+      const sizes = [];
+      for (const entry of [...cases, cases[0]]) sizes.push(await observe(ui, file, entry));
+      const result = { file, sizes };
+      results.push(result);
+
+      if (!cases.at(-1).dateBlock) continue;
+      const workbench = await ui.nativeWindow();
+      await service.receive(view, main, { type: 'detach' });
+      await until(() => view.frames.get('preview')?.ready, 'detached bounded columns ready');
+      const preview = view.frames.get('preview');
+      const floating = await frame({ detached: true, state: { title: preview.panel.title } });
+      try {
+        assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
+        const wide = cases.at(-1);
+        const dateTitles = locations => source.replace(/<(?:InputField|LabelField) name="(Stamp|Settlement|Limit)" id="\d+">/gu,
+          (opening, name) => {
+            const location = typeof locations === 'string' ? locations : locations[name];
+            return location ? `${opening}<TitleLocation>${location}</TitleLocation>` : opening;
+          });
+        if (leftTitles) {
+          const mixed = cases.find(entry => entry.dateFields?.[0][0] === 'Top' && entry.dateFields[1][0] === 'Left');
+          assert.ok(mixed);
+          const forced = dateTitles('Left');
+          assert.notEqual(forced, source);
+          await observe(floating, file, mixed);
+          await editFormSource(document, view, forced);
+          await observe(floating, file, leftTitles);
+          await editFormSource(document, view, source);
+          await observe(floating, file, mixed);
+        }
+        if (titleVariants) {
+          for (const { locations, caption, rightWidth, labelProperties, cases: poses } of titleVariants) {
+            let variant = dateTitles(locations);
+            assert.notEqual(variant, source);
+            if (caption) {
+              assert.ok(variant.includes(caption[0]));
+              variant = variant.replaceAll(...caption);
+            }
+            if (rightWidth) variant = variant.replace('<Width>39</Width>', `<Width>${rightWidth}</Width>`);
+            if (labelProperties) {
+              const field = '<LabelField name="Limit" id="43">';
+              assert.ok(variant.includes(field));
+              variant = variant.replace(field, field + labelProperties);
+            }
+            await editFormSource(document, view, variant);
+            for (const pose of [...poses, poses[0]]) await observe(floating, file, pose);
+          }
+          await editFormSource(document, view, source);
+        }
+        if (throughVariants) {
+          result.throughVariants = [];
+          for (const { hideServices, traceWidth, topTitles, leftTitles, courtCaption, tailWidth, cases: poses } of throughVariants) {
+            let variant = leftTitles ? dateTitles('Left') : topTitles ? dateTitles('Top') : source;
+            if (hideServices) variant = variant.replace('<UsualGroup name="Services" id="1089">', '$&<Visible>false</Visible>');
+            if (courtCaption) variant = variant.replaceAll('Исполнительное производство', courtCaption);
+            if (traceWidth) variant = variant.replace('<InputField name="Trace" id="1091">', `$&<Width>${traceWidth}</Width>`);
+            if (tailWidth) variant = variant.replace(/<LabelField name="(?:Outgoing|Incoming)Org" id="\d+">/gu, `$&<Width>${tailWidth}</Width>`);
+            assert.notEqual(variant, source);
+            await editFormSource(document, view, variant);
+            const resized = [];
+            for (const pose of [...poses, poses[0]]) resized.push(await observe(floating, file, pose));
+            result.throughVariants.push({ hideServices, traceWidth, topTitles, leftTitles, courtCaption, tailWidth, resized });
+          }
+          await editFormSource(document, view, source);
+          await observe(floating, file, cases[1]);
+        }
+        await observe(floating, file, wide);
+        await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
+        await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));
+        await until(() => floating.evaluate("__boundedGroup.isConnected && getComputedStyle(__boundedGroup).backgroundColor === 'rgb(255, 255, 224)'"),
+          'dirty group styling applied in place');
+        await observe(floating, file, wide);
+        await observe(floating, file, cases[0]);
+        if (!through) await floating.screenshot('united-column-surplus-' + vscode.env.language + '.png');
+        if (through) {
+          const endpoint = await verifyThroughEnd(floating, cases[0].width);
+          result.end = endpoint;
+          await floating.screenshot('united-date-through-end-' + vscode.env.language + '.png');
+          await observe(floating, file, wide);
+          const restored = await observe(floating, file, cases[0]);
+          assert.deepEqual(restored.dividerRange, endpoint.dividerRange);
+
+          await editFormSource(document, view, dateTitles('Top'));
+          await allocateFormViewport(floating, [584, 760]);
+          const top = await verifyThroughEnd(floating, 584);
+          assert.equal(top.columns[1][1], 432);
+          assert.equal(top.dateBlockWidth, 328);
+          assert.ok(top.dateFields.every(([location]) => location === 'Top'));
+          result.topEnd = top;
+          await editFormSource(document, view, source);
+          await observe(floating, file, wide);
+        }
+        const compact = cases.find(entry => entry.width === 774 && entry.checkCaption?.[2] === 2);
+        if (compact) {
+          const before = await observe(floating, file, compact);
+          const revision = view.snapshot.revision;
+          await floating.dragHorizontally('.taxi-column-divider', 40);
+          await until(async () => {
+            const manual = await measure(floating);
+            return manual?.columns[0][1] === before.columns[0][1] + 40 && manual.checkCaption?.[2] === 3;
+          }, 'manual division recalculates the wrapped date block from the chosen width');
+          assert.equal(view.snapshot.revision, revision);
+
+          await editFormSource(document, view, dateTitles({ Settlement: 'Top' }));
+          await allocateFormViewport(floating, [574, 420]);
+          let partial;
+          await until(async () => {
+            partial = await measure(floating);
+            return partial?.width === 574 && partial.dateLabel?.location === 'Left' && partial.dateFields[1][0] === 'Top';
+          }, 'the transition keeps the date label at the side while the date input is above');
+          const partialRevision = view.snapshot.revision;
+          const left = partial.columns[0][1];
+          const delta = left > 105 ? -5 : 5;
+          await floating.dragHorizontally('.taxi-column-divider', delta);
+          await until(async () => {
+            const next = await measure(floating);
+            return next?.columns[0][1] === left + delta && next.dateLabel?.location === 'Left'
+              && next.checkCaption[1] !== partial.checkCaption[1];
+          }, 'dragging through the transition updates the side label and checkbox tracks');
+          assert.equal(view.snapshot.revision, partialRevision);
+          await editFormSource(document, view, source);
+        }
+      } finally {
+        floating.close();
+        await service.receive(view, preview, { type: 'dock' });
+        await until(() => !view.frames.has('preview'), 'bounded columns returned to workbench');
+      }
+      await until(() => ui.evaluate("!!document.querySelector('.preview-scroll')"), 'docked bounded columns rendered');
+      await observe(ui, file, cases.at(-1));
+    }
+    return { kind: 'ColumnSurplus', fixtures: results };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -221,6 +567,11 @@ exports.run = async () => {
       assert.deepEqual(currentWidths,[151,151,191,191],input.kind+' native input widths');
     }
     results.push({kind:input.kind,leftGap,rightGap,horizontalGap,widths:currentWidths});
+    if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
+      results.push(await verifyUnitedRowHeight(main, view, document, keys));
+      results.push(await verifyDateBlock(main, view, document));
+      results.push(await verifyColumnSurplus(service, main, view, document));
+    }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+left)}).click()`);

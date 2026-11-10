@@ -39,6 +39,43 @@ export async function createFormInspectorSource(fixture) {
   return form;
 }
 
+export async function createInspectorNavigationSource(fixture) {
+  const form = await createFormSource(fixture), root = join(fixture.source, 'Configuration.xml');
+  await writeFile(root, (await readFile(root, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Document>InspectorReceipt</Document>'));
+  const owner = join(fixture.source, 'Documents', 'InspectorReceipt.xml');
+  await mkdir(dirname(owner), { recursive: true });
+  const schema = 'http://www.w3.org/2001/XMLSchema', core = 'http://v8.1c.ru/8.1/data/core';
+  const typed = (kind, qualifiers = '') => `<Type xmlns:v8="${core}" xmlns:xs="${schema}"><v8:Type>xs:${kind}</v8:Type>${qualifiers}</Type>`;
+  const amount = typed('decimal', '<v8:NumberQualifiers><v8:Digits>15</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Nonnegative</v8:AllowedSign></v8:NumberQualifiers>');
+  const children = `<Attribute uuid="b-amount"><Properties><Name>Amount</Name>${amount}</Properties></Attribute>
+    <TabularSection uuid="b-lines"><Properties><Name>Lines</Name></Properties><ChildObjects>
+    <Attribute uuid="b-quantity"><Properties><Name>Quantity</Name>${typed('decimal')}</Properties></Attribute>
+    </ChildObjects></TabularSection>`;
+  await writeFile(owner, descriptor('Document', 'InspectorReceipt', children, '<NumberLength>11</NumberLength><NumberType>String</NumberType>'));
+  const attributes = `<Attributes>
+    <Attribute name="Object" id="1"><Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config"><v8:Type>cfg:DocumentObject.InspectorReceipt</v8:Type></Type><MainAttribute>true</MainAttribute></Attribute>
+    <Attribute name="Amount" id="2">${typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>')}</Attribute>
+    <Attribute name="MixedType" id="3"><Type xmlns:v8="${core}" xmlns:xs="${schema}" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
+    <v8:Type>xs:string</v8:Type><v8:Type>xs:dateTime</v8:Type><v8:Type>cfg:DocumentRef.InspectorReceipt</v8:Type>
+    <v8:StringQualifiers><v8:Length>80</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>
+    <v8:DateQualifiers><v8:DateFractions>Time</v8:DateFractions></v8:DateQualifiers></Type></Attribute>
+    </Attributes>`;
+  const xml = form.text.replace('<DataPath>Name</DataPath>', '<DataPath>Object.Amount</DataPath>')
+    .replace('<LabelDecoration name="SecondLabel" id="8"><Title>Other page</Title></LabelDecoration>',
+      '<InputField name="SecondAmount" id="8"><Title>Second amount</Title><DataPath>Object.Amount</DataPath></InputField>')
+    .replace(/<Attributes>[\s\S]*?<\/Attributes>/u, attributes);
+  await writeFile(form.path, xml);
+  let deep = Array.from({length: 2250}, (_, index) => `<InputField name="DeepField${index}" id="${index + 1000}">
+    <Visible>false</Visible><DataPath>Value${index % 1000}</DataPath></InputField>`).join('');
+  for (let depth = 22; depth >= 0; depth--) deep = `<UsualGroup name="Branch${depth}" id="${depth + 1}">
+    <Group>Vertical</Group><ShowTitle>false</ShowTitle><ChildItems>${deep}</ChildItems></UsualGroup>`;
+  const text = typed('string', '<v8:StringQualifiers><v8:Length>100</v8:Length></v8:StringQualifiers>');
+  const largeAttributes = Array.from({length: 1000}, (_, index) => `<Attribute name="Value${index}" id="${index + 1}">${text}</Attribute>`).join('');
+  await writeFile(form.second, `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform"><CommandBarLocation>None</CommandBarLocation>
+    <AutoCommandBar name="FormCommandBar" id="-1"/><ChildItems>${deep}</ChildItems><Attributes>${largeAttributes}</Attributes></Form>`);
+  return { ...form, owner, text: xml };
+}
+
 export async function createFormHandlerSource(fixture) {
   const form=await createFormInspectorSource(fixture);
   const xml=await readFile(form.path,'utf8');
@@ -291,15 +328,48 @@ async function addNativeGoods(fixture, catalog) {
   await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
 }
 
+async function addNativeUsers(fixture) {
+  await writeFile(join(fixture.source, 'Catalogs', 'NativeUsers.xml'), descriptor('Catalog', 'NativeUsers'));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeUsers</Catalog>'));
+}
+
+async function addNativeChoices(fixture, descriptor) {
+  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
+  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(descriptor));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+}
+
 export async function createReferenceWidthGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native reference directory.');
   await addNativeGoods(fixture, join(input, 'Catalog.xml'));
-  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
-  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(join(input, 'Enum.xml')));
-  const configuration = join(fixture.source, 'Configuration.xml');
-  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+  await addNativeChoices(fixture, join(input, 'Enum.xml'));
   return createMeasuredFormGallery(fixture, input);
+}
+
+export async function createReferenceButtonGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native reference button directory.');
+  const reference = join(input, '..', 'native-reference-widths');
+  await addNativeGoods(fixture, join(reference, 'Catalog.xml'));
+  await addNativeUsers(fixture);
+  await addNativeChoices(fixture, join(reference, 'Enum.xml'));
+  return createInputBordersGallery(fixture);
+}
+
+export async function createChoicePictureGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute choice picture fixture directory.');
+  const { pictures } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  await addNativeUsers(fixture);
+  await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
+  await cp(join(input, 'CommonPictures'), join(fixture.source, 'CommonPictures'), { recursive: true });
+  const configuration = join(fixture.source, 'Configuration.xml');
+  const entries = pictures.map(name => `<CommonPicture>${name}</CommonPicture>`).join('');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + entries));
+  return createInputBordersGallery(fixture);
 }
 
 export async function createTableHeightGallery(fixture) {
@@ -359,15 +429,25 @@ export async function createTableGallery(fixture) {
   return result;
 }
 
-export function createUnitedGallery(fixture) {
-  return createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
+export async function createUnitedGallery(fixture) {
+  const forms = await createGallery(fixture, ['ColumnsFF', 'ColumnsFT', 'ColumnsTF', 'ColumnsTT', 'NestedFF', 'NestedFT', 'RowsF', 'RowsT']);
+  if (process.platform === 'linux') {
+    await addNativeGoods(fixture, join(process.env.ESKA_FORM_FIXTURES, '..', 'native-context-tables', 'Catalog.xml'));
+  }
+  return forms;
 }
 
 export async function createColumnWidthGallery(fixture, locale) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
   await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
-  const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json', 'title-location-metrics.json', 'checkbox-metrics.json', 'mixed-title-metrics.json', 'group-alignment-metrics.json']
+  await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
+  await addNativeUsers(fixture);
+  const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json',
+    'title-location-metrics.json', 'checkbox-metrics.json', 'mixed-title-metrics.json', 'group-alignment-metrics.json',
+    'footer-allocation-metrics.json', 'footer-wrapped-metrics.json', 'input-stack-metrics.json',
+    'vertical-amount-title-metrics.json', 'vertical-reference-title-metrics.json',
+    'compact-header-metrics.json', 'compact-footer-title-metrics.json']
     .map(async file => JSON.parse(await readFile(join(input, file), 'utf8'))));
   const cases = new Map();
   for (const { fixtures } of measurements) {

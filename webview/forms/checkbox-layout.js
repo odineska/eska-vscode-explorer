@@ -5,7 +5,7 @@ import { availableTrackWidth, boxInsets, pixels, updateStyle } from './layout-bo
 import { groupCanShrink, allocateLaneSizes } from './layout-model.mjs';
 import { number } from './model.mjs';
 
-function checkboxField(node, { targets, scale }) {
+export function checkboxField(node, { targets, scale }) {
   if (node.kind !== 'CheckBoxField' || checkboxMode(node) !== 'CheckBox' || number(node, 'Width') > 0) return;
   const element = targets.elements.get(node.key);
   if (element.dataset.stretchX === 'true') return;

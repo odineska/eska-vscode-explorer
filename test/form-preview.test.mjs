@@ -32,6 +32,19 @@ test('both preview windows validate the same navigation snapshot', () => {
   assert.equal(parsePreviewNavigation({ ...navigation, pages: { invalid: 'source:page' } }), undefined);
 });
 
+test('choice picture protocol distinguishes an empty face from a missing asset', () => {
+  const input = fixture();
+  const presentation = input.model.root.presentation;
+  for (const picture of [undefined, null, {kind: 'standard', name: 'MoveLeft'}, {kind: 'missing', reference: 'CommonPicture.Missing'}]) {
+    presentation.choiceButtonPicture = picture;
+    assert.deepEqual(parseFormSnapshot(input).model.root.presentation.choiceButtonPicture, picture);
+  }
+  for (const picture of [false, {kind: 'common', source}, {kind: 'standard', name: 42}]) {
+    presentation.choiceButtonPicture = picture;
+    assert.throws(() => parseFormSnapshot(input));
+  }
+});
+
 test('tabular total captions use the viewer locale and preserve form overrides', () => {
   const input = fixture(), node = input.model.root;
   node.presentation.caption = { kind: 'literal', items: [

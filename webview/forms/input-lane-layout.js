@@ -2,7 +2,7 @@ import { fieldWidth, flag, linuxFixedInputWidth, number } from './model.mjs';
 import { allocateLaneSizes, laneInputBounds, stretches, groupCanShrink } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, updateStyle } from './layout-box.mjs';
 import { designCaptionWidth, fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateFieldCaption, inputCaptionInset, throughCaptionWidth } from './field-caption-layout.js';
+import { allocateFieldCaption, growFieldCaption, inputCaptionInset, throughCaptionWidth } from './field-caption-layout.js';
 import { narrowInputLaneWidths } from './input-lane-model.mjs';
 
 function inputField(node, element, flexible, os, collapsed) {
@@ -74,9 +74,7 @@ function captionWidth(track, field, size, atMinimum) {
   if (!field.stretch) {
     return size.width >= track.reserve + size.caption + field.minimum ? size.caption : field.caption.minimum;
   }
-  const growth = size.width - track.minimumWidth;
-  const share = field.caption.minimum / (track.minimumWidth - track.reserve);
-  return Math.min(field.caption.preferred, field.caption.minimum + Math.round(growth * share));
+  return growFieldCaption(field.caption, size.width, track.minimumWidth, track.reserve);
 }
 
 export function inputLaneFields(node, targets) {
@@ -135,6 +133,7 @@ export function inputLaneLayout({ targets, alignment, collapsed, os, scale }) {
     if (minimum !== undefined) style(items, '--taxi-input-lane-minimum', `${minimum}px`);
     allocations.push({ items, tracks, narrow, minimum });
     style(items, '--taxi-united-allocated-columns', '');
+    return true;
   }
 
   function allocateWidths(captions) {

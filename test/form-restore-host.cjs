@@ -12,6 +12,13 @@ exports.run = async () => {
   const resultFile = path.join(fixture.root, 'host-result.json');
   const title = `${vscode.env.language.startsWith('ru') ? 'Форма' : 'Form'}: Preview`;
   const previewTitle = `${title} — ${vscode.env.language.startsWith('ru') ? 'Предпросмотр формы' : 'Form preview'}`;
+  const search = value => `(() => {
+    const input = document.querySelector('.form-inspector-search input');
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+  })()`;
+  const pagesRow = '.form-tree-row[id$=":current:4"]';
+  const selectedDataTab = "document.querySelector('.form-pane--data [role=tab][aria-selected=true]').textContent";
   let stage = 'source';
   try {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
@@ -30,17 +37,20 @@ exports.run = async () => {
       stage = 'initial-main';
       const main = await frame({state:{title}});
       await until(async () => await main.evaluate("!!document.querySelector('.taxi-input')"), 'initial form DOM');
-      await main.evaluate(`document.querySelector('.form-splitter:not(.form-splitter--vertical)').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
+      await main.evaluate(`document.querySelector('.form-shell > .form-splitter').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
         const zoom=document.querySelector('.form-zoom select');zoom.value='125';zoom.dispatchEvent(new Event('change',{bubbles:true}));
         document.querySelectorAll('.taxi-tabs button')[1].click();document.querySelector('.taxi-input').click();`);
-      await until(async () => await main.evaluate("document.querySelector('.form-inspectors').style.height==='240px'&&document.querySelector('.form-zoom select').value==='125'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label').textContent==='Unsaved restored page'"), 'main UI configured');
+      await until(async () => await main.evaluate("document.querySelector('.form-inspectors').style.height==='240px'&&document.querySelector('.form-zoom select').value==='125'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.getAttribute('aria-label')==='Unsaved restored page'"), 'main UI configured');
+      await main.evaluate(`document.querySelector(${JSON.stringify(pagesRow)} + ' .form-tree-expander').click()`);
+      await main.evaluate("document.querySelector('.form-pane--data [role=tab]:last-child').click()");
+      await main.evaluate(search('Name'));
       await main.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
       stage = 'initial-preview';
       const preview = await frame({detached:true,state:{title:previewTitle}});
       await until(async () => await preview.evaluate("!!document.querySelector('.taxi-input')"), 'detached form DOM');
       await preview.evaluate(`const zoom=document.querySelector('.form-zoom select');zoom.value='150';zoom.dispatchEvent(new Event('change',{bubbles:true}));
         document.querySelectorAll('.taxi-tabs button')[1].click();document.querySelector('.taxi-input').click();`);
-      await until(async () => await preview.evaluate("document.querySelector('.form-zoom select').value==='150'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label').textContent==='Unsaved restored page'"), 'preview UI configured');
+      await until(async () => await preview.evaluate("document.querySelector('.form-zoom select').value==='150'&&document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.getAttribute('aria-label')==='Unsaved restored page'"), 'preview UI configured');
       await preview.evaluate("document.querySelector('.taxi-input').click()");
       await until(async () => await main.evaluate("document.querySelector('.form-tree-row.selected').id.endsWith(':2')"), 'shared selection settled before closing');
       const selection = await main.evaluate("document.querySelector('.form-tree-row.selected').id");
@@ -61,11 +71,16 @@ exports.run = async () => {
       await until(() => vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => tab.input instanceof vscode.TabInputWebview && tab.input.viewType.endsWith('eska.formViewer')).length === 2, 'both serialized form panels restored');
       const main = await frame({state:{title}}), preview = await frame({detached:true,state:{title:previewTitle}});
       stage = 'restored-model';
-      await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.textContent===${JSON.stringify(checkpoint.caption)}`), 'restored form uses unsaved XML');
+      await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.getAttribute('aria-label')===${JSON.stringify(checkpoint.caption)}`), 'restored form uses unsaved XML');
       await until(async () => await main.evaluate(`(() => {const shell=document.querySelector('.form-shell'),inspectors=document.querySelector('.form-inspectors');return !document.querySelector('.preview-scroll,.form-detached-placeholder,.form-shell > .form-splitter')&&Math.abs(inspectors.getBoundingClientRect().height-Math.max(84,shell.clientHeight-document.querySelector('.form-toolbar').getBoundingClientRect().height-document.querySelector('.form-status').getBoundingClientRect().height))<1})()`),'restored detached inspectors fill the main window');
       assert.equal(await main.evaluate("document.querySelector('.form-zoom select').value"), '125');
       assert.equal(await preview.evaluate("document.querySelector('.form-zoom select').value"), '150');
       assert.equal(await main.evaluate("document.querySelector('.form-tree-row.selected').id"), checkpoint.selection, 'shared selection survives serialization');
+      assert.equal(await main.evaluate("document.querySelector('.form-inspector-search input').value"), 'Name');
+      assert.equal(await main.evaluate(selectedDataTab), vscode.env.language.startsWith('ru') ? 'Параметры' : 'Parameters');
+      await main.evaluate(search(''));
+      assert.equal(await main.evaluate(`document.querySelector(${JSON.stringify(pagesRow)}).getAttribute('aria-expanded')`), 'false');
+      await main.evaluate(search('Name'));
       assert.equal(await preview.evaluate("document.querySelector('.taxi-tabs button[aria-selected=true]').textContent"), 'Other');
       assert.ok((await preview.targets()).some(target => target.type === 'page' && target.url === 'about:blank'), 'native floating workbench restored');
       stage = 'restored-live-update';
@@ -73,7 +88,7 @@ exports.run = async () => {
       const caption = process.env.ESKA_HOST_RUN === '0' ? 'Live after reload' : 'Live after restart';
       edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), text.replace(checkpoint.caption, caption));
       assert.equal(await vscode.workspace.applyEdit(edit), true);
-      await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.textContent===${JSON.stringify(caption)}`), 'restored panels are live');
+      await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.getAttribute('aria-label')===${JSON.stringify(caption)}`), 'restored panels are live');
       assert.equal((await fs.readFile(file)).toString('hex'), checkpoint.disk);
       await fs.writeFile(marker, JSON.stringify({...checkpoint,pid:process.pid,text:document.getText(),caption}));
       await main.screenshot(`form-restored-${vscode.env.language}.png`);

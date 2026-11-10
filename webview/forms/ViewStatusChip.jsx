@@ -28,6 +28,7 @@ export function ViewStatusChip(props) {
     },
   });
   return <span ref={chip} class="taxi-view-status-chip" title={props.label.label}
+    data-compact-view-status={props.width < props.preferred ? '' : undefined}
     data-native-view-status={status()} style={{ width: props.width ? `${props.width}px` : undefined }}>
     <span class="taxi-view-status-label">
       <span class="taxi-view-status-name">{props.label.name.slice(0, -1)}</span>

@@ -85,7 +85,7 @@ function alignFirstControls(items, fields, top) {
 /** Keep the minimum width independent of the active caption position. */
 export function inputTitleLayout(model, context, minimumCaptions) {
   const { targets, alignment, os, scale } = context;
-  const minimumRows = new Map(), rows = [];
+  const minimumRows = new Map(), captionFields = new Set(), rows = [];
   function visit(node) {
     const items = targets.containers.get(node.key);
     const children = targets.children(node);
@@ -119,6 +119,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     for (const column of columns) {
       alignment.style(column.element, '--taxi-field-track', '');
       for (const field of column.fields) {
+        captionFields.add(field.key);
         for (const name of ['--taxi-field-columns', '--taxi-field-caption-width', '--taxi-input-title-value-min', '--taxi-input-title-value-max']) {
           alignment.style(field.element, name, '');
         }
@@ -133,7 +134,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
 
   if (os === 'linux') visit(model);
   return {
-    minimumRows,
+    minimumRows, captionFields,
     allocate(captions) {
       const above = new Set();
       let heightChanged = false;

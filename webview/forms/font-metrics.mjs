@@ -101,8 +101,9 @@ function captionProfile(text, font, advancesFor) {
 }
 
 /** The minimum keeps each word intact. The compact width fits a paragraph on two lines. */
-export function fieldCaptionProfile(text, font) {
-  return captionProfile(text, font, designTextAdvances);
+export function fieldCaptionProfile(text, font, { splitTerminalColon = false } = {}) {
+  const profile = captionProfile(text, font, designTextAdvances);
+  return profile && splitTerminalColon ? { ...profile, splitTerminalColon } : profile;
 }
 
 /** Designer shapes words independently, without kerning across whitespace. */
@@ -125,9 +126,9 @@ export function decorationCaptionProfile(text, font) {
 }
 
 /** A parenthesized suffix keeps the break space in its width but starts at the left edge. */
-export function fieldCaptionLines(profile, width) {
+function wrapFieldCaption(profile, width, format, splitColon = false) {
   return profile.paragraphs.flatMap(({characters, edges}) => {
-    if (!characters.length) return [''];
+    if (!characters.length) return [format('', 0)];
     const lines = [];
     let start = 0;
     while (start < characters.length) {
@@ -138,13 +139,24 @@ export function fieldCaptionLines(profile, width) {
         if (characters[end] === ' ' && end > start + Number(characters[start] === ' ')) boundary = end;
         end++;
       }
-      if (end < characters.length && characters[end] !== ' ' && boundary > start) end = boundary;
+      const terminalColon = splitColon && end === characters.length - 1 && characters[end] === ':';
+      if (end < characters.length && characters[end] !== ' ' && boundary > start && !terminalColon) end = boundary;
       const line = characters.slice(start, end).join('').trim();
-      if (line) lines.push(line);
+      if (line) lines.push(format(line, edges[end] - edges[start]));
       start = end;
     }
-    return lines.length ? lines : [''];
+    return lines.length ? lines : [format('', 0)];
   });
+}
+
+export function fieldCaptionLines(profile, width) {
+  // The terminal colon can wrap on its own once the track has its final width.
+  return wrapFieldCaption(profile, width, text => text, profile.splitTerminalColon);
+}
+
+export function fieldCaptionOccupiedWidth(profile, width) {
+  if (width >= profile.preferred) return profile.preferred;
+  return Math.max(0, ...wrapFieldCaption(profile, width, (_, span) => span));
 }
 
 /** Keep kerning inside each native caption fragment, never across fragment boundaries. */

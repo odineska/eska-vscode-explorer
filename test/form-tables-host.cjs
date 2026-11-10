@@ -341,7 +341,7 @@ async function verifyDynamicToolbar(document, view, ui, english) {
     const [grid,bar,search] = ${JSON.stringify(selectors)}.map(selector=>document.querySelector(selector));
     const buttons = [...bar.querySelectorAll('.taxi-button')].filter(button=>button.offsetWidth);
     const r = node => node.getBoundingClientRect();
-    const body = document.querySelector('.taxi-form-content');
+    const body = document.querySelector('.taxi-form-scrollport');
     return [r(grid).width, r(grid).height, r(bar).width, buttons.length, r(search).width,
       body.scrollWidth-body.clientWidth, __toolbarNodes[0]===grid && __toolbarNodes[1]===bar && __toolbarNodes[2]===search];
   })()`);

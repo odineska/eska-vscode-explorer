@@ -1,7 +1,7 @@
 import { BackendProcess } from "../process.js";
-import { API_VERSION, ExplorerError, isRecord } from "../protocol.js";
+import { ExplorerError, isRecord } from "../protocol.js";
 import type { DiagnosticLog } from "../diagnostics.js";
-import { formatCapabilities, type FormatEndpoint } from "./protocol.js";
+import { FORMAT_API_VERSION, formatCapabilities, type FormatEndpoint } from "./protocol.js";
 
 interface Entry { key: string; child: BackendProcess; ready: Promise<FormatEndpoint> }
 
@@ -29,7 +29,7 @@ export class FormattingBackend {
     this.entry = entry;
     entry.ready = (async () => {
       try {
-        const hello = await child.request("initialize", { apiVersion: API_VERSION, client: { name: "eska-explorer", version: this.version }, locale }, 10_000);
+        const hello = await child.request("initialize", { apiVersion: FORMAT_API_VERSION, client: { name: "eska-explorer", version: this.version }, locale }, 10_000);
         const limits = formatCapabilities(hello);
         if (!limits || !isRecord(hello) || !isRecord(hello.server) || hello.server.name !== "eska-project"
           || typeof hello.server.version !== "string" || !hello.server.version) throw new ExplorerError("incompatible");

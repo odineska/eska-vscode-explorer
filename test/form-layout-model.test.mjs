@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { displayedInPreview, stretches, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
+import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { narrowNumericTracks } from '../webview/forms/numeric-label-model.mjs';
+import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
-import { fieldCaptionLines, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
+import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 const property=(name,text)=>({key:{namespace:'http://v8.1c.ru/8.3/xcf/logform',name},value:{kind:'text',text:String(text)}});
 const node=(kind,properties={},children=[])=>({key:kind,kind,properties:Object.entries(properties).map(([name,value])=>property(name,value)),children,
   presentation:{displayed:true,valueType:{kind:'string'},font:{points:10,weight:400}}});
@@ -23,6 +24,40 @@ test('Auto stretch follows field types and descendants while an explicit No stop
   assert.equal(stretches(node('UsualGroup',{},[fixed]),'x'),false);
   assert.equal(stretches(node('UsualGroup',{},[table]),'y',{UsualGroup:true}),false);
   table.presentation.displayed=false;assert.equal(stretches(node('Page',{},[table]),'x'),false);
+});
+
+test('a label with a union of reference types stretches automatically unless fixed', () => {
+  const namespace = 'http://v8.1c.ru/8.1/data/enterprise/current-config';
+  const type = { kind:'composite', types:[
+    { namespace, name:'CatalogRef.Goods' }, { namespace, name:'DocumentRef.Order' },
+  ] };
+  const automatic = node('LabelField'), fixed = node('LabelField', { HorizontalStretch:false });
+  automatic.presentation.valueType = fixed.presentation.valueType = type;
+  assert.equal(stretches(automatic, 'x'), true);
+  assert.equal(stretches(fixed, 'x'), false);
+});
+
+test('a picture with manual limits at its authored dimensions does not stretch by default', () => {
+  const dimensions = { Width:2, Height:1, AutoMaxWidth:false, MaxWidth:2, AutoMaxHeight:false, MaxHeight:1 };
+  const field = node('PictureField', dimensions);
+  assert.equal(stretches(field,'x'), false);
+  assert.equal(stretches(field,'y'), false);
+  assert.equal(stretches(node('PictureField', { ...dimensions, MaxHeight:3 }),'y'), true);
+  assert.equal(stretches(node('PictureField', { ...dimensions, VerticalStretch:true }),'y'), true);
+});
+
+test('an exposed child can continue an explicit through-aligned column', () => {
+  const group = (properties, united) => {
+    const child = node('UsualGroup',properties);
+    child.presentation.united = united;
+    return child;
+  };
+  assert.equal(sharesGroupLabels(group({},false),true), true);
+  assert.equal(sharesGroupLabels(group({},false)), false);
+  assert.equal(sharesGroupLabels(group({},true),true), false);
+  assert.equal(sharesGroupLabels(group({ThroughAlign:'DontUse'},false),true), false);
+  assert.equal(sharesGroupLabels(group({HorizontalStretch:false},false),true), false);
+  assert.equal(sharesGroupLabels(group({Representation:'NormalSeparation'},false),true), false);
 });
 
 test('groups without rendered descendants retain their source nodes but allocate no preview space', () => {
@@ -75,6 +110,20 @@ test('Linux multiline input keeps its XML height under viewport pressure', () =>
   assert.equal(minimum({}, 10, { authoredHeight: true }), 23);
   const capped = node('InputField', { MultiLine: true, AutoMaxHeight: false, MaxHeight: 1 });
   assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
+});
+
+test('manual Linux memo width uses the Taxi unit at the preferred size', () => {
+  const memo = node('InputField',{MultiLine:true, HorizontalStretch:true, AutoMaxWidth:false, MaxWidth:80});
+  assert.equal(controlBounds(memo,'x',undefined,'linux',{atPreferred:true}).maximum,810);
+  const reference = node('InputField',{ReadOnly:true});
+  reference.presentation.valueType.kind = 'reference';
+  assert.equal(controlBounds(reference,'x',undefined,'linux').maximum,410);
+  reference.presentation.valueType = { kind:'composite', types: ['DocumentRef.First','DocumentRef.Second'].map(name =>
+    ({ name, namespace:'http://v8.1c.ru/8.1/data/enterprise/current-config' })) };
+  assert.equal(stretches(reference,'x'),true);
+  assert.equal(controlBounds(reference,'x',undefined,'linux').maximum,410);
+  reference.presentation.valueType.types.push({ name:'string', namespace:'http://www.w3.org/2001/XMLSchema' });
+  assert.equal(stretches(reference,'x'),false);
 });
 
 test('native horizontal lanes divide control space and honor minima, caps and fixed siblings', () => {
@@ -177,15 +226,44 @@ test('numeric captions preserve words, explicit lines and the native suffix brea
   assert.deepEqual(fieldCaptionLines(explicit, explicit.preferred), ['Quantity', '', 'Amount:']);
 });
 
+test('date labels retain native value bounds for their date parts, font and explicit dimensions', () => {
+  for (const [dateParts, points, width, height, preferred, paintHeight] of [
+    ['DateTime', 10, 0, 0, 152, 19], ['Date', 10, 0, 0, 92, 19], ['Time', 10, 0, 0, 82, 19],
+    ['DateTime', 12, 0, 0, 190, 23], ['DateTime', 16, 0, 0, 252, 29],
+    ['DateTime', 10, 25, 0, 252, 19], ['DateTime', 10, 0, 2, 152, 34],
+  ]) {
+    const label = node('LabelField', { Width: width, Height: height, BackColor: 'web:Pink' });
+    label.presentation.valueType = { kind: 'date', dateParts };
+    label.presentation.titleLocation = 'Top';
+    label.presentation.font.points = points;
+    assert.deepEqual(textLabelMetrics(label, 'linux'), { preferred, height: paintHeight, outset: 2 });
+  }
+});
+
+test('caption packing changes at the whole-word threshold before track rounding', () => {
+  const title = fieldCaptionProfile('Дата отражения в учете:');
+  assert.equal(fieldCaptionOccupiedWidth(title, 107.99), 97);
+  assert.equal(fieldCaptionOccupiedWidth(title, 108), 108);
+  assert.equal(fieldCaptionOccupiedWidth(title, title.preferred), title.preferred);
+  const dateLabel = fieldCaptionProfile('Дата запрета отражения:', undefined, { splitTerminalColon: true });
+  assert.deepEqual(fieldCaptionLines(dateLabel, 150), ['Дата запрета отражения', ':']);
+  assert.equal(fieldCaptionOccupiedWidth(dateLabel, 150), 80);
+
+  const left = { minimum: 90, preferred: 471 }, right = { minimum: 441, preferred: 612 };
+  const [, raw] = allocateLaneSizes(730, [left, right], { fractional: true });
+  assert.ok(raw > 502 && raw < 503);
+  assert.deepEqual(allocateLaneSizes(730, [left, right]), [227, 503]);
+});
+
 test('narrow numeric rows fill the value boxes before restoring trailing captions', () => {
   const font = {points:10, weight:400};
   const tracks = ['Количество (итог):', 'Сумма (итог):'].map(title => ({
     caption:fieldCaptionProfile(title, font), reserve:5, value:{minimum:52, preferred:77, maximum:335},
   }));
-  assert.deepEqual(narrowNumericTracks(225, tracks), [{width:128, caption:71}, {width:97, caption:40}]);
-  assert.deepEqual(narrowNumericTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
-  assert.deepEqual(narrowNumericTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
-  assert.equal(narrowNumericTracks(357, tracks), undefined);
+  assert.deepEqual(narrowCaptionTracks(225, tracks), [{width:128, caption:71}, {width:97, caption:40}]);
+  assert.deepEqual(narrowCaptionTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
+  assert.deepEqual(narrowCaptionTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
+  assert.equal(narrowCaptionTracks(357, tracks), undefined);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {

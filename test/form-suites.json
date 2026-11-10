@@ -433,7 +433,31 @@
         "ESKA_FORM_FIXTURES": "native-nested-reflow"
       },
       "environment": {
-        "ESKA_FORM_MANUAL_VIEWPORT": "1"
+        "ESKA_FORM_MANUAL_VIEWPORT": "1",
+        "ESKA_FORM_VERIFY_PREFERRED_FRAME": "1"
+      },
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "page-captions",
+      "driver": "test/form-group-spacing-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-page-captions"
+      },
+      "environment": {
+        "ESKA_FORM_MANUAL_VIEWPORT": "1",
+        "ESKA_FORM_VERIFY_PREFERRED_FRAME": "1"
       },
       "dependencies": [
         "backend",
@@ -455,7 +479,8 @@
         "ESKA_FORM_FIXTURES": "native-wrapped-titles"
       },
       "environment": {
-        "ESKA_FORM_MANUAL_VIEWPORT": "1"
+        "ESKA_FORM_MANUAL_VIEWPORT": "1",
+        "ESKA_FORM_VERIFY_PREFERRED_FRAME": "1"
       },
       "dependencies": [
         "backend",
@@ -568,6 +593,24 @@
     {
       "id": "inspectors",
       "driver": "test/form-inspectors-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "inspector-navigation",
+      "driver": "test/form-inspector-navigation-host.cjs",
       "mode": "installed",
       "locales": [
         "en",
@@ -1635,6 +1678,26 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "reference-buttons",
+      "driver": "test/form-reference-buttons-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-reference-buttons"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "help-command",
       "driver": "test/form-text-inputs-host.cjs",
       "mode": "installed",
@@ -1773,6 +1836,29 @@
         "native-display"
       ],
       "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
+      "id": "table-viewport",
+      "driver": "test/form-table-viewport-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {
+        "ESKA_FORM_FIXTURES": "native-table-viewport"
+      },
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions",
+      "explorerPathEnv": {
+        "ESKA_HOST_FOCUS_HELPER": "test/focus-native-workbench.py"
+      }
     },
     {
       "id": "table-insets",

@@ -13,7 +13,7 @@ for (const [file, expected] of [["scripts/form-font-raster.c", raster.bridgeSha2
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
 const result = await build({ entryPoints: ["src/extension.ts"], outfile: "out/extension.js", bundle: true,
   platform: "node", target: "node22", format: "cjs", external: ["vscode"], metafile: true, legalComments: "inline" });
-const browser = await build({ entryPoints: { "query-designer": "webview/query/index.jsx", "form-preview": "webview/forms/index.jsx" }, outdir: "out", bundle: true,
+const browserOptions = { outdir: "out", bundle: true,
   platform: "browser", target: "chrome140", format: "iife", metafile: true, legalComments: "inline",
   loader: { ".ttf": "file", ".wasm": "file" }, assetNames: "form-fonts/[name]-[hash]",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
@@ -25,15 +25,24 @@ const browser = await build({ entryPoints: { "query-designer": "webview/query/in
       return { contents: result.code, loader: "js" };
     });
   } }]
-});
+};
+const [query, form] = await Promise.all([
+  build({ ...browserOptions, entryPoints: { "query-designer": "webview/query/index.jsx" } }),
+  // Keep the form assets within the existing installed-size limit.
+  build({ ...browserOptions, entryPoints: { "form-preview": "webview/forms/index.jsx" }, minifyWhitespace: true }),
+]);
+const browser = {
+  inputs: { ...query.metafile.inputs, ...form.metafile.inputs },
+  outputs: { ...query.metafile.outputs, ...form.metafile.outputs },
+};
 // Asset names include hashes; an incremental build must not package older font engines.
-const assets = new Set(Object.keys(browser.metafile.outputs).map(file => resolve(file)));
+const assets = new Set(Object.keys(browser.outputs).map(file => resolve(file)));
 for (const file of await readdir("out/form-fonts")) {
   const path = join("out/form-fonts", file);
   if (/\.(?:ttf|wasm)$/.test(file) && !assets.has(resolve(path))) await rm(path);
 }
 const packages = new Map();
-for (const input of Object.keys({ ...result.metafile.inputs, ...browser.metafile.inputs }).filter(path => path.includes("node_modules/"))) {
+for (const input of Object.keys({ ...result.metafile.inputs, ...browser.inputs }).filter(path => path.includes("node_modules/"))) {
   let folder = dirname(resolve(input));
   let found = false;
   while (folder !== dirname(folder)) {
@@ -62,4 +71,4 @@ for (const [name, { folder, value }] of [...packages].sort(([a], [b]) => a.local
 await writeFile("out/THIRD-PARTY-NOTICES.txt", notices.join("\n"));
 await writeFile("out/extension-meta.json", JSON.stringify(result.metafile, null, 2) + "\n");
 
-await writeFile("out/query-designer-meta.json", JSON.stringify(browser.metafile, null, 2) + "\n");
+await writeFile("out/query-designer-meta.json", JSON.stringify(browser, null, 2) + "\n");

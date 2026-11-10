@@ -22,15 +22,21 @@ test('short windows reserve preview space and account for wrapped toolbar/status
   assert.ok(tiny.height + 59 + 36 + 5 + 96 > 180, 'an impossible fit uses shell scrolling');
 });
 
-test('narrow widths keep every inspector reachable through its own scroll area', () => {
-  for (const width of [0, 180, 320, 428, 500, 1000]) {
-    const result = inspectorLayout(size(width, 500), ui);
-    const tracks = result.tracks.split(' ').map(parseFloat);
-    assert.ok(tracks[0] >= 120); assert.ok(tracks[2] >= 120); assert.ok(tracks[4] >= 180);
-    assert.equal(tracks.reduce((sum, value) => sum + value, 0), result.width);
-    assert.ok(result.left >= result.leftMinimum && result.left <= result.leftMaximum);
-    assert.ok(result.right >= result.rightMinimum && result.right <= result.rightMaximum);
+test('available webview width selects compact or stacked tracks without horizontal overflow', () => {
+  for (const width of [180, 320, 428, 474]) {
+    const compact = inspectorLayout(size(width, 500), ui);
+    assert.equal(compact.mode, 'compactStacked');
+    assert.equal(compact.tracks, 'minmax(0, 1fr)');
   }
+  for (const width of [475, 500, 650, 739]) {
+    const compact = inspectorLayout(size(width, 500), ui);
+    const tracks = compact.tracks.split(' ').map(parseFloat);
+    assert.equal(compact.mode, 'compact');
+    assert.equal(tracks.length, 3);
+    assert.equal(tracks.reduce((sum, value) => sum + value, 0), width);
+    assert.ok(compact.right >= compact.rightMinimum && compact.right <= compact.rightMaximum);
+  }
+  assert.equal(inspectorLayout(size(740, 500), ui).mode, 'columns');
 });
 
 test('shrink, grow and return do not overwrite locally saved dimensions', () => {
@@ -56,6 +62,10 @@ test('detached inspectors fill the space after actual toolbar and status without
   for (const [width, height, toolbar, status] of [[1000,700,34,23],[420,360,59,36],[420,180,90,50]]) {
     const result = inspectorLayout(size(width,height,toolbar,status), ui, true);
     assert.equal(result.height, Math.max(84,height-toolbar-status));
+    assert.equal(result.mode, 'columns');
+    const tracks = result.tracks.split(' ').map(parseFloat);
+    assert.equal(tracks.length, 5);
+    assert.equal(tracks.reduce((sum, value) => sum + value, 0), Math.max(width, 504));
     assert.deepEqual(ui, { upper:230,left:40,right:65 });
   }
 });

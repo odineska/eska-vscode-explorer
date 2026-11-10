@@ -1,12 +1,21 @@
-import {For,Show} from 'solid-js';
+import { Show } from 'solid-js';
 
-const CORNERS=[[false,false],[true,false],[false,true],[true,true]],PIXELS=[0,1,2,3,4,5,6,7,8];
+const positions = ['left top', 'right top', 'left bottom', 'right bottom'];
 
-export function NativeInputCorners(props){
- // Choice inputs extend one pixel; search controls already allocate their complete width.
- const right=()=>props.rightOffset??(props.paint.choice?'-2px':'-1px');
- return <Show when={props.paint}><For each={CORNERS}>{([isRight,bottom],index)=><svg class="taxi-input-corner" width="3" height="3" viewBox="0 0 3 3" aria-hidden="true" shape-rendering="crispEdges"
-  style={{left:isRight?undefined:'-1px',right:isRight?right():undefined,top:bottom?undefined:'-1px',bottom:bottom?'-1px':undefined}}>
-  <For each={PIXELS}>{pixel=><rect x={pixel%3} y={Math.floor(pixel/3)} width="1" height="1" fill={`rgb(${props.paint.corners[index()][pixel].join(',')})`}/>}</For>
- </svg>}</For></Show>;
+export function inputCornerBackground(corners) {
+  return corners.map((pixels, index) => {
+    const cells = pixels.map((pixel, position) =>
+      `<rect x="${position % 3}" y="${Math.floor(position / 3)}" width="1" height="1" fill="rgb(${pixel.join(',')})"/>`).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="3" height="3" shape-rendering="crispEdges">${cells}</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${positions[index]} no-repeat`;
+  }).join(', ');
+}
+
+export function NativeInputCorners(props) {
+  // Choice inputs extend one pixel; search controls allocate their complete width.
+  const right = () => props.rightOffset ?? 'calc(-1px - var(--taxi-input-outset, 0px))';
+  return <Show when={props.paint}>{paint =>
+    <span class="taxi-input-corner" aria-hidden="true" style={{
+      right: right(), background: paint().cornerBackground ?? inputCornerBackground(paint().corners),
+    }}/>}</Show>;
 }

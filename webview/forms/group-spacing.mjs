@@ -1,8 +1,9 @@
-import { flag, scalar } from './model.mjs';
+import { flag, property, scalar } from './model.mjs';
 
 export function independentVerticalSection(node) {
-  return node.kind === 'UsualGroup' && scalar(node, 'Representation') === 'NormalSeparation'
-    && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United');
+  const representation = scalar(node, 'Representation', 'Auto');
+  return node.kind === 'UsualGroup' && scalar(node, 'Group') === 'Vertical' && !flag(node, 'United')
+    && (representation === 'NormalSeparation' || representation === 'Auto' && !property(node, 'BackColor'));
 }
 
 const empty = { distance: 0, insets: [] };
@@ -16,7 +17,7 @@ function transverseEdge(edges, side) {
 
 /** Carry boundary requests through transparent groups until a neighboring item consumes them. */
 export function groupSeparationEdges(node, children, horizontal, padding = {}, painted = false) {
-  if (node.kind !== 'UsualGroup') return { x: [empty, empty], y: [empty, empty] };
+  if (node.kind !== 'UsualGroup' && node.kind !== 'Form') return { x: [empty, empty], y: [empty, empty] };
   const representation = scalar(node, 'Representation', 'None');
   const normal = representation === 'NormalSeparation';
   return Object.fromEntries(['x', 'y'].map(axis => {

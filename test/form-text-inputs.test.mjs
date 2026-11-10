@@ -61,12 +61,32 @@ test('authored maximum is ignored in automatic mode and does not mutate the sour
   assert.equal(textInputWidthBounds(node, 'win32'), undefined);
 });
 
+test('automatic maximum is independent of the string length once the input stretches', () => {
+  for (const [length, properties, preferred, maximum] of [
+    [36, {}, 371, 410],
+    [100, { MaxWidth: '4' }, 411, 411],
+    [10, { HorizontalStretch: 'true' }, 111, 410],
+    [10, { HorizontalStretch: 'true', ChoiceButton: 'true' }, 132, 410],
+    [10, { HorizontalStretch: 'true', AutoMaxWidth: 'false', MaxWidth: '19' }, 111, 200],
+    [10, {}, 111, undefined],
+  ]) {
+    const field = nodeFor({ properties, type: { kind: 'string', length }, font: { points: 10 } });
+    const bounds = textInputWidthBounds(field, 'linux');
+    assert.equal(bounds.preferredPaint, preferred);
+    assert.equal(bounds.maximumPaint, maximum);
+    assert.equal(horizontalInputMaximum(field, 'linux'),
+      maximum === undefined ? undefined : maximum - bounds.outset);
+  }
+});
+
 test('single-line threshold preserves multiline stretch and actual choice outset follows allocation', () => {
   const field = metrics.rows.find(row => row.name === 'ChoiceMax1').controls.Value;
   const node = nodeFor(field), before = JSON.stringify(node);
   assert.equal(inputChoiceButton(node, 'linux'), false);
   assert.equal(textInputWidthBounds(node, 'linux', true).outset, 1);
   assert.equal(textInputWidthBounds(node, 'linux', false).outset, 0);
+  assert.equal(inputPaintedOutset(node, 'linux', true), 1);
+  assert.equal(inputPaintedOutset(node, 'linux', false), 0);
   assert.equal(JSON.stringify(node), before);
   node.properties.push({key:{namespace:FORM_NS,name:'MultiLine'},value:{kind:'text',text:'true'}});
   node.presentation.valueType.length = 8;

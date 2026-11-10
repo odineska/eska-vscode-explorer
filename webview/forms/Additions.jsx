@@ -23,14 +23,15 @@ function StatusStrip(props) {
   }));
   const alignment = () => ({ Left: 'start', Center: 'center', Right: 'end' })[scalar(node(), 'HorizontalLocation')];
   onMount(() => {
-    if (!props.standalone) return;
+    if (state.os !== 'linux' || !props.standalone && !props.fitTable) return;
     const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
     observer.observe(strip);
     onCleanup(() => observer.disconnect());
   });
   const chipWidth = label => {
     if (state.os !== 'linux' || label.width === undefined) return;
-    const maximum = props.standalone && width() > 0 ? Math.max(28, Math.floor((width() - 20) / 2)) : Infinity;
+    const maximum = !width() ? Infinity : props.standalone
+      ? Math.max(28, Math.floor((width() - 20) / 2)) : Math.max(1, Math.floor((width() - 14) / 2));
     return Math.min(label.width + 28, maximum);
   };
   const style = () => ({
@@ -50,7 +51,7 @@ function StatusStrip(props) {
 
 /** The Configurator shows sample filter conditions, including on an empty PDF. */
 export function ViewStatus(props) {
-  return <Show when={viewStatusAddition(props.node)}>{addition => <StatusStrip node={addition()} controller={props.controller}/>}</Show>;
+  return <Show when={viewStatusAddition(props.node)}>{addition => <StatusStrip node={addition()} controller={props.controller} fitTable={props.fitTable}/>}</Show>;
 }
 
 export function StandaloneAddition(props) {

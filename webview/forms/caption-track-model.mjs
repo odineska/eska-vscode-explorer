@@ -1,15 +1,15 @@
 import { cappedTrackGrowth, fitCaptionWidths, roundTrackWidths } from './layout-model.mjs';
 
-/** Allocate captions and value boxes within horizontal numeric tracks, excluding the group gap. */
-export function narrowNumericTracks(available, tracks) {
+/** Allocate captions and value boxes within horizontal field tracks, excluding the group gap. */
+export function narrowCaptionTracks(available, tracks) {
   const fit = fitCaptionWidths(available, tracks);
   if (!fit) return;
   const { captions, valueSpace, preferredValues, minimumValues } = fit;
   const spare = valueSpace - preferredValues;
   if (spare < 0) {
-    const widths = cappedTrackGrowth(valueSpace - minimumValues, tracks.map(({caption, value}, index) => {
+    const widths = cappedTrackGrowth(valueSpace - minimumValues, tracks.map(({caption, shrinkCaptionWidth = caption.compact, value}, index) => {
       const limit = value.preferred - value.minimum;
-      return { limit, weight: limit + Math.max(0, caption.compact - captions[index]) };
+      return { limit, weight: limit + Math.max(0, shrinkCaptionWidth - captions[index]) };
     }));
     const growth = roundTrackWidths(widths, Math.floor);
     return tracks.map(({reserve, value}, index) => ({

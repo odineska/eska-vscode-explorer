@@ -30,15 +30,17 @@ async function shellResize(ui, service, view) {
         const rect=selector=>document.querySelector(selector).getBoundingClientRect(), shell=document.querySelector('.form-shell'), inspector=document.querySelector('.form-inspectors');
         return {width:shell.getBoundingClientRect().width,height:shell.getBoundingClientRect().height,contentWidth:shell.clientWidth,inspector:rect('.form-inspectors').height,
           preview:rect('.preview-scroll').height,toolbar:rect('.form-toolbar').height,
-          tracks:getComputedStyle(inspector).gridTemplateColumns.split(' ').map(parseFloat),
+          tracks:getComputedStyle(inspector).gridTemplateColumns.split(' ').map(parseFloat),mode:inspector.dataset.inspectorLayout,
           shellScrollable:shell.scrollHeight>shell.clientHeight,inspectorScrollable:inspector.scrollWidth>inspector.clientWidth,
           sameNodes:__shellResize.nodes.every(node=>node.isConnected),
           controls:[...document.querySelectorAll('.form-toolbar button,.form-zoom')].every(node=>rect('.form-toolbar').bottom>=node.getBoundingClientRect().bottom)};
       })()`);
       assert.equal(sample.width,width); assert.equal(sample.height,height); assert.ok(sample.preview>=96);
-      assert.ok(sample.tracks[0]>=120&&sample.tracks[2]>=120&&sample.tracks[4]>=180);
+      assert.equal(sample.mode,width<475?'compactStacked':'columns');
+      assert.equal(sample.tracks.length,width<475?1:5);
+      assert.ok(sample.tracks.reduce((sum,width)=>sum+width,0)<=sample.contentWidth+1);
       assert.equal(sample.sameNodes,true); assert.equal(sample.controls,true);
-      if(width<428)assert.equal(sample.inspectorScrollable,true);
+      assert.equal(sample.inspectorScrollable,false);
       if(height===180)assert.equal(sample.shellScrollable,true);
       samples.push(sample); await ui.screenshot(`form-shell-${width}-${height}-${vscode.env.language}.png`);
     }

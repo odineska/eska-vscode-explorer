@@ -7,12 +7,15 @@ const preferredSearchWidth = 172;
 /** Measure the preferred pass with every button mounted, then fit the same owners on resize. */
 export function measureTableCommands(root, scale) {
   const bars = [...root.querySelectorAll('.taxi-table-command-bar[data-adaptive-table-toolbar]')].map(bar => {
-    const commands = [...bar.querySelectorAll(':scope > :is([data-command-key], [data-table-search-control], .taxi-element)')];
+    const commands = [...bar.querySelectorAll(':scope > :is([data-command-key], [data-table-search-control], .taxi-element, .taxi-table-move)')];
     const search = !!bar.querySelector(':scope > .taxi-table-search');
     const more = bar.querySelector(':scope > [data-table-more]');
     const button = more.querySelector(':scope > button');
     const gap = pixels(getComputedStyle(bar).columnGap);
-    const widths = commands.map(command => borderBoxSize(command, scale).width);
+    const widths = commands.map(command => {
+      const css = getComputedStyle(command);
+      return borderBoxSize(command, scale).width + pixels(css.marginInlineStart) + pixels(css.marginInlineEnd);
+    });
     const moreWidth = borderBoxSize(button, scale).width;
     return { bar, commands, widths, more, moreWidth, search, gap };
   });

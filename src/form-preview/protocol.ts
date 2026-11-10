@@ -27,6 +27,10 @@ interface AutoCommandItem {
   key: string; caption: FormText; primary: boolean; origin: Origin | null;
   picture?: FormPicture; buttonRepresentation?: ButtonRepresentation; orderByCaption?: boolean; shortcut?: string; enabled?: boolean; beginGroup?: boolean; items?: AutoCommandItem[];
 }
+export interface FieldType {
+  kind: string; length: number | null; digits: number | null; fraction: number | null;
+  allowedSign?: "Any" | "Nonnegative"; dateParts: string | null; types: PropertyKey[];
+}
 export interface Presentation {
   united?: boolean | null;
   markIncomplete?: boolean;
@@ -34,9 +38,10 @@ export interface Presentation {
   tabularTotal?: "automatic" | "overridden";
   tableColumnAppearance?: TableColumnAppearance;
   picture: FormPicture | null;
+  choiceButtonPicture?: FormPicture | null;
   buttonRepresentation?: ButtonRepresentation;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
-  valueType: { kind: string; length: number | null; digits: number | null; fraction: number | null; allowedSign?: "Any" | "Nonnegative"; dateParts: string | null; types: PropertyKey[] };
+  valueType: FieldType;
   binding: Origin | null; choices: FormText[]; autoCommands: string[];
   autoCommandItems?: AutoCommandItem[];
   objectCommandMenu?: AutoCommandItem[][];
@@ -56,11 +61,12 @@ export interface FormPalette {
   formSessionId: string; revision: string; identity: ElementIdentity;
   categories: { id: string; caption: PaletteCaption }[] | null; rows: PaletteRow[] | null;
 }
-export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[] }
+export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[]; valueType?: FieldType }
+export interface FormDataField { path: string[]; valueType: FieldType; type: PropertyField | null; origin: Origin | null }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -68,7 +74,8 @@ export interface FormSnapshot {
 export interface Location { source: string; snapshot: string; root: WirePath; path: WirePath; range: { start: number; end: number } }
 export type FormTarget = { kind: "element" | "binding"; identity: ElementIdentity } | { kind: "property"; identity: ElementIdentity; property: PropertyKey; occurrence?: number }
   | { kind: "attribute"; identity: ElementIdentity; attribute: PropertyKey }
-  | { kind: "definition"; section: "attributes" | "commands" | "parameters"; name: string };
+  | { kind: "definition"; section: "attributes" | "commands" | "parameters"; name: string }
+  | { kind: "dataPath"; path: string[] };
 
 function invalid(): never { throw new ExplorerError("protocolInvalid"); }
 function hash(value: unknown): value is string { return typeof value === "string" && /^[a-f0-9]{64}$/.test(value); }
@@ -92,6 +99,18 @@ function field(value: unknown, depth = 0): boolean {
   if (data.kind === "localized") return Array.isArray(data.items) && data.items.every(item => isRecord(item) && typeof item.language === "string" && typeof item.content === "string");
   if (data.kind === "record") return Array.isArray(data.fields) && data.fields.every(value => field(value, depth + 1));
   return data.kind === "unsupported" && typeof data.issue === "string";
+}
+function fieldType(value: unknown): boolean {
+  return isRecord(value) && typeof value.kind === "string"
+    && ["length", "digits", "fraction"].every(name => value[name] === null
+      || typeof value[name] === "number" && Number.isSafeInteger(value[name]) && (value[name] as number) >= 0)
+    && (value.dateParts === null || typeof value.dateParts === "string")
+    && (value.allowedSign === undefined || value.allowedSign === "Any" || value.allowedSign === "Nonnegative")
+    && Array.isArray(value.types) && value.types.every(key);
+}
+export function isDataPath(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length >= 2 && value.length <= 64
+    && value.every(part => typeof part === "string" && part.length > 0 && !part.includes("."));
 }
 function text(value: unknown): boolean {
   return isRecord(value) && (value.kind === "name" && typeof value.text === "string" || value.kind === "standard" && typeof value.key === "string"
@@ -133,6 +152,7 @@ function commandSections(value: unknown, assets: ReadonlySet<string>): boolean {
 }
 function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
   return isRecord(value) && (value.picture === null || formPicture(value.picture, assets))
+    && (value.choiceButtonPicture == null || formPicture(value.choiceButtonPicture, assets))
     && buttonRepresentation(value.buttonRepresentation)
     && (value.markIncomplete === undefined || typeof value.markIncomplete === "boolean")
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
@@ -201,7 +221,22 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
     && (handler.owner.kind === "element" && isIdentity(handler.owner.identity) && identities.has(identityKey(handler.owner.identity))
       || handler.owner.kind === "command" && typeof handler.owner.name === "string")))) invalid();
   for (const name of ["attributes", "commands", "parameters"]) if (!Array.isArray(value.model[name]) || !(value.model[name] as unknown[]).every(value => isRecord(value)
-    && (value.name === null || typeof value.name === "string") && origin(value.origin) && Array.isArray(value.properties) && value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)))) invalid();
+    && (value.name === null || typeof value.name === "string") && origin(value.origin) && Array.isArray(value.properties)
+    && (value.valueType === undefined || fieldType(value.valueType))
+    && value.properties.every(value => isRecord(value) && origin(value.origin) && field(value)))) invalid();
+  if (value.model.dataFields !== undefined) {
+    if (!Array.isArray(value.model.dataFields) || value.model.dataFields.length > 16_384) invalid();
+    const paths = new Set<string>();
+    const attributes = new Set((value.model.attributes as FormDefinition[]).map(item => item.name));
+    for (const item of value.model.dataFields) {
+      if (!isRecord(item) || !isDataPath(item.path) || !attributes.has(item.path[0]!)
+        || !fieldType(item.valueType) || !(item.type === null || field(item.type))
+        || !(item.origin === null || origin(item.origin) && ids.has((item.origin as Origin).source))) invalid();
+      const path = item.path.join(".");
+      if (paths.has(path)) invalid();
+      paths.add(path);
+    }
+  }
   const commands = value.model.commands as unknown[];
   if (Array.isArray(value.model.handlers)) for (const handler of value.model.handlers) {
     if (isRecord(handler) && isRecord(handler.owner) && handler.owner.kind === "command") {

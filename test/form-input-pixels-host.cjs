@@ -6,24 +6,28 @@ const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.runGallery=async(options)=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture[options.fixtureKey],results=[],failures=[];
+  let detachedUpdates=false;
   const explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
   if(options.fullScreen)await vscode.commands.executeCommand('workbench.action.toggleFullScreen');
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-  async function ready(ui,expected){return ui.evaluate(`(() => {const inputs=[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden');return inputs.length===${expected.fields.length}&&inputs.every(input=>input.dataset.nativeBorder==='ready')&&${JSON.stringify(expected.fields.map(f=>f.type.kind))}.every((kind,index)=>!${JSON.stringify(options.verifyDates?['number','date']:['number'])}.includes(kind)||inputs[index].querySelector('[data-native-value]')?.dataset.nativeValue==='ready');})()`);}
-  async function appearance(ui,expected){return ui.evaluate(`(() => {const inputs=[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden');return inputs.length===${expected.fields.length}&&${JSON.stringify(expected.fields)}.every((field,index)=>{const css=getComputedStyle(inputs[index]);return css.borderTopColor==='rgb('+field.actualBorder.join(', ')+')'&&css.backgroundColor==='rgb('+field.actualBackground.join(', ')+')'&&inputs[index].dataset.nativeBackdrop===field.outside.join(',');});})()`);}
+  async function ready(ui,expected){return ui.evaluate(`(() => {const inputs=[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden');return inputs.length===${expected.fields.length}&&inputs.every(input=>input.dataset.nativeBorder==='ready')&&${JSON.stringify(expected.fields.map(f=>f.type?.kind??expected.valueType?.kind))}.every((kind,index)=>!${JSON.stringify(options.verifyDates?['number','date']:['number'])}.includes(kind)||inputs[index].querySelector('[data-native-value]')?.dataset.nativeValue==='ready');})()`);}
+  async function appearance(ui,expected){return ui.evaluate(`(() => {const inputs=[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden');return inputs.length===${expected.fields.length}&&${JSON.stringify(expected.fields)}.every((field,index)=>{const input=inputs[index],surface=input.hasAttribute('data-native-reference-multiline')?input.querySelector('textarea'):input,css=getComputedStyle(surface);return css.borderTopColor==='rgb('+field.actualBorder.join(', ')+')'&&css.backgroundColor==='rgb('+field.actualBackground.join(', ')+')'&&input.dataset.nativeBackdrop===field.outside.join(',');});})()`);}
   async function sample(ui,expected,label,targetId){
     await until(async()=>await ready(ui,expected)&&await appearance(ui,expected),'native input paint ready');
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await until(()=>ui.evaluate("!document.querySelector('[data-native-label=pending]')"),'input labels settled');
+    await options.beforeSample?.({ui,expected,label});
     await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
-    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),inputs:[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden').map(input=>({...rect(input),outset:Number(input.dataset.nativeOutset),buttons:input.querySelectorAll('.taxi-input-button').length}))};})()`);
+    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),inputs:[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden').map(input=>({...rect(input),outset:Number(input.dataset.nativeOutset),buttons:[...input.querySelectorAll('.taxi-input-button')].map(button=>button.dataset.referenceButton??null)}))};})()`);
     const regions=[],geometryIssues=[];
     if(options.verifyFrame&&(geometry.frame.width!==expected.frame[0]||geometry.frame.height!==expected.frame[1]))geometryIssues.push({frame:geometry.frame,expected:expected.frame});
     for(const [index,input] of geometry.inputs.entries()){
       const field=expected.fields[index],x=input.x-geometry.frame.x,y=input.y-geometry.frame.y,w=input.width+input.outset,h=input.height;
-      if(JSON.stringify([x,y,w,h])!==JSON.stringify(field.rect)||input.buttons!==Number(field.choice))geometryIssues.push({name:field.name,actual:[x,y,w,h],expected:field.rect,buttons:input.buttons,expectedButtons:Number(field.choice)});
-      for(const [corner,cx,cy] of [['topLeft',x,y],['topRight',x+w-3,y],['bottomLeft',x,y+h-3],['bottomRight',x+w-3,y+h-3]])regions.push({name:field.name+' '+corner,x:cx,y:cy,width:3,height:3,hex:field.cornersRgb[corner]});
-      if(options.verifyDates||field.type.kind!=='date')regions.push({name:field.name+' whole',x,y,width:w,height:h,sha:field.wholeInputRgbSha256});
+      const expectedButtons=field.buttons??(field.choice?[null]:[]);
+      if(JSON.stringify([x,y,w,h])!==JSON.stringify(field.rect)||JSON.stringify(input.buttons)!==JSON.stringify(expectedButtons))geometryIssues.push({name:field.name,actual:[x,y,w,h],expected:field.rect,buttons:input.buttons,expectedButtons});
+      if(field.cornersRgb)for(const [corner,cx,cy] of [['topLeft',x,y],['topRight',x+w-3,y],['bottomLeft',x,y+h-3],['bottomRight',x+w-3,y+h-3]])regions.push({name:field.name+' '+corner,x:cx,y:cy,width:3,height:3,hex:field.cornersRgb[corner]});
+      if(field.wholeInputRgbSha256&&(options.verifyDates||field.type?.kind!=='date'))regions.push({name:field.name+' whole',x,y,width:w,height:h,sha:field.wholeInputRgbSha256});
+      for(const {name,rect:[left,top,width,height],rgbSha256} of field.paintAreas??[])regions.push({name:field.name+' '+name,x:x+left,y:y+top,width,height,sha:rgbSha256});
       if(['calculator','calendar'].includes(field.button?.kind)){const [bx,by,bw,bh]=field.button.rect;regions.push({name:field.name+' '+field.button.kind,x:bx+x-field.rect[0],y:by+y-field.rect[1],width:bw,height:bh,sha:field.button.rgbSha256});}
     }
     if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${options.prefix}-geometry-${label}-${vscode.env.language}.json`),JSON.stringify(geometry));
@@ -80,9 +84,10 @@ exports.runGallery=async(options)=>{
       // Docking may recreate the owner's webview; reconnect to its current CDP target.
       ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       await until(()=>appearance(ui,form.expected),'input border reattached');results.push(await sample(ui,form.expected,'reattached-'+form.kind));
+      detachedUpdates=true;
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'input session released');await Promise.all([...explorer.formPreview.closing]);
   }
-  await explorer.shutdown();assert.deepEqual(failures.map(f=>({label:f.label,geometryIssues:f.geometryIssues,regions:f.mismatches.map(m=>m.actual.name)})),[],'native input geometry and pixels');const report={passed:true,locale:vscode.env.language,[options.reportKey]:true,forms:gallery.forms.length,fields:gallery.forms.reduce((count,form)=>count+form.expected.fields.length,0),[options.dirtyKey]:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
+  await explorer.shutdown();assert.deepEqual(failures.map(f=>({label:f.label,geometryIssues:f.geometryIssues,regions:f.mismatches.map(m=>m.actual.name)})),[],'native input geometry and pixels');const report={passed:true,locale:vscode.env.language,[options.reportKey]:true,forms:gallery.forms.length,fields:gallery.forms.reduce((count,form)=>count+form.expected.fields.length,0),...(options.dirtyKey ? {[options.dirtyKey]:detachedUpdates} : {}),detachedUpdates,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
   if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${options.prefix}-measured-${vscode.env.language}.json`),JSON.stringify(report));await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
 };
