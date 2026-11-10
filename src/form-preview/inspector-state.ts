@@ -28,10 +28,10 @@ function folds(value: unknown, data: boolean): Record<string, boolean> {
   const valid: [string, boolean][] = [];
   let bytes = 0;
   for (const [key, state] of Object.entries(value)) {
-    if (state !== true || !(data ? key.startsWith("attributes:") && key.length <= 2048 : /^[a-f0-9]{64}:current:(?:root|-?\d{1,20})$/.test(key))) continue;
+    if (typeof state !== "boolean" || !data && !state || !(data ? key.startsWith("attributes:") && key.length <= 2048 : /^[a-f0-9]{64}:current:(?:root|-?\d{1,20})$/.test(key))) continue;
     bytes += key.length + 12;
     if (bytes > 128_000) break;
-    valid.push([key, true]);
+    valid.push([key, state]);
   }
   return Object.fromEntries(valid);
 }

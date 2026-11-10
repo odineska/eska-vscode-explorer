@@ -1,4 +1,4 @@
-import { FORM_NS, caption, flag, key, property, scalar, treeChildren } from './model.mjs';
+import { FORM_NS, caption, flag, key, property, scalar, text, treeChildren } from './model.mjs';
 import { inspectorType } from './inspector-type.mjs';
 
 export const definitionSections = ['attributes', 'commands', 'parameters'];
@@ -37,8 +37,8 @@ function formColumns(definition, path, append) {
 /** The snapshot owns this index. Selection, folding and search never parse the XML or rebuild it. */
 export function indexInspector(model, locale, strings) {
   const nodes = new Map(), usages = new Map(), commandUses = new Map(), handlers = new Map();
-  const byData = new Map(), definitions = Object.fromEntries(definitionSections.map(section => [section, []]));
-  if (!model) return { nodes, usages, commandUses, handlers, byData, definitions };
+  const byData = new Map(), children = new Map(), definitions = Object.fromEntries(definitionSections.map(section => [section, []]));
+  if (!model) return { nodes, usages, commandUses, handlers, byData, definitions, children };
 
   function visit(node, parent, depth, name) {
     const title = caption(node, { locale, strings });
@@ -60,7 +60,6 @@ export function indexInspector(model, locale, strings) {
     add(handlers, owner, { handler, index });
   }
 
-  const children = new Map();
   function append(section, path, { definition, typeField, valueType, main, origin }) {
     const id = rowKey(section, path);
     if (byData.has(id)) return;
@@ -69,11 +68,11 @@ export function indexInspector(model, locale, strings) {
     const parent = section === 'attributes' && parts.length > 1 ? rowKey(section, parts.slice(0, -1).join('.')) : '';
     const type = section === 'commands' ? undefined : inspectorType(typeField, valueType, locale, strings);
     const action = section === 'commands' ? scalar(definition, 'Action') : '';
-    const row = { id, section, path, name, parent, depth: Math.max(0, parts.length - 1), main, definition, typeField, valueType, type, action, origin,
-      search: searchText([name, path, type?.search, action], locale) };
+    const row = { id, section, path, name, label: name, parent, depth: Math.max(0, parts.length - 1), main, definition, typeField, valueType, type, action, origin };
     byData.set(id, row);
     if (parent) add(children, parent, row);
     else definitions[section].push(row);
+    return row;
   }
   for (const section of definitionSections) {
     for (const definition of model[section] ?? []) {
@@ -91,9 +90,10 @@ export function indexInspector(model, locale, strings) {
       row.valueType = field.valueType;
       row.typeField ??= field.type;
       row.type = inspectorType(row.typeField, row.valueType, locale, strings);
-      row.search = searchText([row.path, row.type.search], locale);
       row.origin = field.origin;
-    } else append('attributes', path, { typeField: field.type, valueType: field.valueType, origin: field.origin });
+    }
+    const entry = row ?? append('attributes', path, { typeField: field.type, valueType: field.valueType, origin: field.origin });
+    entry.label = text(field.caption, locale, strings) || entry.name;
   }
   // Earlier backends expose resolved types on bound elements. Keep exact path components in that mode.
   for (const [binding, elements] of usages) {
@@ -102,6 +102,14 @@ export function indexInspector(model, locale, strings) {
     for (let depth = 2; depth <= parts.length; depth++) {
       append('attributes', parts.slice(0, depth).join('.'), { valueType: depth === parts.length ? elements[0].node.presentation.valueType : undefined });
     }
+  }
+  function displayPath(row) {
+    if (row.displayPath !== undefined) return row.displayPath;
+    const parent = byData.get(row.parent);
+    return row.displayPath = parent ? `${displayPath(parent)}.${row.label}` : row.label;
+  }
+  for (const row of byData.values()) {
+    row.search = searchText([row.name, row.path, displayPath(row), row.type?.search, row.action], locale);
   }
   return { nodes, usages, commandUses, handlers, byData, definitions, children };
 }
@@ -139,7 +147,11 @@ export function commandFor(index, name) {
   return name ? index.byData.get(rowKey('commands', name)) : undefined;
 }
 
-export function dataRows(index, section, folded, terms) {
+export function dataRowExpanded(folded, id, revealed) {
+  return folded[id] === false || revealed?.has(id) === true;
+}
+
+export function dataRows(index, section, folded, terms, revealed) {
   const roots = index.definitions[section] ?? [];
   const matches = matchedRows(section === 'attributes' ? [...index.byData.values()].filter(row => row.section === section) : roots,
     terms, key => index.byData.get(key), row => row.id);
@@ -147,7 +159,7 @@ export function dataRows(index, section, folded, terms) {
   function visit(row) {
     if (matches && !matches.has(row.id)) return;
     rows.push(row);
-    if (matches || !folded[row.id]) for (const child of index.children.get(row.id) ?? []) visit(child);
+    if (matches || dataRowExpanded(folded, row.id, revealed)) for (const child of index.children.get(row.id) ?? []) visit(child);
   }
   const main = roots.filter(row => row.main);
   const other = roots.filter(row => !row.main);

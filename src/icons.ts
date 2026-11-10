@@ -73,6 +73,27 @@ export const metadataIcons: Readonly<Record<string, string>> = {
   "integration-service-channel": "exchange"
 };
 
+// Form roles point at the same packaged artwork used by metadata and source trees.
+export const inspectorIcons: Readonly<Record<string, string>> = {
+  form: metadataIcons.form!,
+  group: "folder",
+  pages: "common-forms",
+  page: metadataIcons.form!,
+  field: metadataIcons.attribute!,
+  column: "tabular-attribute",
+  table: metadataIcons["tabular-section"]!,
+  button: metadataIcons.command!,
+  text: "requisites",
+  image: metadataIcons["common-picture"]!,
+  check: "check",
+  choice: metadataIcons.enum!,
+  chart: metadataIcons.report!,
+  command: metadataIcons.command!,
+  data: "attributes",
+  parameter: metadataIcons.parameter!,
+  unknown: "unknown",
+};
+
 // Collections have their own silhouettes where object artwork would repeat.
 export const collectionIcons: Readonly<Record<string, string>> = {
   "command-group": "command-group",

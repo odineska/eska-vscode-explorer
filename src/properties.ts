@@ -4,7 +4,7 @@ import { message } from "./messages.js";
 import { ExplorerError, isRecord } from "./protocol.js";
 
 export interface PropertyKey { namespace: string | null; name: string }
-export interface PropertyQualifier { key: PropertyKey; value: string; caption?: PropertyCaption }
+export interface PropertyQualifier { key: PropertyKey; value: string; caption?: PropertyCaption; keyCaption?: PropertyCaption; scalarType?: "boolean" }
 export interface PropertyCaption { "ru-RU": string; "en-US": string }
 export interface PropertyField { presentation?: PropertyPresentation; key: PropertyKey; caption?: PropertyCaption; qualifiers: PropertyQualifier[]; value: PropertyValue }
 export type PropertyValue = { kind: "text"; text: string; caption?: PropertyCaption; scalarType?: "boolean" }
@@ -54,7 +54,9 @@ function parseField(value: unknown, depth: number): PropertyField {
   if (!Array.isArray(annotations)) throw new ExplorerError("protocolInvalid");
   const qualifiers = annotations.map((qualifier: unknown) => {
     if (!isRecord(qualifier) || typeof qualifier.value !== "string") throw new ExplorerError("protocolInvalid");
-    return { key: parseKey(qualifier.key), value: qualifier.value, ...parseCaption(qualifier.caption) };
+    const keyCaption = parseCaption(qualifier.keyCaption).caption;
+    return { key: parseKey(qualifier.key), value: qualifier.value, ...parseCaption(qualifier.caption),
+      ...(keyCaption ? { keyCaption } : {}), ...parseScalarType(qualifier.scalarType, qualifier.value) };
   });
   const presentation = parsePresentation(value.presentation);
   return { key: parseKey(value.key), qualifiers, value: parseValue(value.value, depth), ...parseCaption(value.caption),
@@ -69,15 +71,18 @@ function parseCaption(value: unknown): { caption?: PropertyCaption } {
   return { caption: { "ru-RU": value["ru-RU"], "en-US": value["en-US"] } };
 }
 
+function parseScalarType(hint: unknown, text: string): { scalarType?: "boolean" } {
+  if (hint !== "boolean") return {};
+  if (!["true", "false", "1", "0"].includes(text.trim())) throw new ExplorerError("protocolInvalid");
+  return { scalarType: "boolean" };
+}
+
 /** Validate the backend's four value shapes before sending them to the webview. */
 function parseValue(value: unknown, depth: number): PropertyValue {
   if (!isRecord(value)) throw new ExplorerError("protocolInvalid");
   if (value.kind === "text" && typeof value.text === "string") {
-    if (value.scalarType === "boolean" && !["true", "false", "1", "0"].includes(value.text.trim())) {
-      throw new ExplorerError("protocolInvalid");
-    }
     return { kind: "text", text: value.text, ...parseCaption(value.caption),
-      ...(value.scalarType === "boolean" ? { scalarType: "boolean" } : {}) };
+      ...parseScalarType(value.scalarType, value.text) };
   }
   if (value.kind === "localized" && Array.isArray(value.items) && value.items.every(item => isRecord(item)
     && typeof item.language === "string" && typeof item.content === "string")) {

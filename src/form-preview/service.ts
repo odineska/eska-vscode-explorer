@@ -8,6 +8,7 @@ import { relativeFile, revealFile } from "../reveal.js";
 import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
+import { inspectorIcons } from "../icons.js";
 import { FormSession } from "./client.js";
 import { identityKey, isIdentity, isDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
@@ -131,19 +132,32 @@ export class FormPreviewService implements vscode.Disposable {
     return this.inspectorWrite;
   }
   private frame(view: View, role: Role, restored?: vscode.WebviewPanel): Frame {
+    const localResourceRoots = [vscode.Uri.joinPath(this.context.extensionUri, "out")];
+    if (role === "main") localResourceRoots.push(vscode.Uri.joinPath(this.context.extensionUri, "resources", "icons"));
     const panel = restored ?? vscode.window.createWebviewPanel(VIEW_TYPE, role === "main" ? view.title : `${view.title} — ${this.strings().preview}`,
-      role === "main" ? vscode.ViewColumn.One : vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "out")] });
+      role === "main" ? vscode.ViewColumn.One : vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots });
     const frame = { panel, role, ready: false }; view.frames.set(role, frame);
-    panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "out")] };
+    panel.webview.options = { enableScripts: true, localResourceRoots };
     panel.webview.onDidReceiveMessage(value => { void this.receive(view, frame, value).catch(error => this.failure(view, error)); });
     panel.onDidDispose(() => { if (view.frames.get(role) === frame) view.frames.delete(role); if (!view.frames.size) this.release(view); else this.publish(view); });
-    panel.webview.html = this.html(panel.webview);
+    panel.webview.html = this.html(panel.webview, role === "main");
     return frame;
   }
-  private html(webview: vscode.Webview): string {
+  private html(webview: vscode.Webview, inspector: boolean): string {
     const nonce = randomBytes(16).toString("hex"), base = vscode.Uri.joinPath(this.context.extensionUri, "out");
     const script = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.css"));
-    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; connect-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'"><link rel="stylesheet" href="${style}"></head><body><div id="root"></div><script id="form-preview-script" nonce="${nonce}" src="${script}"></script></body></html>`;
+    const artwork = inspector ? this.inspectorArtwork(webview) : "";
+    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; connect-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'"><link rel="stylesheet" href="${style}">${artwork}</head><body><div id="root"></div><script id="form-preview-script" nonce="${nonce}" src="${script}"></script></body></html>`;
+  }
+  /** Resolve trusted asset names once per view; the webview theme selects the artwork. */
+  private inspectorArtwork(webview: vscode.Webview): string {
+    const themes = { light: "light", dark: "dark", "high-contrast": "contrast", "high-contrast-light": "contrast-light" };
+    const base = vscode.Uri.joinPath(this.context.extensionUri, "resources", "icons");
+    const rules = Object.entries(themes).flatMap(([theme, folder]) => Object.entries(inspectorIcons).map(([role, icon]) => {
+      const uri = webview.asWebviewUri(vscode.Uri.joinPath(base, folder, `${icon}.svg`)).toString();
+      return `.vscode-${theme} [data-form-artwork="${role}"]{background-image:url(${JSON.stringify(uri)})}`;
+    }));
+    return `<style>${rules.join("")}</style>`;
   }
   private async receive(view: View, frame: Frame, value: unknown): Promise<void> {
     if (view.closed || this.disposed || !isRecord(value)) return;

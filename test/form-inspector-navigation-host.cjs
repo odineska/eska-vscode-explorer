@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame, sameSourcePath } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath, editFormSource } = require('./webview-host.cjs');
 
 const field = value => `.form-data-row[data-form-data-path=${JSON.stringify(value)}]`;
 const lookup = selector => `document.querySelector(${JSON.stringify(selector)})`;
@@ -39,6 +39,12 @@ async function themeChecks(ui, label) {
           getComputedStyle(input).backgroundColor,preview && getComputedStyle(preview).backgroundColor];
       })()`);
       colors.push(sample);
+      const artwork = await ui.evaluate(`(() => {
+        const icon = document.querySelector('.form-tree-row.selected [data-form-artwork="field"]');
+        return icon && getComputedStyle(icon).backgroundImage;
+      })()`);
+      const assetTheme = kind === 'high-contrast' ? 'contrast' : kind === 'high-contrast-light' ? 'contrast-light' : kind;
+      assert.ok(artwork?.includes('/resources/icons/' + assetTheme + '/attribute.svg'), artwork);
       await ui.screenshot(`inspector-${kind}-${label}.png`);
     }
   } finally { await config.update('colorTheme', old, vscode.ConfigurationTarget.Global); }
@@ -77,7 +83,48 @@ exports.run = async () => {
   })()`);
   assert.equal(dimensions.mode, 'columns');
   assert.equal(dimensions.topTabs, true);
+  const annotated = snapshot.model.dataFields.find(row => row.path.join('.') === 'Object.Ref')?.caption?.kind === 'standard';
+  if (process.env.ESKA_FORM_REQUIRE_INSPECTOR_PRESENTATION === '1') assert.equal(annotated, true);
+  const expanded = async (target, path) => target.evaluate(`${lookup(field(path))}?.getAttribute('aria-expanded')`);
+  const shown = (target, path) => target.evaluate(`!!${lookup(field(path))}`);
+  const expander = path => field(path) + ' .form-tree-expander';
+  await waitFor(ui, field('Object'));
+  assert.equal(await expanded(ui, 'Object'), 'false');
+  assert.equal(await shown(ui, 'Object.Ref'), false);
+  await click(ui, rowFor('2'));
+  await waitFor(ui, '.form-context-facts .form-handler');
+  await click(ui, '.form-context-facts .form-handler');
   await waitFor(ui, field('Object.Amount'));
+  assert.equal(view.inspectorState?.ui.dataFolded['attributes:Object'], undefined);
+  await search(ui, 'Object.Lines.Quantity');
+  await waitFor(ui, field('Object.Lines.Quantity'));
+  await search(ui, '');
+  await until(async () => (await expanded(ui, 'Object')) === 'false', 'clear search restores collapsed groups');
+  await click(ui, expander('Object'));
+  await waitFor(ui, field('Object.Amount'));
+  assert.equal(await expanded(ui, 'Object.Lines'), 'false');
+  await click(ui, field('Object.Lines'));
+  await ui.evaluate(`document.querySelector('.form-data-grid').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))`);
+  await waitFor(ui, field('Object.Lines.Quantity'));
+  const offsets = await ui.evaluate(`['Object','Object.Lines','Object.Lines.Quantity','Object.Ref'].map(path => {
+    const row = [...document.querySelectorAll('.form-data-row')].find(row => row.dataset.formDataPath === path);
+    return row.querySelector('[data-form-artwork]').getBoundingClientRect().left;
+  })`);
+  assert.deepEqual(offsets.map(x => x - offsets[0]), [0, 12, 24, 12], 'each depth reserves the expander and one indentation step');
+  for (const [path, localized, english] of [
+    ['Object.Ref', 'Ссылка', 'Reference'], ['Object.Date', 'Дата', 'Date'],
+    ['Object.DeletionMark', 'Пометка удаления', 'Deletion mark'],
+  ]) {
+    const expected = annotated ? (ru ? localized : english) : path.split('.').at(-1);
+    assert.equal(await ui.evaluate(`${lookup(field(path))}.querySelector('.form-data-name > .form-truncate').textContent`), expected);
+  }
+  assert.equal(await ui.evaluate(`${lookup(field('Date'))}.querySelector('.form-data-name > .form-truncate').textContent`), 'Date');
+  if (ru && annotated) {
+    await search(ui, 'Ссылка');
+    await waitFor(ui, field('Object.Ref'));
+    await search(ui, '');
+    await waitFor(ui, field('Object.Lines.Quantity'));
+  }
   const type = await ui.evaluate(`${lookup(field('Object.Amount'))}.querySelector('td:last-child').textContent.trim()`);
   assert.equal(type, ru ? 'Число (15, 2)' : 'Number (15, 2)');
   assert.equal(await ui.evaluate(`${lookup(field('Object.Ref'))}.querySelector('td:last-child small').textContent`),
@@ -94,6 +141,32 @@ exports.run = async () => {
   await until(() => view.selected?.key.value === '2', 'element selected');
   await waitFor(ui, field('Object.Amount') + '.related');
   assert.equal(await ui.evaluate(`${lookup(title)}.textContent`), 'Name');
+  const fontProperty = '[data-property-name="Font"]';
+  await waitFor(ui, fontProperty + ' .form-property-qualifiers');
+  if (annotated) {
+    const font = await ui.evaluate(`(() => {
+      const area = ${lookup(fontProperty)};
+      return { ref: area.querySelector('[title="style:normaltextfont"]').textContent,
+        flags: Array.from(area.querySelectorAll('input[type=checkbox]'), input => [input.checked,input.disabled]) };
+    })()`);
+    assert.equal(font.ref, ru ? 'Обычный шрифт текста' : 'Normal text font');
+    assert.deepEqual(font.flags, [[true,true],[false,true]]);
+  }
+  const future = '[data-property-name="FutureSettings"] details';
+  await waitFor(ui, future);
+  await click(ui, future + ' > summary');
+  await until(() => ui.evaluate(`${lookup(future)}.querySelectorAll('input').length === 2`), 'only typed nested booleans are checkboxes');
+  const nested = await ui.evaluate(`(() => {
+    const area = ${lookup(future)};
+    return { flags: Array.from(area.querySelectorAll('input'), input => [input.checked,input.disabled]),
+      literal: area.querySelector('span[title="false"]').textContent };
+  })()`);
+  assert.deepEqual(nested, { flags: [[true,true],[false,true]], literal: 'false' });
+  const automatic = await ui.evaluate(`(() => {
+    const row = document.querySelector('[data-palette-id="platform:HorizontalStretch"]');
+    return row && [row.querySelector('td').textContent, !!row.querySelector('input')];
+  })()`);
+  assert.deepEqual(automatic, [ru ? 'Авто' : 'Default', false]);
   const initialPage = await activePage(ui);
   const scroll = await ui.evaluate(`${lookup(scrollTop)}.scrollTop`);
   await click(ui, field('Object.Amount'));
@@ -209,6 +282,16 @@ exports.run = async () => {
   ]`);
   await until(() => view.inspectorState?.ui.search === 'Quantity' && view.inspectorState.ui.dataWidth === Number(dimensionsBefore[1]), 'workspace preferences delivered');
   assert.equal(view.snapshot, snapshot, 'inspection does not refresh the model');
+  await search(ui, '');
+  await waitFor(ui, field('Object.Lines.Quantity'));
+  await editFormSource(document, view, form.text.replace('Second amount', 'Second amount after edit'));
+  await until(() => ui.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'dirty revision reached inspector');
+  assert.equal(await expanded(ui, 'Object'), 'true');
+  assert.equal(await expanded(ui, 'Object.Lines'), 'true');
+  assert.equal(await shown(ui, 'Object.Lines.Quantity'), true);
+  await editFormSource(document, view, form.text);
+  await search(ui, 'Quantity');
+  await until(() => view.inspectorState?.ui.search === 'Quantity', 'search restored for close and reopen');
   assert.deepEqual(ui.scriptErrors(), []);
   ui.close();
   main.panel.dispose();
@@ -221,6 +304,10 @@ exports.run = async () => {
     document.querySelector('.form-inspector-sash--structure').getAttribute('aria-valuenow'),
     document.querySelector('.form-data-splitter').getAttribute('aria-valuenow')
   ]`), dimensionsBefore);
+  await search(reopened.ui, '');
+  await waitFor(reopened.ui, field('Object.Lines.Quantity'));
+  assert.equal(await expanded(reopened.ui, 'Object'), 'true');
+  assert.equal(await expanded(reopened.ui, 'Object.Lines'), 'true');
   assert.deepEqual(reopened.ui.scriptErrors(), []);
   reopened.ui.close();
   reopened.main.panel.dispose();
@@ -248,5 +335,6 @@ exports.run = async () => {
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, locale: vscode.env.language, themes, dimensions, dimensionsBefore, uses,
     compact: true, separatePreview: true, sameSnapshot: true, modelData: true, workspaceState: true, mounted,
+    localizedStandardFields: annotated, threeLevelIndent: true, savedDataExpansion: true, typedProperties: true,
   }));
 };
