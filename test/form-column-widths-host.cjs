@@ -336,15 +336,32 @@ exports.run = async () => {
             await allocateFormViewport(floating, [Math.floor(width * .67), height]);
             await until(() => floating.evaluate(`(() => {
               const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
-              const area = document.querySelector('.preview-scroll');
-              return row.classList.contains('taxi-items--vertical') && area.clientHeight < area.scrollHeight;
+              const outer = document.querySelector('.preview-scroll');
+              const body = document.querySelector('.taxi-form-scrollport');
+              const linux = !!row.closest('[data-os=linux]');
+              const scrolls = linux ? body.hasAttribute('data-scrollable') && body.clientHeight < body.scrollHeight
+                : outer.clientHeight < outer.scrollHeight;
+              return row.classList.contains('taxi-items--vertical') && scrolls
+                && (!linux || outer.clientHeight === outer.scrollHeight);
             })()`), 'a wrapped row makes the form scroll vertically');
             await allocateFormViewport(floating, preferred);
-            await until(() => floating.evaluate(`(() => {
+            const conditionalGeometry = () => floating.evaluate(`(() => {
               const row = document.querySelector('.taxi-items[data-grouping=HorizontalIfPossible]');
-              const area = document.querySelector('.preview-scroll');
-              return row.classList.contains('taxi-items--horizontal') && area.clientHeight === area.scrollHeight;
-            })()`), 'the row returns to horizontal at its preferred size');
+              const root = row.closest('.taxi-form-frame');
+              const outer = document.querySelector('.preview-scroll');
+              const body = document.querySelector('.taxi-form-scrollport');
+              return { horizontal: row.classList.contains('taxi-items--horizontal'),
+                outer: [outer.clientHeight, outer.scrollHeight], body: [body.clientHeight, body.scrollHeight],
+                scrollable: body.hasAttribute('data-scrollable'),
+                frame: root.getBoundingClientRect().height, rowHeight: row.getBoundingClientRect().height,
+                items: root.style.getPropertyValue('--taxi-form-items-min-height') };
+            })()`);
+            await until(async () => {
+              const { horizontal, outer, scrollable } = await conditionalGeometry();
+              return horizontal && outer[0] === outer[1] && !scrollable;
+            }, 'the row returns to horizontal at its preferred size').catch(async error => {
+              throw new Error(`At ${preferred.join(' × ')}: ${JSON.stringify(await conditionalGeometry())}`, { cause: error });
+            });
             results.push({label:'conditional-group-restores-horizontal-at-preferred-width', frame:preferred});
             await replace(original);
             await pose(floating, keys, wide);

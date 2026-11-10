@@ -43,8 +43,9 @@ export function createFormLayout(controller, viewport, preview, frame) {
   const state = controller.state;
   const [preferred, setPreferred] = createSignal({ width: 0, height: 0 });
   const [geometry, setGeometry] = createSignal({
-    minimum: { width: 28, height: 28 }, minima: new Map(), itemsHeight: 0, chromeHeight: 28, tableFormScroll: false,
+    minimum: { width: 28, height: 28 }, minima: new Map(), itemsHeight: 0, chromeHeight: 28,
   });
+  const nativeFormScroll = () => state.os === 'linux';
   const [size, setSize] = createSignal({ width: 0, height: 0 });
   const [viewportResized, setViewportResized] = createSignal(false);
   const authoredHeight = createMemo(() => {
@@ -88,7 +89,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
     // A hidden tab has no allocation; preserve dirty measurements until it becomes visible.
     if (!surface?.isConnected || !content?.isConnected || !root?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
     const body = root.querySelector(':scope > .taxi-form-content');
-    const bodyScroll = body.dataset.rootCommandPosition === 'Bottom' ? body.querySelector(':scope > .taxi-items') : body;
+    const bodyScroll = body.querySelector(':scope > .taxi-form-scrollport');
     const scroll = [surface.scrollLeft, surface.scrollTop, bodyScroll.scrollLeft, bodyScroll.scrollTop];
     const refresh = needsPreferred;
     if (refresh) {
@@ -175,7 +176,7 @@ export function createFormLayout(controller, viewport, preview, frame) {
         commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
         fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, available, conditionalWidth: state.os === 'linux',
       });
-      setGeometry({ ...measured, tableFormScroll: !!root.querySelector('.taxi-table-field:is([data-native-column-sizing],[data-native-dynamic-list])') });
+      setGeometry(measured);
       content.dataset.formLayout = 'allocated';
       surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
       bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
@@ -317,16 +318,22 @@ export function createFormLayout(controller, viewport, preview, frame) {
     cancelAnimationFrame(scheduled);
     clearAlignment();
   });
+  const allocation = () => {
+    const { minimum, chromeHeight } = geometry();
+    const viewport = size(), zoom = state.ui.zoom;
+    // Keep the natural height of a form that only needs to scroll horizontally.
+    const fitsHeight = minimum.height <= viewport.outerHeight * 100 / zoom - 8 + .5;
+    const frameMinimum = nativeFormScroll() && !fitsHeight ? { width: minimum.width, height: chromeHeight } : minimum;
+    const allocated = formAllocation(viewport, preferred(), frameMinimum, zoom);
+    return { width: allocated.width, height: authoredHeight() || allocated.height };
+  };
   return {
     atPreferred: axis => axis === 'x' ? preferredX() : preferredY(),
-    allocation: () => {
-      const { minimum, chromeHeight, tableFormScroll } = geometry();
-      const frameMinimum = tableFormScroll ? { width: minimum.width, height: chromeHeight } : minimum;
-      const allocated = formAllocation(size(), preferred(), frameMinimum, state.ui.zoom);
-      return { width: allocated.width, height: authoredHeight() || allocated.height };
-    },
+    allocation,
     columnDivider: columnDividers.get, moveColumnDivider: columnDividers.move,
-    authoredHeight, tableFormScroll: () => geometry().tableFormScroll,
+    authoredHeight, nativeFormScroll,
+    // A painted border outside the logical rows must not create a scrollbar.
+    bodyOverflows: () => nativeFormScroll() && geometry().minimum.height > allocation().height + .5,
     itemsMinimumHeight: () => geometry().itemsHeight,
     viewportResized,
     invalidate: invalidatePreferred,

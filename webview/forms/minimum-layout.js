@@ -169,7 +169,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
     return value;
   }
   const content = root.querySelector(':scope > .taxi-form-content'), title = root.querySelector(':scope > .taxi-form-title');
-  const value = items(content.querySelector(':scope > .taxi-items')), commands = content.querySelector(':scope > .taxi-root-commands');
+  const value = items(content.querySelector(':scope > .taxi-form-scrollport > .taxi-items'));
+  const commands = content.querySelector(':scope > .taxi-root-commands');
   const itemsHeight = value.height, rootInsets = insets(root), chromeHeight = rootInsets.height + size(title).height;
   if (commands) {
     reserveWidth(value, commandWidth ?? 0);

@@ -232,13 +232,13 @@ export function Preview(props) {
     '--taxi-form-initial-height': layout.authoredHeight() ? `${layout.authoredHeight() - 4}px` : undefined,
     '--taxi-form-preferred-width': `${layout.preferred().width}px`,
     '--taxi-form-preferred-height': `${layout.preferred().height}px`,
-    '--taxi-form-items-min-height': layout.tableFormScroll() ? `${layout.itemsMinimumHeight()}px` : undefined,
+    '--taxi-form-items-min-height': layout.nativeFormScroll() ? `${layout.itemsMinimumHeight()}px` : undefined,
     'min-width': '28px',
   });
   return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }}
-        data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.tableFormScroll() ? '' : undefined}
+        data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.nativeFormScroll() ? '' : undefined}
         style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
@@ -246,7 +246,9 @@ export function Preview(props) {
         <div class="taxi-form-content" classList={{ 'taxi-form-content--commands': hasCommands() }}
           data-root-command-position={hasCommands() ? placement().position : undefined} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <Show when={hasCommands()}><RootCommands placement={placement()} controller={props.controller}/></Show>
-          <Items node={root()} controller={props.controller}/>
+          <div class="taxi-form-scrollport" data-scrollable={layout.bodyOverflows() ? '' : undefined}>
+            <Items node={root()} controller={props.controller}/>
+          </div>
         </div>
       </div>
     </div>

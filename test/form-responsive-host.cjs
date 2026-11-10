@@ -11,8 +11,8 @@ const geometry = `(() => {
   const fixedGroup=[...document.querySelectorAll('.taxi-group-title')].find(node=>node.textContent==='Fixed group')?.closest('.taxi-element');
   const input=name=>document.querySelector('.taxi-input input[aria-label="'+name+'"]')?.closest('.taxi-input');
   const surface=document.querySelector('.taxi-special[data-native-field=ChartField]'),svg=surface?.querySelector('svg.taxi-chart'),canvas=surface?.querySelector('canvas');
-  const viewport=document.querySelector('.preview-scroll'),body=frame.querySelector('.taxi-form-content');
-  const innerScroll=frame.hasAttribute('data-native-form-scroll') && body.scrollHeight>body.clientHeight;
+  const viewport=document.querySelector('.preview-scroll'),body=frame.querySelector('.taxi-form-scrollport');
+  const innerScroll=body.hasAttribute('data-scrollable') && body.scrollHeight>body.clientHeight;
   const contentBottom=innerScroll?rect(body).y+body.scrollHeight-body.scrollTop:rect(frame).bottom;
   return {viewport:{width:viewport.clientWidth,height:viewport.clientHeight},frame:rect(frame),contentBottom,fixedGroup:rect(fixedGroup),code:rect(input('Code')),amount:rect(input('Amount')),name:rect(input('Name')),limited:rect(input('Limited')),memo:rect(document.querySelector('textarea[aria-label=Memo]')?.closest('.taxi-input')),
     table:rect(document.querySelector('.taxi-table-field')),grid:rect(document.querySelector('.taxi-table-scroll')),columns:{width:document.querySelector('.taxi-table-content').clientWidth,scrollWidth:document.querySelector('.taxi-table-content').scrollWidth},fixedTable:rect(document.querySelector('.taxi-element[data-kind=Table][data-stretch-x=false] > .taxi-table-field')),chart:rect(surface),
@@ -248,7 +248,7 @@ async function checkCompactTable(ui, document, view) {
     let sample;
     await until(async () => {
       sample = await ui.evaluate(`(() => {
-        const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-content');
+        const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-scrollport');
         const viewport = frame.closest('.preview-scroll'), title = frame.querySelector('.taxi-form-title');
         const last = [...frame.querySelectorAll('.taxi-button')].find(button => button.textContent === 'Close');
         const grid = ${grid}, box = grid.getBoundingClientRect();
@@ -266,7 +266,7 @@ async function checkCompactTable(ui, document, view) {
     return sample;
   };
   const scroll = offset => ui.evaluate(`(() => {
-    const body = document.querySelector('.taxi-form-content');
+    const body = document.querySelector('.taxi-form-scrollport');
     body.scrollTop = ${offset};
     return body.scrollTop;
   })()`);
@@ -319,7 +319,7 @@ exports.run=async function(){
   await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','responsive form opened');
   const view=[...service.views.values()][0],main=view.frames.get('main');let ui=await frame({state:{title:main.panel.title}});
   try { await until(async()=>await ui.evaluate("document.querySelector('.taxi-preview')?.dataset.formLayout==='allocated'&&!!document.querySelector('.taxi-chart')"),'responsive DOM ready'); }
-  catch(error){error.message+=' '+JSON.stringify(await ui.evaluate("({mode:document.querySelector('.taxi-preview')?.dataset.formLayout,kinds:[...document.querySelectorAll('[data-kind]')].map(n=>n.dataset.kind),html:document.querySelector('.taxi-form-content')?.innerHTML.slice(-3000)})"));throw error;}
+  catch(error){error.message+=' '+JSON.stringify(await ui.evaluate("({mode:document.querySelector('.taxi-preview')?.dataset.formLayout,kinds:[...document.querySelectorAll('[data-kind]')].map(n=>n.dataset.kind),html:document.querySelector('.taxi-form-scrollport')?.innerHTML.slice(-3000)})"));throw error;}
   await ui.evaluate('document.fonts.ready.then(()=>true)');
   // Overflow is a test condition, so establish it independently of the display/workbench size.
   const initialTarget = await ui.nativeWindow(), initialWindow = await ui.windowBounds(initialTarget.targetId);
@@ -352,9 +352,11 @@ exports.run=async function(){
   results.push({label:'splitter',...afterSplitter});
   await ui.evaluate(`document.querySelector('.form-shell > .form-splitter').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));true`);
   await ui.evaluate(`document.querySelector('.form-zoom select').value='125';document.querySelector('.form-zoom select').dispatchEvent(new Event('change',{bubbles:true}));true`);
+  await until(()=>view.inspectorState?.ui.zoom===125,'the zoom action reached the host before resize');
   results.push(...await cssCycle(ui,service,view,'zoom125'));
   assert.equal((await settled(ui)).zoom,'125','resize keeps the user zoom');
   await ui.evaluate(`document.querySelector('.form-zoom select').value='100';document.querySelector('.form-zoom select').dispatchEvent(new Event('change',{bubbles:true}));true`);
+  await until(()=>view.inspectorState?.ui.zoom===100,'the restored zoom reached the host');
   await replace(document,sourceTitle('Name'),sourceTitle('Name changed'));
   await until(()=>JSON.stringify(view.snapshot.model).includes('Name changed'),'dirty XML rendered');
   await until(async()=>await ui.evaluate("[...document.querySelectorAll('.taxi-field-label')].some(label=>label.textContent==='Name changed:')"),'dirty caption actually displayed');
@@ -411,7 +413,7 @@ exports.run=async function(){
   for(const [width,height] of [[360,240],[640,360],[1000,680]]) {
     await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
     await settled(ui);
-    const sample=await ui.evaluate(`(() => {const label=document.querySelector('.taxi-label'),r=label.getBoundingClientRect(),frame=document.querySelector('.taxi-form-frame'),root=frame.getBoundingClientRect(),body=frame.querySelector('.taxi-form-content'),bottom=frame.hasAttribute('data-native-form-scroll')?body.getBoundingClientRect().top+body.scrollHeight-body.scrollTop:root.bottom,close=[...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close').getBoundingClientRect();return {text:label.textContent,wrap:getComputedStyle(label).whiteSpace,width:r.width,height:r.height,inside:r.right<=root.right&&r.bottom<=bottom,followingControl:close.top>=r.bottom,expanded:document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')==='true'}})()`);
+    const sample=await ui.evaluate(`(() => {const label=document.querySelector('.taxi-label'),r=label.getBoundingClientRect(),frame=document.querySelector('.taxi-form-frame'),root=frame.getBoundingClientRect(),body=frame.querySelector('.taxi-form-scrollport'),bottom=frame.hasAttribute('data-native-form-scroll')?body.getBoundingClientRect().top+body.scrollHeight-body.scrollTop:root.bottom,close=[...document.querySelectorAll('.taxi-button')].find(button=>button.textContent==='Close').getBoundingClientRect();return {text:label.textContent,wrap:getComputedStyle(label).whiteSpace,width:r.width,height:r.height,inside:r.right<=root.right&&r.bottom<=bottom,followingControl:close.top>=r.bottom,expanded:document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')==='true'}})()`);
     // Native decoration layout inserts line breaks before the CSS paint stage.
     assert.ok(sample.text.length>55&&sample.width>0&&sample.height>0);
     assert.equal(sample.inside,true,'expanded long caption stays within the scrollable form');assert.equal(sample.followingControl,true,'caption never overlaps the following button');assert.equal(sample.expanded,true);
@@ -447,7 +449,7 @@ exports.run=async function(){
       let measured;
       await until(async () => {
         measured = await ui.evaluate(`(() => {
-          const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-content');
+          const frame = document.querySelector('.taxi-form-frame'), body = frame.querySelector('.taxi-form-scrollport');
           return { height: frame.getBoundingClientRect().height, authored: frame.hasAttribute('data-authored-height'),
             scrolls: body.scrollHeight > body.clientHeight, sameOwners: __heightOwners.every(node => node.isConnected) };
         })()`);
@@ -456,7 +458,7 @@ exports.run=async function(){
       assert.equal(measured.sameOwners, true);
       if (units === 1) {
         assert.equal(measured.scrolls, true);
-        assert.ok(await ui.evaluate("(() => {const body=document.querySelector('.taxi-form-content');body.scrollTop=20;return body.scrollTop;})()") > 0);
+        assert.ok(await ui.evaluate("(() => {const body=document.querySelector('.taxi-form-scrollport');body.scrollTop=20;return body.scrollTop;})()") > 0);
       }
       authoredHeights.push({units, ...measured});
     }
