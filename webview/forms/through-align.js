@@ -1,4 +1,4 @@
-import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, flag, number, property, scalar, textInputWidthBounds } from './model.mjs';
+import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
@@ -153,26 +153,10 @@ function allocateIndependentCaption(field, available, minima, captions, above, p
   updateStyle(field.element, '--taxi-field-columns', top ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
 }
 
-function reserveConditionalRows(node, targets, reserve, reserves) {
-  if (!targets.containers.has(node.key)) return;
-  if (node.presentation.grouping === 'HorizontalIfPossible') {
-    reserves.set(node.key, reserve);
-    return;
-  }
-  if (node.presentation.grouping !== 'Vertical') return;
-  for (const child of targets.children(node)) {
-    if (ordinaryGroup(child) && scalar(child, 'Representation') === 'None' && number(child, 'Width') <= 0
-      && !flag(child, 'ShowTitle') && !property(child, 'BackColor')) {
-      reserveConditionalRows(child, targets, reserve, reserves);
-    }
-  }
-}
-
-function reserveConditionalPageWidths(tracks, { targets }, reserves) {
+function reservePageCaptions(tracks, { targets }, reserves) {
   for (const { node, container, fields } of tracks) {
     if (!ordinaryGroup(node) || fields.some(field => field.caption.minimum !== field.caption.preferred)) continue;
-    const pages = targets.children(node).filter(child => child.kind === 'Pages'
-      && ['Auto', 'None', 'TabsOnTop', 'TabsOnBottom'].includes(scalar(child, 'PagesRepresentation', 'Auto')));
+    const pages = targets.children(node).filter(child => child.kind === 'Pages');
     if (!pages.length) continue;
     const local = Math.max(...fields.map(field => field.caption.preferred)) + inputCaptionInset;
     const reserve = () => {
@@ -180,9 +164,7 @@ function reserveConditionalPageWidths(tracks, { targets }, reserves) {
         || container.style.getPropertyValue('--taxi-through-label-width'));
       return Math.max(0, shared - local);
     };
-    for (const group of pages) for (const page of group.children) {
-      reserveConditionalRows(page, targets, reserve, reserves);
-    }
+    for (const group of pages) reserves.set(group.key, reserve);
   }
 }
 
@@ -190,7 +172,7 @@ function reserveConditionalPageWidths(tracks, { targets }, reserves) {
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
   const shared = [], stacks = [], isolatedCaptions = [], stackLimits = new Map(), minimumInputs = new Map();
-  const pageWidthReserves = new Map();
+  const pageCaptionReserves = new Map();
   for (const { tracks: scope, local, page, isolated } of os === 'linux' ? scopes : []) {
     if (isolated) {
       const { node, minimum, preferred } = isolated;
@@ -214,7 +196,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     const tracks = scope.map(track => captionTrack(track, context, minimumCaptions, adaptiveFields));
     if (tracks.some(track => !track)) continue;
     // The shared caption affects the fit budget. Each page still allocates its own columns.
-    if (vertical && tracks.length > 1) reserveConditionalPageWidths(tracks, context, pageWidthReserves);
+    if (vertical && tracks.length > 1) reservePageCaptions(tracks, context, pageCaptionReserves);
 
     const fields = tracks.flatMap(track => track.fields);
     const width = metric => Math.max(...fields.map(field => field.caption[metric])) + inputCaptionInset;
@@ -347,7 +329,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
   }
   return {
-    stackLimits, minimumInputs, pageWidthReserves,
+    stackLimits, minimumInputs, pageCaptionReserves,
     allocate(captions, minima, above) {
       allocateWidths(shared, captions, minima, above);
       for (const { field, minimum, preferred } of isolatedCaptions) {
