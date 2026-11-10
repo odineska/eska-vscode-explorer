@@ -409,7 +409,7 @@ function Group(props) {
     if (profile && profile.minimum < profile.preferred && groupCanShrink(node(), state.os, state.model.root)) return profile.minimum;
   };
   let container;
-  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.sequence}));
+  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.modelSequence}));
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>

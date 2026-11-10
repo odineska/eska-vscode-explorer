@@ -32,7 +32,7 @@ function Tumbler(props) {
       '--taxi-tumbler-padding': `${side}px`,
     };
   };
-  createEffect(on(() => [state.os, state.sequence, layout(), props.inactive, runtime?.pixelAligned()], () => {
+  createEffect(on(() => [state.os, state.modelSequence, layout(), props.inactive, runtime?.pixelAligned()], () => {
     setCaptionsPainted(false);
     runtime?.issue(owner, false);
     if (state.os !== 'linux' || layout().width === undefined || !runtime?.pixelAligned()) { setPainted(false); return; }
@@ -78,7 +78,7 @@ function Mark(props) {
   const [painted, setPainted] = createSignal(false);
   const state = props.controller.state;
   const switcher = () => props.mode === 'Switcher';
-  createEffect(on(() => [state.os, state.sequence, props.mode, props.inactive, props.controller.nativeText?.pixelAligned()], () => {
+  createEffect(on(() => [state.os, state.modelSequence, props.mode, props.inactive, props.controller.nativeText?.pixelAligned()], () => {
     if (state.os !== 'linux' || !props.controller.nativeText?.pixelAligned()) { setPainted(false); return; }
     const draw = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(surface.parentElement);

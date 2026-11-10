@@ -1,11 +1,10 @@
 import {createEffect,createSignal,on,onCleanup} from 'solid-js';
 import {buttonArrowPixels} from './button-caption.mjs';
-
-const rgb=value=>/^rgb\((\d+), (\d+), (\d+)\)$/.exec(value)?.slice(1).map(Number);
+import { rgb } from './native-control-paint.js';
 
 export function NativeButtonArrow(props){
  let canvas;const [ready,setReady]=createSignal(false),owner={};
- createEffect(on(()=>[props.enabled,props.foreground,props.controller.state.sequence],()=>{
+ createEffect(on(()=>[props.enabled,props.foreground,props.controller.state.modelSequence],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(!props.enabled)return;
   const button=props.button(),draw=()=>{
    try{

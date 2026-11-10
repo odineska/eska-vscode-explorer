@@ -110,7 +110,7 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     define: { 'process.env.NODE_ENV': '"production"' },
   });
   const listeners = new Map();
-  const snapshots = [];
+  const snapshots = [], paints = [];
   const module = { exports: {} };
   const context = createContext({
     module,
@@ -119,6 +119,7 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     requestAnimationFrame: () => 1,
     cancelAnimationFrame: () => {},
     observe: value => snapshots.push(structuredClone(value)),
+    paint: sequence => paints.push(sequence),
     window: {
       addEventListener: (name, callback) => listeners.set(name, callback),
       removeEventListener: name => listeners.delete(name),
@@ -142,9 +143,10 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   });
   const root = node('Form', 0, [node('Pages', 1, [node('Page', 2), node('Page', 3)]), node('UsualGroup', 10)]);
   root.properties.push({ key: { namespace: 'form', name: 'Width' }, value: { kind: 'text', text: '10' } });
-  receive({ type: 'state', sequence: 1, culture: 'en-US', model: { root } });
+  receive({ type: 'state', sequence: 1, formSessionId: 'first', revision: '1', culture: 'en-US', model: { root } });
   runInContext(`module.exports.createRoot(dispose => {
     globalThis.stopObserving = dispose;
+    module.exports.createEffect(() => paint(formController.state.modelSequence));
     module.exports.createEffect(() => observe({
       sequence: formController.state.sequence,
       culture: formController.state.culture,
@@ -161,6 +163,8 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   receive({
     type: 'state',
     sequence: 2,
+    formSessionId: 'first',
+    revision: '2',
     culture: 'ru-RU',
     model: { root: changed },
     selection: changed.children[0].children[1].identity,
@@ -175,6 +179,7 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   snapshots.length = 0;
   receive({ type: 'state', sequence: 3, phase: 'updating' });
   assert.deepEqual(snapshots, [{ ...expected, sequence: 3 }]);
+  assert.deepEqual(paints, [1, 2], 'a status message leaves model-dependent effects idle');
   snapshots.length = 0;
   receive({ type: 'state', sequence: 1, culture: 'en-US', model: { root } });
   assert.deepEqual(snapshots, [], 'an older message cannot partially replace the current state');
@@ -184,6 +189,12 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     previewNavigation: { pages: { 'own:current:1': 'own:current:2' }, collapsed: { 'own:current:10': false } },
   });
   assert.deepEqual(snapshots, [{ ...expected, sequence: 3, page: 'own:current:2', collapsed: false }]);
+  // A detached frame handshake can resend the current snapshot to the main frame.
+  receive({ type: 'state', sequence: 4, formSessionId: 'first', revision: '2', model: { root: changed } });
+  assert.deepEqual(paints, [1, 2], 'the same session revision leaves model-dependent effects idle');
+  receive({ type: 'state', sequence: 5, formSessionId: 'second', revision: '2', model: { root } });
+  assert.deepEqual(paints, [1, 2, 5], 'the same revision number in a new session installs a new model');
+  assert.equal(snapshots.at(-1).width, '10');
   runInContext('stopObserving(); formController.dispose();', context);
   assert.equal(listeners.size, 0);
 });

@@ -43,7 +43,7 @@ export function RadioChoices(props) {
       '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
   };
 
-  createEffect(on(() => [state.sequence, segments(), inactive()], () => {
+  createEffect(on(() => [state.modelSequence, segments(), inactive()], () => {
     setInactiveColor(undefined);
     if (!linux || segments() || !inactive()) return;
     const frame = requestAnimationFrame(() => {
@@ -54,7 +54,7 @@ export function RadioChoices(props) {
   }));
 
   const runtime = props.controller.nativeText, owner = {};
-  createEffect(on(() => [state.sequence, layout(), inactive(), runtime?.pixelAligned()], () => {
+  createEffect(on(() => [state.modelSequence, layout(), inactive(), runtime?.pixelAligned()], () => {
     setPainted(false);
     runtime?.issue(owner, false);
     const size = layout(), font = valueFont();
@@ -118,7 +118,7 @@ export function RadioChoices(props) {
 function RadioMark(props) {
   let mark, canvas;
   const [painted, setPainted] = createSignal(false);
-  createEffect(on(() => [props.state.os, props.state.sequence, props.selected, props.inactive, props.runtime?.pixelAligned()], () => {
+  createEffect(on(() => [props.state.os, props.state.modelSequence, props.selected, props.inactive, props.runtime?.pixelAligned()], () => {
     if (props.state.os !== 'linux' || !props.runtime?.pixelAligned()) { setPainted(false); return; }
     const frame = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(mark.parentElement);

@@ -4,7 +4,7 @@ import {pdfSurfaceRgba} from './pdf-surface.mjs';
 
 export function Pdf(props){
  let surface,canvas;const [ready,setReady]=createSignal(false),owner={};
- createEffect(on(()=>[props.controller.state.os,props.controller.state.sequence,props.controller.state.ui.zoom,props.metrics],()=>{
+ createEffect(on(()=>[props.controller.state.os,props.controller.state.modelSequence,props.controller.state.ui.zoom,props.metrics],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(props.controller.state.os!=='linux')return;
   const draw = () => {
    const metrics = props.metrics;

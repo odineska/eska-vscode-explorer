@@ -12,7 +12,7 @@ const REGIONS = { left:sideRegions(false), right:sideRegions(true) };
 export function NativeTabBorder(props) {
   let source, neighbours, lastKey;
   const state=props.controller.state;
-  createEffect(on(()=>[state.sequence,state.os,props.enabled,props.side,props.active,props.selected,props.titleColorAuthored,
+  createEffect(on(()=>[state.modelSequence,state.os,props.enabled,props.side,props.active,props.selected,props.titleColorAuthored,
     JSON.stringify([props.node.presentation.background,props.node.presentation.titleColor,props.previous?.presentation.background,props.next?.presentation.background,props.pageBackground,props.pageHasBackground])],()=>{
     const frame=requestAnimationFrame(()=>{
       const button=props.button();
