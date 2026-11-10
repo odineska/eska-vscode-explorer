@@ -8,18 +8,29 @@ exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture.tabBorders,results=[];
   const explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-  async function ready(ui,expected){return ui.evaluate(`(() => {const tabs=[...document.querySelectorAll('.taxi-tabs>[role=tab]')];return tabs.length===${expected.tabs.length}&&!document.querySelector('[data-native-label=pending]')&&${JSON.stringify(expected.tabs)}.every((tab,index)=>tabs[index].dataset.nativeTabBorder==='ready'&&tabs[index].getAttribute('aria-selected')===String(tab.active)&&getComputedStyle(tabs[index]).backgroundColor==='rgb('+tab.background.join(', ')+')');})()`);}
+  async function ready(ui,expected){return ui.evaluate(`(() => {const tabs=[...document.querySelectorAll('.taxi-tabs>[role=tab]')];return tabs.length===${expected.tabs.length}&&!document.querySelector('[data-native-label=pending]')&&${JSON.stringify(expected.tabs)}.every((tab,index)=>tabs[index].dataset.nativeTabBorder==='ready'&&tabs[index].getAttribute('aria-selected')===String(tab.active)&&getComputedStyle(tabs[index]).backgroundColor==='rgb('+tab.background.join(', ')+')'&&(!tab.foreground||getComputedStyle(tabs[index]).color==='rgb('+tab.foreground.join(', ')+')'));})()`);}
   async function sample(ui,expected,label,targetId){
     await until(()=>ready(ui,expected),'native tab colors and glyphs');await ui.evaluate('document.fonts.ready.then(()=>true)');
     await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
-    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),tabs:[...document.querySelectorAll('.taxi-tabs>[role=tab]')].map(rect),inputs:[...document.querySelectorAll('.taxi-input')].filter(node=>getComputedStyle(node).visibility!=='hidden').map(rect)};})()`),regions=[];
+    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),panel:rect(document.querySelector('.taxi-page[aria-hidden=false]')),tabs:[...document.querySelectorAll('.taxi-tabs>[role=tab]')].map(rect),inputs:[...document.querySelectorAll('.taxi-input')].filter(node=>getComputedStyle(node).visibility!=='hidden').map(rect)};})()`),regions=[];
+    const addRegions=(owner,measured)=>{
+      for(const [name,r] of Object.entries(measured)){
+        const [x,y,width,height]=r.rect;
+        regions.push({name:owner+' '+name,x,y,width,height,hex:r.rgb,sha:r.rgbSha256});
+      }
+    };
     assert.deepEqual([geometry.frame.width,geometry.frame.height],expected.frame,label+' form allocation');
+    if(expected.panel){
+      const {x,y,width,height}=geometry.panel;
+      assert.deepEqual([x-geometry.frame.x,y-geometry.frame.y,width,height],expected.panel.rect,label+' page panel geometry');
+      addRegions('page panel',expected.panel.regions);
+    }
     if(expected.automaticInputMaximum){const input=geometry.inputs[0];assert.deepEqual([input.x-geometry.frame.x,input.y-geometry.frame.y,input.width,input.height],expected.automaticInputMaximum.rect,label+' native automatic string maximum');}
     for(const [index,tab] of geometry.tabs.entries()){
       const native=expected.tabs[index],x=tab.x-geometry.frame.x,y=tab.y-geometry.frame.y;
       assert.deepEqual([x,y,tab.width,tab.height],native.rect,label+' '+native.name+' geometry');
-      for(const [name,r] of Object.entries(native.regions)){const [x,y,width,height]=r.rect;regions.push({name:native.name+' '+name,x,y,width,height,hex:r.rgb});}
-      regions.push({name:native.name+' whole',x,y,width:tab.width,height:tab.height,sha:native.wholeTabRgbSha256});
+      addRegions(native.name,native.regions);
+      if(native.wholeTabRgbSha256)regions.push({name:native.name+' whole',x,y,width:tab.width,height:tab.height,sha:native.wholeTabRgbSha256});
     }
     if(expected.wholeFormWithShadowRgbSha256)regions.push({name:'whole form and shadow',x:0,y:0,width:expected.frame[0]+4,height:expected.frame[1]+4,sha:expected.wholeFormWithShadowRgbSha256});
     let actual,captureAttempts=0;
@@ -73,6 +84,10 @@ exports.run=async()=>{
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'tab session released');await Promise.all([...explorer.formPreview.closing]);
   }
-  await explorer.shutdown();const report={passed:true,locale:vscode.env.language,tabBorders:true,forms:gallery.forms.length,nativeStates:47,nativeTabs:105,dirtyPalette:true,detachedPixels:true,localNavigationStateHandoffVerified:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
+  await explorer.shutdown();
+  const states=gallery.forms.flatMap(form=>form.expected.states),dirtyPalette=gallery.forms.some(form=>form.kind==='ColorFreshA');
+  const report={passed:true,locale:vscode.env.language,tabBorders:true,forms:gallery.forms.length,nativeStates:states.length,
+    nativeTabs:states.reduce((total,state)=>total+state.tabs.length,0),dirtyPalette,detachedPixels:dirtyPalette,
+    localNavigationStateHandoffVerified:dirtyPalette,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
   if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`tab-borders-measured-${vscode.env.language}.json`),JSON.stringify(report));await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
 };

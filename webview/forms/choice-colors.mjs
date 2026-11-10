@@ -17,3 +17,8 @@ export function inactiveRadioTextColor(foreground, backdrop) {
   const high = Math.max(...backdrop), low = Math.min(...backdrop);
   return mixInactiveCaption(foreground, Math.round((high + 255) / 2), high ? (high - low) / (2 * high) : 0);
 }
+
+export function inactiveTabTextColor(foreground, backdrop) {
+  const high = Math.max(...backdrop);
+  return mixInactiveCaption(foreground, high, high ? (high - Math.min(...backdrop)) / high : 0);
+}
