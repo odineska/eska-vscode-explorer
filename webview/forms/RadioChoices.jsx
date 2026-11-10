@@ -54,11 +54,11 @@ export function RadioChoices(props) {
   }));
 
   const runtime = props.controller.nativeText, owner = {};
-  createEffect(on(() => [state.sequence, layout(), inactive()], () => {
+  createEffect(on(() => [state.sequence, layout(), inactive(), runtime?.pixelAligned()], () => {
     setPainted(false);
     runtime?.issue(owner, false);
     const size = layout(), font = valueFont();
-    if (!size || !runtime) return;
+    if (!size || !runtime?.pixelAligned()) return;
     let current = true;
     const fail = () => { if (current) runtime.issue(owner, true); };
     const frame = requestAnimationFrame(() => {
@@ -104,7 +104,7 @@ export function RadioChoices(props) {
       return <span class="taxi-radio-option" role="radio" aria-label={label()} aria-checked={checked()} style={optionStyle()}
         data-top={edge(position().row === 0)} data-bottom={edge(index() + columns() >= choices().length)}
         data-left={edge(position().column === 0)} data-right={edge(position().column === columns() - 1 || index() === choices().length - 1)}>
-        <Show when={!segments()}><RadioMark state={state} selected={checked()} inactive={inactive()}/></Show>
+        <Show when={!segments()}><RadioMark state={state} selected={checked()} inactive={inactive()} runtime={runtime}/></Show>
         <span class="taxi-radio-caption" style={{ width: width() === undefined ? undefined : `${width()}px` }}>
           <NativeLabel enabled={linux && !segments()} placement="radioChoice" text={label()} font={valueFont()}
             foreground={foreground()} runtime={props.controller.nativeText}/>
@@ -118,8 +118,8 @@ export function RadioChoices(props) {
 function RadioMark(props) {
   let mark, canvas;
   const [painted, setPainted] = createSignal(false);
-  createEffect(on(() => [props.state.os, props.state.sequence, props.selected, props.inactive], () => {
-    if (props.state.os !== 'linux') { setPainted(false); return; }
+  createEffect(on(() => [props.state.os, props.state.sequence, props.selected, props.inactive, props.runtime?.pixelAligned()], () => {
+    if (props.state.os !== 'linux' || !props.runtime?.pixelAligned()) { setPainted(false); return; }
     const frame = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(mark.parentElement);
       const image = backdrop ? radioGlyph(props.selected, props.inactive, backdrop) : undefined;

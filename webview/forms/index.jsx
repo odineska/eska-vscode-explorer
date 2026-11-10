@@ -6,7 +6,7 @@ import { createInputBorderPaintQueue } from './NativeInputBorder.jsx';
 import './style.css';
 import './inspector.css';
 const c = controller(acquireVsCodeApi());
-c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src);
+c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src, () => c.state.ui.zoom);
 c.scheduleInputBorderPaint = createInputBorderPaintQueue();
 const dispose = render(() => <App controller={c}/>, document.getElementById('root'));
 window.addEventListener('unload', () => { dispose(); c.nativeText.dispose(); c.dispose(); }, { once: true });
