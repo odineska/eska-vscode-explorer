@@ -12,8 +12,8 @@ export function throughCaptionWidth(element) {
 }
 
 /** Allocate the label track while keeping its original accessible name. */
-export function allocateFieldCaption(captions, { element, key, caption }, width, inset = 0) {
-  updateStyle(element, '--taxi-field-caption-width', width === undefined ? '' : `${width + inset}px`);
+export function allocateFieldCaption(captions, { element, key, caption }, width, inset = 0, styleProperty = '--taxi-field-caption-width') {
+  updateStyle(element, styleProperty, width === undefined ? '' : `${width + inset}px`);
   if (width === undefined || width >= caption.preferred) return false;
   const lines = fieldCaptionLines(caption, width);
   if (lines.length < 2) return false;

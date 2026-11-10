@@ -203,7 +203,10 @@ export function dateBlockLayout(model, context) {
     alignment.style(leading.element, '--taxi-date-title-line-height', `${leading.wrappedLineHeight}px`);
     const outer = spacing + boxInsets(getComputedStyle(group)).width;
     const widthAt = fraction => outer + (authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * fraction);
-    const minimumWidth = minimum + outer - spacing + boxInsets(getComputedStyle(items)).width;
+    const insets = outer - spacing + boxInsets(getComputedStyle(items)).width;
+    const minimumWidth = minimum + insets;
+    const automaticTop = !authoredTop && !locked.length
+      ? { leading: leading.key, minimum: minimumWidth, sideWidth: Math.round(mixedWidth + insets) } : undefined;
     if (fixedTop) {
       const profile = { base: fixed + topValue + outer, minimum: minimumWidth, preferred: preferred + outer, checkbox: checkbox.caption };
       titleFloors.set(node.key, {
@@ -233,12 +236,13 @@ export function dateBlockLayout(model, context) {
         pack: canMove || sideValue === lockedValue ? width => packSideCaptions(width, profile) : undefined,
         widthAt: authoredTop ? undefined : widthAt,
         transition,
+        automaticTop,
       });
     }
     // Use the same calibrated width for preferred measurement and for a fully expanded block.
     alignment.style(owner, '--taxi-fixed-date-width', `${Math.round(preferred + outer)}px`);
     for (const [index, element] of middle.entries()) updateStyle(element, '--taxi-field-track', `${middleWidths[index]}px`);
-    blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop,
+    blocks.push({ key: node.key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred, canMove, authoredTop, automaticTop,
       widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate, minimumWidth });
   }
 
@@ -248,13 +252,17 @@ export function dateBlockLayout(model, context) {
     allocate(captions, above, columnFraction, packedDates, fixedThroughWidths) {
       for (const block of blocks) {
         const { key, items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
-          canMove, authoredTop, widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing,
+          canMove, authoredTop, automaticTop, widthAt, slots, mixedInset, mixedWidth, sideWidth, spacing,
           lockedValue, lockedDate, minimumWidth } = block;
         const width = widthAt(columnFraction(owner));
-        const limit = Math.max(minimumWidth, fixedThroughWidths.get(owner)?.availableWidth() ?? Infinity);
+        const through = fixedThroughWidths.get(owner);
+        const limit = Math.max(minimumWidth, through?.availableWidth() ?? Infinity);
         const plan = packedDates.get(key);
         const packed = plan?.width <= limit ? plan : undefined;
-        updateStyle(owner, '--taxi-fixed-date-width', `${packed?.width ?? Math.min(limit, Math.round(width))}px`);
+        const requested = packed?.width ?? Math.min(limit, Math.round(width));
+        const compact = through?.compactLeadingWidth && automaticTop && requested < automaticTop.sideWidth;
+        const allocated = compact ? through.compactLeadingWidth(requested, minimumWidth) : requested;
+        updateStyle(owner, '--taxi-fixed-date-width', `${allocated}px`);
         const available = availableTrackWidth(row, slots.length, scale);
         const sideUnavailable = canMove && available + spacing < Math.round(mixedWidth);
         const lockedOnly = sideUnavailable || !canMove;

@@ -302,16 +302,21 @@ async function verifyColumnSurplus(service, main, view, document) {
     } : null;
     const divider = form.querySelector('.taxi-column-divider');
     const throughFields = [[1051, '.taxi-input'], [1071, '.taxi-input'], [1072, '.taxi-picture-field'], [1073, '.taxi-label-field']];
+    const through = throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector)));
+    const referenceLabel = find(1051)?.querySelector('.taxi-field-label');
+    const referenceCaption = through[0] && referenceLabel
+      ? [through[0][0] - box(referenceLabel)[0], referenceLabel.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
     const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
       dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
-      dateFields, checkCaption, dateLabel, divider: !!divider,
+      dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
       dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
-      through: throughFields.map(([id, selector]) => box(find(id)?.querySelector(selector))) };
+      through, referenceCaption };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
-    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, checkCaption, dateLabel, referenceRow, divider }) {
+    columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
+    checkCaption, dateLabel, referenceRow, referenceCaption, divider }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
@@ -319,9 +324,11 @@ async function verifyColumnSurplus(service, main, view, document) {
     if (dateBlockWidth !== undefined) expected.dateBlockWidth = dateBlockWidth;
     if (traceOffset !== undefined) expected.traceOffset = traceOffset;
     if (dateFields) expected.dateFields = dateFields;
+    if (dateLocations) expected.dateLocations = dateLocations;
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
     if (referenceRow) expected.through = referenceRow;
+    if (referenceCaption) expected.referenceCaption = referenceCaption;
     const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
@@ -418,16 +425,17 @@ async function verifyColumnSurplus(service, main, view, document) {
         }
         if (throughVariants) {
           result.throughVariants = [];
-          for (const { hideServices, traceWidth, topTitles, tailWidth, cases: poses } of throughVariants) {
-            let variant = topTitles ? dateTitles('Top') : source;
+          for (const { hideServices, traceWidth, topTitles, leftTitles, courtCaption, tailWidth, cases: poses } of throughVariants) {
+            let variant = leftTitles ? dateTitles('Left') : topTitles ? dateTitles('Top') : source;
             if (hideServices) variant = variant.replace('<UsualGroup name="Services" id="1089">', '$&<Visible>false</Visible>');
+            if (courtCaption) variant = variant.replaceAll('Исполнительное производство', courtCaption);
             if (traceWidth) variant = variant.replace('<InputField name="Trace" id="1091">', `$&<Width>${traceWidth}</Width>`);
             if (tailWidth) variant = variant.replace(/<LabelField name="(?:Outgoing|Incoming)Org" id="\d+">/gu, `$&<Width>${tailWidth}</Width>`);
             assert.notEqual(variant, source);
             await editFormSource(document, view, variant);
             const resized = [];
             for (const pose of [...poses, poses[0]]) resized.push(await observe(floating, file, pose));
-            result.throughVariants.push({ hideServices, traceWidth, topTitles, tailWidth, resized });
+            result.throughVariants.push({ hideServices, traceWidth, topTitles, leftTitles, courtCaption, tailWidth, resized });
           }
           await editFormSource(document, view, source);
           await observe(floating, file, cases[1]);

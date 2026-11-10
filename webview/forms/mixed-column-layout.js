@@ -6,6 +6,11 @@ import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.
 
 const sum = values => values.reduce((total, value) => total + value, 0);
 const gap = 10;
+const mixedCaptionWidth = '--taxi-through-mixed-caption-width';
+
+function compactTrack({ minimum, maximum }) {
+  return { minimum, preferred: minimum, maximum, growthWeight: minimum };
+}
 
 function controlSize(entry, { os, collapsed }) {
   const value = entry.kind === 'field' ? entry.controlWidth : entry.width;
@@ -223,6 +228,13 @@ export function mixedColumnLayout(context) {
         }
       }
       const width = Math.max(leading.preferred, scope.stackWidth, rigid, fixedDates.length ? fixed : 0);
+      const [date] = fixedDates;
+      const automaticTop = date && dateProfiles.get(date.element.dataset.element)?.automaticTop;
+      if (fixedDates.length === 1 && automaticTop && compactReserve !== undefined) {
+        scope.automaticDate = { ...date, ...automaticTop, fullWidth: leading.preferred, fullReserve: leading.reserve,
+          captionMinimum: Math.max(...scope.titles.map(({ caption }) => caption.minimum)) };
+        for (const { element } of scope.titles) alignment.style(element, mixedCaptionWidth, '');
+      }
       if (width > leading.preferred) {
         const preferred = width + picture.preferred + label.preferred + spacing;
         for (const { items } of lanes) alignment.style(items, '--taxi-through-preferred-width', `${preferred}px`);
@@ -247,6 +259,7 @@ export function mixedColumnLayout(context) {
         const layout = {
           trailingMinimum: trailing + spacing + inset,
           trailingPreferred: picture.preferred + label.preferred + spacing + inset,
+          compactSpacing: scope.automaticDate ? spacing : 0,
           leadingWidth(available, minima) {
             const preferred = available + .5 >= leading.preferred ? leading.preferred : leading.preferred - leading.reserve + reserve;
             return Math.max(rigid, preferred, ...peers.map(({ offset, limit }) =>
@@ -256,13 +269,20 @@ export function mixedColumnLayout(context) {
             return Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale))) - trailing;
           },
         };
+        // With the date titles above, all three tracks share growth from their compact widths.
+        if (scope.automaticDate) layout.compactLeadingWidth = (limit, minimum) =>
+          minimum + Math.round(Math.max(0, limit - minimum) * minimum / (minimum + trailing));
         for (const { element } of fixedDates) fixedThroughWidths.set(element, layout);
       }
     }
   }
 
-  function allocateThrough({ lanes, references, fixedSiblings, compactReserve, stackWidth, titles, topDateKey, fullReferenceWidth }, captions, packedDates) {
-    const planned = packedDates.get(topDateKey)?.leadingWidth;
+  function allocateThrough(scope, above, captions, packedDates) {
+    const { lanes, references, fixedSiblings, compactReserve, stackWidth, titles, topDateKey, fullReferenceWidth, automaticDate } = scope;
+    const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale)));
+    const origin = leadingOrigin(lanes);
+    const automatic = automaticDate && above.has(automaticDate.leading);
+    let planned = packedDates.get(topDateKey)?.leadingWidth;
     if (topDateKey) {
       const compact = planned !== undefined && planned + .5 < fullReferenceWidth;
       for (const title of titles) {
@@ -272,15 +292,27 @@ export function mixedColumnLayout(context) {
         allocateFieldCaption(captions, title, width === undefined ? width : width - inputCaptionInset, inputCaptionInset);
       }
     }
+    if (automaticDate) {
+      const dateWidth = automatic ? occupiedWidth([automaticDate], origin) : 0;
+      const compact = automatic && dateWidth + .5 < automaticDate.fullWidth;
+      const { minimum, captionMinimum, fullReserve } = automaticDate;
+      const fraction = Math.max(0, (dateWidth - minimum) / minimum);
+      const reserve = Math.min(fullReserve, compactReserve + Math.round(captionMinimum * fraction));
+      if (automatic) planned = dateWidth;
+      // Share the date block's leading edge while the automatic date titles sit above the fields.
+      for (const title of titles) {
+        if (compact) captions.delete(title.key);
+        allocateFieldCaption(captions, title, compact ? reserve - title.labelGap - inputCaptionInset : undefined,
+          inputCaptionInset, mixedCaptionWidth);
+      }
+    }
     // Read the caption after the through-aligned groups have chosen their wrapped titles.
     for (const lane of lanes) {
       const [entry] = lane.children;
       entry.labelWidth = pixels(getComputedStyle(entry.row).gridTemplateColumns);
     }
     const tracks = trackProfiles(lanes), [leading, picture, label] = tracks;
-    const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, tracks.length, scale)));
     // A fixed sibling occupies the leading track across the vertical stack.
-    const origin = leadingOrigin(lanes);
     const fixed = occupiedWidth(fixedSiblings, origin);
     const floor = Math.min(fixed, available - picture.minimum - label.minimum);
     const renderedMinimum = Math.max(leading.minimum, floor);
@@ -294,7 +326,8 @@ export function mixedColumnLayout(context) {
     let requested;
     if (planned !== undefined) {
       const first = Math.min(available - picture.minimum - label.minimum, Math.max(planned, renderedMinimum));
-      requested = [first, ...allocateLaneSizes(available - first, [picture, label], { fractional: true })];
+      const followers = automatic ? [compactTrack(picture), compactTrack(label)] : [picture, label];
+      requested = [first, ...allocateLaneSizes(available - first, followers, { fractional: true })];
     } else {
       requested = allocateLaneSizes(available, tracks, { fractional: true });
       if (stackDominates && requested[0] < renderedMinimum) {
@@ -304,7 +337,7 @@ export function mixedColumnLayout(context) {
     }
     const preferred = (planned === undefined ? leading.preferred : requested[0]) + picture.preferred + label.preferred;
     // Round the two leading boxes independently and give the last label the remaining pixels.
-    const round = available < preferred ? Math.floor : Math.round;
+    const round = !automatic && available < preferred ? Math.floor : Math.round;
     const first = requested.slice(0, 2).map(round);
     const widths = [...first, round(sum(requested) + 1e-7) - sum(first)];
     for (const lane of lanes) {
@@ -347,7 +380,7 @@ export function mixedColumnLayout(context) {
         }
       }
     }
-    return new Map(throughAllocations.map(scope => [scope.column, allocateThrough(scope, captions, packedDates)]));
+    return new Map(throughAllocations.map(scope => [scope.column, allocateThrough(scope, above, captions, packedDates)]));
   }
 
   return { register, registerThrough, captureThroughPreferred, allocate, minimumRows, widthFloors, fixedThroughWidths };

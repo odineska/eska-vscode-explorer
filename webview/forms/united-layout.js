@@ -277,9 +277,12 @@ export function alignUnitedRows(model, context, wrapped) {
     if (partial) return partial;
     // Before the side captions fit, share extra space in proportion to the minimum content widths.
     const widths = candidates.map(candidate => candidate.minimum);
-    const weights = candidates.map(candidate => Math.max(0, candidate.minimum - candidate.insets));
-    const widerValue = pair.packedDateColumn?.block.transition?.widerValue;
-    return { widths, allocated: spreadCaptionSurplus(widths, weights, available, 0, widerValue ? Math.round : Math.floor) };
+    const packed = pair.packedDateColumn;
+    const compactSpacing = packed?.block.through?.compactSpacing ?? 0;
+    const weights = candidates.map(({ minimum, insets }, index) =>
+      Math.max(0, minimum - insets - (index === packed?.index ? compactSpacing : 0)));
+    const round = compactSpacing || packed?.block.transition?.widerValue ? Math.round : Math.floor;
+    return { widths, allocated: spreadCaptionSurplus(widths, weights, available, 0, round) };
   }
   function allocateWidths(captions, minima) {
     allocateInputs(captions);
