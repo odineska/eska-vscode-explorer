@@ -3,6 +3,8 @@ import { ExplorerError, isRecord } from "../protocol.js";
 import { isByteRange, isSnapshot, unsigned, type ByteRange } from "../query/protocol.js";
 import { withQueryText, type QueryTextInput } from "../query/text-transfer.js";
 
+export const FORMAT_API_VERSION = { major: 1, minor: 33 } as const;
+
 export type FormatMethod = "format/document" | "format/query" | "format/bufferBegin" | "format/bufferAppend" | "format/bufferClose";
 export interface FormatLimits { maxTextBytes: number; maxInlineBytes: number }
 export interface FormatEndpoint {
@@ -15,7 +17,8 @@ export interface NativeFormatEdit { start: number; end: number; text: string }
 export function formatCapabilities(hello: unknown): FormatLimits | undefined {
   if (!isRecord(hello) || !isRecord(hello.capabilities) || hello.capabilities.formatting === undefined) return undefined;
   const value = hello.capabilities.formatting;
-  if (!isRecord(hello.apiVersion) || hello.apiVersion.major !== 1 || !unsigned(hello.apiVersion.minor) || hello.apiVersion.minor < 33
+  if (!isRecord(hello.apiVersion) || hello.apiVersion.major !== FORMAT_API_VERSION.major
+    || !unsigned(hello.apiVersion.minor) || hello.apiVersion.minor < FORMAT_API_VERSION.minor
     || !isRecord(value) || value.schemaVersion !== 1 || value.component !== "eska-fmt" || value.protocolVersion !== 1
     || value.planOnly !== true || value.writesOwner !== false || value.document !== true || value.range !== true || value.queryDraft !== true
     || value.formatOnSave !== "opt_in" || !Array.isArray(value.languages) || !value.languages.includes("bsl") || !value.languages.includes("sdbl")

@@ -69,7 +69,7 @@ export function NativeInputBorder(props) {
       const reference = props.referenceButtons;
       const buttons = reference ?? [...surface.querySelectorAll('.taxi-input-button')];
       const supported = reference || !flag(node(), 'MultiLine', false) && ['string', 'number', 'date'].includes(kind)
-        && buttons.length <= 1 && buttons.every(button => button.classList.contains('taxi-input-button--choice'));
+        && buttons.length <= 2 && buttons.every(button => button.classList.contains('taxi-input-button--choice'));
       if (!supported || surface.getBoundingClientRect().height < 6) return reset();
       const disabled = !!surface.closest('.taxi-disabled'), inactive = flag(node(), 'ReadOnly', false) || disabled;
       const { border, background } = inputColors(source, declarations);

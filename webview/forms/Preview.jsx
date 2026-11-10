@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, inputPaintedOutset, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, inputPaintedOutset, primitiveInputSelection, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { StandaloneAddition } from './Additions.jsx';
 import { Splitter } from './Splitter.jsx';
@@ -20,6 +20,7 @@ import { tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
+import { InputChoicePicture } from './InputChoicePicture.jsx';
 import { referenceButtonBackground } from './reference-button-paint.mjs';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
@@ -615,6 +616,22 @@ function MenuLevel(props) {
     }}</For>
   </div>;
 }
+function PrimitiveChoiceGlyph(props) {
+  return <Switch fallback="...">
+    <Match when={props.kind === 'calendar'}>
+      <Show when={props.os === 'linux'} fallback={<Icon name="Calendar"/>}>
+        <NativeInputCalendar height={props.height} inactive={props.inactive} fallback={<Icon name="Calendar"/>}/>
+      </Show>
+    </Match>
+    <Match when={props.kind === 'calculator'}>
+      <Show when={props.os === 'linux'} fallback={<Icon name="Calculator"/>}>
+        <NativeInputCalculator height={props.height} inactive={props.inactive}/>
+      </Show>
+    </Match>
+    <Match when={props.kind === 'list'}>▾</Match>
+  </Switch>;
+}
+
 function Input(props) {
   let valueInput, surface;
   const [paint,setPaint] = createSignal();
@@ -623,7 +640,10 @@ function Input(props) {
   const value = createMemo(() => fieldValue(node(), state.culture, state.locale));
   const hint = () => localizedProperty(property(node(), 'InputHint')?.value, state.locale);
   const listChoice = () => inputListChoice(node(), state.os);
-  const choiceKind = () => listChoice() ? 'list' : kind() === 'date' ? 'calendar' : kind() === 'number' ? 'calculator' : 'choice';
+  const primitiveSelection = createMemo(() => primitiveInputSelection(node(), state.os));
+  const choiceKind = () => !primitiveSelection() && listChoice() ? 'list'
+    : kind() === 'date' ? 'calendar' : kind() === 'number' ? 'calculator' : 'choice';
+  const choicePicture = () => node().presentation.choiceButtonPicture;
   const multiline = () => flag(node(), 'MultiLine', false);
   const referenceButtons = createMemo(() => referenceInputButtons(node(), state.os));
   const referenceButtonHeight = () => inputHeight(node(), state.os);
@@ -631,8 +651,10 @@ function Input(props) {
   const disabled = () => paint()?.disabled ?? !flag(node(), 'Enabled');
   const textSizing = createMemo(() => textInputWidthBounds(node(), state.os));
   const [observedPaintWidth, setObservedPaintWidth] = createSignal();
-  const choice = () => !referenceButtons() && (textSizing() ? textSizing().requestedChoice && (observedPaintWidth() ?? textSizing().preferredPaint) >= 24
+  const choice = () => !referenceButtons() && (textSizing()
+    ? textSizing().requestedChoice && (observedPaintWidth() ?? textSizing().preferredPaint) >= textSizing().choiceThreshold
     : inputChoiceButton(node(), state.os));
+  const inactive = () => paint()?.inactive ?? (readOnly() || disabled());
   // Intrinsic layout reserves the painted edge even before the native palette is read.
   const outset = createMemo(() => inputPaintedOutset(node(), state.os, choice()));
   const sizing = createMemo(() => fieldStyle(node(), state.os, choice()));
@@ -674,15 +696,32 @@ function Input(props) {
       </Match>
     </Switch>
     <Show when={referenceButtons()} fallback={<>
-      <Show when={choice()}><span class="taxi-input-button" data-choice-kind={choiceKind()} classList={{'taxi-input-button--choice':true,'taxi-input-button--number':choiceKind() === 'calculator'}}>{choiceKind() === 'calendar' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calendar"/>}><NativeInputCalendar height={controlHeight()} inactive={paint()?.inactive ?? (readOnly() || disabled())} fallback={<Icon name="Calendar"/>}/></Show> : choiceKind() === 'calculator' ? <Show when={state.os === 'linux'} fallback={<Icon name="Calculator"/>}><NativeInputCalculator height={controlHeight()} inactive={paint()?.inactive ?? (readOnly() || disabled())}/></Show> : listChoice() ? '▾' : '...'}</span></Show>
+      <Show when={choice() && primitiveSelection()?.includes('dropdown')}>
+        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list"
+          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive())}, #fff` }}/>
+      </Show>
+      <Show when={choice() && (primitiveSelection()?.includes('choice') ?? true)}>
+        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind={choiceKind()}
+          classList={{ 'taxi-input-button--number': choiceKind() === 'calculator' }}>
+          <InputChoicePicture picture={choiceKind() === 'list' ? undefined : choicePicture()} assets={state.model.assets}
+            os={state.os} height={controlHeight()} inactive={inactive()}
+            fallback={<PrimitiveChoiceGlyph kind={choiceKind()} os={state.os} height={controlHeight()} inactive={inactive()}/>}/>
+        </span>
+      </Show>
       <Show when={inputOpenButton(node(), state.os)}><span class="taxi-input-button taxi-input-button--open"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
       <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
       <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
     </>}>{buttons => <For each={buttons()}>{kind => <span class="taxi-input-button" data-reference-button={kind}
       data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
       classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
+      data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
       aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(),
-        disabled() || readOnly() && kind !== 'open') }}/>}</For>}</Show>
+        disabled() || readOnly() && kind !== 'open') }}>
+        <Show when={kind === 'choice' && choicePicture()}>
+          <InputChoicePicture picture={choicePicture()} assets={state.model.assets} os={state.os}
+            height={referenceButtonHeight()} inactive={inactive()}/>
+        </Show>
+      </span>}</For>}</Show>
   </div>;
 }
 function Field(props) {

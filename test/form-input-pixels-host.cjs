@@ -6,6 +6,7 @@ const {until,frame, sameSourcePath } = require('./webview-host.cjs');
 
 exports.runGallery=async(options)=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture[options.fixtureKey],results=[],failures=[];
+  let detachedUpdates=false;
   const explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
   if(options.fullScreen)await vscode.commands.executeCommand('workbench.action.toggleFullScreen');
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
@@ -15,6 +16,7 @@ exports.runGallery=async(options)=>{
     await until(async()=>await ready(ui,expected)&&await appearance(ui,expected),'native input paint ready');
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await until(()=>ui.evaluate("!document.querySelector('[data-native-label=pending]')"),'input labels settled');
+    await options.beforeSample?.({ui,expected,label});
     await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),inputs:[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden').map(input=>({...rect(input),outset:Number(input.dataset.nativeOutset),buttons:[...input.querySelectorAll('.taxi-input-button')].map(button=>button.dataset.referenceButton??null)}))};})()`);
     const regions=[],geometryIssues=[];
@@ -82,9 +84,10 @@ exports.runGallery=async(options)=>{
       // Docking may recreate the owner's webview; reconnect to its current CDP target.
       ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
       await until(()=>appearance(ui,form.expected),'input border reattached');results.push(await sample(ui,form.expected,'reattached-'+form.kind));
+      detachedUpdates=true;
     }
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'input session released');await Promise.all([...explorer.formPreview.closing]);
   }
-  await explorer.shutdown();assert.deepEqual(failures.map(f=>({label:f.label,geometryIssues:f.geometryIssues,regions:f.mismatches.map(m=>m.actual.name)})),[],'native input geometry and pixels');const report={passed:true,locale:vscode.env.language,[options.reportKey]:true,forms:gallery.forms.length,fields:gallery.forms.reduce((count,form)=>count+form.expected.fields.length,0),[options.dirtyKey]:true,detachedUpdates:true,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
+  await explorer.shutdown();assert.deepEqual(failures.map(f=>({label:f.label,geometryIssues:f.geometryIssues,regions:f.mismatches.map(m=>m.actual.name)})),[],'native input geometry and pixels');const report={passed:true,locale:vscode.env.language,[options.reportKey]:true,forms:gallery.forms.length,fields:gallery.forms.reduce((count,form)=>count+form.expected.fields.length,0),...(options.dirtyKey ? {[options.dirtyKey]:detachedUpdates} : {}),detachedUpdates,sourceWritesDuringViewing:false,wholeFormVisualParity:false,results};
   if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${options.prefix}-measured-${vscode.env.language}.json`),JSON.stringify(report));await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify(report));
 };

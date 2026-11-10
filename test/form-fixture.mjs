@@ -359,6 +359,19 @@ export async function createReferenceButtonGallery(fixture) {
   return createInputBordersGallery(fixture);
 }
 
+export async function createChoicePictureGallery(fixture) {
+  const input = process.env.ESKA_FORM_FIXTURES;
+  if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute choice picture fixture directory.');
+  const { pictures } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
+  await addNativeUsers(fixture);
+  await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
+  await cp(join(input, 'CommonPictures'), join(fixture.source, 'CommonPictures'), { recursive: true });
+  const configuration = join(fixture.source, 'Configuration.xml');
+  const entries = pictures.map(name => `<CommonPicture>${name}</CommonPicture>`).join('');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + entries));
+  return createInputBordersGallery(fixture);
+}
+
 export async function createTableHeightGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native table height directory.');

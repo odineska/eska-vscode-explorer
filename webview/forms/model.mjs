@@ -300,17 +300,26 @@ export function inputListChoice(node, os) {
 export function inputOpenButton(node, os) {
   return flag(node, 'OpenButton', node.presentation.valueType.kind === 'reference' && !(os === 'linux' && enumerationInput(node)));
 }
-function requestedInputChoice(node, os) {
+function requestedInputPicker(node, os, listMode = false) {
   const type = node.presentation.valueType;
   const automatic = ['reference', 'composite'].includes(type.kind) || type.kind === 'number' && (os !== 'linux' || type.fraction > 0)
     || type.kind === 'date' && type.dateParts !== 'Time';
   const readOnly = os === 'linux' && flag(node, 'ReadOnly', false) && ['number', 'date', 'reference'].includes(type.kind);
-  return inputListChoice(node, os) || flag(node, 'ChoiceButton', automatic && !readOnly);
+  return flag(node, 'ChoiceButton', automatic && !readOnly && !listMode);
+}
+export function primitiveInputSelection(node, os) {
+  if (!linuxFixedInputWidth(node, os)) return;
+  const listMode = inputListChoice(node, os);
+  const dropdown = flag(node, 'DropListButton', listMode && !flag(node, 'ReadOnly', false));
+  return [dropdown && 'dropdown', requestedInputPicker(node, os, listMode) && 'choice'].filter(Boolean);
 }
 export function inputChoiceButton(node, os) {
   const reference = referenceInputButtons(node, os);
   if (reference) return reference.some(referenceSelectionButton);
-  return textInputWidthBounds(node, os)?.choice ?? requestedInputChoice(node, os);
+  const text = textInputWidthBounds(node, os);
+  if (text) return text.choice;
+  const buttons = primitiveInputSelection(node, os);
+  return buttons ? buttons.length > 0 : inputListChoice(node, os) || requestedInputPicker(node, os);
 }
 export function textInputStretchesByDefault(node) {
   if (flag(node, 'MultiLine', false)) return true;
@@ -323,19 +332,22 @@ export function textInputWidthBounds(node, os, choiceVisible) {
   const authored = Math.trunc(number(node, 'Width')), limit = Math.max(0, number(node, 'MaxWidth'));
   const length = node.presentation.valueType.length;
   const manual = !flag(node, 'AutoMaxWidth');
-  const requestedChoice = requestedInputChoice(node, os);
+  const buttons = primitiveInputSelection(node, os).length;
+  const requestedChoice = buttons > 0;
   const cap = manual ? Math.min(50, limit || 50) : 40;
-  const preferredPaint = authored > 0 ? authored * 10 + 11 + Number(requestedChoice) * 21
-    : Math.min(scaledAutomaticInputWidth(node, length || 15) + Number(requestedChoice) * 21, scaledAutomaticInputWidth(node, cap));
+  const slots = buttons * referenceButtonSlotWidth;
+  const preferredPaint = authored > 0 ? authored * 10 + 11 + slots
+    : Math.min(scaledAutomaticInputWidth(node, length || 15) + slots, scaledAutomaticInputWidth(node, cap));
   // The native value box needs one pixel beside the borders and choice button.
-  const choice = requestedChoice && (choiceVisible ?? preferredPaint >= 24);
+  const choiceThreshold = slots + 3;
+  const choice = requestedChoice && (choiceVisible ?? preferredPaint >= choiceThreshold);
   const stretch = flag(node, 'HorizontalStretch', textInputStretchesByDefault(node));
   // String length affects the preferred box, while AutoMaxWidth uses the font's standard limit.
   const bound = manual ? limit ? limit * 10 + 10 : undefined : automaticTextWidth(node);
   const maximumPaint = stretch && bound !== undefined ? Math.max(preferredPaint, bound) : undefined;
   const outset = Number(choice);
   return { preferred: preferredPaint - outset, maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
-    preferredPaint, maximumPaint, requestedChoice, choice, outset, stretch };
+    preferredPaint, maximumPaint, requestedChoice, choice, choiceThreshold, outset, stretch };
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;
@@ -393,8 +405,10 @@ export function fieldWidth(node, os) {
   const spin = native && flag(node, 'SpinButton', false);
   // Multiline controls include the choice button's trailing edge in their own box.
   const choiceInset = Number(native && flag(node, 'MultiLine', false));
+  const choiceCount = reference ? 0 : primitiveInputSelection(node, os)?.length ?? Number(inputChoiceButton(node, os));
+  const choiceSlots = choiceCount * referenceButtonSlotWidth - Number(choiceCount > 0 && !spin && !choiceInset);
   const buttons = reference ? reference.length * referenceButtonSlotWidth
-    : (spin ? 21 : 0) + (inputChoiceButton(node, os) ? inputChoiceWidth + Number(spin) + choiceInset : 0);
+    : (spin ? referenceButtonSlotWidth : 0) + choiceSlots;
   const width = native ? Math.trunc(number(node, 'Width')) : number(node, 'Width');
   // Explicit Taxi widths use fixed character units, independent of the value font.
   if (width > 0) {
@@ -409,9 +423,9 @@ export function fieldWidth(node, os) {
   if (type.kind === 'number') return Math.round(Math.max(12, Math.min(24, (type.digits || 15) + 3)) * unit + 4 + 21) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
   if (type.kind === 'reference') return Math.round(50 * unit + 11);
   if (type.kind === 'date') {
-    if (type.dateParts === 'Time') return Math.round(11 * unit + 3);
+    if (type.dateParts === 'Time') return Math.round(11 * unit + 3) + (os === 'linux' ? buttons : 0);
     const width = type.dateParts === 'Date' ? 12 * unit + 25 : 20 * unit + 21;
-    return Math.round(width) - (os === 'linux' && !inputChoiceButton(node, os) ? 20 : 0);
+    return Math.round(width) + (os === 'linux' ? buttons - inputChoiceWidth : 0);
   }
   if (type.kind === 'string') return Math.round(type.length ? Math.max(100, Math.min(50, type.length) * unit + 11) : 20 * unit + 1);
   return Math.round(20 * unit + 1);

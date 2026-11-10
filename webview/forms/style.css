@@ -130,9 +130,14 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready][data-native-disabled-foreground] > input { color: var(--taxi-input-disabled-foreground) !important; }
 .taxi-input-corner { display: block; position: absolute; inset: -1px; pointer-events: none; z-index: 2; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-border=ready] > .taxi-input-button { border-color: inherit; border-left-color: var(--taxi-input-button-border); background: #fff; }
-.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] > .taxi-input-button { position: relative; width: 20px; flex-basis: 20px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] > .taxi-input-button:last-of-type { position: relative; width: 20px; flex-basis: 20px; }
 .taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] > .taxi-input-button:last-of-type::after { content: ''; position: absolute; top: 0; bottom: 0; right: -2px; width: 2px; background: #fff; border-right: 1px solid; border-right-color: inherit; pointer-events: none; }
-.taxi-preview[data-os=linux] .taxi-input > .taxi-input-button[data-reference-button] { background: var(--taxi-reference-button-paint), #fff; }
+.taxi-preview[data-os=linux] .taxi-input > .taxi-input-button[data-reference-button]:not([data-choice-picture-empty], :has(> .taxi-input-choice-picture)) {
+  background: var(--taxi-reference-button-paint), #fff;
+}
+.taxi-input-button:has(> .taxi-input-choice-picture) { position: relative; }
+.taxi-input-choice-picture { position: absolute; z-index: 1; pointer-events: none; }
+.taxi-preview:not([data-os=linux]) .taxi-input-choice-picture[data-choice-picture-inactive] { filter: grayscale(1); opacity: .5; }
 .taxi-input[data-native-reference].taxi-input--incomplete::after {
   right: calc(3px + var(--taxi-reference-buttons-width));
   height: 1px;

@@ -38,6 +38,7 @@ export interface Presentation {
   tabularTotal?: "automatic" | "overridden";
   tableColumnAppearance?: TableColumnAppearance;
   picture: FormPicture | null;
+  choiceButtonPicture?: FormPicture | null;
   buttonRepresentation?: ButtonRepresentation;
   titleLocation: "Left" | "Right" | "Top" | "Bottom" | "None"; displayed: boolean; grouping: "Vertical" | "Horizontal" | "HorizontalIfPossible"; caption: FormText; tooltip: FormText | null; font: Font; titleFont: Font; foreground: Color; background: Color; border: Color; titleColor: Color;
   valueType: FieldType;
@@ -151,6 +152,7 @@ function commandSections(value: unknown, assets: ReadonlySet<string>): boolean {
 }
 function presentation(value: unknown, assets: ReadonlySet<string>): boolean {
   return isRecord(value) && (value.picture === null || formPicture(value.picture, assets))
+    && (value.choiceButtonPicture == null || formPicture(value.choiceButtonPicture, assets))
     && buttonRepresentation(value.buttonRepresentation)
     && (value.markIncomplete === undefined || typeof value.markIncomplete === "boolean")
     && (value.footerText === undefined || value.footerText === null || text(value.footerText))
