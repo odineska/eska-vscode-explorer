@@ -85,6 +85,8 @@ test('single-line threshold preserves multiline stretch and actual choice outset
   assert.equal(inputChoiceButton(node, 'linux'), false);
   assert.equal(textInputWidthBounds(node, 'linux', true).outset, 1);
   assert.equal(textInputWidthBounds(node, 'linux', false).outset, 0);
+  assert.equal(inputPaintedOutset(node, 'linux', true), 1);
+  assert.equal(inputPaintedOutset(node, 'linux', false), 0);
   assert.equal(JSON.stringify(node), before);
   node.properties.push({key:{namespace:FORM_NS,name:'MultiLine'},value:{kind:'text',text:'true'}});
   node.presentation.valueType.length = 8;

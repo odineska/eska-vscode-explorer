@@ -590,9 +590,9 @@ button { cursor: default; }
 .taxi-items[data-numeric-label-auto-spacing] { --taxi-horizontal-gap: 10px; }
 
 /* Include the choice border outset when the field determines an intrinsic column. */
-.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] { margin-right: 1px; }
+.taxi-preview[data-os=linux] .taxi-input[data-native-outset="1"] { margin-right: 1px; overflow: visible; }
 /* The help gap already includes the choice input's border outset. */
-.taxi-preview[data-os=linux] .taxi-field-control[data-tooltip-button] > .taxi-input[data-native-border=ready] { margin-right: 0; }
+.taxi-preview[data-os=linux] .taxi-field-control[data-tooltip-button] > .taxi-input[data-native-outset="1"] { margin-right: 0; }
 
 /* Raised buttons reserve their shadow and vertical spacing in every content column. */
 .taxi-preview[data-os=linux] .taxi-button[data-button-type=UsualButton] { height: var(--taxi-button-height, auto); }

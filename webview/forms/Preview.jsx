@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, inputPaintedOutset, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { StandaloneAddition } from './Additions.jsx';
 import { Splitter } from './Splitter.jsx';
@@ -633,12 +633,14 @@ function Input(props) {
   const [observedPaintWidth, setObservedPaintWidth] = createSignal();
   const choice = () => !referenceButtons() && (textSizing() ? textSizing().requestedChoice && (observedPaintWidth() ?? textSizing().preferredPaint) >= 24
     : inputChoiceButton(node(), state.os));
+  // Intrinsic layout reserves the painted edge even before the native palette is read.
+  const outset = createMemo(() => inputPaintedOutset(node(), state.os, choice()));
   const sizing = createMemo(() => fieldStyle(node(), state.os, choice()));
   createEffect(on(textSizing, metrics => {
     setObservedPaintWidth(undefined);
     if (!metrics?.requestedChoice) return;
     // Adjust the logical border after visibility changes without changing painted width.
-    const measure = () => setObservedPaintWidth(surface.offsetWidth + Number(choice()));
+    const measure = () => setObservedPaintWidth(surface.offsetWidth + outset());
     const observer = new ResizeObserver(measure);
     observer.observe(surface);
     const frame = requestAnimationFrame(measure);
@@ -650,9 +652,9 @@ function Input(props) {
     const offset=(inputRowHeight(node(),state.os,!!caption(node(),state))-inputHeight(node(),state.os))/2;
     return Math.round(offset)-offset;
   };
-  return <div ref={surface} class="taxi-input" data-native-text-width={textSizing()?'':undefined} data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={paint()?.outset}
+  return <div ref={surface} class="taxi-input" data-native-text-width={textSizing()?'':undefined} data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={outset()}
     data-native-reference={referenceButtons() ? '' : undefined} data-native-reference-multiline={referenceButtons() && multiline() ? '' : undefined}
-    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': readOnly() }} style={{ ...sizing(), '--taxi-input-outset': textSizing() ? `${Number(choice())}px` : sizing()['min-width'] === 'calc(100% - 1px)' ? '1px' : '0px', top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
+    classList={{ 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': readOnly() }} style={{ ...sizing(), '--taxi-input-outset': `${outset()}px`, top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
     '--taxi-reference-buttons-width': referenceButtons() && `${referenceButtons().length * referenceButtonSlotWidth}px`,
     '--taxi-reference-button-height': referenceButtons() && multiline() ? `${referenceButtonHeight()}px` : undefined,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>

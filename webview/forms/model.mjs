@@ -347,8 +347,8 @@ function linuxSimpleInput(node, os) {
   return !flag(node, 'MultiLine', false) && linuxFixedInputWidth(node, os);
 }
 /** Painted choice borders extend past the logical box; spin controls own their whole border. */
-export function inputPaintedOutset(node, os) {
-  return Number(linuxSimpleInput(node, os) && inputChoiceButton(node, os) && !flag(node, 'SpinButton', false));
+export function inputPaintedOutset(node, os, choiceVisible) {
+  return Number(linuxSimpleInput(node, os) && (choiceVisible ?? inputChoiceButton(node, os)) && !flag(node, 'SpinButton', false));
 }
 export function linuxReferenceInput(node, os) {
   return os === 'linux' && node.kind === 'InputField' && ['reference', 'composite'].includes(node.presentation.valueType.kind);
@@ -443,7 +443,7 @@ export function fieldStyle(node, os, choiceVisible) {
   const automaticMinimum = automaticStretch && number(node, 'Width') <= 0 && !node.presentation.valueType.length
     ? `min(100%, ${automaticTextWidth(node)}px)` : '100%';
   const stretch = flag(node, 'HorizontalStretch', false);
-  const choiceOutset = inputPaintedOutset(node, os);
+  const choiceOutset = inputPaintedOutset(node, os, choiceVisible);
   // Keep the intrinsic preference; fill only the allocated column, including the choice outset.
   return { width: `${fieldWidth(node, os)}px`, ...(automaticStretch ? { 'min-width': automaticMinimum } : {}),
     ...(maxWidth > 0 ? { 'max-width': `${maxWidth * 8 + 4}px` } : {}), ...(minWidth > 0 ? { 'min-width': `${minWidth * 8 + 4}px` } : {}),

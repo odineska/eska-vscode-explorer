@@ -75,16 +75,16 @@ export function NativeInputBorder(props) {
       const { border, background } = inputColors(source, declarations);
       const outside = backdrop(surface, colors);
       if (!border || !background || !outside) return reset();
-      const choice = buttons.length > 0, outset = Number(choice && !reference);
+      const choice = buttons.length > 0;
       const explicitBorder = !!property(node(), 'BorderColor');
-      const key = JSON.stringify([border, background, outside, inactive, disabled, choice, outset, explicitBorder]);
+      const key = JSON.stringify([border, background, outside, inactive, disabled, choice, explicitBorder]);
       if (key === lastKey) return;
       lastKey = key;
       if (!palettes.has(key)) {
         const pixels = inputBorderPixels(border, background, outside, { inactive, choice, explicitBorder });
         const foreground = disabled ? disabledInputForeground(background) : undefined;
         const buttonBorder = inactive ? [215, 215, 215] : border;
-        palettes.set(key, { ...pixels, outside, inactive, disabled, outset, foreground, buttonBorder,
+        palettes.set(key, { ...pixels, outside, inactive, disabled, foreground, buttonBorder,
           cornerBackground: inputCornerBackground(pixels.corners) });
       }
       const paint = palettes.get(key);
