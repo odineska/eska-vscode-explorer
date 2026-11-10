@@ -77,6 +77,35 @@ test("queued notifications captured under projection cannot leak after release; 
   assert.equal(sent.at(-1).method, "textDocument/didClose"); assert.equal(documents.poisoned(uri), false);
 });
 
+test("a projection opened during wire close keeps its owner and can close", async () => {
+  const uri = "file:///module.bsl", first = {}, next = {}, sent = [];
+  const closing = Promise.withResolvers(), finish = Promise.withResolvers();
+  const documents = new LanguageDocuments(async (method, params) => {
+    sent.push({ method, ...params });
+    if (method === "textDocument/didClose") {
+      closing.resolve();
+      await finish.promise;
+    }
+  }, () => undefined);
+
+  await documents.project(uri, "first", first);
+  const released = documents.release(uri, first);
+  await closing.promise;
+  const replaced = documents.project(uri, "second", next);
+  finish.resolve();
+  await Promise.all([released, replaced]);
+
+  assert.equal(documents.projected(uri), true);
+  assert.equal(documents.poisoned(uri), true);
+  assert.equal(sent.at(-1).textDocument.text, "second");
+  await documents.release(uri, next);
+  assert.equal(documents.projected(uri), false);
+  assert.equal(documents.poisoned(uri), false);
+  assert.deepEqual(sent.map(value => value.method), [
+    "textDocument/didOpen", "textDocument/didClose", "textDocument/didOpen", "textDocument/didClose",
+  ]);
+});
+
 test("a failed projected notification still permits restoration and never writes native document state", async () => {
   const sent = [], uri = "file:///module.bsl", document = { isClosed: false, getText: () => "native" };
   let fail = false;

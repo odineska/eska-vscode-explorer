@@ -1,5 +1,5 @@
 import { inputTextBaseline } from './model.mjs';
-import { hintedTextWidth, designTextAdvances, segmentedTextAdvances } from './font-metrics.mjs';
+import { hintedTextWidth, designTextAdvances, segmentedTextAdvances, wordTextAdvances } from './font-metrics.mjs';
 import { lcdCaptionPixels } from './lcd-caption.mjs';
 import { createCaptionRaster } from './caption-raster.js';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
@@ -14,6 +14,8 @@ function labelAdvances(props, text, options) {
   }
   // Date masks allocate character positions without pair kerning.
   if (props.mask) return [...text].map(char => hintedTextWidth(char, options));
+  if (props.fieldTitleRuns) return wordTextAdvances(text, options, { terminalColon: true });
+  if (props.tabInset !== undefined && Number(options.weight) <= 500) return wordTextAdvances(text, options);
   if (['formTitle', 'menuItem'].includes(props.placement)) {
     const advances = designTextAdvances(text, options);
     if (!advances) throw new Error('font-raster-advances');
@@ -48,7 +50,10 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   }
   const width = parseFloat(style.width), borderLeft = parseFloat(style.borderLeftWidth);
   let left = 0;
-  if (tab || link) left = Math.round((width - raster.advance) / 2) - borderLeft;
+  if (tab || link) {
+    const sideExtra = parseFloat(style.getPropertyValue('--taxi-side-caption-extra')) || 0;
+    left = (props.tabInset === undefined ? Math.round((width - raster.advance) / 2) : props.tabInset + sideExtra) - borderLeft;
+  }
   else if (search) left = 2;
   else if (title || table || menuItem) left = parseFloat(style.paddingLeft);
   else if (input) left = label.offsetLeft + (alignedLeft ? 3 : width - 3 - raster.advance);
@@ -90,7 +95,7 @@ export function NativeLabel(props) {
   const status = createCaptionRaster(props, {
     target: () => props.target?.() ?? placeholder.parentElement,
     mode: 'lcd',
-    dependencies: () => [props.placement, props.calibrated, props.mask, JSON.stringify(props.segments)],
+    dependencies: () => [props.placement, props.calibrated, props.mask, props.tabInset, props.fieldTitleRuns, JSON.stringify(props.segments)],
     calibrated: () => !calibratedPlacements.includes(props.placement) || !!props.calibrated,
     resizeWith: label => props.placement === 'fieldTitle' ? label.closest('.taxi-form-frame') : undefined,
     advances: (text, options) => labelAdvances(props, text, options),

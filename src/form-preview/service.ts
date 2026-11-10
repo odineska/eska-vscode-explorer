@@ -10,7 +10,7 @@ import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { inspectorIcons } from "../icons.js";
 import { FormSession } from "./client.js";
-import { identityKey, isIdentity, isDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
+import { identityKey, isIdentity, isDataPath, isExpandedDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
 import { parsePreviewNavigation, type PreviewNavigation } from "./navigation.js";
 import { formEditorRange, formSourceKey } from "./source.js";
@@ -35,6 +35,7 @@ interface View {
   previewNavigation?: PreviewNavigation;
   palette: FormPalette | undefined;
   inspectorState: InspectorState | undefined;
+  expandedData: Map<string, string[]>;
 }
 async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
   const found = await revealFile(tree, path);
@@ -92,7 +93,7 @@ export class FormPreviewService implements vscode.Disposable {
     const create = Promise.resolve().then(() => {
       const inspectorState = this.savedInspectors().get(this.inspectorKey(key));
       const view: View = { key, tree, entry, path, application, inspectorState, title: `${this.strings().title}: ${entry.node.label.kind === "name" ? entry.node.label.text : ""}`,
-        frames: new Map(), client: undefined, snapshot: undefined, palette: undefined, nodes: new Map(), selected: inspectorState?.selection, phase: "loading", notice: "", sequence: 0, wanted: 0,
+        frames: new Map(), expandedData: new Map(), client: undefined, snapshot: undefined, palette: undefined, nodes: new Map(), selected: inspectorState?.selection, phase: "loading", notice: "", sequence: 0, wanted: 0,
         running: undefined, timer: undefined, suspended: false, closed: false, watchers: [], watchKey: "", inputs: new Map(), generation: "", activityKey: "", navigation: 0, inputRoots: [], formInputs: new Map() };
       this.views.set(key, view); return view;
     });
@@ -182,6 +183,16 @@ export class FormPreviewService implements vscode.Disposable {
       return;
     }
     if (value.type === "refresh") { if (!this.tree()) await this.ensureTree(); view.suspended = false; this.schedule(view, 0); return; }
+    if (value.type === "expandData" && frame.role === "main" && view.client?.limits.referenceData
+      && value.revision === view.snapshot?.revision && value.formSessionId === view.snapshot?.formSessionId
+      && isExpandedDataPath(value.path)) {
+      const path = value.path as string[], key = path.join(".");
+      if (view.expandedData.has(key) || view.expandedData.size >= 128
+        || !view.snapshot?.model.attributes.some(attribute => attribute.name === path[0])) return;
+      view.expandedData.set(key, path);
+      this.schedule(view, 0);
+      return;
+    }
     if (value.type === "select" && isIdentity(value.identity) && view.nodes.has(identityKey(value.identity))) {
       view.selected = value.identity;
       this.rememberInspector(view, { ui: { ...(view.inspectorState?.ui ?? defaultInspectorUi()), inspectedData: "" } });
@@ -278,7 +289,7 @@ export class FormPreviewService implements vscode.Disposable {
         const inputs = await this.collectInputs(view);
         if (!view.client) {
           if (view.closed || view.suspended || this.disposed) return;
-          const client = await FormSession.open(this.connection, tree, view.entry, state.formPreview, inputs, view.application);
+          const client = await FormSession.open(this.connection, tree, view.entry, state.formPreview, inputs, view.application, [...view.expandedData.values()]);
           if (view.closed || view.suspended || this.disposed) { await client.close(); return; }
           view.client = client;
         }
@@ -344,7 +355,7 @@ export class FormPreviewService implements vscode.Disposable {
     // its overlay set stabilizes, bounded by the protocol's dependency limit.
     for (let pass = 0; pass <= MAX_FORM_DEPENDENCIES; pass++) {
       if (view.closed || view.suspended || this.disposed) throw new ExplorerError("obsolete");
-      const snapshot = opened ? client.current : await client.update(inputs);
+      const snapshot = opened ? client.current : await client.update(inputs, [...view.expandedData.values()]);
       opened = false;
       await this.watch(view, snapshot.dependencies);
       if (wanted !== view.wanted) return snapshot;
@@ -417,7 +428,7 @@ export class FormPreviewService implements vscode.Disposable {
   // Only the ready handshake initializes navigation; model refreshes retain live UI state.
   private publish(view: View, model = true, initializeNavigation?: Frame): void {
     for (const frame of view.frames.values()) if (frame.ready) void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
-      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true,
+      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, referenceData: view.client?.limits.referenceData === true,
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },

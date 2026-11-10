@@ -1,5 +1,7 @@
-import { borderBoxSize, boxInsets, pixels, textWidth } from './layout-box.mjs';
+import { borderBoxSize, boxInsets, pixels, textWidth, updateStyle } from './layout-box.mjs';
 import { throughCaptionWidth } from './field-caption-layout.js';
+import { sideTabRepresentation } from './tab-metrics.mjs';
+import { sideTabWidths } from './page-fit-layout.js';
 
 const widthWithHeadings = value => value.fullWidth ?? value.width;
 const widthWithSideCaptions = value => value.sideWidth ?? value.width;
@@ -135,15 +137,26 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         sideWidth: Math.max(0, ...children.map(widthWithSideCaptions)),
         height: Math.max(0, ...children.map(value => value.height)) };
       const tabs = pages.querySelector(':scope > .taxi-tabs');
+      const side = sideTabRepresentation(pages.dataset.representation);
+      const rail = side ? sideTabWidths(tabs, scale) : undefined;
       if (tabs) {
-        const box = marginBox(tabs), side = ['TabsOnLeftHorizontal','TabsOnRightHorizontal'].includes(pages.dataset.representation);
+        const box = marginBox(tabs);
         if (side) {
-          value.fullWidth += box.width;
-          value.sideWidth += box.width;
-          value.width += box.width;
+          const width = rail?.nominal ?? box.width;
+          value.fullWidth += width;
+          value.sideWidth += width;
+          value.width += width;
+          if (rail) value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
         } else value.height += box.height;
       }
       value = add(value, insets(pages));
+      if (tabs?.dataset.sideFitMinimum !== undefined) {
+        const authored = pixels(element.style.getPropertyValue('--taxi-group-width'));
+        value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value), authored);
+        const limit = element.dataset.stretchX === 'true' && Number.isFinite(value.maximumWidth)
+          ? `${value.maximumWidth}px` : 'none';
+        updateStyle(pages, '--taxi-side-page-maximum', limit);
+      }
     } else {
       const child = element.firstElementChild;
       value = child ? marginBox(child) : { width: 0, height: 0 };

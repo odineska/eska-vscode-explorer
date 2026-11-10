@@ -181,7 +181,7 @@ async function protectedSelection(root, accepted) {
   const edits = await vscode.commands.executeCommand('vscode.executeFormatRangeProvider', document.uri, selected, options);
   assert.ok(edits?.length);
   assert.equal(await editor.edit(builder => { for (const edit of edits) builder.replace(edit.range, edit.newText); }), true);
-  assert.equal(document.getText(), text.replace('    A=1;', '\tA = 1;'));
+  assert.equal(document.getText(), text.replace('    A=1;', '\n\tA = 1;'));
   assert.equal(await fs.readFile(source, 'utf8'), text);
   await vscode.commands.executeCommand('undo'); assert.equal(document.getText(), text);
   accepted.push('supported_file_rejects_whole_document_and_expansion_but_accepts_exact_selection_with_native_undo');

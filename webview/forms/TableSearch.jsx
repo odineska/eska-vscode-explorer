@@ -42,7 +42,7 @@ export function TableSearch(props) {
       '--taxi-search-hint': paint()?.hintColor,
     };
   };
-  createEffect(on(() => [state.os, state.sequence, compact()], () => {
+  createEffect(on(() => [state.os, state.modelSequence, compact()], () => {
     const runtime = props.controller.nativeText;
     runtime?.issue(owner, false);
     setPaint();

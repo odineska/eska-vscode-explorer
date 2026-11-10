@@ -20,6 +20,7 @@ import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
 import { sameDecorationLines } from './decoration-metrics.mjs';
+import { conditionalPageFits, sideTabWidths } from './page-fit-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -71,7 +72,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
   let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, throughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
-  let allocateInlineRows, natural, referenceFrame, needsNatural = true, referencePending = true;
+  let allocateInlineRows, pageFits, natural, referenceFrame, needsNatural = true, referencePending = true;
   let headingTitles = [];
   const headingHeights = new Map();
   const undoAlignment = [];
@@ -155,6 +156,13 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const rows = [...containers.values()].filter(items => items.dataset.grouping === 'HorizontalIfPossible');
       const activeWrap = wrapped();
       function prepare(wrap) {
+        for (const tabs of root.querySelectorAll('.taxi-tabs[data-side-fit-minimum]')) {
+          const rail = sideTabWidths(tabs, scale);
+          if (!rail) continue;
+          alignment.style(tabs.parentElement, '--taxi-side-preferred-overlap', `${rail.nominal - rail.painted}px`);
+          // Only the surplus from the painted minimum moves every caption.
+          alignment.style(tabs.parentElement, '--taxi-side-caption-extra', `${rail.captionExtra}px`);
+        }
         rootCommands = measureRootCommands(commands, scale);
         decorationsLayout = measureDecorations(model, context, state);
         layoutGroupSpacing(model, context, bottomCommands);
@@ -174,6 +182,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         // Rows that can move titles above their inputs own their resize allocation.
         adaptiveTitles = inputTitleLayout(model, context, minimumCaptions);
         throughCaptions = layoutThroughCaptions(throughScopes, context, minimumCaptions, adaptiveTitles.captionFields);
+        pageFits = rows.length && state.os === 'linux'
+          ? conditionalPageFits(model, context, throughCaptions.pageCaptionReserves) : undefined;
         checkboxes = checkboxLayout(model, context);
         unitedColumns.captureThroughPreferred(throughCaptions.stackLimits, dateBlocks.titleFloors);
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
@@ -254,10 +264,10 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const alignedAbove = new Set();
     throughCaptions.allocate(captions, geometry().minima, alignedAbove);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
-    if (!reference) {
-      columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
+    const dividers = reference ? undefined : columnDividers.measure(unitedRows.columnPairs, geometry().minima, root);
+    if (dividers) {
       for (const [key, plan] of packedDates) {
-        const divider = columnDividers.get(plan.owner);
+        const divider = dividers.get(plan.owner);
         if (!divider?.tracks) continue;
         const manual = plan.manual?.(divider.value);
         if (manual) packedDates.set(key, manual);
@@ -267,7 +277,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions, alignedAbove);
     checkboxes.allocate(captions);
-    const { above, heightChanged } = adaptiveTitles.allocate(captions);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve);
+    dividers?.publish();
     for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
@@ -324,6 +335,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       }
       if (changed.length) setPreferredWidths(natural.widths);
     }
+    const measuredFits = new Map();
     try {
       for (const items of conditionalGroups) {
         const key = items.dataset.layoutOwner, footprint = natural.rows.get(key);
@@ -331,7 +343,9 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         const required = items.hasAttribute('data-native-command-row')
           ? [...items.children].reduce((width, child) => width + pixels(child.style.getPropertyValue('--taxi-min-width')), footprint.spacing)
           : footprint.width;
-        const available = rect(items).width - boxInsets(getComputedStyle(items)).width;
+        const fit = pageFits?.get(key);
+        if (fit && !measuredFits.has(fit)) measuredFits.set(fit, fit());
+        const available = rect(items).width - boxInsets(getComputedStyle(items)).width + (measuredFits.get(fit) ?? 0);
         if (available + .5 < required) wrap.add(key);
       }
     } finally {

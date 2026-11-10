@@ -37,7 +37,8 @@ async function query(explorer, kind, label) {
 /** Watch the real source file event before issuing another query operation under the resulting generation. */
 function sourceEvent(explorer, source) {
   let observed = false;
-  const watchers = explorer.watchers.filter(watcher => typeof watcher.flush === "function");
+  const watchers = [...explorer.projectWatchers.values()];
+  assert.ok(watchers.length, "the active workspace owns source watchers");
   const originals = watchers.map(watcher => watcher.add);
   watchers.forEach((watcher, index) => {
     watcher.add = function (file) { if (file === source) observed = true; return originals[index].call(this, file); };
@@ -169,35 +170,40 @@ async function interruptedApply(explorer, fixture) {
   await ownerWritable(explorer, row, true);
 }
 
-/** The installed readonly provider uses the common retained owner, then follows the native buffer after exact release. */
+/** The installed readonly provider uses the retained owner, then follows a newer native buffer after release. */
 async function protectedOwnerViews(explorer, fixture) {
   const disk = await fs.readFile(fixture.query.schemaPath);
   const source = vscode.Uri.file(fixture.query.schemaPath);
-  const owner = await vscode.workspace.openTextDocument(source);
-  await vscode.window.showTextDocument(owner, { preview: false });
-  await replace(owner, owner.getText(), owner.getText() + "\n<!-- dirty parent before query -->");
-  await until(() => vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputText
-    && tab.input.uri.toString() === source.toString() && tab.isDirty)), "native dirty parent is visible");
-  const captured = owner.getText();
+  const parent = await vscode.workspace.openTextDocument(source);
+  await vscode.window.showTextDocument(parent, { preview: false });
+  const captured = parent.getText();
   const row = await query(explorer, "common-template", "A");
   await vscode.commands.executeCommand("eska.explorer.openQuery", row);
   const draft = vscode.window.activeTextEditor.document;
+  assert.equal(draft.uri.scheme, "eska-query");
+  // Modal open closes the parent. Edit a new native view while the child retains the original snapshot.
+  const owner = await vscode.workspace.openTextDocument(source);
+  await replace(owner, owner.getText(), owner.getText() + "\n<!-- dirty parent during query -->");
+  await until(() => owner.isDirty, "new native owner buffer is dirty");
   const protectedUri = source.with({ scheme: "eska-protected" });
   const view = await vscode.workspace.openTextDocument(protectedUri);
-  assert.equal(view.getText(), captured, "protected view uses the whole retained dirty owner");
+  assert.equal(view.getText(), captured, "protected view uses the whole retained owner");
   const stat = await vscode.workspace.fs.stat(protectedUri);
   assert.equal(stat.size, Buffer.byteLength(captured), "stat describes the snapshot rather than the disk");
-  await vscode.window.showTextDocument(view, { preview: false });
-  await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
-  await vscode.commands.executeCommand("type", { text: "blocked" });
-  assert.equal(view.getText(), captured);
   await assert.rejects(vscode.workspace.fs.writeFile(protectedUri, Buffer.from("blocked")));
   await replace(owner, owner.getText(), owner.getText() + "\n<!-- newer native parent -->");
   assert.notEqual(owner.getText(), captured);
   assert.equal(Buffer.from(await vscode.workspace.fs.readFile(protectedUri)).toString("utf8"), captured,
     "an active core owner outranks a later native buffer");
   await closeQuery(explorer, draft);
-  await until(() => view.getText() === owner.getText(), "released view follows the current dirty native buffer");
+  await until(async () => Buffer.from(await vscode.workspace.fs.readFile(protectedUri)).toString("utf8") === owner.getText(),
+    "released view follows the current dirty native buffer");
+  const protectedEditor = await vscode.window.showTextDocument(protectedUri, { preview: false });
+  assert.equal(protectedEditor.document.uri.toString(), protectedUri.toString());
+  const protectedText = protectedEditor.document.getText();
+  await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
+  await vscode.commands.executeCommand("type", { text: "blocked" });
+  assert.equal(protectedEditor.document.getText(), protectedText);
   assert.deepEqual(await fs.readFile(fixture.query.schemaPath), disk, "source inspection never writes disk");
   await vscode.window.showTextDocument(owner);
   await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
@@ -232,7 +238,7 @@ exports.run = async function () {
       noAutomaticReplay: true, cleanCloseReleasesCheckpoint: true, backendSourceWriteFence: true,
       backendFenceReleasedOnError: true, restoredFenceUntilClose: true, languageWritesRespectSourceOwnership: true,
       supportDisabledDoesNotReleaseOwnership: true, staleNativeAuthorizationRejected: true,
-      protectedViewUsesRetainedDirtyOwner: true, protectedViewFollowsRelease: true, snapshotStatExact: true, injectedErrors: errors }));
+      protectedViewUsesRetainedOwner: true, protectedViewFollowsRelease: true, snapshotStatExact: true, injectedErrors: errors }));
   } catch (error) {
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: false, error: String(error.stack ?? error), errors }));
     throw error;

@@ -346,8 +346,9 @@ export function textInputWidthBounds(node, os, choiceVisible) {
   const bound = manual ? limit ? limit * 10 + 10 : undefined : automaticTextWidth(node);
   const maximumPaint = stretch && bound !== undefined ? Math.max(preferredPaint, bound) : undefined;
   const outset = Number(choice);
-  return { preferred: preferredPaint - outset, maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
-    preferredPaint, maximumPaint, requestedChoice, choice, choiceThreshold, outset, stretch };
+  const preferred = preferredPaint - outset;
+  return { preferred, minimum: Math.min(80, preferred), maximum: maximumPaint === undefined ? undefined : maximumPaint - outset,
+    preferredPaint, maximumPaint, requestedChoice, choice, choiceThreshold, outset, slots, stretch };
 }
 export function linuxFixedInputWidth(node, os) {
   const kind = node.presentation.valueType.kind;

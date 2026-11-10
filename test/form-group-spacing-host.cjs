@@ -37,8 +37,19 @@ async function geometry(ui, keys, expected) {
         const [x,y,w,h] = box(surface);
         return [name, surface.dataset.nativeGroupBackground === 'ready' ? [x,y+1,w,h-2] : null];
       }));
+    const pageGroups = Object.fromEntries(${JSON.stringify(Object.keys(expected.pageGroups ?? {}))}.map(name => {
+      const pages = nodes.get(keys[name])?.querySelector(':scope > .taxi-pages');
+      return [name, { width: pages?.getBoundingClientRect().width ?? null,
+        tabs: pages?.querySelectorAll(':scope > .taxi-tabs > [role=tab]').length ?? 0 }];
+    }));
+    const label = name => nodes.get(keys[name])?.querySelector('.taxi-field-label');
+    const captionLines = name => [...(label(name)?.querySelectorAll('.taxi-field-caption-line') ?? [])];
     return {
       frame: [origin.width, origin.height],
+      dividers: ${JSON.stringify(expected.dividers !== undefined)} ? [...root.querySelectorAll('.taxi-column-divider')]
+        .map(box).filter(([, , , height]) => height > 0)
+        .map(([x,y,w,h]) => [Math.floor(x + (w - 2) / 2),y,h]) : undefined,
+      pageGroups,
       fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
       groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
       fills,
@@ -46,10 +57,12 @@ async function geometry(ui, keys, expected) {
         const title = nodes.get(keys[name])?.querySelector(':scope > .taxi-group > .taxi-group-title');
         return [name, title ? Math.round(title.offsetHeight / parseFloat(getComputedStyle(title).lineHeight)) : 0];
       })),
-      captionLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLines ?? {}))}.map(name => {
-        const label = nodes.get(keys[name])?.querySelector('.taxi-field-label');
-        return [name, label ? label.querySelectorAll('.taxi-field-caption-line').length || 1 : 0];
-      })),
+      captionLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLines ?? {}))}.map(name =>
+        [name, label(name) ? captionLines(name).length || 1 : 0])),
+      captionText: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionText ?? {}))}.map(name =>
+        [name, captionLines(name).map(line => line.textContent)])),
+      captionLocations: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLocations ?? {}))}.map(name =>
+        [name, nodes.get(keys[name])?.querySelector('.taxi-field-row')?.dataset.titleLocation])),
     };
   })()`);
 }
@@ -58,7 +71,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'captionLocations', 'captionText', 'pageGroups', 'dividers'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
@@ -128,20 +141,66 @@ async function verifyUpdates({ document, service, view, main, ui, keys, original
   return results;
 }
 
+async function verifyPageDivider(ui, narrow, hidden, observe) {
+  const selector = '.taxi-form-frame .taxi-column-divider';
+  const read = () => ui.evaluate(`(() => {
+    const separator = document.querySelector(${JSON.stringify(selector)});
+    if (!separator?.getBoundingClientRect().height) return null;
+    const row = separator.parentElement;
+    return { label: separator.getAttribute('aria-label'),
+      range: ['min', 'now', 'max'].map(name => Number(separator.getAttribute('aria-value'+name))),
+      x: separator.getBoundingClientRect().left - row.getBoundingClientRect().left,
+      tracks: [...row.querySelectorAll(':scope > .taxi-element')].map(element => element.getBoundingClientRect().width),
+    };
+  })()`);
+  const initial = await read();
+  assert.equal(initial.label, vscode.env.language.startsWith('ru') ? 'Изменить ширину колонок формы' : 'Resize form columns');
+  const [minimum, value, maximum] = initial.range;
+  async function at(next, label) {
+    let current;
+    await until(async () => {
+      current = await read();
+      return current?.range[1] === next && current.tracks[0] === next;
+    }, label);
+    const shift = next - value;
+    assert.equal(current.x, initial.x + shift);
+    assert.deepEqual(current.tracks, [initial.tracks[0] + shift, initial.tracks[1] - shift]);
+    return current;
+  }
+  const delta = Math.min(10, maximum - value);
+  assert.ok(delta > 0, 'automatic position leaves room for dragging');
+  await ui.dragHorizontally(selector, delta);
+  await at(value + delta, 'dragged page divider');
+  for (const [key, bound] of [['Home', minimum], ['End', maximum]]) {
+    await ui.evaluate(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(
+      new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true})); true`);
+    await at(bound, 'page divider reaches '+key);
+  }
+  for (const profile of hidden) {
+    await allocateFormViewport(ui, profile.frame);
+    await observe(profile);
+  }
+  await allocateFormViewport(ui, narrow.frame);
+  return at(maximum, 'page divider restores the manual position');
+}
+
 async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
   const profiles = plan.cases.map(name => gallery.find(sample => sample.kind === name).expected);
   const identity = [...view.nodes.values()].find(node => node.name === (plan.selected ?? 'B')).identity;
-  const changed = plan.edit && original.replace(plan.edit.from, plan.edit.to);
+  const edited = plan.edit?.case ? gallery.find(sample => sample.kind === plan.edit.case) : undefined;
+  if (plan.edit?.case) assert.ok(edited, 'dirty edit has an observed reference');
+  const changed = edited ? await fs.readFile(edited.path, 'utf8')
+    : plan.edit && original.replace(plan.edit.from, plan.edit.to);
   if (plan.edit) assert.notEqual(changed, original);
   await service.receive(view, main, { type: 'select', identity });
   const results = [];
-  async function observe(target, profile, name) {
+  async function observe(target, profile, name, reference = expected) {
     let actual, preferred;
     try {
       await until(async () => {
         actual = await geometry(target, keys, profile);
         preferred = await preferredFrame(target);
-        return matches(actual, profile) && (verifyPreferredFrame ? sameFrame(preferred, expected.frame) : preferred?.[0] === expected.frame[0]);
+        return matches(actual, profile) && (verifyPreferredFrame ? sameFrame(preferred, reference.frame) : preferred?.[0] === reference.frame[0]);
       }, name);
     } catch (error) {
       throw new Error(name + ' ' + JSON.stringify({ actual, preferred }), { cause: error });
@@ -166,14 +225,28 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
           await editFormSource(document, view, changed);
           await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
             'resized form received the dirty edit');
+          if (edited) await allocateFormViewport(target, edited.expected.frame);
           await target.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-          await observe(target, profile, mode + '-folded-dirty-' + width);
+          await observe(target, edited?.expected ?? profile, mode + '-dirty-' + width, edited?.expected ?? expected);
+          if (edited) {
+            await editFormSource(document, view, original);
+            await allocateFormViewport(target, profile.frame);
+            await observe(target, profile, mode + '-restored-' + width);
+          }
         }
+      }
+      if (plan.resizeDivider) {
+        const hidden = profiles.filter(profile => profile.dividers?.length === 0);
+        const divider = await verifyPageDivider(target, profiles.at(-1), hidden,
+          profile => observe(target, profile, mode + '-divider-hidden-' + profile.frame[0]));
+        assert.equal(await target.evaluate('__resizedFormInputs.every(element => element.isConnected)'), true);
+        assert.deepEqual(view.selected, identity);
+        results.push({ name: mode + '-divider-moved', divider });
       }
     } finally {
       if (changed) await editFormSource(document, view, original);
     }
-    if (verifyPreferredFrame && changed) {
+    if (verifyPreferredFrame && changed && !edited) {
       const differentWidth = profiles.find(profile => profile.frame[0] !== expected.frame[0]);
       const resized = gallery.find(sample => sample.expected === differentWidth);
       assert.ok(resized, 'a fixture with a different preferred width');

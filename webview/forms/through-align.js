@@ -1,7 +1,7 @@
 import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateFieldCaption, growFieldCaption, inputCaptionInset } from './field-caption-layout.js';
+import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
@@ -26,6 +26,17 @@ function singleLineInputStack(track, children, os) {
   return fields.length > 1 && fields.every(node => node.kind === 'InputField'
     && node.presentation.titleLocation === 'Left' && inputRows(node) === 1
     && (linuxReferenceInput(node, os) || textInputWidthBounds(node, os)));
+}
+
+function isolatedPageInput(track, entries, os) {
+  if (!ordinaryGroup(track.node) || entries.length !== 2 || !entries.some(node => node.kind === 'Pages')) return;
+  const node = entries.find(node => node.kind === 'InputField' && node.presentation.titleLocation === 'Left');
+  if (!node) return;
+  const bounds = textInputWidthBounds(node, os);
+  if (number(node, 'Width') <= 0 || !bounds?.stretch) return;
+  // Keep selection buttons in the control budget while measuring the title.
+  const preferred = bounds.preferredPaint;
+  return { node, minimum: Math.min(preferred, bounds.minimum + bounds.slots), preferred };
 }
 
 /** Share the leading title track across ordinary vertical groups without changing their owners. */
@@ -54,22 +65,23 @@ export function alignThroughLabels(model, { targets: { containers, children }, a
       const stack = os === 'linux' && scope.length === 1 && singleLineInputStack(scope[0], children, os)
         ? scope[0].node.kind : undefined;
       const entries = children(scope[0].node);
-      if (stack || scope.length > 1 || os === 'linux' && (entries.some(separatedRow)
+      const isolated = os === 'linux' && scope.length === 1 ? isolatedPageInput(scope[0], entries, os) : undefined;
+      if (stack || isolated || scope.length > 1 || os === 'linux' && (entries.some(separatedRow)
         || entries.length > 1 && entries.some(child => movableNumber(child, os)))) {
-        scopes.push({ tracks: scope, local: stack === 'UsualGroup', page: stack === 'Page' });
+        scopes.push({ tracks: scope, local: stack === 'UsualGroup', page: stack === 'Page', isolated });
       }
     }
   }
   visit(model);
 
-  const aligned = scopes.map(({ tracks, local, page }) => {
+  const aligned = scopes.map(({ tracks, ...layout }) => {
     const measured = tracks.map(({ node, container, track, horizontal }) => {
       const css = getComputedStyle(track);
       const width = parseFloat(css.gridTemplateColumns);
       const left = track.getBoundingClientRect().left / scale + parseFloat(css.paddingLeft) + parseFloat(css.borderLeftWidth);
       return { node, container, horizontal, left, end: left + width };
     });
-    return { tracks: measured, local, page };
+    return { tracks: measured, ...layout };
   }).filter(({ tracks }) => tracks.every(track => Number.isFinite(track.end)));
   for (const { tracks: scope } of aligned) {
     if (scope.length === 1) continue;
@@ -141,11 +153,40 @@ function allocateIndependentCaption(field, available, minima, captions, above, p
   updateStyle(field.element, '--taxi-field-columns', top ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
 }
 
+function reservePageCaptions(tracks, { targets }, reserves) {
+  for (const { node, container, fields } of tracks) {
+    if (!ordinaryGroup(node) || fields.some(field => field.caption.minimum !== field.caption.preferred)) continue;
+    const pages = targets.children(node).filter(child => child.kind === 'Pages');
+    if (!pages.length) continue;
+    const local = Math.max(...fields.map(field => field.caption.preferred)) + inputCaptionInset;
+    const reserve = () => {
+      const shared = pixels(container.style.getPropertyValue('--taxi-through-allocated-label-width')
+        || container.style.getPropertyValue('--taxi-through-label-width'));
+      return Math.max(0, shared - local);
+    };
+    for (const group of pages) reserves.set(group.key, reserve);
+  }
+}
+
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
-  const shared = [], stacks = [], stackLimits = new Map(), minimumInputs = new Map();
-  for (const { tracks: scope, local, page } of os === 'linux' ? scopes : []) {
+  const shared = [], stacks = [], isolatedCaptions = [], stackLimits = new Map(), minimumInputs = new Map();
+  const pageCaptionReserves = new Map();
+  for (const { tracks: scope, local, page, isolated } of os === 'linux' ? scopes : []) {
+    if (isolated) {
+      const { node, minimum, preferred } = isolated;
+      const element = targets.elements.get(node.key);
+      const field = inputCaption(node, element, os);
+      if (field?.caption && field.caption.minimum < field.caption.preferred
+          && !minimumCaptions.has(node.key) && !adaptiveFields.has(node.key)) {
+        minimumCaptions.set(node.key, field.caption.minimum + inputCaptionInset);
+        alignment.style(element, '--taxi-field-caption-width', '');
+        alignment.style(element, '--taxi-field-columns', '');
+        isolatedCaptions.push({ field, minimum, preferred });
+      }
+      continue;
+    }
     const separated = scope.flatMap(({node, horizontal}) => horizontal ? [] : targets.children(node).filter(separatedRow))
       .filter(node => targets.children(node).length > 1)
       .map(node => targets.containers.get(node.key)).filter(Boolean);
@@ -154,6 +195,8 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     if (scope.some(track => Math.abs(track.left - scope[0].left) > .5)) continue;
     const tracks = scope.map(track => captionTrack(track, context, minimumCaptions, adaptiveFields));
     if (tracks.some(track => !track)) continue;
+    // The shared caption affects the fit budget. Each page still allocates its own columns.
+    if (vertical && tracks.length > 1) reservePageCaptions(tracks, context, pageCaptionReserves);
 
     const fields = tracks.flatMap(track => track.fields);
     const width = metric => Math.max(...fields.map(field => field.caption[metric])) + inputCaptionInset;
@@ -286,8 +329,17 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
   }
   return {
-    stackLimits, minimumInputs,
-    allocate: (captions, minima, above) => allocateWidths(shared, captions, minima, above),
+    stackLimits, minimumInputs, pageCaptionReserves,
+    allocate(captions, minima, above) {
+      allocateWidths(shared, captions, minima, above);
+      for (const { field, minimum, preferred } of isolatedCaptions) {
+        const { element, gap, caption } = field;
+        const available = borderBoxSize(element, scale).width;
+        const width = isolatedInputCaptionWidth(caption, available, gap, minimum, preferred);
+        allocateFieldCaption(captions, field, width, inputCaptionInset);
+        updateStyle(element, '--taxi-field-columns', width === undefined ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
+      }
+    },
     allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, undefined, leadingEdges),
   };
 }

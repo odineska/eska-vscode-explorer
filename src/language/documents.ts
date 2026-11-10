@@ -52,9 +52,7 @@ export class LanguageDocuments {
       if (stream.owner) return;
       if (method === "textDocument/didClose") {
         ++this.revision;
-        if (stream.opened) await this.publish("textDocument/didClose", { textDocument: { uri } });
-        stream.opened = false; stream.poisoned = false; stream.version = 0; delete stream.nativeSnapshot;
-        if (this.streams.get(uri) === stream && !this.native(uri)) this.streams.delete(uri);
+        await this.closeWireDocument(uri, stream);
       } else if (method === "textDocument/didSave") await forward({ ...params, textDocument: { ...textDocument, uri } });
       else if (text !== undefined) await this.body(uri, stream, text, snapshot);
     });
@@ -81,11 +79,7 @@ export class LanguageDocuments {
       const document = this.native(uri);
       if (!this.active(uri)) await this.suspend(uri, stream);
       else if (document && !document.isClosed) await this.body(uri, stream, document.getText(), { document, version: document.version });
-      else {
-        if (stream.opened) await this.publish("textDocument/didClose", { textDocument: { uri } });
-        stream.opened = false; stream.poisoned = false; stream.version = 0; delete stream.nativeSnapshot;
-        if (this.streams.get(uri) === stream && !this.native(uri)) this.streams.delete(uri);
-      }
+      else await this.closeWireDocument(uri, stream);
     });
   }
 
@@ -99,6 +93,16 @@ export class LanguageDocuments {
         await this.body(uri, stream, document.getText(), { document, version: document.version });
       }
     });
+  }
+
+  private async closeWireDocument(uri: string, stream: Stream): Promise<void> {
+    if (stream.opened) await this.publish("textDocument/didClose", { textDocument: { uri } });
+    stream.opened = false;
+    stream.version = 0;
+    delete stream.nativeSnapshot;
+    // A new projection can reserve this stream while didClose is in flight.
+    stream.poisoned = stream.owner !== undefined;
+    if (!stream.owner && !this.native(uri) && this.streams.get(uri) === stream) this.streams.delete(uri);
   }
 
   private async suspend(uri: string, stream: Stream): Promise<void> {

@@ -6,6 +6,7 @@ import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseForm
 import { prepare, fieldWidth, flatten, treeChildren, find, text, caption, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 import { parsePreviewNavigation } from '../out/form-preview/navigation.js';
+import { FormSession } from '../out/form-preview/client.js';
 
 const source = 'a'.repeat(64);
 function fixture() {
@@ -21,6 +22,42 @@ function fixture() {
     status: 'ready', lastError: null, dependencies: [{ id: source, root: { encoding: 'utf-8', value: '/project/src' }, path: { encoding: 'utf-8', value: 'Form.xml' }, snapshot: source, version: null, member: null, role: 'form' }],
     model: { importantColor: {kind:"role",value:"ImportantColor"}, root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
+
+test('opening a form releases an allocated session after a rejected snapshot or upload cleanup', async () => {
+  const sessionId = 'workspace', projectId = 'project', generation = '2';
+  const tree = { session: { sessionId }, synchronizeInputs: async () => {} };
+  const entry = { node: { id: { kind: 'object', objectId: 'form' } }, project: { info: { projectId, generation } } };
+  const limits = { maxSessions: 1, maxOverlayBytes: 128, maxInlineBytes: 16 };
+  const root = { value: '/project/src', encoding: 'utf-8' }, path = { value: 'Form.xml', encoding: 'utf-8' };
+  const text = 'Ж'.repeat(16), bytes = Buffer.byteLength(text), cleanupError = new Error('closing upload failed');
+  for (const malformed of [true, false]) {
+    const closed = [];
+    const value = { ...fixture(), sessionId, projectId, generation };
+    if (malformed) delete value.model;
+    const connection = {
+      state: { kind: 'ready', session: { sessionId } },
+      async request(session, method, params) {
+        assert.equal(session, sessionId);
+        assert.equal(params.projectId, projectId);
+        switch (method) {
+          case 'query/bufferBegin': return { bufferId: 'upload', receivedBytes: 0, ready: false };
+          case 'query/bufferAppend': {
+            const receivedBytes = params.offset + Buffer.byteLength(params.text);
+            return { bufferId: 'upload', receivedBytes, ready: receivedBytes === bytes };
+          }
+          case 'query/bufferClose': throw cleanupError;
+          case 'form/open': return value;
+          case 'form/close': closed.push(params.formSessionId); return { released: true };
+          default: assert.fail(method);
+        }
+      },
+    };
+    const inputs = malformed ? [] : [{ root, path, text, version: '1' }];
+    await assert.rejects(FormSession.open(connection, tree, entry, limits, inputs),
+      error => malformed ? error.code === 'protocolInvalid' : error === cleanupError);
+    assert.deepEqual(closed, [value.formSessionId]);
+  }
+});
 
 test('both preview windows validate the same navigation snapshot', () => {
   const navigation = { pages: { 'source:pages': 'source:page' }, collapsed: { 'source:group': true } };
@@ -338,4 +375,13 @@ test('list menu transport preserves optional sections, shortcuts and disabled su
   }
   root.presentation.tableCommandMenu=[[]];
   assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.tableCommandMenu,[[]]);
+});
+
+
+test('expanded reference paths are bounded semantic paths, including root attributes', () => {
+  const snapshot=fixture();snapshot.model.expandedData=[['Link'],['Link','Parent']];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.expandedData,[['Link'],['Link','Parent']]);
+  for (const paths of [[[]],[['Link.Parent']],[['']],Array.from({length:129},()=>['Link']),[Array(65).fill('Parent')],[['я'.repeat(1025)]]]) {
+    snapshot.model.expandedData=paths;assert.throws(()=>parseFormSnapshot(snapshot));
+  }
 });

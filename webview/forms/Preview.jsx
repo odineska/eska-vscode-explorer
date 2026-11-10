@@ -16,7 +16,7 @@ import { designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCa
 import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
-import { tabMetrics } from './tab-metrics.mjs';
+import { sideTabRepresentation, tabMetrics } from './tab-metrics.mjs';
 import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
@@ -62,9 +62,10 @@ function BrowserIcon(props) {
 }
 function CommonPicture(props) {
   const source = () => `data:${props.image.mimeType};base64,${props.image.data}`;
-  const image = () => <img class="taxi-picture-resource" src={source()} alt="" draggable="false"/>;
+  const glyphStyle = () => props.image.glyph ? { width: `${props.image.glyph.width}px`, height: `${props.image.glyph.height}px`, 'object-fit': 'none', 'object-position': 'left top' } : undefined;
+  const image = () => <img class="taxi-picture-resource" style={glyphStyle()} data-picture-index={props.image.glyph ? '0' : undefined} src={source()} alt="" draggable="false"/>;
   return <Show when={props.image.isTemplate} fallback={image()}>
-    <TemplatePicture source={source()}/>
+    <TemplatePicture source={source()} glyph={props.image.glyph}/>
   </Show>;
 }
 function Picture(props) {
@@ -336,8 +337,10 @@ export function Items(props) {
     data-native-group-row={groupRow() ? '' : undefined}
     data-column-divider={divider()?.tracks ? 'manual' : divider() ? 'auto' : undefined}
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
-      '--taxi-resized-columns': divider()?.tracks, '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+      '--taxi-resized-columns': divider()?.tracks, '--taxi-column-divider-value': divider() ? `${divider().value}px` : undefined,
+      '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
+      forcedPageRow={props.node.kind === 'Page' && props.node.presentation.grouping === 'Horizontal'}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
     <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
@@ -348,28 +351,50 @@ export function Items(props) {
 
 function Pages(props) {
   const node = () => props.node, state = props.controller.state;
-  const pages = () => node().children.filter(node => node.presentation.displayed);
-  const selected = () => (pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0])?.key;
-  const metrics = () => tabMetrics(pages().map(page => page.presentation.titleFont));
-  const horizontal = () => !['TabsOnLeftHorizontal', 'TabsOnRightHorizontal'].includes(scalar(node(), 'PagesRepresentation'));
-  return <div class="taxi-pages" data-representation={scalar(node(), 'PagesRepresentation', 'TabsOnTop')}>
-    <Show when={scalar(node(), 'PagesRepresentation') !== 'None'}><div class="taxi-tabs" role="tablist" style={{height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined}}><For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()} pageBackground={pages().find(page=>page.key===selected())?.presentation.background} pageHasBackground={!!property(pages().find(page=>page.key===selected()),'BackColor')} pages={node()} controller={props.controller} metrics={metrics()} horizontal={horizontal()} active={page.key === selected()}/>}</For></div></Show>
+  const representation = () => scalar(node(), 'PagesRepresentation', 'TabsOnTop');
+  const horizontal = () => !sideTabRepresentation(representation());
+  const pages = createMemo(() => node().children.filter(page => page.presentation.displayed
+    && (state.os !== 'linux' || horizontal() || page.children.some(child => displayedInPreview(child, state.model.root)))));
+  const selectedPage = createMemo(() => pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0]);
+  const selected = () => selectedPage()?.key;
+  const metrics = createMemo(() => tabMetrics(pages().map(page => page.presentation.titleFont)));
+  const side = () => state.os === 'linux' && !horizontal()
+    ? representation() === 'TabsOnRightHorizontal' ? 'right' : 'left' : undefined;
+  const sideMetrics = () => side() && pages().length ? metrics().side : undefined;
+  return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}>
+    <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={sideMetrics()?.fitMinimum}
+      style={{ height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined,
+        'min-width':sideMetrics() ? `${sideMetrics().buttonMinimum}px` : undefined }}>
+      <For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()}
+        pageBackground={selectedPage()?.presentation.background} pageHasBackground={!!property(selectedPage(),'BackColor')}
+        pages={node()} controller={props.controller} metrics={metrics()} representation={representation()} horizontal={horizontal()} side={side()} sideMetrics={sideMetrics()} active={page.key === selected()}/>}</For>
+    </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
       style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {
-  const state = props.controller.state;
+  const state = props.controller.state, layout = useFormLayout();
   let button;
   const [paint,setPaint]=createSignal();
-  const width = createNativeButtonWidth(() => button, () => ({text:caption(props.page,state),os:state.os,automatic:true,font:font(props.page.presentation.titleFont,state.os),metrics:props.metrics}));
-  const native = () => state.os === 'linux' && ['Auto', 'TabsOnTop', 'Swipe'].includes(scalar(props.pages, 'PagesRepresentation', 'Auto'));
+  const width = createNativeButtonWidth(() => button, () => ({ text:caption(props.page,state), os:state.os,
+    automatic:true, wordCaption:!!props.sideMetrics, font:font(props.page.presentation.titleFont,state.os), metrics:props.metrics }));
+  const padding = () => props.horizontal ? props.metrics.horizontalPadding * 2 : props.sideMetrics?.padding;
+  createEffect(() => { if (props.sideMetrics && width()) layout.invalidate(); });
+  const native = () => state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'Swipe'].includes(props.representation));
+  const tabInset = () => props.side ? props.metrics.horizontalPadding + 1 + Number(props.side === 'right') : undefined;
+  const titleColorAuthored = () => {
+    const value = scalar(props.page, 'TitleTextColor', scalar(props.pages, 'TitleTextColor'));
+    return value !== '' && value !== 'Auto';
+  };
   return <button ref={button} data-native-tab-border={paint()?'ready':undefined} type="button" role="tab" aria-label={caption(props.page,state)} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active} classList={{active:props.active,'taxi-selected':state.selected===props.page.key}}
     style={{...font(props.page.presentation.titleFont,state.os),color:color(props.page.presentation.titleColor),width:width(),height:state.os === 'linux' ? `${props.metrics.height}px` : undefined,
-      'padding-left':state.os === 'linux' && props.horizontal ? `${props.metrics.horizontalPadding}px` : undefined,'padding-right':state.os === 'linux' && props.horizontal ? `${props.metrics.horizontalPadding}px` : undefined,
-      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'background-color':paint()?`rgb(${paint().background.join(',')})`:undefined,'border-bottom-color':paint()&&props.active?`rgb(${paint().background.join(',')})`:undefined}} onClick={event => {
+      'padding-left':state.os === 'linux' && padding() !== undefined ? `${Math.ceil(padding() / 2)}px` : undefined,
+      'padding-right':state.os === 'linux' && padding() !== undefined ? `${Math.floor(padding() / 2)}px` : undefined,
+      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'--taxi-tab-fill':paint() ? `rgb(${paint().background.join(',')})` : undefined,
+      '--taxi-disabled-tab-text':paint()?.foreground ? `rgb(${paint().foreground.join(',')})` : undefined}} onClick={event => {
     event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page);
-  }}><NativeLabel enabled={native()} placement="tab" calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/><NativeTabBorder node={props.page} previous={props.previous} next={props.next} selected={props.selected} pageBackground={props.pageBackground} pageHasBackground={props.pageHasBackground} active={props.active} enabled={native()} button={()=>button} controller={props.controller} paint={paint()} setPaint={setPaint}/></button>;
+  }}><NativeLabel enabled={native()} placement="tab" tabInset={tabInset()} calibrated={props.metrics.calibrated} text={caption(props.page,state)} font={props.page.presentation.titleFont} foreground={props.page.presentation.titleColor} runtime={props.controller.nativeText}/><NativeTabBorder node={props.page} previous={props.previous} next={props.next} selected={props.selected} pageBackground={props.pageBackground} pageHasBackground={props.pageHasBackground} active={props.active} side={props.side} titleColorAuthored={titleColorAuthored()} enabled={native()} button={()=>button} controller={props.controller} paint={paint()} setPaint={setPaint}/></button>;
 }
 function Group(props) {
   const node = () => props.node, state = props.controller.state;
@@ -384,7 +409,7 @@ function Group(props) {
     if (profile && profile.minimum < profile.preferred && groupCanShrink(node(), state.os, state.model.root)) return profile.minimum;
   };
   let container;
-  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.sequence}));
+  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.modelSequence}));
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
@@ -734,8 +759,10 @@ function Field(props) {
       || localizedProperty(property(node().auxiliary.find(item=>item.kind==='ExtendedTooltip'), 'Title')?.value, state.locale)
     : '';
   const layout = useFormLayout();
-  const titleLocation = () => layout?.titleAbove(node()) ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const automaticTop = () => layout?.titleAbove(node());
+  const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
+  const pageTitleAbove = () => props.forcedPageRow && node().kind === 'InputField' && titleLocation() === 'Top';
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
@@ -744,8 +771,9 @@ function Field(props) {
   const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
-    runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
-      && sideTitle()) && flag(node(), 'Enabled'))}/>;
+    runtime={props.controller.nativeText} fieldTitleRuns={pageTitleAbove() && !automaticTop()}
+    enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
+      && (sideTitle() || pageTitleAbove())) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const inputTitleWidth = createMemo(() => {
@@ -768,7 +796,7 @@ function Field(props) {
       ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
-    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && sideTitle());
+    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || pageTitleAbove()));
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),

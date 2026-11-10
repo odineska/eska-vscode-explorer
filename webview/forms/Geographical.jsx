@@ -4,7 +4,7 @@ import {geographicalBorderPaint} from './geographical-border.mjs';
 
 export function Geographical(props){
  let surface;const [paint,setPaint]=createSignal(),owner={};
- createEffect(on(()=>[props.controller.state.os,props.controller.state.sequence,JSON.stringify(props.node.presentation.border)],()=>{
+ createEffect(on(()=>[props.controller.state.os,props.controller.state.modelSequence,JSON.stringify(props.node.presentation.border)],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setPaint(undefined);if(props.controller.state.os!=='linux')return;
   const draw=()=>{const match=/^rgb\((\d+), (\d+), (\d+)\)$/.exec(getComputedStyle(surface).color);setPaint(match?geographicalBorderPaint(match.slice(1).map(Number)):undefined);runtime?.issue(owner,!match);};
   const frame=requestAnimationFrame(draw);draw();onCleanup(()=>{cancelAnimationFrame(frame);runtime?.issue(owner,false);});

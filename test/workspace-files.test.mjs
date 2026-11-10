@@ -156,6 +156,39 @@ test("watch invalidation reveals new groups and removal; manual refresh recovers
   assert.equal(watches.size, 0);
 });
 
+test("an older directory scan cannot discard a later filesystem change", async t => {
+  const root = await fixture(t);
+  await populate(root, ["eska.toml"]);
+  const { files, watches, changes } = model(t, [project(root)], root);
+  await files.groups();
+  const readDirectory = files.readDirectory.bind(files);
+  const scans = Array.from({ length: 2 }, () => ({ captured: Promise.withResolvers(), finish: Promise.withResolvers() }));
+  let index = 0;
+  files.readDirectory = async path => {
+    const scan = scans[index++];
+    const snapshot = await readDirectory(path);
+    if (scan) {
+      scan.captured.resolve();
+      await scan.finish.promise;
+    }
+    return snapshot;
+  };
+
+  await populate(root, ["README.md"]);
+  const older = watches.get(root)();
+  await scans[0].captured.promise;
+  await populate(root, ["notes.txt"]);
+  const newer = watches.get(root)();
+  await scans[1].captured.promise;
+  scans[0].finish.resolve();
+  await older;
+  scans[1].finish.resolve();
+  await newer;
+
+  assert.deepEqual((await files.groups()).map(group => group.kind), ["settings", "documentation", "other"]);
+  assert.deepEqual(changes, [undefined]);
+});
+
 test("directory links remain navigable but ancestor cycles terminate", async t => {
   const root = await fixture(t);
   await populate(root, ["eska.toml"]);

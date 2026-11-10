@@ -101,14 +101,17 @@ function captionProfile(text, font, advancesFor) {
 }
 
 /** The minimum keeps each word intact. The compact width fits a paragraph on two lines. */
-export function fieldCaptionProfile(text, font, { splitTerminalColon = false } = {}) {
-  const profile = captionProfile(text, font, designTextAdvances);
+export function fieldCaptionProfile(text, font, { splitTerminalColon = false, wordRuns = false } = {}) {
+  const advances = wordRuns ? (text, options) => wordTextAdvances(text, options, { terminalColon: splitTerminalColon })
+    : designTextAdvances;
+  const profile = captionProfile(text, font, advances);
   return profile && splitTerminalColon ? { ...profile, splitTerminalColon } : profile;
 }
 
 /** Designer shapes words independently, without kerning across whitespace. */
-export function wordTextAdvances(text, options) {
-  const runs = text.split(/(\s+)/u).map(run => hintedPairTextAdvances(run, options));
+export function wordTextAdvances(text, options, { terminalColon = false } = {}) {
+  const breaks = terminalColon ? /(\s+|:$)/u : /(\s+)/u;
+  const runs = text.split(breaks).map(run => hintedPairTextAdvances(run, options));
   if (runs.some(run => !run)) return;
   return runs.flat();
 }

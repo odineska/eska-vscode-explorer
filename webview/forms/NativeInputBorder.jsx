@@ -2,22 +2,7 @@ import { batch, createEffect, on, onCleanup } from 'solid-js';
 import { color, flag, property } from './model.mjs';
 import { inputBorderPixels, disabledInputForeground } from './input-border.mjs';
 import { NativeInputCorners, inputCornerBackground } from './NativeInputCorners.jsx';
-
-function rgb(value) {
-  const match = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value);
-  return match?.slice(1).map(Number);
-}
-
-function backdrop(element, colors) {
-  const parent = element.parentElement;
-  if (!parent) return;
-  if (colors.has(parent)) return colors.get(parent);
-  const style = getComputedStyle(parent);
-  const background = style.backgroundImage !== 'none' ? undefined
-    : style.backgroundColor === 'rgba(0, 0, 0, 0)' ? backdrop(parent, colors) : rgb(style.backgroundColor);
-  colors.set(parent, background);
-  return background;
-}
+import { rgb, solidBackdrop } from './native-control-paint.js';
 
 function inputColors(source, shared) {
   const { color, backgroundColor } = source.style;
@@ -61,7 +46,7 @@ export function NativeInputBorder(props) {
     return () => props.setPaint(undefined);
   };
   // A parent's background can change while reconciliation retains the child node.
-  createEffect(on(() => [state.sequence, state.os, props.choice, props.referenceButtons,
+  createEffect(on(() => [state.modelSequence, state.os, props.choice, props.referenceButtons,
     JSON.stringify(node().presentation.border), JSON.stringify(node().presentation.background)], () => {
     onCleanup(props.controller.scheduleInputBorderPaint(({ colors, declarations, palettes }) => {
       if (state.os !== 'linux') return reset();
@@ -73,7 +58,7 @@ export function NativeInputBorder(props) {
       if (!supported || surface.getBoundingClientRect().height < 6) return reset();
       const disabled = !!surface.closest('.taxi-disabled'), inactive = flag(node(), 'ReadOnly', false) || disabled;
       const { border, background } = inputColors(source, declarations);
-      const outside = backdrop(surface, colors);
+      const outside = solidBackdrop(surface.parentElement, colors);
       if (!border || !background || !outside) return reset();
       const choice = buttons.length > 0;
       const explicitBorder = !!property(node(), 'BorderColor');
