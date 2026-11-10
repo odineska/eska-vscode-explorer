@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onMount, onCleanup } from 'solid-js';
 import { automaticCommands, text } from './model.mjs';
-import { dataRowExpanded, dataRows, definitionSections, treeRows } from './inspector-model.mjs';
+import { canExpandData, dataRowExpanded, dataRows, definitionSections, treeRows } from './inspector-model.mjs';
 import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { Splitter } from './Splitter.jsx';
 
@@ -185,6 +185,15 @@ export function DataPane(props) {
   const visibleParents = createMemo(() => new Set(rows().map(row => row.parent)));
   const expanded = row => props.terms.length ? visibleParents().has(row.id)
     : dataRowExpanded(state.ui.dataFolded, row.id, props.revealed);
+  const loaded = createMemo(() => new Set((state.model.expandedData ?? []).map(path => path.join('.'))));
+  const hasChildren = row => props.index.children.get(row.id)?.length || state.referenceData && !loaded().has(row.path) && canExpandData(row);
+  const requestData = row => {
+    if (state.referenceData && !loaded().has(row.path) && canExpandData(row)) c.post({ type: 'expandData', path: row.path.split('.'), revision: state.revision, formSessionId: state.formSessionId });
+  };
+  createEffect(() => {
+    if (state.phase !== 'ready') return;
+    for (const row of rows()) if (!row.heading && !props.terms.length && expanded(row)) requestData(row);
+  });
   const virtual = virtualRows(rows, dataHeight, 180, 24);
   const current = () => props.activeData ?? props.relatedData;
   const isSelected = row => props.activeData?.id === row.id;
@@ -192,6 +201,7 @@ export function DataPane(props) {
   let grid;
   const fold = row => {
     if (props.terms.length) return;
+    if (!expanded(row)) requestData(row);
     c.ui('dataFolded', { ...state.ui.dataFolded, [row.id]: expanded(row) });
     props.clearReveal();
   };
@@ -207,13 +217,13 @@ export function DataPane(props) {
       case 'Home': next = list[0]; break;
       case 'End': next = list.at(-1); break;
       case 'ArrowRight':
-        if (row && props.index.children.get(row.id)?.length) {
+        if (row && hasChildren(row)) {
           if (!expanded(row)) fold(row);
           else if (list[index + 1]?.parent === row.id) next = list[index + 1];
         }
         break;
       case 'ArrowLeft':
-        if (row && !props.terms.length && expanded(row) && props.index.children.get(row.id)?.length) fold(row);
+        if (row && !props.terms.length && expanded(row) && hasChildren(row)) fold(row);
         else if (row?.parent) next = props.index.byData.get(row.parent);
         break;
       case 'Enter': if (row) props.select(row); break;
@@ -250,11 +260,11 @@ export function DataPane(props) {
           }>
             <tr classList={{ 'form-data-row': true, selected: isSelected(row), related: linked(row) }} id={`form-data-${row.id}`}
               role="row" aria-level={row.depth + 1} aria-selected={isSelected(row)} aria-rowindex={virtual.start() + index() + 2}
-              aria-expanded={props.index.children.get(row.id)?.length ? expanded(row) : undefined}
+              aria-expanded={hasChildren(row) ? expanded(row) : undefined}
               data-form-data-path={row.path} title={row.path}
               onClick={() => { props.select(row); virtual.focus(); }} onDblClick={() => props.locate(row)}>
               <td role="gridcell"><div class="form-data-name" style={{ '--form-depth': row.depth }}>
-                <Show when={props.index.children.get(row.id)?.length} fallback={<span class="form-tree-expander" aria-hidden="true"/>}>
+                <Show when={hasChildren(row)} fallback={<span class="form-tree-expander" aria-hidden="true"/>}>
                   <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded(row) ? state.strings.collapse : state.strings.expand}
                     disabled={!!props.terms.length} onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
                     <InspectorIcon name={expanded(row) ? 'down' : 'right'}/>

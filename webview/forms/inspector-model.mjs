@@ -170,3 +170,10 @@ export function dataRows(index, section, folded, terms, revealed) {
   }
   return rows;
 }
+
+/** Metadata references expand on demand; primitive types and enum values stay leaves. */
+export function canExpandData(row) {
+  return row.section === 'attributes' && !row.main && row.path.split('.').length < 64 && row.valueType?.types?.some(type =>
+    type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config'
+    && /^(?:Catalog|Document|ChartOfAccounts|ChartOfCharacteristicTypes|ChartOfCalculationTypes|ExchangePlan|BusinessProcess|Task)(?:Ref|Object)\.|^(?:InformationRegister|AccumulationRegister|AccountingRegister|CalculationRegister)RecordSet\./u.test(type.name));
+}

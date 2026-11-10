@@ -339,3 +339,12 @@ test('list menu transport preserves optional sections, shortcuts and disabled su
   root.presentation.tableCommandMenu=[[]];
   assert.deepEqual(parseFormSnapshot(snapshot).model.root.presentation.tableCommandMenu,[[]]);
 });
+
+
+test('expanded reference paths are bounded semantic paths, including root attributes', () => {
+  const snapshot=fixture();snapshot.model.expandedData=[['Link'],['Link','Parent']];
+  assert.deepEqual(parseFormSnapshot(snapshot).model.expandedData,[['Link'],['Link','Parent']]);
+  for (const paths of [[[]],[['Link.Parent']],[['']],Array.from({length:129},()=>['Link']),[Array(65).fill('Parent')],[['я'.repeat(1025)]]]) {
+    snapshot.model.expandedData=paths;assert.throws(()=>parseFormSnapshot(snapshot));
+  }
+});
