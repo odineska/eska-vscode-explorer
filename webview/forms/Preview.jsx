@@ -761,7 +761,7 @@ function Field(props) {
   const automaticTop = () => layout?.titleAbove(node());
   const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
-  const movedPageTitle = () => props.forcedPageRow && automaticTop();
+  const pageTitleAbove = () => props.forcedPageRow && node().kind === 'InputField' && titleLocation() === 'Top';
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;
@@ -770,8 +770,9 @@ function Field(props) {
   const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
-    runtime={props.controller.nativeText} enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
-      && (sideTitle() || movedPageTitle())) && flag(node(), 'Enabled'))}/>;
+    runtime={props.controller.nativeText} fieldTitleRuns={pageTitleAbove() && !automaticTop()}
+    enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
+      && (sideTitle() || pageTitleAbove())) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const inputTitleWidth = createMemo(() => {
@@ -794,7 +795,7 @@ function Field(props) {
       ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
-    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || movedPageTitle()));
+    const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || pageTitleAbove()));
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),

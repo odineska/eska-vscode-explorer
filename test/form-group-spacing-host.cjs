@@ -42,6 +42,8 @@ async function geometry(ui, keys, expected) {
       return [name, { width: pages?.getBoundingClientRect().width ?? null,
         tabs: pages?.querySelectorAll(':scope > .taxi-tabs > [role=tab]').length ?? 0 }];
     }));
+    const label = name => nodes.get(keys[name])?.querySelector('.taxi-field-label');
+    const captionLines = name => [...(label(name)?.querySelectorAll('.taxi-field-caption-line') ?? [])];
     return {
       frame: [origin.width, origin.height],
       dividers: ${JSON.stringify(expected.dividers !== undefined)} ? [...root.querySelectorAll('.taxi-column-divider')]
@@ -55,10 +57,10 @@ async function geometry(ui, keys, expected) {
         const title = nodes.get(keys[name])?.querySelector(':scope > .taxi-group > .taxi-group-title');
         return [name, title ? Math.round(title.offsetHeight / parseFloat(getComputedStyle(title).lineHeight)) : 0];
       })),
-      captionLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLines ?? {}))}.map(name => {
-        const label = nodes.get(keys[name])?.querySelector('.taxi-field-label');
-        return [name, label ? label.querySelectorAll('.taxi-field-caption-line').length || 1 : 0];
-      })),
+      captionLines: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLines ?? {}))}.map(name =>
+        [name, label(name) ? captionLines(name).length || 1 : 0])),
+      captionText: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionText ?? {}))}.map(name =>
+        [name, captionLines(name).map(line => line.textContent)])),
       captionLocations: Object.fromEntries(${JSON.stringify(Object.keys(expected.captionLocations ?? {}))}.map(name =>
         [name, nodes.get(keys[name])?.querySelector('.taxi-field-row')?.dataset.titleLocation])),
     };
@@ -69,7 +71,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines', 'captionLocations', 'pageGroups', 'dividers'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'captionLocations', 'captionText', 'pageGroups', 'dividers'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
