@@ -36,6 +36,8 @@ Bun. `scripts/bundle.mjs` собирает production JS и runtime зависи
 `yauzl`/`pend`, `vscode-languageclient` 11.0.0 и его зависимости в
 `out/extension.js` через закреплённый esbuild 0.28.2. Поэтому
 `--no-dependencies` сохраняет рабочие установщик и LSP-клиент в установленном VSIX.
+Во всех поставляемых JS-бандлах esbuild удаляет лишние пробелы, сохраняя
+имена и лицензионные комментарии.
 `out/THIRD-PARTY-NOTICES.txt` содержит лицензии всех модулей bundle; отсутствие
 лицензии останавливает сборку. Upstream license/NOTICE анализатора включены
 в `resources/analyzer-notices/` с source/hash provenance. `.vscodeignore` разрешает
