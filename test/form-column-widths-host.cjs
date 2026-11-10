@@ -105,7 +105,7 @@ function sourceVariant(xml, edit) {
     return editField(xml, edit === 'fixLeft' ? 'A' : 'B', properties => '<HorizontalStretch>false</HorizontalStretch>' + properties);
   }
   let changed = edit.form
-    ? xml.replace(/^[\s\S]*?(?=<ChildItems>)/u, properties => editProperties(properties, edit.form))
+    ? xml.replace(/(<Form\b[^>]*>)([\s\S]*?)(?=<ChildItems>)/u, (_, open, properties) => open + editProperties(properties, edit.form))
     : xml;
   for (const [name, title] of Object.entries(edit.titles ?? {})) {
     changed = editField(changed, name, properties => properties.replace(/<Title>[\s\S]*?<\/Title>/u, titleXml(title)));
@@ -273,7 +273,7 @@ exports.run = async () => {
     } else if (process.platform === 'linux' && (placements || checkbox)) {
       const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;
       const observation = await verifyDetached(service, view, main, ui, identity, async floating => {
-        const explicitWide = checkbox || form.kind === 'VerticalAmountTitles';
+        const explicitWide = checkbox || ['VerticalAmountTitles', 'VerticalReferenceTitles'].includes(form.kind);
         const wide = explicitWide ? form.cases[0] : {name:'wide captions',frame:[1180,250],
           locations:Object.fromEntries(Object.keys(placements).map(name => [name, 'Left']))};
         const initial = await pose(floating, keys, wide);

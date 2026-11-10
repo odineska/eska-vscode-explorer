@@ -1,4 +1,4 @@
-import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, referenceAlternatives, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
+import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth, inputHeight, inputControlHeight, inputRows, inputChoiceButton, inputOpenButton, linuxFixedInputWidth, linuxReferenceInput, nativeReferenceInput, referenceButtonWidth, automaticTextWidth, numericLabelMetrics, referenceAlternatives, textInputWidthBounds, textInputStretchesByDefault } from './model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 import { additionKinds, additionStretches } from './addition-model.mjs';
@@ -179,6 +179,13 @@ export function horizontalInputMaximum(node, os) {
   if (node.presentation.valueType.kind === 'string' && linuxFixedInputWidth(node, os)) return Math.max(maximum, minimum);
 }
 
+/** A Linux reference value retains 71 px and 21 px per button at the standard font size. */
+export function referenceInputMinimum(node, os) {
+  if (!linuxReferenceInput(node, os) || (node.presentation.font?.points ?? 10) !== 10) return;
+  const buttons = Number(inputChoiceButton(node, os)) + Number(inputOpenButton(node, os));
+  return Math.min(fieldWidth(node, os), 71 + buttons * 21);
+}
+
 /** Width bounds of the measured input profiles inside a horizontal group of columns. */
 export function laneInputBounds(node, os) {
   const type = node.presentation.valueType;
@@ -190,7 +197,7 @@ export function laneInputBounds(node, os) {
   const maximum = manualLaneMaximum(node) ?? automaticInputMaximum(node, os, true) ?? bounds.maximum ?? Infinity;
   // A manual cap below the intrinsic width becomes the preferred box with its trailing border.
   const preferred = Math.min(intrinsic, maximum + 1);
-  const narrowMinimum = Math.min(reference ? 113 : 71, preferred);
+  const narrowMinimum = Math.min(reference ? referenceInputMinimum(node, os) : 71, preferred);
   const minimum = reference && node.presentation.titleLocation !== 'None'
     ? Math.min(bounds.minimum ?? intrinsic, preferred) : narrowMinimum;
   return { preferred, minimum, narrowMinimum, maximum: Math.max(preferred, maximum), valueWeight: reference ? 98 : 78 };

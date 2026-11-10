@@ -1,7 +1,7 @@
 import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
-import { horizontalGrouping, laneInputBounds, ordinaryGroup, sharesGroupLabels } from './layout-model.mjs';
+import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
+import { allocateFieldCaption, growFieldCaption, inputCaptionInset } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
@@ -11,10 +11,13 @@ function labelScope(node, os) {
     || os === 'linux' && node.kind === 'UsualGroup' && scalar(node, 'Behavior') === 'Collapsible');
 }
 
-function movableNumber(node, os) {
-  return node.presentation.valueType?.kind === 'number' && linuxFixedInputWidth(node, os)
-    && node.presentation.titleLocation === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
+function automaticSideCaption(node) {
+  return node.presentation.titleLocation === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
     && scalar(node, 'ToolTipRepresentation') !== 'Button';
+}
+
+function movableNumber(node, os) {
+  return node.presentation.valueType?.kind === 'number' && linuxFixedInputWidth(node, os) && automaticSideCaption(node);
 }
 
 function localInputStack(track, children, os) {
@@ -108,8 +111,8 @@ function captionTrack(track, { targets, os, scale }, minimumCaptions, adaptiveFi
 }
 
 function sideReserve(field, minima) {
-  return field.numberWidth === undefined ? (minima.get(field.key)?.width ?? field.minimum) - field.minimum
-    : field.numberWidth + field.gap;
+  const value = field.numberWidth ?? field.referenceWidth;
+  return value === undefined ? (minima.get(field.key)?.width ?? field.minimum) - field.minimum : value + field.gap;
 }
 
 function captionStep(steps, tracks, minima, available) {
@@ -122,11 +125,17 @@ function captionStep(steps, tracks, minima, available) {
   })));
 }
 
-function allocateIndependentCaption(field, available, minima, captions, above) {
-  const capacity = available - sideReserve(field, minima);
-  const top = field.numberWidth !== undefined && capacity + .5 < field.minimum;
+function allocateIndependentCaption(field, available, minima, captions, above, profileMinimum) {
+  const reserve = sideReserve(field, minima);
+  const capacity = available - reserve;
+  // A compact profile keeps the positions chosen at its minimum until the shared track fits.
+  const placementWidth = Math.min(available, profileMinimum ?? available);
+  const top = field.canMoveAbove && placementWidth - reserve + .5 < field.minimum;
   if (top) above.add(field.key);
-  const width = top ? available : Math.max(field.caption.minimum, Math.floor(capacity) - inputCaptionInset);
+  const labelCapacity = Math.floor(capacity) - inputCaptionInset;
+  const captionWidth = field.referenceWidth === undefined || top ? labelCapacity
+    : Math.min(labelCapacity, growFieldCaption(field.caption, available, profileMinimum, field.gap + inputCaptionInset));
+  const width = top ? available : Math.max(field.caption.minimum, captionWidth);
   allocateFieldCaption(captions, field, Math.min(field.caption.preferred, width), top ? 0 : inputCaptionInset);
   updateStyle(field.element, '--taxi-field-columns', top ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
 }
@@ -155,6 +164,19 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
     const independentCaptions = fields.some(field => field.numberWidth !== undefined);
     if (minimum >= preferred && !local && !independentCaptions) continue;
+    const referenceWidths = independentCaptions ? fields.map(field => referenceInputMinimum(field.node, os)) : [];
+    const compactReferences = referenceWidths.some((width, index) => width !== undefined
+      && fields[index].caption.minimum < fields[index].caption.preferred);
+    if (compactReferences) for (const [index, field] of fields.entries()) {
+      const width = referenceWidths[index];
+      if (width === undefined) continue;
+      if (field.element.dataset.stretchX === 'true') {
+        field.referenceWidth = width;
+        alignment.style(field.element, '--taxi-lane-input-min-width', `${width}px`);
+      } else {
+        field.referenceWidth = fieldWidth(field.node, os);
+      }
+    }
     const end = Math.max(...tracks.map(track => track.end));
     for (const items of separated) alignment.mark(items, 'data-through-separated-row');
     for (const track of tracks) {
@@ -172,7 +194,8 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         minimumCaptions.set(field.key, field.minimum);
         alignment.style(field.element, '--taxi-field-caption-width', '');
         if (independentCaptions) {
-          const aboveWidth = field.numberWidth === undefined ? undefined : Math.max(field.numberWidth, field.caption.minimum);
+          field.canMoveAbove = field.numberWidth !== undefined || field.referenceWidth !== undefined && automaticSideCaption(field.node);
+          const aboveWidth = field.canMoveAbove ? Math.max(field.numberWidth ?? field.referenceWidth, field.caption.minimum) : undefined;
           // Keep the side-caption budget available even when the physical minimum is smaller.
           minimumInputs.set(field.key, { alignedCaption: minimum, gap: field.gap, aboveWidth });
           alignment.style(field.element, '--taxi-field-columns', '');
@@ -189,7 +212,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
       ? [...new Set(fields.map(field => field.caption.preferred + inputCaptionInset))]
         .filter(width => width > minimum).sort((a, b) => b - a)
       : undefined;
-    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions };
+    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences };
     if (local) {
       const [track] = tracks;
       alignment.mark(track.container, 'data-through-input-stack');
@@ -213,7 +236,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
   }
 
   function allocateWidths(allocations, captions, minima, above, leadingEdges) {
-    for (const { tracks, preferred, compact, minimum, steps, independentCaptions } of allocations) {
+    for (const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences } of allocations) {
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
         // The stack has its own captions but occupies the leading track of the mixed rows.
         const edge = leadingEdges?.get(parent);
@@ -231,11 +254,13 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         : measured.every(track => compact <= track.capacity + .5) ? compact : minimum;
       const full = steps ? shared === preferred : measured.every(track => track.full);
       const separate = independentCaptions && measured.some(track => track.capacity + .5 < minimum);
+      const profileMinimum = separate && compactReferences
+        ? Math.max(0, ...tracks.flatMap(track => track.fields.map(field => minima.get(field.key)?.width ?? 0))) : undefined;
       for (const [index, {container, horizontal, fields, fullWidth}] of tracks.entries()) {
         const [leading] = fields;
         const { capacity, available } = measured[index];
         if (separate) {
-          for (const field of fields) allocateIndependentCaption(field, available, minima, captions, above);
+          for (const field of fields) allocateIndependentCaption(field, available, minima, captions, above, profileMinimum);
           continue;
         }
         const independent = horizontal && shared > capacity + .5;

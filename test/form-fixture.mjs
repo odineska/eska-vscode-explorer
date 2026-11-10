@@ -328,14 +328,18 @@ async function addNativeGoods(fixture, catalog) {
   await writeFile(configuration, xml.replace('<ChildObjects>', '<ChildObjects><Catalog>NativeGoods</Catalog>'));
 }
 
+async function addNativeChoices(fixture, descriptor) {
+  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
+  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(descriptor));
+  const configuration = join(fixture.source, 'Configuration.xml');
+  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+}
+
 export async function createReferenceWidthGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native reference directory.');
   await addNativeGoods(fixture, join(input, 'Catalog.xml'));
-  await mkdir(join(fixture.source, 'Enums'), { recursive: true });
-  await writeFile(join(fixture.source, 'Enums', 'NativeChoices.xml'), await readFile(join(input, 'Enum.xml')));
-  const configuration = join(fixture.source, 'Configuration.xml');
-  await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Enum>NativeChoices</Enum>'));
+  await addNativeChoices(fixture, join(input, 'Enum.xml'));
   return createMeasuredFormGallery(fixture, input);
 }
 
@@ -408,13 +412,15 @@ export async function createColumnWidthGallery(fixture, locale) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native column widths directory.');
   await addNativeGoods(fixture, join(input, '..', 'native-context-tables', 'Catalog.xml'));
+  await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
   const configuration = join(fixture.source, 'Configuration.xml');
   await writeFile(join(fixture.source, 'Catalogs', 'NativeUsers.xml'), descriptor('Catalog', 'NativeUsers'));
   await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects><Catalog>NativeUsers</Catalog>'));
   const measurements = await Promise.all(['metrics.json', 'automatic-metrics.json', 'narrow-metrics.json', 'fixed-sibling-metrics.json',
     'title-location-metrics.json', 'checkbox-metrics.json', 'mixed-title-metrics.json', 'group-alignment-metrics.json',
     'footer-allocation-metrics.json', 'footer-wrapped-metrics.json', 'input-stack-metrics.json',
-    'vertical-amount-title-metrics.json', 'compact-header-metrics.json', 'compact-footer-title-metrics.json']
+    'vertical-amount-title-metrics.json', 'vertical-reference-title-metrics.json',
+    'compact-header-metrics.json', 'compact-footer-title-metrics.json']
     .map(async file => JSON.parse(await readFile(join(input, file), 'utf8'))));
   const cases = new Map();
   for (const { fixtures } of measurements) {
