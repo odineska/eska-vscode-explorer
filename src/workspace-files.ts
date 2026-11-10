@@ -46,6 +46,7 @@ export function fileCategory(name: string, directory: boolean): FileGroupKind {
 export class WorkspaceFiles {
   readonly scopes: FileScope[];
   private readonly listings = new Map<string, Promise<DirectorySnapshot>>();
+  private readonly invalidations = new Map<string, object>();
   private readonly watchers = new Map<string, { dispose(): void }>();
   private disposed = false;
 
@@ -89,19 +90,27 @@ export class WorkspaceFiles {
 
   /** Ignore delayed create events already reflected in a snapshot, preserving selection on unrelated branches. */
   private async invalidate(path: string, owner: WorkspaceEntry | ProjectTree | undefined): Promise<void> {
-    const previous = this.listings.get(path);
+    if (!this.watchers.has(path)) return;
+    const ticket = {}, previous = this.listings.get(path);
+    this.invalidations.set(path, ticket);
+    // Keep the visible snapshot as the baseline until the newest scan is ready.
+    const current = () => this.invalidations.get(path) === ticket && this.listings.get(path) === previous;
     try {
       const [before, after] = await Promise.all([previous, this.readDirectory(path)]);
-      if (this.disposed || this.listings.get(path) !== previous) return;
+      if (!current()) return;
       this.listings.set(path, Promise.resolve(after));
       if (before && before.real === after.real && JSON.stringify(before.entries) === JSON.stringify(after.entries)) return;
     } catch {
-      if (this.disposed || this.listings.get(path) !== previous) return;
+      if (!current()) return;
       this.listings.delete(path);
+    } finally {
+      if (this.invalidations.get(path) === ticket) this.invalidations.delete(path);
     }
     for (const key of this.listings.keys()) if (relativeFile(path, key)) this.listings.delete(key);
     for (const [key, watcher] of this.watchers) {
-      if (relativeFile(path, key)) { watcher.dispose(); this.watchers.delete(key); }
+      if (relativeFile(path, key)) {
+        watcher.dispose(); this.watchers.delete(key); this.invalidations.delete(key);
+      }
     }
     this.changed(owner);
   }
@@ -207,20 +216,20 @@ export class WorkspaceFiles {
   activityChanged(): void {
     for (const [path, watcher] of this.watchers) {
       if (this.scopes.some(scope => scope.project && !projectEnabled(scope.project.info) && (relative(scope.path, path) === "" || relativeFile(scope.path, path) !== undefined))) {
-        watcher.dispose(); this.watchers.delete(path); this.listings.delete(path);
+        watcher.dispose(); this.watchers.delete(path); this.listings.delete(path); this.invalidations.delete(path);
       }
     }
   }
 
   /** Refresh recovers stale or watcher-excluded folders without touching the metadata cache. */
-  refresh(): void { this.listings.clear(); }
+  refresh(): void { this.listings.clear(); this.invalidations.clear(); }
 
   /** Release directory subscriptions and pending snapshots when a connection is replaced. */
   dispose(): void {
     this.disposed = true;
     for (const watcher of this.watchers.values()) watcher.dispose();
     this.watchers.clear();
-    this.listings.clear();
+    this.refresh();
   }
 }
 
