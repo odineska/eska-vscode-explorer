@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { inspectorType, inspectorTypeDetails, technicalType } from '../webview/forms/inspector-type.mjs';
-import { attributeFor, commandFor, dataRows, indexInspector, inspectorTerms, treeRows } from '../webview/forms/inspector-model.mjs';
+import { attributeFor, canExpandData, commandFor, dataRows, indexInspector, inspectorTerms, treeRows } from '../webview/forms/inspector-model.mjs';
 import { prepare, FORM_NS } from '../webview/forms/model.mjs';
 import { parseInspectorState } from '../out/form-preview/inspector-state.js';
 
@@ -152,4 +152,13 @@ test('data groups open only through a saved expansion, search or a transient rev
   assert.equal(reference.label, 'Ссылка');
   assert.equal(reference.displayPath, 'Object.Ссылка');
   assert.equal(reference.path, 'Object.Ref');
+});
+
+
+test('reference branches load on demand while main attributes and scalar rows stay local', () => {
+  const row={section:'attributes',path:'Object.Link',valueType:{types:[{namespace:config,name:'CatalogRef.Company'}]}};
+  assert.equal(canExpandData(row),true);
+  assert.equal(canExpandData({...row,main:true}),false);
+  assert.equal(canExpandData({...row,valueType:{types:[{namespace:schema,name:'string'}]}}),false);
+  assert.equal(canExpandData({...row,path:Array(64).fill('Parent').join('.')}),false);
 });

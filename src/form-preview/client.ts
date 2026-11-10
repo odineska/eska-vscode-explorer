@@ -35,11 +35,11 @@ export class FormSession {
     const value = await connection.request(tree.session.sessionId, "form/prepare", { projectId: entry.project.info.projectId, generation, node: entry.node.id, ...(application ? { application } : {}) });
     checkContext(connection, tree, entry, value, generation); return parseFormPreparation(value);
   }
-  static async open(connection: Connection, tree: MetadataTree, entry: TreeEntry, limits: FormLimits, inputs: FormInput[], application?: string): Promise<FormSession> {
+  static async open(connection: Connection, tree: MetadataTree, entry: TreeEntry, limits: FormLimits, inputs: FormInput[], application?: string, expandedData: string[][] = []): Promise<FormSession> {
     await tree.synchronizeInputs();
     const generation = entry.project.info.generation;
     const request = (method: string, params: Record<string, unknown>) => connection.request(tree.session.sessionId, method, { ...params, projectId: entry.project.info.projectId, generation });
-    const value = await withInputs(inputs, limits, request, inputs => request("form/open", { node: entry.node.id, inputs, ...(application ? { application } : {}) }));
+    const value = await withInputs(inputs, limits, request, inputs => request("form/open", { node: entry.node.id, inputs, ...(application ? { application } : {}), ...(limits.referenceData ? { expandedData } : {}) }));
     const snapshot = parseFormSnapshot(value), session = new FormSession(connection, tree, entry, limits, snapshot);
     try { session.check(value, generation); return session; } catch (error) { await session.close(); throw error; }
   }
@@ -51,13 +51,13 @@ export class FormSession {
     return this.connection.request(this.tree.session.sessionId, method, { ...params, projectId: this.entry.project.info.projectId, generation });
   }
   /** Uploads and update acknowledgement complete before close; stale results are never installed into another session. */
-  update(inputs: FormInput[]): Promise<FormSnapshot> {
+  update(inputs: FormInput[], expandedData: string[][] = []): Promise<FormSnapshot> {
     const action = this.pending.then(async () => {
       if (this.closed) throw new ExplorerError("obsolete");
       await this.tree.synchronizeInputs();
       const generation = this.entry.project.info.generation;
       return withInputs(inputs, this.limits, (method, params) => this.request(method, params, generation), async inputs => {
-        const value = await this.request("form/update", { formSessionId: this.current.formSessionId, revision: this.current.revision, overlays: [], inputs }, generation);
+        const value = await this.request("form/update", { formSessionId: this.current.formSessionId, revision: this.current.revision, overlays: [], inputs, ...(this.limits.referenceData ? { expandedData } : {}) }, generation);
         const result = parseFormSnapshot(value);
         // Retain the acknowledged revision even if a later file event made this response visually obsolete.
         this.current = result; this.check(value, generation); return result;

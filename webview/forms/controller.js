@@ -7,7 +7,7 @@ import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/
 /** Only UI state is persisted. Models and backend session handles are refreshed after reload. */
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
-  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false,
+  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, referenceData: false,
     notice: '', restore: null, selected: '', copiedType: false,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
@@ -86,7 +86,7 @@ export function controller(api) {
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
       if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'notice', 'restore', 'title']) {
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
       if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));

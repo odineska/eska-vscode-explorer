@@ -5,7 +5,7 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 export const MAX_FORM_DEPENDENCIES = 1024;
 const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean }
+export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean; referenceData?: boolean }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
 export interface FormPreparation { contextFingerprint: string; application: string | null; limitedContext: boolean; roots: WirePath[]; forms: FormInputSource[] }
@@ -66,7 +66,7 @@ export interface FormDataField { path: string[]; caption?: FormText; valueType: 
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
 export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
-export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
+export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; expandedData?: string[][]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
   formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
@@ -112,9 +112,12 @@ function fieldType(value: unknown): boolean {
     && (value.allowedSign === undefined || value.allowedSign === "Any" || value.allowedSign === "Nonnegative")
     && Array.isArray(value.types) && value.types.every(key);
 }
-export function isDataPath(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length >= 2 && value.length <= 64
+export function isDataPath(value: unknown, minimumSegments: 1 | 2 = 2): value is string[] {
+  return Array.isArray(value) && value.length >= minimumSegments && value.length <= 64
     && value.every(part => typeof part === "string" && part.length > 0 && !part.includes("."));
+}
+export function isExpandedDataPath(value: unknown): value is string[] {
+  return isDataPath(value, 1) && Buffer.byteLength(value.join(""), "utf8") <= 2048;
 }
 function text(value: unknown): boolean {
   return isRecord(value) && (value.kind === "name" && typeof value.text === "string" || value.kind === "standard" && typeof value.key === "string"
@@ -178,7 +181,8 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
     ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}),
-    ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}) };
+    ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}),
+    ...(value.apiVersion.minor >= 47 && data.referenceData === true ? { referenceData: true } : {}) };
 }
 export function parseFormPreparation(value: unknown): FormPreparation {
   if (!isRecord(value) || !hash(value.contextFingerprint) || !(value.application === null || typeof value.application === "string") || typeof value.limitedContext !== "boolean"
@@ -241,6 +245,8 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
       paths.add(path);
     }
   }
+  if (value.model.expandedData !== undefined && (!Array.isArray(value.model.expandedData)
+    || value.model.expandedData.length > 128 || !value.model.expandedData.every(isExpandedDataPath))) invalid();
   const commands = value.model.commands as unknown[];
   if (Array.isArray(value.model.handlers)) for (const handler of value.model.handlers) {
     if (isRecord(handler) && isRecord(handler.owner) && handler.owner.kind === "command") {
