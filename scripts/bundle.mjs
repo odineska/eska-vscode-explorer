@@ -10,11 +10,13 @@ for (const [file, expected] of [["scripts/form-font-raster.c", raster.bridgeSha2
   if (createHash("sha256").update(await readFile(file)).digest("hex") !== expected) throw new Error(`Stale caption rasterizer: ${file}`);
 }
 
+// Remove generated whitespace while keeping names and licenses in the shipped code.
+const bundleOptions = { bundle: true, metafile: true, legalComments: "inline", minifyWhitespace: true };
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
-const result = await build({ entryPoints: ["src/extension.ts"], outfile: "out/extension.js", bundle: true,
-  platform: "node", target: "node22", format: "cjs", external: ["vscode"], metafile: true, legalComments: "inline" });
-const browserOptions = { outdir: "out", bundle: true,
-  platform: "browser", target: "chrome140", format: "iife", metafile: true, legalComments: "inline",
+const result = await build({ ...bundleOptions, entryPoints: ["src/extension.ts"], outfile: "out/extension.js",
+  platform: "node", target: "node22", format: "cjs", external: ["vscode"] });
+const browserOptions = { ...bundleOptions, outdir: "out",
+  platform: "browser", target: "chrome140", format: "iife",
   loader: { ".ttf": "file", ".wasm": "file" }, assetNames: "form-fonts/[name]-[hash]",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "solid-jsx", setup(builder) {
@@ -28,8 +30,7 @@ const browserOptions = { outdir: "out", bundle: true,
 };
 const [query, form] = await Promise.all([
   build({ ...browserOptions, entryPoints: { "query-designer": "webview/query/index.jsx" } }),
-  // Keep the form assets within the existing installed-size limit.
-  build({ ...browserOptions, entryPoints: { "form-preview": "webview/forms/index.jsx" }, minifyWhitespace: true }),
+  build({ ...browserOptions, entryPoints: { "form-preview": "webview/forms/index.jsx" } }),
 ]);
 const browser = {
   inputs: { ...query.metafile.inputs, ...form.metafile.inputs },
