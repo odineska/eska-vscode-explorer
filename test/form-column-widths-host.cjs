@@ -250,7 +250,7 @@ exports.run = async () => {
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');
     const placements = form.cases[0]?.locations;
-    if (process.platform === 'linux' && ['FooterWrapped', 'MixedInputStack'].includes(form.kind)) {
+    if (process.platform === 'linux' && ['FooterWrapped', 'CompactFooterTitles', 'MixedInputStack'].includes(form.kind)) {
       const stack = form.kind === 'MixedInputStack';
       const field = stack ? 'Trace' : 'Memo';
       const identity = nodes.find(node => node.name === field).identity;
@@ -267,7 +267,8 @@ exports.run = async () => {
         const name = stack ? 'input stack restores wide captions' : 'mixed row restores wide captions';
         results.push(await pose(floating, keys, { ...form.cases[0], name }));
       }, retainedKey);
-      const label = stack ? 'detached-input-stack-resize-and-dirty' : 'detached-mixed-row-resize-and-dirty';
+      const label = form.kind === 'CompactFooterTitles' ? 'detached-compact-footer-resize-and-dirty'
+        : stack ? 'detached-input-stack-resize-and-dirty' : 'detached-mixed-row-resize-and-dirty';
       results.push({label, ...observation});
     } else if (process.platform === 'linux' && (placements || checkbox)) {
       const identity = (checkbox ?? nodes.find(node => Object.hasOwn(placements, node.name))).identity;

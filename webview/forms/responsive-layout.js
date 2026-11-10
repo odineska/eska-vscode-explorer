@@ -200,8 +200,8 @@ export function createFormLayout(controller, viewport, preview, frame) {
     rootCommands?.allocate();
     allocateTableCommands?.();
     const captions = new Map(), previousCaptions = fieldCaptions();
-    const throughAbove = new Set();
-    throughCaptions.allocate(captions, geometry().minima, throughAbove);
+    const alignedAbove = new Set();
+    throughCaptions.allocate(captions, geometry().minima, alignedAbove);
     const packedDates = unitedRows.allocateWidths(captions, geometry().minima);
     columnDividers.allocate(unitedRows.columnPairs, geometry().minima, root);
     for (const [key, plan] of packedDates) {
@@ -212,10 +212,10 @@ export function createFormLayout(controller, viewport, preview, frame) {
       else packedDates.delete(key);
     }
     numericRows?.allocateWidths(captions);
-    allocateInlineRows(captions);
+    allocateInlineRows(captions, alignedAbove);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions);
-    for (const key of throughAbove) above.add(key);
+    for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
     throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);

@@ -719,6 +719,9 @@ button { cursor: default; }
   column-gap: 5px;
   align-items: var(--taxi-inline-label-align, center);
 }
+.taxi-items[data-native-inline-row] > .taxi-element[data-kind=LabelField] > .taxi-field-row[data-title-location=Top] {
+  row-gap: 4px;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-native-inline-row] > .taxi-element[data-group-shrink-x][data-stretch-x=false] {
   width: var(--taxi-inline-track-width);
 }
