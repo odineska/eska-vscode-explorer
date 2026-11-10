@@ -46,17 +46,23 @@ test('explicit text label geometry retains native background insets without chan
   assert.equal(textLabelMetrics(numeric, 'linux'), undefined);
 });
 
-test('numeric labels in mixed rows quantize the formatted value width in Taxi units', () => {
+test('numeric labels quantize the formatted value width in Taxi units', () => {
   const label = {
     kind: 'LabelField',
     presentation: { titleLocation: 'Left', font: { points: 10, weight: 700 } },
     properties: [{ key: { namespace: FORM_NS, name: 'BackColor' }, value: { kind: 'text', text: '#E0FFFF' } }],
   };
   for (const [digits, fraction, preferred] of [
+    [1, 0, 22], [2, 0, 32], [3, 0, 32], [4, 0, 52], [5, 0, 52], [6, 0, 62],
+    [7, 0, 72], [8, 0, 82], [10, 0, 102],
+    [2, 1, 32], [3, 1, 42], [4, 2, 52],
     [5, 2, 52], [10, 2, 102], [14, 2, 132], [15, 2, 152], [16, 2, 152], [20, 2, 192],
     [25, 2, 232], [38, 2, 352], [15, 0, 142], [15, 5, 142],
   ]) {
     label.presentation.valueType = { kind: 'number', digits, fraction, allowedSign: 'Any' };
-    assert.equal(numericLabelMetrics(label, 'linux', { characterUnits: true }).preferred, preferred);
+    assert.equal(numericLabelMetrics(label, 'linux').preferred, preferred);
   }
+  label.presentation.valueType = { kind: 'number', digits: 10, fraction: 2 };
+  label.presentation.tabularTotal = 'automatic';
+  assert.equal(numericLabelMetrics(label, 'linux').preferred, 92);
 });

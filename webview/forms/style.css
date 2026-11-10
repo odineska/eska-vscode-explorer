@@ -617,6 +617,10 @@ button { cursor: default; }
   width: var(--taxi-form-initial-width) !important;
   height: var(--taxi-form-initial-height, auto) !important;
 }
+/* Measure fixed branches before the stretching groups take their share of the row. */
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-native-group-row] > .taxi-element[data-stretch-x=false] {
+  flex-shrink: 0;
+}
 .taxi-preview[data-form-layout=preferred] .taxi-items[data-numeric-label-row] > .taxi-element {
   width: max-content;
   flex: 0 0 auto !important;

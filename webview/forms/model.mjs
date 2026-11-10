@@ -234,7 +234,7 @@ export function textLabelMetrics(node, os) {
 }
 
 /** Intrinsic size of a single-line numeric label in Linux Designer. */
-export function numericLabelMetrics(node, os, { characterUnits = false } = {}) {
+export function numericLabelMetrics(node, os) {
   const type = node.presentation.valueType;
   if (os !== 'linux' || node.kind !== 'LabelField' || type?.kind !== 'number' || !type.digits
       || number(node, 'Height') > 1 || !['Left', 'None'].includes(node.presentation.titleLocation)) return;
@@ -246,8 +246,9 @@ export function numericLabelMetrics(node, os, { characterUnits = false } = {}) {
   const separators = Math.floor(Math.max(0, type.digits - fraction - 1) / 3);
   const digits = type.digits * 8 + separators * 4 + (fraction ? 2 : 0);
   const authored = Math.trunc(number(node, 'Width'));
-  const units = characterUnits ? numberWidthUnits(type) : undefined;
-  const automatic = units === undefined ? Math.max(50, digits) : Math.max(5, units) * 10;
+  // Tabular section totals keep a separate width profile.
+  const units = node.presentation.tabularTotal ? undefined : numberWidthUnits(type);
+  const automatic = units === undefined ? Math.max(50, digits) : units * 10;
   const preferred = (authored > 0 ? authored * 10 : Math.round(automatic * scale)) + widthOutset;
   return {
     preferred,

@@ -16,7 +16,7 @@ function fieldTrack(node, element, { os, scale, collapsed }, fixed) {
   const multiline = linuxFixedInputWidth(node, os) && inputRows(node) > 1;
   const location = node.presentation.titleLocation;
   if (!(multiline ? ['Top', 'None'] : ['Left', 'None']).includes(location)) return;
-  const numeric = numericLabelMetrics(node, os, { characterUnits: true });
+  const numeric = numericLabelMetrics(node, os);
   const label = numeric ?? textLabelMetrics(node, os);
   if (!multiline && !label) return;
   const field = element.querySelector(':scope > .taxi-field-row');
