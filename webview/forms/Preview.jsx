@@ -699,7 +699,7 @@ function Field(props) {
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
     const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && sideTitle());
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
-      width: titleWidth === undefined ? undefined : `var(--taxi-field-caption-width, ${titleWidth}px)`,
+      width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
       'line-height': numericLabel() || wrapped ? `${fontLineHeight(labelFont())}px` : undefined,
       'white-space': labelCaption() ? 'pre' : undefined,

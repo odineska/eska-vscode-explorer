@@ -306,13 +306,15 @@ async function verifyColumnSurplus(service, main, view, document) {
     const referenceLabel = find(1051)?.querySelector('.taxi-field-label');
     const referenceCaption = through[0] && referenceLabel
       ? [through[0][0] - box(referenceLabel)[0], referenceLabel.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
+    const referenceLabelFits = referenceCaption
+      && box(referenceLabel)[1] + parseFloat(getComputedStyle(referenceLabel.parentElement).columnGap) <= referenceCaption[0];
     const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
     return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
       dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
       dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
       dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
-      through, referenceCaption };
+      through, referenceCaption, referenceLabelFits };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
     columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
@@ -328,7 +330,10 @@ async function verifyColumnSurplus(service, main, view, document) {
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
     if (referenceRow) expected.through = referenceRow;
-    if (referenceCaption) expected.referenceCaption = referenceCaption;
+    if (referenceCaption) {
+      expected.referenceCaption = referenceCaption;
+      if (referenceCaption[1] > 1) expected.referenceLabelFits = true;
+    }
     const keys = Object.keys(expected);
     const description = `${file} matches the native preview at ${width}px`;
     let actual, stable = 0;
