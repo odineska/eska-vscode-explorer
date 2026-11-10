@@ -6,7 +6,7 @@ function BrowserSheet(props){const columns=Array.from({length:12},(_,i)=>i+1);re
 
 export function Sheet(props){
  let surface,canvas;const [ready,setReady]=createSignal(false),owner={};
- createEffect(on(()=>[props.controller.state.os,props.controller.state.sequence,props.controller.state.ui.zoom,props.metrics],()=>{
+ createEffect(on(()=>[props.controller.state.os,props.controller.state.modelSequence,props.controller.state.ui.zoom,props.metrics],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(props.controller.state.os!=='linux')return;
   let current=true,faces;const showHeaders=flag(props.node,'ShowHeaders',false);if(showHeaders&&!runtime)return;const draw=()=>{if(!current)return;const metrics=props.metrics,rect=surface.getBoundingClientRect(),calibrated=metrics?.calibrated&&devicePixelRatio===1&&props.controller.state.ui.zoom===100&&rect.width===metrics.width-2&&rect.height===metrics.height-2&&spreadsheetSurfaceSize(metrics.width,metrics.height);
    if(calibrated&&showHeaders&&!faces)return;

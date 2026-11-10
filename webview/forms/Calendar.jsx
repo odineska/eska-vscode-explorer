@@ -16,7 +16,7 @@ function BrowserCalendar(props) {
 
 export function Calendar(props){
  let surface,canvas;const [ready,setReady]=createSignal(false),[paintDate,setPaintDate]=createSignal(''),owner={};
- createEffect(on(()=>[props.controller.state.sequence,props.controller.state.os,props.controller.state.ui.zoom,props.controller.state.culture,props.controller.state.strings.today,props.metrics],()=>{
+ createEffect(on(()=>[props.controller.state.modelSequence,props.controller.state.os,props.controller.state.ui.zoom,props.controller.state.culture,props.controller.state.strings.today,props.metrics],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(props.controller.state.os!=='linux'||!runtime)return;
   let current=true,face,timer;
   const draw=()=>{

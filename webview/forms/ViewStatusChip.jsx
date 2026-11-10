@@ -14,7 +14,7 @@ export function ViewStatusChip(props) {
   }, {
     target: () => chip,
     mode: 'lcd',
-    dependencies: () => [props.width, props.active, state.ui.zoom, state.sequence],
+    dependencies: () => [props.width, props.active, state.ui.zoom, state.modelSequence],
     calibrated: () => props.font.points === 10 && props.font.weight === 400 && state.ui.zoom === 100 && devicePixelRatio === 1,
     paint: ({ style, raster }) => {
       const background = solidBackdrop(chip.parentElement);
