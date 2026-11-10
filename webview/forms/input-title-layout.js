@@ -1,7 +1,7 @@
 import { fieldWidth, inputRows, number, scalar, textInputWidthBounds } from './model.mjs';
 import { automaticHorizontalSpacing, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
 import { borderBoxSize, boundingScale, boxInsets, pixels, updateStyle } from './layout-box.mjs';
-import { fieldCaptionProfile } from './font-metrics.mjs';
+import { fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
 import { inputLaneFields } from './input-lane-layout.js';
 import { sideTabWidths } from './page-fit-layout.js';
@@ -9,7 +9,7 @@ import { sideTabWidths } from './page-fit-layout.js';
 const total = widths => widths.reduce((sum, width) => sum + width, 0);
 const kinds = new Set(['number', 'date', 'reference']);
 
-function inputTitleField(node, { targets, scale, os }, minimumCaptions, page) {
+function inputTitleField(node, { targets, scale, os }, minimumCaptions, page, authoredTop) {
   const element = targets.elements.get(node.key);
   const kind = node.presentation.valueType.kind;
   const location = node.presentation.titleLocation;
@@ -25,7 +25,9 @@ function inputTitleField(node, { targets, scale, os }, minimumCaptions, page) {
   if (!control) return;
   const label = row.querySelector(':scope > .taxi-field-label');
   const title = label?.getAttribute('aria-label') ?? '';
-  const caption = fieldCaptionProfile(title, node.presentation.titleFont);
+  const caption = fieldCaptionProfile(title, node.presentation.titleFont, {
+    wordRuns: authoredTop, splitTerminalColon: authoredTop,
+  });
   if (!caption) return;
   const preferred = flexible || page ? Math.min(fieldWidth(node, os), cap ?? Infinity) : borderBoxSize(control, scale).width;
   const minimum = bounds?.narrowMinimum ?? preferred;
@@ -54,6 +56,39 @@ function pageSideCaption(field, width) {
   if (field.flexible) return isolatedInputCaptionWidth(caption, width, gap, minimum, preferred) ?? caption.preferred;
   const available = width - preferred - gap - inputCaptionInset;
   return Math.min(caption.preferred, Math.max(caption.minimum, available));
+}
+
+function allocateAuthoredPageTitles(width, fitWidth, fields, lanes) {
+  const flexible = fields[0].flexible ? 0 : 1;
+  const input = fields[flexible], fixed = fields[1 - flexible];
+  const inputLane = lanes[flexible], fixedLane = lanes[1 - flexible];
+  const compact = Math.max(input.preferred, input.caption.compact);
+  const full = fixedLane.maximum;
+  const ordered = sizes => flexible === 0 ? sizes : sizes.reverse();
+  if (fitWidth >= compact + full) {
+    const value = Math.max(inputLane.minimum, Math.min(width - full, inputLane.maximum));
+    return { sizes: ordered([value, full]) };
+  }
+
+  // Fit whole words in the fixed column before sharing the width that wrapping releases.
+  const preferred = input.preferred <= inputLane.minimum ? inputLane.minimum
+    : Math.min(fitWidth, Math.max(input.preferred, input.caption.preferred));
+  const [provisional, budget] = allocateLaneSizes(fitWidth, [
+    { minimum: inputLane.minimum, preferred },
+    { minimum: fixedLane.minimum, preferred: full },
+  ]);
+  const fixedWidth = Math.max(fixedLane.minimum, fieldCaptionOccupiedWidth(fixed.caption, budget));
+  const leadingWrap = flexible === 0 && input.caption.minimum < input.caption.preferred;
+  const fitsCompact = width >= compact + fixedWidth && input.preferred <= input.caption.compact;
+  const target = leadingWrap && !fitsCompact ? provisional : compact;
+  const inputWidth = Math.max(inputLane.minimum, Math.min(target, width - fixedWidth));
+  const bounds = [inputLane.maximum, full];
+  const sizes = ordered(allocateLaneSizes(width, [inputWidth, fixedWidth].map((preferred, index) => ({
+    minimum: preferred, preferred, maximum: bounds[index], growthWeight: preferred - 1,
+  }))));
+  // A wrapped leading title needs room for both tracks to change after packing.
+  const canSplit = leadingWrap ? width - inputWidth - fixedWidth > 2 : sizes[0] > lanes[0].minimum;
+  return { sizes, divider: canSplit && full > fixedLane.minimum };
 }
 
 function placements(columns) {
@@ -109,16 +144,20 @@ export function inputTitleLayout(model, context, minimumCaptions) {
   }
 
   function register(node, items, children, page) {
+    const authoredTop = page && children.length === 2 && children.every(child => child.presentation.titleLocation === 'Top');
     const columns = children.map(child => {
       const nodes = inputLaneFields(child, targets);
       if (!nodes?.length) return;
-      const fields = nodes.map(field => inputTitleField(field, context, minimumCaptions, page));
+      const fields = nodes.map(field => inputTitleField(field, context, minimumCaptions, page, authoredTop));
       if (fields.some(field => !field)) return;
       return { element: targets.elements.get(child.key), fields };
     });
     if (columns.some(column => !column)) return;
     const fields = columns.flatMap(column => column.fields);
     if (!fields.some(field => (page || field.side) && ['number', 'date'].includes(field.kind))) return;
+    const top = authoredTop && fields.some(field => field.flexible && field.kind === 'string') && fields.some(field => !field.flexible)
+      ? fields : undefined;
+    if (top) alignment.mark(items, 'data-authored-top-row');
 
     const gap = !page && automaticHorizontalSpacing(node) ? 11 : pixels(getComputedStyle(items).columnGap);
     const spacing = gap * (columns.length - 1);
@@ -130,7 +169,8 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     for (const name of ['--taxi-input-title-columns', '--taxi-input-title-gap']) alignment.style(items, name, '');
     alignment.mark(items, 'data-input-title-reflow', 'false');
     for (const column of columns) {
-      alignment.style(column.element, '--taxi-field-track', '');
+      const field = column.fields[0];
+      alignment.style(column.element, '--taxi-field-track', top ? `${Math.max(field.preferred, field.caption.preferred)}px` : '');
       for (const field of column.fields) {
         captionFields.add(field.key);
         for (const name of ['--taxi-field-columns', '--taxi-field-caption-width', '--taxi-input-title-value-min', '--taxi-input-title-value-max']) {
@@ -144,7 +184,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     if (align) for (const field of first) alignment.style(field.element, '--taxi-input-title-offset', '');
     const pair = page && columns.length === 2 ? { items, left: first[0].key, right: first[1].key } : undefined;
     const tabs = page ? items.closest('.taxi-pages')?.querySelector(':scope > .taxi-tabs[data-side-fit-minimum]') : undefined;
-    rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, first: align ? first : [] });
+    rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top, first: align ? first : [] });
   }
 
   if (os === 'linux') visit(model);
@@ -153,14 +193,14 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     allocate(captions, resolveDivider) {
       const above = new Set();
       let heightChanged = false;
-      for (const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, first} of rows) {
+      for (const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top, first} of rows) {
         const css = getComputedStyle(items);
         const available = borderBoxSize(items, scale).width - boxInsets(css).width;
         const rail = sideTabWidths(tabs, scale);
         // As for conditional rows, Designer tests the title fit against the nominal tab width.
         const fitWidth = available + (rail ? rail.painted - rail.nominal : 0);
         const fit = plans.find(plan => plan.width + spacing <= fitWidth + .5) ?? plans.at(-1);
-        const plan = fit.above.size || available + .5 < preferred ? fit : undefined;
+        const plan = top || fit.above.size || available + .5 < preferred ? fit : undefined;
         const abovePage = page && plan && columns.some(({fields}) => fields.some(field =>
           field.location === 'Top' || plan.above.has(field.key)));
         const lanes = plan && columns.map(({fields}, index) => {
@@ -172,10 +212,11 @@ export function inputTitleLayout(model, context, minimumCaptions) {
           return abovePage ? { reserve: 0, minimum, preferred: minimum, maximum: width('maximum', 'preferred'), growthWeight: minimum }
             : { reserve: 0, minimum, preferred, maximum: preferred };
         });
-        let sizes = lanes && allocateLaneSizes(available - spacing, lanes);
-        if (pair && plan?.above.size === 2 && resolveDivider) {
-          // Once both automatic titles move above, the columns can share their remaining width.
-          const [left, right] = lanes, width = Math.round(available - spacing);
+        const width = Math.round(available - spacing);
+        const authored = top && allocateAuthoredPageTitles(width, fitWidth - spacing, top, lanes);
+        let sizes = authored?.sizes ?? (lanes && allocateLaneSizes(available - spacing, lanes));
+        if (pair && (authored?.divider || plan?.above.size === 2) && resolveDivider) {
+          const [left, right] = lanes;
           const minimum = Math.max(left.minimum, width - right.maximum);
           const maximum = Math.min(left.maximum, width - right.minimum);
           const divider = resolveDivider(owner, pair, width, minimum, maximum, () => sizes[0]);
@@ -202,8 +243,8 @@ export function inputTitleLayout(model, context, minimumCaptions) {
           }
         }
         if (first.length) {
-          const top = plan && first.some(field => field.location === 'Top' || plan.above.has(field.key));
-          heightChanged = alignFirstControls(items, first, top) || heightChanged;
+          const alignTop = plan && first.some(field => field.location === 'Top' || plan.above.has(field.key));
+          heightChanged = alignFirstControls(items, first, alignTop) || heightChanged;
         }
       }
       return { above, heightChanged };

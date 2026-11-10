@@ -14,6 +14,7 @@ function labelAdvances(props, text, options) {
   }
   // Date masks allocate character positions without pair kerning.
   if (props.mask) return [...text].map(char => hintedTextWidth(char, options));
+  if (props.fieldTitleRuns) return wordTextAdvances(text, options, { terminalColon: true });
   if (props.tabInset !== undefined && Number(options.weight) <= 500) return wordTextAdvances(text, options);
   if (['formTitle', 'menuItem'].includes(props.placement)) {
     const advances = designTextAdvances(text, options);
@@ -94,7 +95,7 @@ export function NativeLabel(props) {
   const status = createCaptionRaster(props, {
     target: () => props.target?.() ?? placeholder.parentElement,
     mode: 'lcd',
-    dependencies: () => [props.placement, props.calibrated, props.mask, props.tabInset, JSON.stringify(props.segments)],
+    dependencies: () => [props.placement, props.calibrated, props.mask, props.tabInset, props.fieldTitleRuns, JSON.stringify(props.segments)],
     calibrated: () => !calibratedPlacements.includes(props.placement) || !!props.calibrated,
     resizeWith: label => props.placement === 'fieldTitle' ? label.closest('.taxi-form-frame') : undefined,
     advances: (text, options) => labelAdvances(props, text, options),

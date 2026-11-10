@@ -685,6 +685,14 @@ button { cursor: default; }
   width: max-content;
   flex: 0 0 auto !important;
 }
+/* Measure one native caption/value track per input with an authored top title. */
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-authored-top-row] > .taxi-element {
+  flex: 0 0 var(--taxi-field-track) !important;
+  width: var(--taxi-field-track);
+}
+.taxi-preview[data-form-layout=preferred] .taxi-items[data-authored-top-row] > .taxi-element > .taxi-field-row {
+  grid-template-columns: minmax(0, 1fr);
+}
 .taxi-preview[data-form-layout=minimum] .taxi-form-frame { width: min-content !important; height: auto !important; }
 .taxi-preview[data-form-layout=preferred] .taxi-items--horizontal[data-grouping=HorizontalIfPossible] { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--taxi-horizontal-gap); }
 .taxi-preview[data-form-layout=preferred] .taxi-items--horizontal[data-grouping=HorizontalIfPossible] > .taxi-element { flex-shrink: 0; }
