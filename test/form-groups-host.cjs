@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame, editFormSource, sameSourcePath } = require('./webview-host.cjs');
 
@@ -20,8 +21,41 @@ async function replaceText(document, from, to) {
   assert.equal(await vscode.workspace.applyEdit(edit),true);
 }
 
+const readGroupLayout = `(() => {
+  const frame = document.querySelector('.taxi-form-frame');
+  const bounds = frame.getBoundingClientRect();
+  const title = frame.querySelector('.taxi-group-title');
+  const button = title?.querySelector('button');
+  const inputs = [...frame.querySelectorAll('.taxi-input')].map(input => {
+    const box = input.getBoundingClientRect();
+    return [box.x - bounds.x, box.y - bounds.y, box.width, box.height];
+  });
+  const icon = button?.querySelector('.taxi-group-expander');
+  return {
+    frame: [bounds.width, bounds.height], inputs, control: title?.dataset.groupControl ?? null,
+    accessiblePicture: icon?.getAttribute('aria-hidden') === 'true',
+    underline: button ? getComputedStyle(button).textDecorationLine === 'underline' : false,
+  };
+})()`;
+
+async function verifyGroupLayout(ui, expected, label) {
+  let actual;
+  try {
+    await until(async () => {
+      actual = await ui.evaluate(readGroupLayout);
+      if (actual.control !== expected.control || actual.accessiblePicture !== (expected.control === 'picture')
+          || actual.underline !== (expected.control === 'link')) return false;
+      return process.platform !== 'linux'
+        || isDeepStrictEqual(actual.frame, expected.frame) && isDeepStrictEqual(actual.inputs, expected.inputs);
+    }, label);
+  } catch (error) {
+    throw new Error(label + ' ' + JSON.stringify(actual), { cause: error });
+  }
+}
+
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
+  const groupLayouts = JSON.parse(await fs.readFile(path.join(process.env.ESKA_FORM_FIXTURES, 'collapsible-layout.json'), 'utf8')).geometry;
   const extension = vscode.extensions.all.find(extension => extension.packageJSON.name === 'eska-explorer');
   const explorer = await extension.activate(); await vscode.commands.executeCommand('eska.explorer.connect');
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
@@ -62,7 +96,8 @@ exports.run = async function () {
     }
     if (process.platform === 'linux') {
       const locale=vscode.env.language.startsWith('ru')?'ru':'en';
-      const expected = form.nativeFrameLocales?.[locale]?.frame ?? nativeFrames[form.kind];
+      const expected = form.kind === 'CompactGroupCaptions' ? groupLayouts.compact.frame
+        : form.nativeFrameLocales?.[locale]?.frame ?? nativeFrames[form.kind];
       if(form.nativeFrameLocales)assert.deepEqual([geometry.frame.width,geometry.frame.height],expected,form.kind+' exact locale frame');
       // Text advances can land between CSS pixels; retain the exact measured result.
       for (const [index, dimension] of ['width','height'].entries()) if (Math.abs(geometry.frame[dimension]-expected[index])>1)
@@ -102,19 +137,62 @@ exports.run = async function () {
         await editFormSource(document, view, original);
       }
     }
-    if(form.kind==='GroupCollapsible') {
+    if (form.kind === 'GroupCollapsible') {
+      const original = document.getText();
+      const picture = '<ControlRepresentation>Picture</ControlRepresentation>';
+      const pictureSource = original.replace('<Collapsed>true</Collapsed>', '<Collapsed>true</Collapsed>' + picture);
+      await verifyGroupLayout(ui, groupLayouts.link, 'default collapsible link');
+      await editFormSource(document, view, pictureSource);
+      await verifyGroupLayout(ui, groupLayouts.picture, 'picture control from dirty XML');
       assert.equal(await ui.evaluate("document.querySelector('.taxi-group-title button').getAttribute('aria-expanded')"),'true');
       await ui.evaluate("document.querySelector('.taxi-group-title button').click()");
       assert.equal(await ui.evaluate("document.querySelectorAll('.taxi-input').length"),0);
       await until(()=>Object.values(view.previewNavigation?.collapsed??{}).includes(true),'collapsed navigation acknowledged');
       await service.receive(view,panel,{type:'detach'});await until(()=>view.frames.get('preview')?.ready,'collapsed group detached');
       const floating=await frame({detached:true,fixedFormArea:true,state:{title:view.frames.get('preview').panel.title}});
-      await until(()=>floating.evaluate("document.querySelectorAll('.taxi-input').length===0&&document.querySelector('.taxi-group-title button')?.getAttribute('aria-expanded')==='false'"),'new floating window retains collapsed state');
+      await until(() => floating.evaluate(`(() => {
+        const button = document.querySelector('.taxi-group-title button[aria-expanded=false]');
+        return !document.querySelector('.taxi-input') && !!button?.querySelector('.taxi-group-expander');
+      })()`), 'new floating window retains the collapsed picture control');
       await ui.evaluate("globalThis.__sharedGroupNavigation=undefined;window.addEventListener('message',event=>{if(event.data.type==='previewNavigation')globalThis.__sharedGroupNavigation=event.data.previewNavigation})");
       await floating.evaluate("document.querySelector('.taxi-group-title button').click()");
       await until(()=>ui.evaluate("Object.values(globalThis.__sharedGroupNavigation?.collapsed??{}).includes(false)"),'floating expansion reaches the owner');
+      await verifyGroupLayout(floating, groupLayouts.picture, 'picture control after floating expansion');
+      const noMargin = pictureSource.replace(picture, picture + '<ShowLeftMargin>false</ShowLeftMargin>');
+      await floating.evaluate("globalThis.__groupControlInput = document.querySelector('.taxi-input'); true");
+      await editFormSource(document, view, noMargin);
+      await verifyGroupLayout(floating, groupLayouts.noMargin, 'picture control without a left margin');
+      await editFormSource(document, view, noMargin.replace(picture, picture + '<Representation>StrongSeparation</Representation>'));
+      await verifyGroupLayout(floating, groupLayouts.strongNoMargin, 'strong marking retains its left inset');
+      await editFormSource(document, view, pictureSource.replace(picture, picture + '<ShowTitle>false</ShowTitle>'));
+      await verifyGroupLayout(floating, groupLayouts.hiddenTitle, 'hidden title has no picture control or inset');
+      assert.equal(await floating.evaluate("__groupControlInput === document.querySelector('.taxi-input')"), true);
       floating.close();await service.receive(view,view.frames.get('preview'),{type:'dock'});ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
-      await until(()=>ui.evaluate("document.querySelectorAll('.taxi-input').length===2"),'docked group stays expanded');
+      await editFormSource(document, view, original);
+      await verifyGroupLayout(ui, groupLayouts.link, 'docked group stays expanded with the restored link');
+    }
+    if (form.kind === 'CompactGroupCaptions') {
+      const original = document.getText();
+      await verifyGroupLayout(ui, groupLayouts.compact, 'compact captions preserve two lines');
+      await ui.evaluate(`(() => {
+        globalThis.__groupCaptionInputs = [...document.querySelectorAll('.taxi-input')];
+        __groupCaptionInputs[1].click();
+      })()`);
+      await until(() => view.selected?.key?.value === '20', 'select field in the compact stack');
+      const selected = view.selected;
+      const width = value => original.replace('<Width>31</Width>', '<Width>' + value + '</Width>');
+      for (const [value, layout] of [[19, 'minimumSide'], [33, 'longerSide'], [42, 'wideSide']]) {
+        await editFormSource(document, view, width(value));
+        await verifyGroupLayout(ui, groupLayouts[layout], 'caption track at Width ' + value);
+      }
+      const ordinary = original.replace('<Behavior>Collapsible</Behavior>', '<Behavior>Usual</Behavior>')
+        .replace('<ControlRepresentation>Picture</ControlRepresentation>', '');
+      await editFormSource(document, view, ordinary);
+      await verifyGroupLayout(ui, groupLayouts.ordinary, 'ordinary vertical group keeps compact captions');
+      await editFormSource(document, view, original);
+      await verifyGroupLayout(ui, groupLayouts.compact, 'initial compact caption layout restored');
+      assert.equal(await ui.evaluate('__groupCaptionInputs.every(input => input.isConnected)'), true);
+      assert.deepEqual(view.selected, selected);
     }
     if(form.kind==='PagesAuto') {
       await ui.evaluate("document.querySelector('.taxi-form-title').click()");

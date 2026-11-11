@@ -417,12 +417,24 @@ function Group(props) {
   const collapsed = () => state.ui.collapsed[node().key] ?? false;
   const collapsible = () => scalar(node(), 'Behavior') === 'Collapsible';
   const title = () => flag(node(), 'ShowTitle', node().kind !== 'Page');
+  const groupControl = () => {
+    if (collapsible()) return scalar(node(), 'ControlRepresentation') === 'Picture' ? 'picture' : 'link';
+  };
+  const indent = () => collapsible() && title() && flag(node(), 'ShowLeftMargin');
   const painted = () => !!property(node(), 'BackColor');
   const heading = createMemo(() => state.os === 'linux' ? decorationCaptionProfile(caption(node(), state), node().presentation.titleFont) : undefined);
+  const headingInset = () => groupControl() === 'picture' ? 20 : 0;
+  const headingWidth = () => heading() && heading().preferred + headingInset();
   const headingMinimum = () => {
     const profile = heading();
-    if (profile && profile.minimum < profile.preferred && groupCanShrink(node(), state.os, state.model.root)) return profile.minimum;
+    if (profile && profile.minimum < profile.preferred && groupCanShrink(node(), state.os, state.model.root)) {
+      return profile.minimum + headingInset();
+    }
   };
+  function toggleGroup(event) {
+    event.stopPropagation();
+    props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() });
+  }
   let container;
   const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.modelSequence}));
   return <Switch>
@@ -430,14 +442,25 @@ function Group(props) {
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
     <Match when={node().kind === 'CommandBar'}><CommandBar {...props}/></Match>
     <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
-    <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{ 'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation', 'taxi-group--collapsible': collapsible() && title(), 'taxi-group--painted': painted() }}
-      style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
-      <Show when={title()}><div class="taxi-group-title" data-native-text-width={heading()?.preferred} data-native-heading-minimum={headingMinimum()} style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor),
-        width: heading() ? `${heading().preferred}px` : undefined, 'max-width': state.os === 'linux' ? '100%' : undefined,
-        'font-size': state.os === 'linux' ? `${fontPixels(node().presentation.titleFont)}px` : undefined,
-        'white-space': state.os === 'linux' ? 'var(--taxi-group-heading-space, pre)' : undefined,
-        'margin-bottom': state.os === 'linux' && independentVerticalSection(node()) ? `${groupSpacingInterval(node(), 'y') ?? 9}px` : undefined }}>
-        <Show when={collapsible()} fallback={caption(node(), state)}><button type="button" aria-expanded={!collapsed()} onClick={event => { event.stopPropagation(); props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() }); }}>{caption(node(), state)}</button></Show>
+    <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{
+      'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation',
+      'taxi-group--indented': indent(),
+      'taxi-group--painted': painted(),
+    }} style={{ 'background-color': painted() ? color(node().presentation.background) : undefined, '--taxi-group-outside':outside(), '--taxi-group-title-color': color(node().presentation.titleColor) }}>
+      <Show when={title()}><div class="taxi-group-title" data-group-control={groupControl()}
+        data-native-text-width={headingWidth()} data-native-heading-minimum={headingMinimum()}
+        style={{ ...font(node().presentation.titleFont, state.os), 'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor),
+          width: headingWidth() === undefined ? undefined : `${headingWidth()}px`, 'max-width': state.os === 'linux' ? '100%' : undefined,
+          '--taxi-group-expander-width': headingInset() ? `${headingInset()}px` : undefined,
+          'font-size': state.os === 'linux' ? `${fontPixels(node().presentation.titleFont)}px` : undefined,
+          'white-space': state.os === 'linux' ? 'var(--taxi-group-heading-space, pre)' : undefined,
+          'margin-bottom': state.os === 'linux' && independentVerticalSection(node()) ? `${groupSpacingInterval(node(), 'y') ?? 9}px` : undefined }}>
+        <Show when={collapsible()} fallback={caption(node(), state)}>
+          <button type="button" aria-expanded={!collapsed()} onClick={toggleGroup}>
+            <Show when={groupControl() === 'picture'}><span class="taxi-group-expander" aria-hidden="true"/></Show>
+            <span>{caption(node(), state)}</span>
+          </button>
+        </Show>
       </div></Show><Show when={!collapsed()}><Items {...props}/></Show>
     </div></Match>
   </Switch>;
