@@ -1,3 +1,4 @@
+import { updateStyle } from './layout-box.mjs';
 import { paintCanvas } from './native-control-paint.js';
 import { scrollbarFragment, scrollbarPaint } from './scrollbar-paint.mjs';
 import { tableHorizontalPaint } from './table-scrollbar.mjs';
@@ -5,9 +6,15 @@ import { tableHorizontalPaint } from './table-scrollbar.mjs';
 export function pageScrollbar(items, alignment, height) {
   alignment.mark(items, 'data-native-page-scroll', 'false');
   alignment.style(items.parentElement, '--taxi-page-row-height', `${height}px`);
-  return enabled => {
+  let scrollHeight = height;
+  return (enabled, nextHeight = height) => {
+    const heightChanged = enabled && scrollHeight !== nextHeight;
+    if (heightChanged) {
+      scrollHeight = nextHeight;
+      updateStyle(items.parentElement, '--taxi-page-row-height', `${scrollHeight}px`);
+    }
     const value = String(!!enabled);
-    if (items.dataset.nativePageScroll === value) return false;
+    if (items.dataset.nativePageScroll === value) return !!heightChanged;
     items.dataset.nativePageScroll = value;
     if (enabled) preparePageScrollbarPaint(items);
     else {

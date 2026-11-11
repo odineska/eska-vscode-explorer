@@ -27,7 +27,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { authoredTopPageInputs, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
+import { pageInputTitlePair, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
@@ -272,9 +272,9 @@ export function Items(props) {
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
+  const fixedSideTitles = createMemo(() => props.sidePage && fixedPageInputs(children(), props.controller.state.os));
   const pageTitleRow = createMemo(() => props.node.kind === 'Page' && (props.node.presentation.grouping === 'Horizontal'
-    || horizontal() && authoredTopPageInputs(children())
-    || props.sidePage && fixedPageInputs(children(), props.controller.state.os)));
+    || horizontal() && pageInputTitlePair(children(), 'Top') || fixedSideTitles()));
   const horizontalGap = createMemo(() => {
     if (props.controller.state.os !== 'linux' || !horizontalGrouping(props.node)) return;
     const gap = horizontalGroupGap(props.node, children());
@@ -352,7 +352,7 @@ export function Items(props) {
       '--taxi-resized-columns': divider()?.tracks, '--taxi-column-divider-value': divider() ? `${divider().value}px` : undefined,
       '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
-      pageTitleRow={pageTitleRow()}
+      pageTitleRow={pageTitleRow()} fixedSideTitles={fixedSideTitles()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
     <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
@@ -787,7 +787,7 @@ function Field(props) {
   const checkboxCaption = () => checkbox() ? allocatedCaption() : undefined;
   const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
-    runtime={props.controller.nativeText} fieldTitleRuns={pageInputTitle() && !automaticTop()}
+    runtime={props.controller.nativeText} fieldTitleRuns={pageInputTitle() && (!automaticTop() || props.fixedSideTitles)}
     enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
       && (sideTitle() || pageTitleAbove())) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));

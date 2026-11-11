@@ -18,8 +18,8 @@ export function horizontalGrouping(node) {
   return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
 }
 
-export function authoredTopPageInputs(children) {
-  if (children.length !== 2 || children.some(child => child.kind !== 'InputField' || child.presentation.titleLocation !== 'Top')) return false;
+export function pageInputTitlePair(children, location) {
+  if (children.length !== 2 || children.some(child => child.kind !== 'InputField' || child.presentation.titleLocation !== location)) return false;
   const kinds = children.map(child => child.presentation.valueType.kind);
   return kinds.includes('string') && kinds.some(kind => kind === 'number' || kind === 'date');
 }

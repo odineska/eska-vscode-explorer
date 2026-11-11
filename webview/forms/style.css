@@ -110,7 +110,14 @@ button { cursor: default; }
 .taxi-field-row[data-title-location=None] .taxi-field-control { grid-column: 1 / -1; }
 .taxi-field-row[data-title-location=Top], .taxi-field-row[data-title-location=Bottom] { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 .taxi-field-row[data-title-location=Top] > *, .taxi-field-row[data-title-location=Bottom] > * { grid-column: 1; }
-.taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom]) { row-gap: 3px; padding-block: 1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row {
+  --taxi-input-top-gap: 3px;
+  --taxi-input-top-padding: 1px;
+}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom]) {
+  row-gap: var(--taxi-input-top-gap);
+  padding-block: var(--taxi-input-top-padding);
+}
 .taxi-field-row[data-title-location=Bottom] .taxi-field-label { order: 1; }
 .taxi-field-row--check { grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
 .taxi-field-row--check[data-title-location=Right] .taxi-field-label { grid-column: 2; grid-row: 1; }
@@ -852,8 +859,9 @@ button { cursor: default; }
 }
 .taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-native-page-scroll=true] {
   /* The scrollport reaches into the page insets while the fields keep their origin. */
-  margin-inline: -5px -11px;
-  padding-inline-start: 5px;
+  --taxi-page-scroll-leading-inset: 5px;
+  margin-inline: calc(-1 * var(--taxi-page-scroll-leading-inset)) -11px;
+  padding-inline-start: var(--taxi-page-scroll-leading-inset);
   height: var(--taxi-page-row-height);
   flex: none;
   overflow: scroll;
@@ -1193,7 +1201,7 @@ button { cursor: default; }
   transform: translateX(50%);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-items[data-input-title-reflow=true]:not([data-united-columns]) > .taxi-column-divider {
-  inset-inline-start: calc(var(--taxi-column-divider-value) + var(--taxi-input-title-gap) / 2);
+  inset-inline-start: calc(var(--taxi-page-scroll-leading-inset, 0px) + var(--taxi-column-divider-value) + var(--taxi-input-title-gap) / 2);
   transform: translateX(-50%);
   background-position-x: calc(50% - .5px);
 }

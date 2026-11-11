@@ -36,6 +36,13 @@ export function rowFitWidth(items, scale) {
   return borderBoxSize(box, scale).width - boxInsets(getComputedStyle(box)).width;
 }
 
+/** Reconsider caption placement against the page group's allocation before its content cap. */
+export function sidePageWidthBeforeCap(tabs, width, scale) {
+  const pages = tabs.parentElement;
+  const spare = borderBoxSize(pages.parentElement, scale).width - borderBoxSize(pages, scale).width;
+  return width + Math.max(0, spare);
+}
+
 /** Fit a row using the nominal tab width and the extra width of the shared caption. */
 export function conditionalPageFits(model, { targets, scale }, captions) {
   const plans = new Map();

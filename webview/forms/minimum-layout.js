@@ -72,7 +72,10 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         reserveWidth(value, bounds.width + through.trailingMinimum, widthWithHeadings(bounds) + through.trailingMinimum);
       }
     }
-    return add(add(value, padding), margins(element));
+    const measured = add(add(value, padding), margins(element));
+    const titleMaximum = pixels(element.style.getPropertyValue('--taxi-page-title-maximum'));
+    if (titleMaximum) measured.maximumWidth = titleMaximum;
+    return measured;
   }
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
@@ -135,7 +138,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-group-height')));
       }
     } else if (pages) {
-      const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), margins(page))));
+      const panels = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')]
+        .map(page => ({ page, content: page.querySelector(':scope > .taxi-items') }));
+      const children = panels.map(({page, content}) => add(items(content), add(insets(page), margins(page))));
       value = { width: Math.max(0, ...children.map(value => value.width)), fullWidth: Math.max(0, ...children.map(widthWithHeadings)),
         sideWidth: Math.max(0, ...children.map(widthWithSideCaptions)),
         height: Math.max(0, ...children.map(value => value.height)) };
@@ -158,7 +163,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       if (tabs?.dataset.sideFitMinimum !== undefined) {
         const authored = pixels(element.style.getPropertyValue('--taxi-group-width'));
         value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value), authored);
-        const limit = element.dataset.stretchX === 'true' && Number.isFinite(value.maximumWidth)
+        const compactTitles = panels.some(({content}) => content?.style.getPropertyValue('--taxi-page-title-maximum'));
+        const limit = (element.dataset.stretchX === 'true' || compactTitles) && Number.isFinite(value.maximumWidth)
           ? `${value.maximumWidth}px` : 'none';
         updateStyle(pages, '--taxi-side-page-maximum', limit);
       }

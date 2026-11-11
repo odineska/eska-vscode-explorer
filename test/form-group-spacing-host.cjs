@@ -171,8 +171,8 @@ async function verifyPageDivider(ui, narrow, hidden, observe) {
     assert.deepEqual(current.tracks, [initial.tracks[0] + shift, initial.tracks[1] - shift]);
     return current;
   }
-  const delta = Math.min(10, maximum - value);
-  assert.ok(delta > 0, 'automatic position leaves room for dragging');
+  const delta = Math.min(10, maximum - value) || Math.max(-10, minimum - value);
+  assert.notEqual(delta, 0, 'automatic position leaves room for dragging');
   await ui.dragHorizontally(selector, delta);
   await at(value + delta, 'dragged page divider');
   for (const [key, bound] of [['Home', minimum], ['End', maximum]]) {
