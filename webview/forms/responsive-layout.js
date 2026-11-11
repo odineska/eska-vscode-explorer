@@ -277,7 +277,10 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     numericRows?.allocateWidths(captions);
     allocateInlineRows(captions, alignedAbove);
     checkboxes.allocate(captions);
-    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve, () => {
+      const requested = reference ? authoredWidth() + 4 : formAllocation(size(), preferred(), {}, state.ui.zoom).width;
+      return Math.max(0, rect(root).width - requested);
+    });
     dividers?.publish();
     for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);

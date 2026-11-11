@@ -3,7 +3,7 @@ import { pageInputTitlePair, automaticHorizontalSpacing, fixedPageInputs, horizo
 import { borderBoxSize, boundingScale, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
-import { fixedCaptionTracks, narrowCaptionTracks } from './caption-track-model.mjs';
+import { fixedCaptionTracks, fixedTopPageTracks, narrowCaptionTracks, retainsFullPageTitle } from './caption-track-model.mjs';
 import { inputLaneFields } from './input-lane-layout.js';
 import { rowFitWidth, sidePageWidthBeforeCap, sideTabWidths } from './page-fit-layout.js';
 import { pageScrollbar } from './page-scrollbar.js';
@@ -40,7 +40,7 @@ function inputTitleField(node, { targets, scale, os }, minimumCaptions, page) {
   const sideMinimum = side ? caption.minimum + inputCaptionInset + gap : 0;
   const automatic = side && scalar(node, 'TitleLocation', 'Auto') === 'Auto';
   const lineHeight = fontLineHeight(node.presentation.titleFont);
-  return { key: node.key, kind, element, row, control, label, caption, lineHeight, location, side, automatic, gap, sideMinimum, minimum, preferred, maximum, sideValue, flexible };
+  return { key: node.key, kind, element, row, control, caption, lineHeight, location, side, automatic, gap, sideMinimum, minimum, preferred, maximum, sideValue, flexible };
 }
 
 function sideWidth(fields, above) {
@@ -74,12 +74,18 @@ function pageHeightLimit(items, scale) {
   return () => preferred;
 }
 
-function unwrappedTopHeight(fields, scale) {
-  return Math.max(...fields.map(({ row, label, control }) => {
+function unwrappedTopHeights(fields, scale) {
+  return fields.map(({ row, control, lineHeight }) => {
     const css = getComputedStyle(row);
-    return borderBoxSize(control, scale).height + pixels(getComputedStyle(label).lineHeight)
+    return borderBoxSize(control, scale).height + lineHeight + 1
       + pixels(css.getPropertyValue('--taxi-input-top-gap')) + 2 * pixels(css.getPropertyValue('--taxi-input-top-padding'));
-  }));
+  });
+}
+
+function topRowHeight({ fields, heights }, sizes) {
+  return Math.max(...heights.map((height, index) => sizes
+    ? height + (fieldCaptionLines(fields[index].caption, sizes[index]).length - 1) * fields[index].lineHeight
+    : height));
 }
 
 function naturalSideCaption(field, page) {
@@ -262,19 +268,22 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     const viewport = scrollHeight === undefined ? undefined : pageScrollbar(items, alignment, scrollHeight);
     const pageHeight = fixed && tabs ? pageHeightLimit(items, scale) : undefined;
     const topAlternative = fixed && tabs && pageInputTitlePair(children, 'Left') && fields.every(field => field.automatic)
-      ? { fields, width: spacing + total(fields.map(field => Math.max(field.preferred, field.caption.preferred))),
-          height: unwrappedTopHeight(fields, scale) } : undefined;
+      ? { fields, width: spacing + total(fields.map(field => Math.max(field.preferred, field.caption.preferred))) } : undefined;
     if (topAlternative) alignment.style(items, '--taxi-page-title-maximum', '');
+    const fixedTop = fixed && tabs && (top || topAlternative) ? {
+      text: fields[0].kind === 'string' ? 0 : 1, fields, heights: unwrappedTopHeights(fields, scale),
+    } : undefined;
+    if (fixedTop) alignment.style(items, '--taxi-page-title-minimum', '');
     rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top,
-      fixed, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first: align ? first : [] });
+      fixed, fixedTop, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first: align ? first : [] });
   }
 
   if (os === 'linux') visit(model);
   return {
     minimumRows, captionFields,
-    allocate(captions, resolveDivider) {
+    allocate(captions, resolveDivider, frameOverflow) {
       const above = new Set();
-      let heightChanged = false;
+      let heightChanged = false, overflowWidth;
       for (const {items, fields, tabs, reserve, minimum, preferred, heights, height, pageHeight, viewport} of stacks) {
         const available = rowFitWidth(items, scale), rail = sideTabWidths(tabs, scale);
         const width = Math.max(minimum, Math.min(preferred, available - reserve));
@@ -292,21 +301,23 @@ export function inputTitleLayout(model, context, minimumCaptions) {
       }
       for (const row of rows) {
         const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top,
-          fixed, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first} = row;
+          fixed, fixedTop, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first} = row;
         const available = rowFitWidth(items, scale);
         const rail = sideTabWidths(tabs, scale);
         // As for conditional rows, Designer tests the title fit against the nominal tab width.
-        const fitWidth = available + (rail ? rail.painted - rail.nominal : 0);
+        const tabOverlap = rail ? rail.painted - rail.nominal : 0;
+        const fitWidth = available + tabOverlap;
         const placementWidth = rail && topAlternative ? sidePageWidthBeforeCap(tabs, fitWidth, scale) : fitWidth;
-        const fit = plans.find(plan => plan.width + spacing <= placementWidth + .5) ?? plans.at(-1);
+        const text = fixedTop?.fields[fixedTop.text];
+        const retainText = rail && text && retainsFullPageTitle(text.caption);
+        const retainedSide = retainText && topAlternative ? text.caption.preferred - text.caption.minimum : 0;
+        const fit = plans.find((plan, index) => plan.width + spacing + (index === 0 ? retainedSide : 0) <= placementWidth + .5)
+          ?? plans.at(-1);
         const plan = top || fit.above.size || available + .5 < preferred ? fit : undefined;
         const movedTop = topAlternative && fit.above.size === topAlternative.fields.length ? topAlternative : undefined;
         if (topAlternative) {
           const maximum = movedTop && !tabs.parentElement.hasAttribute('data-authored-side-stretch') ? `${movedTop.width}px` : '';
-          if (items.style.getPropertyValue('--taxi-page-title-maximum') !== maximum) {
-            updateStyle(items, '--taxi-page-title-maximum', maximum);
-            heightChanged = true;
-          }
+          heightChanged = updateStyle(items, '--taxi-page-title-maximum', maximum) || heightChanged;
         }
         const abovePage = page && plan && columns.some(({fields}) => fields.some(field =>
           field.location === 'Top' || plan.above.has(field.key)));
@@ -328,22 +339,30 @@ export function inputTitleLayout(model, context, minimumCaptions) {
           && narrowCaptionTracks(width, sideTracks, Math.round(fitWidth - spacing));
         // Share the remaining width once a whole caption can be retained beside its value.
         const fixedFit = fixed && sideTracks && !abovePage && available < preferred - .5;
-        const fixedSizes = fixedFit ? fixedCaptionTracks(width, sideTracks, Math.round(fitWidth - spacing)) : undefined;
+        const fixedSizes = fixedFit ? fixedCaptionTracks(width, sideTracks, Math.round(fitWidth - spacing),
+          retainedSide ? fixedTop.text : undefined) : undefined;
         const sideSizes = fixedSizes ?? (packed && packed.some(({caption}, index) => caption === sideTracks[index].caption.preferred
           && sideTracks[index].caption.minimum < caption) ? packed : undefined);
         const topFields = top ?? movedTop?.fields;
-        const topLayout = topFields && allocateTopPageTitles(width, fitWidth - spacing, topFields, lanes, rail);
-        const topHeight = movedTop?.height ?? scrollHeight;
-        const expandedHeight = pageHeight && topLayout?.scroll ? pageHeight() : 0;
-        const fitsTopHeight = expandedHeight > topHeight + .5 && topFields.every((field, index) => {
-          const extraLines = fieldCaptionLines(field.caption, topLayout.sizes[index]).length - 1;
-          return topHeight + extraLines * field.lineHeight <= expandedHeight + .5;
-        });
+        const requestedRowWidth = retainText && topFields ? placementWidth - (overflowWidth ??= frameOverflow()) : placementWidth;
+        const topLayout = topFields && (fixedTop && rail
+          ? fixedTopPageTracks(width, fitWidth - spacing, topFields, lanes, { requestedRowWidth, retainText, automatic: !!movedTop })
+          : allocateTopPageTitles(width, fitWidth - spacing, topFields, lanes, rail));
+        if (fixedTop) {
+          const minimum = topLayout?.minimum ? `${topLayout.minimum + spacing}px` : '';
+          heightChanged = updateStyle(items, '--taxi-page-title-minimum', minimum) || heightChanged;
+        }
+        const measureTop = fixedTop && (topLayout?.scroll || topLayout?.nominalSizes);
+        const reservedHeight = measureTop ? topRowHeight(fixedTop, topLayout.nominalSizes) : scrollHeight;
+        const paintedHeight = measureTop ? topRowHeight(fixedTop, topLayout.sizes) : 0;
+        const topScroll = topLayout?.scroll || measureTop && paintedHeight > reservedHeight + .5;
+        const expandedHeight = pageHeight && topScroll ? pageHeight() : 0;
+        const fitsTopHeight = measureTop && expandedHeight > reservedHeight + .5 && paintedHeight <= expandedHeight + .5;
         const clippedByTabs = fixedSizes && rail && fitWidth + .5 >= preferred;
         const heightLimit = clippedByTabs ? pageHeight() : 0;
         const overflow = clippedByTabs && fixedSizes.some(({caption}, index) =>
           wrappedSideHeight(columns[index].fields[0], caption) > heightLimit + .5);
-        heightChanged = (viewport?.(topLayout?.scroll && !fitsTopHeight || overflow, topHeight) ?? false) || heightChanged;
+        heightChanged = (viewport?.(topScroll && !fitsTopHeight || overflow, reservedHeight) ?? false) || heightChanged;
         let sizes = topLayout?.sizes ?? sideSizes?.map(size => size.width) ?? (lanes && allocateLaneSizes(available - spacing, lanes));
         if (pair && (topLayout ? topLayout.divider : plan?.above.size === 2) && resolveDivider) {
           const [left, right] = lanes;

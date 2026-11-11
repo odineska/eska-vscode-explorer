@@ -813,10 +813,12 @@ function Field(props) {
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
     const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || pageTitleAbove()));
+    const lineHeight = numericLabel() || wrapped ? fontLineHeight(labelFont())
+      : pageTitleAbove() && props.fixedSideTitles ? fontLineHeight(labelFont()) + 1 : undefined;
     return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
-      'line-height': numericLabel() || wrapped ? `${fontLineHeight(labelFont())}px` : undefined,
+      'line-height': lineHeight === undefined ? undefined : `${lineHeight}px`,
       'white-space': labelCaption() ? 'pre' : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
   };

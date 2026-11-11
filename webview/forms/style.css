@@ -873,7 +873,9 @@ button { cursor: default; }
   --taxi-scroll-arrow-right: var(--taxi-page-scroll-right);
   --taxi-scroll-arrow-up: var(--taxi-page-scroll-up-disabled);
   --taxi-scroll-arrow-down: var(--taxi-page-scroll-down);
-  --taxi-page-scroll-button-height: max(0px, round(down, calc((var(--taxi-page-row-height) - 15px) / 2), 1px));
+  --taxi-page-scroll-half-height: calc((var(--taxi-page-row-height) - 15px) / 2);
+  --taxi-page-scroll-button-height: max(0px, round(down, var(--taxi-page-scroll-half-height), 1px));
+  --taxi-page-scroll-up-height: max(0px, round(up, var(--taxi-page-scroll-half-height), 1px));
 }
 .taxi-items--vertical[data-native-page-scroll=true] {
   grid-template-columns: var(--taxi-input-title-columns);
@@ -929,7 +931,8 @@ button { cursor: default; }
   height: var(--taxi-page-scroll-button-height);
 }
 .taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:decrement {
-  background: var(--taxi-scroll-arrow-up) 4px round(up, calc((var(--taxi-page-scroll-button-height) - 3px) / 2), 1px) no-repeat;
+  height: var(--taxi-page-scroll-up-height);
+  background: var(--taxi-scroll-arrow-up) 4px round(down, calc((var(--taxi-page-scroll-up-height) - 3px) / 2), 1px) no-repeat;
 }
 .taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:increment {
   background: var(--taxi-scroll-arrow-down) 4px round(down, calc((var(--taxi-page-scroll-button-height) - 3px) / 2), 1px) no-repeat;

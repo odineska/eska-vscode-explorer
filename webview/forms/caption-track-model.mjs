@@ -3,8 +3,52 @@ import { fieldCaptionOccupiedWidth } from './font-metrics.mjs';
 
 const sum = widths => widths.reduce((total, width) => total + width, 0);
 
+/** The Linux Designer checks the last word against a 240px caption measure at 96 DPI. */
+export function retainsFullPageTitle(caption) {
+  const breakWidth = 240;
+  if (caption.preferred <= breakWidth || caption.paragraphs.length !== 1) return false;
+  const { characters, edges } = caption.paragraphs[0];
+  const lastSpace = characters.lastIndexOf(' ');
+  return lastSpace >= 0 && edges[lastSpace] <= breakWidth;
+}
+
+/** Keep a preferred caption as wide as possible beside the other fixed column. */
+function retainCaption(width, first, second) {
+  const leading = Math.max(first.minimum, Math.min(first.maximum, width - second.minimum));
+  return [leading, Math.max(second.minimum, Math.min(second.maximum, width - leading))];
+}
+
+/** Allocate the upper captions in a fixed string and numeric/date pair with side tabs. */
+export function fixedTopPageTracks(width, fitWidth, fields, lanes, { requestedRowWidth, retainText, automatic }) {
+  const text = fields[0].kind === 'string' ? 0 : 1;
+  const input = lanes[text], peer = lanes[1 - text];
+  const order = sizes => text === 0 ? sizes : sizes.reverse();
+  const full = input.maximum + peer.maximum;
+  const fitsFull = fitWidth >= full - 3;
+  const scroll = fitsFull && width < full;
+  const minimum = retainText && requestedRowWidth >= input.maximum ? input.maximum + peer.minimum : undefined;
+  const nominalSizes = minimum ? order(retainCaption(fitWidth, input, peer)) : undefined;
+  if (scroll && !automatic) {
+    const reductions = cappedTrackGrowth(full - width, lanes.map(lane => ({
+      weight: lane.maximum, limit: lane.maximum - lane.minimum,
+    })));
+    const sizes = roundTrackWidths(lanes.map((lane, index) => lane.maximum - reductions[index]));
+    return { sizes, scroll, minimum, nominalSizes };
+  }
+  if (minimum) return { sizes: order(retainCaption(width, input, peer)), scroll, minimum, nominalSizes };
+
+  const compact = Math.max(input.minimum, fields[text].caption.compact);
+  const compactWidth = compact + peer.maximum;
+  if (retainText && !fitsFull && fitWidth >= compactWidth - 3) {
+    const [peerWidth, textWidth] = retainCaption(width, peer, input);
+    return { sizes: order([textWidth, peerWidth]), scroll: width < compactWidth,
+      nominalSizes: order([compact, peer.maximum]) };
+  }
+  return { sizes: allocateLaneSizes(width, lanes), scroll, divider: width > input.minimum + peer.minimum + 2 };
+}
+
 /** Fit caption lines against the nominal width, then allocate the painted width. */
-export function fixedCaptionTracks(available, tracks, fitWidth = available) {
+export function fixedCaptionTracks(available, tracks, fitWidth = available, retainedCaption) {
   const values = tracks.map(({reserve, value}) => reserve + value.preferred);
   const profiles = tracks.map(({caption}) => caption);
   const reserve = sum(values), preferred = sum(profiles.map(caption => caption.preferred));
@@ -13,9 +57,13 @@ export function fixedCaptionTracks(available, tracks, fitWidth = available) {
   if (fitBudget >= preferred) {
     // Only the painted tabs intrude into an otherwise unwrapped row.
     const reductions = cappedTrackGrowth(Math.max(0, preferred - budget), profiles.map(caption => ({
-      weight: 1, limit: caption.preferred - caption.minimum,
+      weight: retainedCaption === undefined ? 1 : caption.preferred, limit: caption.preferred - caption.minimum,
     })));
     sizes = profiles.map((caption, index) => caption.preferred - reductions[index]);
+  } else if (retainedCaption !== undefined) {
+    const bounds = profiles.map(({minimum, preferred}) => ({ minimum, maximum: preferred }));
+    sizes = retainCaption(budget, bounds[retainedCaption], bounds[1 - retainedCaption]);
+    if (retainedCaption === 1) sizes.reverse();
   } else {
     const provisional = allocateLaneSizes(fitBudget, profiles, { fractional: true });
     const wrapped = profiles.map((caption, index) => Math.max(caption.minimum,

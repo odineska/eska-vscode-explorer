@@ -73,6 +73,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       }
     }
     const measured = add(add(value, padding), margins(element));
+    const titleMinimum = pixels(element.style.getPropertyValue('--taxi-page-title-minimum'));
+    if (titleMinimum) reserveWidth(measured, titleMinimum);
     const titleMaximum = pixels(element.style.getPropertyValue('--taxi-page-title-maximum'));
     if (titleMaximum) measured.maximumWidth = titleMaximum;
     return measured;

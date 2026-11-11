@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { fixedCaptionTracks, narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
+import { fixedCaptionTracks, fixedTopPageTracks, narrowCaptionTracks, retainsFullPageTitle } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 import { isolatedInputCaptionWidth } from '../webview/forms/field-caption-layout.js';
@@ -322,6 +322,47 @@ test('fixed page captions grow from their wrapped lines and retain a full traili
     { width: 165, caption: 99 },
     { width: 274, caption: 108 },
   ]);
+});
+
+test('a long fixed page title can retain its natural width when only the final word wraps in the caption measure', () => {
+  const title = text => fieldCaptionProfile(text + ':', undefined, { wordRuns: true, splitTerminalColon: true });
+  const address = title('Адрес удаленного сервера резервного кластера');
+  const trailingPair = title('Адрес удаленного сервера кластера новой базы');
+  const longerPrefix = title('Адрес сервера долгосрочного кластера базы');
+  assert.equal(retainsFullPageTitle(address), true);
+  assert.equal(retainsFullPageTitle(trailingPair), false);
+  assert.equal(retainsFullPageTitle(longerPrefix), false);
+  assert.equal(retainsFullPageTitle(title('Адрес удаленного сервера кластера A')), false);
+  assert.equal(retainsFullPageTitle(title('Адрес удаленного сервера кластера M')), true);
+});
+
+test('fixed top page tracks preserve nominal height and expand the compact row only when the request fits the title', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const fields = [
+    { kind: 'string', caption: fieldCaptionProfile('Адрес удаленного сервера резервного кластера:', undefined, options) },
+    { kind: 'number', caption: fieldCaptionProfile('Порт подключения:', undefined, options) },
+  ];
+  const lanes = [
+    { minimum: 161, preferred: 161, maximum: 296, growthWeight: 161 },
+    { minimum: 84, preferred: 84, maximum: 117, growthWeight: 84 },
+  ];
+  const tracks = (width, fitWidth, requestedRowWidth, automatic = true) =>
+    fixedTopPageTracks(width, fitWidth, fields, lanes, { requestedRowWidth, retainText: true, automatic });
+  assert.deepEqual(tracks(259, 265, 275), { sizes: [170, 89], scroll: false, divider: true });
+  assert.deepEqual(tracks(279, 285, 295), { sizes: [162, 117], scroll: true, nominalSizes: [163, 117] });
+  assert.deepEqual(tracks(374, 380, 305), { sizes: [290, 84], scroll: false, minimum: 380, nominalSizes: [296, 84] });
+  assert.deepEqual(tracks(407, 413, 425), { sizes: [296, 111], scroll: true, minimum: 380, nominalSizes: [296, 117] });
+  assert.deepEqual(tracks(407, 413, 425, false), { sizes: [292, 115], scroll: true, minimum: 380, nominalSizes: [296, 117] });
+  const shorter = [
+    { minimum: 131, preferred: 131, maximum: 154, growthWeight: 131 },
+    lanes[1],
+  ];
+  const authored = fixedTopPageTracks(265, 271, fields, shorter, {
+    requestedRowWidth: 295, retainText: false, automatic: false,
+  });
+  assert.deepEqual(authored.sizes, [151, 114]);
+  assert.equal(authored.scroll, true);
+  assert.equal(authored.divider, undefined);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
