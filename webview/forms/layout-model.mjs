@@ -18,6 +18,12 @@ export function horizontalGrouping(node) {
   return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
 }
 
+export function authoredTopPageInputs(children) {
+  if (children.length !== 2 || children.some(child => child.kind !== 'InputField' || child.presentation.titleLocation !== 'Top')) return false;
+  const kinds = children.map(child => child.presentation.valueType.kind);
+  return kinds.includes('string') && kinds.some(kind => kind === 'number' || kind === 'date');
+}
+
 export function ordinaryGroup(node) {
   return node.kind === 'UsualGroup' && ['Auto', 'Usual'].includes(scalar(node, 'Behavior', 'Auto'));
 }

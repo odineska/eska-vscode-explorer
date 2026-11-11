@@ -829,6 +829,82 @@ button { cursor: default; }
   > .taxi-page > .taxi-items--horizontal:not(:has(> .taxi-element[data-stretch-y=true])) {
   flex: 0 1 auto;
 }
+.taxi-preview[data-form-layout=allocated] .taxi-page:has(> .taxi-items[data-native-page-scroll=true]) {
+  /* The scrollbar bands have their own background even on a colored page. */
+  background-image: linear-gradient(#fff, #fff), linear-gradient(#fff, #fff);
+  background-position: left top calc(var(--taxi-page-row-height) - 7px), right top 9px;
+  background-size: 100% 14px, 14px calc(var(--taxi-page-row-height) - 16px);
+  background-repeat: no-repeat;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page > .taxi-items[data-native-page-scroll=true] {
+  /* The scrollport reaches into the page insets while the fields keep their origin. */
+  margin-inline: -5px -11px;
+  padding-inline-start: 5px;
+  height: var(--taxi-page-row-height);
+  flex: none;
+  overflow: scroll;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+  --taxi-scroll-thumb-start: var(--taxi-page-scroll-thumb-outer-start);
+  --taxi-scroll-thumb-end: var(--taxi-page-scroll-thumb-inner-end);
+  --taxi-scroll-arrow-left: var(--taxi-page-scroll-left-disabled);
+  --taxi-scroll-arrow-right: var(--taxi-page-scroll-right);
+  --taxi-scroll-arrow-up: var(--taxi-page-scroll-up-disabled);
+  --taxi-scroll-arrow-down: var(--taxi-page-scroll-down);
+}
+.taxi-items[data-native-page-scroll=true] > .taxi-element > .taxi-field-row {
+  /* Glyph overhang must not change the horizontal scroll range. */
+  overflow-x: clip;
+}
+.taxi-items[data-native-page-scroll=true]:is([data-page-scroll-x=middle], [data-page-scroll-x=end]) {
+  --taxi-scroll-thumb-start: var(--taxi-page-scroll-thumb-inner-start);
+  --taxi-scroll-arrow-left: var(--taxi-page-scroll-left);
+}
+.taxi-items[data-native-page-scroll=true][data-page-scroll-x=end] {
+  --taxi-scroll-thumb-end: var(--taxi-page-scroll-thumb-outer-end);
+  --taxi-scroll-arrow-right: var(--taxi-page-scroll-right-disabled);
+}
+.taxi-items[data-native-page-scroll=true]:is([data-page-scroll-y=middle], [data-page-scroll-y=end]) {
+  --taxi-scroll-arrow-up: var(--taxi-page-scroll-up);
+}
+.taxi-items[data-native-page-scroll=true][data-page-scroll-y=end] {
+  --taxi-scroll-arrow-down: var(--taxi-page-scroll-down-disabled);
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar { width: 15px; height: 15px; }
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-track,
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-corner { border: 0; background: transparent; }
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-track:horizontal {
+  background: var(--taxi-page-scroll-track-start) left 4px top 3px no-repeat,
+    var(--taxi-page-scroll-track-end) right 9px top 3px no-repeat,
+    linear-gradient(#d6d6d6, #d6d6d6) left 8px top 3px / calc(100% - 21px) 8px no-repeat;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-thumb:horizontal {
+  border: 0;
+  background: var(--taxi-scroll-thumb-start) left 4px top 3px no-repeat,
+    var(--taxi-scroll-thumb-end) right 9px top 3px no-repeat,
+    linear-gradient(#9a9a9a, #9a9a9a) left 8px top 3px / calc(100% - 21px) 8px no-repeat;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-thumb:vertical {
+  border: 3px solid transparent;
+  border-radius: 7px;
+  background: #9a9a9a padding-box;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button {
+  width: 14px;
+  height: 14px;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background: var(--taxi-scroll-arrow-left) 4px 4px no-repeat;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background: var(--taxi-scroll-arrow-right) 1px 4px no-repeat;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background: var(--taxi-scroll-arrow-up) 4px 6px no-repeat;
+}
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:increment {
+  background: var(--taxi-scroll-arrow-down) 4px 5px no-repeat;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-inline-value-minimum, var(--taxi-control-min-width, 0px)))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }

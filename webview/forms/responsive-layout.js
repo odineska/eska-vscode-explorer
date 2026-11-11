@@ -20,7 +20,7 @@ import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
 import { sameDecorationLines } from './decoration-metrics.mjs';
-import { conditionalPageFits, sideTabWidths } from './page-fit-layout.js';
+import { conditionalPageFits, rowFitWidth, sideTabWidths } from './page-fit-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -345,7 +345,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
           : footprint.width;
         const fit = pageFits?.get(key);
         if (fit && !measuredFits.has(fit)) measuredFits.set(fit, fit());
-        const available = rect(items).width - boxInsets(getComputedStyle(items)).width + (measuredFits.get(fit) ?? 0);
+        const available = rowFitWidth(items) + (measuredFits.get(fit) ?? 0);
         if (available + .5 < required) wrap.add(key);
       }
     } finally {

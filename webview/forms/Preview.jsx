@@ -27,7 +27,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
+import { authoredTopPageInputs, displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
@@ -259,11 +259,21 @@ export function Preview(props) {
     </div>
   </div></FormLayoutContext.Provider>;
 }
+function updatePageScrollButtons(event) {
+  const items = event.currentTarget;
+  if (items.dataset.nativePageScroll !== 'true') return;
+  const edge = (offset, range) => offset < .5 ? 'start' : offset >= range - .5 ? 'end' : 'middle';
+  items.dataset.pageScrollX = edge(items.scrollLeft, items.scrollWidth - items.clientWidth);
+  items.dataset.pageScrollY = edge(items.scrollTop, items.scrollHeight - items.clientHeight);
+}
+
 export function Items(props) {
   const layout = useFormLayout();
   const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
+  const pageTitleRow = createMemo(() => props.node.kind === 'Page' && (props.node.presentation.grouping === 'Horizontal'
+    || horizontal() && authoredTopPageInputs(children())));
   const horizontalGap = createMemo(() => {
     if (props.controller.state.os !== 'linux' || !horizontalGrouping(props.node)) return;
     const gap = horizontalGroupGap(props.node, children());
@@ -332,6 +342,7 @@ export function Items(props) {
     }).join(' ');
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
+    on:scroll={props.node.kind === 'Page' ? updatePageScrollButtons : undefined}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
     data-content-horizontal-align={horizontalAlignment()}
     data-native-group-row={groupRow() ? '' : undefined}
@@ -340,7 +351,7 @@ export function Items(props) {
       '--taxi-resized-columns': divider()?.tracks, '--taxi-column-divider-value': divider() ? `${divider().value}px` : undefined,
       '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} classList={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
-      forcedPageRow={props.node.kind === 'Page' && props.node.presentation.grouping === 'Horizontal'}
+      pageTitleRow={pageTitleRow()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
     <Show when={divider()}>{split => <Splitter vertical class="taxi-column-divider" range={split()}
@@ -762,7 +773,7 @@ function Field(props) {
   const automaticTop = () => layout?.titleAbove(node());
   const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
-  const pageTitleAbove = () => props.forcedPageRow && node().kind === 'InputField' && titleLocation() === 'Top';
+  const pageTitleAbove = () => props.pageTitleRow && node().kind === 'InputField' && titleLocation() === 'Top';
   const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
   const labelFont = () => node().presentation.titleFont;

@@ -1,10 +1,11 @@
 import { fieldWidth, inputRows, number, scalar, textInputWidthBounds } from './model.mjs';
-import { automaticHorizontalSpacing, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
-import { borderBoxSize, boundingScale, boxInsets, pixels, updateStyle } from './layout-box.mjs';
+import { authoredTopPageInputs, automaticHorizontalSpacing, horizontalInputMaximum, allocateLaneSizes, laneInputBounds, ordinaryGroup } from './layout-model.mjs';
+import { borderBoxSize, boundingScale, pixels, updateStyle } from './layout-box.mjs';
 import { fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
 import { inputLaneFields } from './input-lane-layout.js';
-import { sideTabWidths } from './page-fit-layout.js';
+import { rowFitWidth, sideTabWidths } from './page-fit-layout.js';
+import { preparePageScrollbarPaint } from './page-scrollbar.js';
 
 const total = widths => widths.reduce((sum, width) => sum + width, 0);
 const kinds = new Set(['number', 'date', 'reference']);
@@ -58,16 +59,20 @@ function pageSideCaption(field, width) {
   return Math.min(caption.preferred, Math.max(caption.minimum, available));
 }
 
-function allocateAuthoredPageTitles(width, fitWidth, fields, lanes) {
+function allocateAuthoredPageTitles(width, fitWidth, fields, lanes, rail) {
   const flexible = fields[0].flexible ? 0 : 1;
   const input = fields[flexible], fixed = fields[1 - flexible];
   const inputLane = lanes[flexible], fixedLane = lanes[1 - flexible];
   const compact = Math.max(input.preferred, input.caption.compact);
   const full = fixedLane.maximum;
   const ordered = sizes => flexible === 0 ? sizes : sizes.reverse();
-  if (fitWidth >= compact + full) {
-    const value = Math.max(inputLane.minimum, Math.min(width - full, inputLane.maximum));
-    return { sizes: ordered([value, full]) };
+  // The side-page fit tolerates three pixels before allocating a wrapped row.
+  const tolerance = rail ? 3 : 0;
+  if (fitWidth >= compact + full - tolerance) {
+    const scroll = rail && rail.painted - rail.nominal > 1 && width < compact + full;
+    const target = scroll ? Math.min(compact, width - full + tolerance) : width - full;
+    const value = Math.max(inputLane.minimum, Math.min(target, inputLane.maximum));
+    return { sizes: ordered([value, scroll ? width - value : full]), scroll };
   }
 
   // Fit whole words in the fixed column before sharing the width that wrapping releases.
@@ -137,14 +142,17 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     const children = targets.children(node);
     const page = node.kind === 'Page' && children.every(child => child.kind === 'InputField')
       && children.some(child => child.presentation.valueType.kind === 'string');
-    if (items && (page || ordinaryGroup(node)) && node.presentation.grouping === 'Horizontal' && children.length > 1
+    const grouping = node.presentation.grouping;
+    const authoredTop = page && authoredTopPageInputs(children);
+    const conditionalTop = authoredTop && grouping === 'HorizontalIfPossible'
+      && items?.classList.contains('taxi-items--horizontal');
+    if (items && (page || ordinaryGroup(node)) && (grouping === 'Horizontal' || conditionalTop) && children.length > 1
         && number(node, 'Width') <= 0 && !items.parentElement.querySelector(':scope > .taxi-group-title')
-        && !items.hasAttribute('data-united-horizontal-lane')) register(node, items, children, page);
+        && !items.hasAttribute('data-united-horizontal-lane')) register(node, items, children, page, authoredTop);
     for (const child of node.children) visit(child);
   }
 
-  function register(node, items, children, page) {
-    const authoredTop = page && children.length === 2 && children.every(child => child.presentation.titleLocation === 'Top');
+  function register(node, items, children, page, authoredTop) {
     const columns = children.map(child => {
       const nodes = inputLaneFields(child, targets);
       if (!nodes?.length) return;
@@ -184,6 +192,11 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     if (align) for (const field of first) alignment.style(field.element, '--taxi-input-title-offset', '');
     const pair = page && columns.length === 2 ? { items, left: first[0].key, right: first[1].key } : undefined;
     const tabs = page ? items.closest('.taxi-pages')?.querySelector(':scope > .taxi-tabs[data-side-fit-minimum]') : undefined;
+    if (top && tabs) {
+      alignment.mark(items, 'data-native-page-scroll', 'false');
+      const height = Math.max(...top.map(field => borderBoxSize(field.element, scale).height));
+      alignment.style(items.parentElement, '--taxi-page-row-height', `${height}px`);
+    }
     rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top, first: align ? first : [] });
   }
 
@@ -194,8 +207,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
       const above = new Set();
       let heightChanged = false;
       for (const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top, first} of rows) {
-        const css = getComputedStyle(items);
-        const available = borderBoxSize(items, scale).width - boxInsets(css).width;
+        const available = rowFitWidth(items, scale);
         const rail = sideTabWidths(tabs, scale);
         // As for conditional rows, Designer tests the title fit against the nominal tab width.
         const fitWidth = available + (rail ? rail.painted - rail.nominal : 0);
@@ -213,7 +225,19 @@ export function inputTitleLayout(model, context, minimumCaptions) {
             : { reserve: 0, minimum, preferred, maximum: preferred };
         });
         const width = Math.round(available - spacing);
-        const authored = top && allocateAuthoredPageTitles(width, fitWidth - spacing, top, lanes);
+        const authored = top && allocateAuthoredPageTitles(width, fitWidth - spacing, top, lanes, rail);
+        if (top && tabs) {
+          const scroll = String(!!authored.scroll);
+          if (items.dataset.nativePageScroll !== scroll) {
+            items.dataset.nativePageScroll = scroll;
+            if (authored.scroll) preparePageScrollbarPaint(items);
+            else {
+              delete items.dataset.pageScrollX;
+              delete items.dataset.pageScrollY;
+            }
+            heightChanged = true;
+          }
+        }
         let sizes = authored?.sizes ?? (lanes && allocateLaneSizes(available - spacing, lanes));
         if (pair && (authored?.divider || plan?.above.size === 2) && resolveDivider) {
           const [left, right] = lanes;

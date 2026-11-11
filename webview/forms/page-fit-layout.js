@@ -1,6 +1,6 @@
 import { flag, number, property, scalar } from './model.mjs';
 import { ordinaryGroup } from './layout-model.mjs';
-import { borderBoxSize, pixels } from './layout-box.mjs';
+import { borderBoxSize, boxInsets, pixels } from './layout-box.mjs';
 
 function registerRows(node, targets, fit, plans) {
   if (!targets.containers.has(node.key)) return;
@@ -28,6 +28,12 @@ export function sideTabWidths(tabs, scale) {
   const nominal = Math.max(Number(tabs.dataset.sideFitMinimum), preferredButton - borders);
   const painted = strip + pixels(stack.marginLeft) + pixels(stack.marginRight);
   return { nominal, painted, captionExtra: Math.round(Math.max(0, strip - preferredButton) / 2) };
+}
+
+export function rowFitWidth(items, scale) {
+  // The local scrollport extends into the page padding without increasing the row's allocation.
+  const box = items.dataset.nativePageScroll === 'true' ? items.parentElement : items;
+  return borderBoxSize(box, scale).width - boxInsets(getComputedStyle(box)).width;
 }
 
 /** Fit a row using the nominal tab width and the extra width of the shared caption. */

@@ -57,6 +57,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
     if (element.hasAttribute('data-united-columns') || element.hasAttribute('data-fixed-date-row')) {
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
+    if (element.dataset.nativePageScroll === 'true') {
+      value.height = pixels(css.getPropertyValue('--taxi-page-row-height'));
+    }
     const minimum = minimumRows.get(element);
     if (minimum !== undefined && !reflows) value.width = value.fullWidth = value.sideWidth = minimum;
     const floor = widthFloors.get(element);

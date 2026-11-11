@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame, sameSourcePath } = require('./webview-host.cjs');
+const {until,frame, sameSourcePath, selectedFormPixels } = require('./webview-host.cjs');
 
 exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture.tabBorders,results=[];
@@ -37,22 +37,7 @@ exports.run=async()=>{
     await until(async()=>{
       captureAttempts++;
       const filename=`tab-borders-${label}-${vscode.env.language}.png`,png=targetId?await ui.captureTarget(targetId,filename,true):await ui.screenshot(filename,true);
-      actual=await ui.evaluate(`(async()=>{
-      if(devicePixelRatio!==1)throw new Error('tab-reference-dpi');
-      const image=await createImageBitmap(new Blob([Uint8Array.from(atob(${JSON.stringify(png)}),value=>value.charCodeAt(0))],{type:'image/png'}));
-      const canvas=new OffscreenCanvas(image.width,image.height),context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();
-      const data=context.getImageData(0,0,canvas.width,canvas.height).data,blue=new Set(),frames=[];
-      for(let p=0;p<canvas.width*canvas.height;p++)if(data[p*4]===30&&data[p*4+1]===144&&data[p*4+2]===255)blue.add(p);
-      while(blue.size){const stack=[blue.values().next().value];blue.delete(stack[0]);let left=canvas.width,top=canvas.height,right=0,bottom=0;
-        while(stack.length){const p=stack.pop(),x=p%canvas.width,y=Math.floor(p/canvas.width);left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);
-          for(const n of [x?p-1:-1,x+1<canvas.width?p+1:-1,y?p-canvas.width:-1,y+1<canvas.height?p+canvas.width:-1])if(blue.delete(n))stack.push(n);}
-        if(right-left+1===${expected.frame[0]}-2&&bottom-top+1===${expected.frame[1]}-2)frames.push({x:left-1,y:top-1});}
-      if(frames.length!==1)return {waitingForFrame:true,frames};const origin=frames[0],results=[],hex=a=>[...a].map(v=>v.toString(16).padStart(2,'0')).join('');
-      for(const r of ${JSON.stringify(regions)}){const rgb=new Uint8Array(r.width*r.height*3);let offset=0;
-        for(let y=0;y<r.height;y++)for(let x=0;x<r.width;x++){const i=((origin.y+r.y+y)*canvas.width+origin.x+r.x+x)*4;rgb.set(data.slice(i,i+3),offset);offset+=3;}
-        results.push({name:r.name,hex:r.hex?hex(rgb):undefined,sha:r.sha?hex(new Uint8Array(await crypto.subtle.digest('SHA-256',rgb))):undefined});}
-      return results;
-    })()`);
+      actual=await selectedFormPixels(ui,png,expected.frame,regions);
       return Array.isArray(actual);
     },'selected tab frame painted');
     // Retry only an unpainted selection frame; an actual RGB mismatch fails immediately.
