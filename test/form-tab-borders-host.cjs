@@ -2,13 +2,32 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,frame, sameSourcePath, selectedFormPixels } = require('./webview-host.cjs');
+const {until, frame, sameSourcePath, selectedFormPixels, editFormSource } = require('./webview-host.cjs');
 
 exports.run=async()=>{
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE),gallery=fixture.tabBorders,results=[];
   const explorer=await vscode.extensions.all.find(item=>item.packageJSON.name==='eska-explorer').activate();
   await vscode.commands.executeCommand('eska.explorer.connect');await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
-  async function ready(ui,expected){return ui.evaluate(`(() => {const tabs=[...document.querySelectorAll('.taxi-tabs>[role=tab]')];return tabs.length===${expected.tabs.length}&&!document.querySelector('[data-native-label=pending]')&&${JSON.stringify(expected.tabs)}.every((tab,index)=>tabs[index].dataset.nativeTabBorder==='ready'&&tabs[index].getAttribute('aria-selected')===String(tab.active)&&getComputedStyle(tabs[index]).backgroundColor==='rgb('+tab.background.join(', ')+')'&&(!tab.foreground||getComputedStyle(tabs[index]).color==='rgb('+tab.foreground.join(', ')+')'));})()`);}
+  function ready(ui, expected) {
+    return ui.evaluate(`(() => {
+      const tabs = [...document.querySelectorAll('.taxi-tabs>[role=tab]')];
+      const frame = document.querySelector('.taxi-form-frame')?.getBoundingClientRect();
+      return tabs.length === ${expected.tabs.length} && !document.querySelector('[data-native-label=pending]')
+        && ${JSON.stringify(expected.tabs)}.every((tab, index) => {
+          const button = tabs[index];
+          const style = getComputedStyle(button);
+          if (button.dataset.nativeTabBorder !== 'ready' || button.getAttribute('aria-selected') !== String(tab.active)
+            || style.backgroundColor !== 'rgb(' + tab.background.join(', ') + ')'
+            || tab.foreground && style.color !== 'rgb(' + tab.foreground.join(', ') + ')') return false;
+          if (tab.labelShown !== undefined && !!button.querySelector('[data-native-label]') !== tab.labelShown) return false;
+          if (tab.picture === undefined) return true;
+          const image = button.querySelector('.taxi-tab-picture')?.getBoundingClientRect();
+          if (!tab.picture) return !image;
+          const rect = image && [image.x-frame.x, image.y-frame.y, image.width, image.height];
+          return JSON.stringify(rect) === JSON.stringify(tab.picture);
+        });
+    })()`);
+  }
   async function sample(ui,expected,label,targetId){
     await until(()=>ready(ui,expected),'native tab colors and glyphs');await ui.evaluate('document.fonts.ready.then(()=>true)');
     await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
@@ -33,6 +52,7 @@ exports.run=async()=>{
       if(native.wholeTabRgbSha256)regions.push({name:native.name+' whole',x,y,width:tab.width,height:tab.height,sha:native.wholeTabRgbSha256});
     }
     if(expected.wholeFormWithShadowRgbSha256)regions.push({name:'whole form and shadow',x:0,y:0,width:expected.frame[0]+4,height:expected.frame[1]+4,sha:expected.wholeFormWithShadowRgbSha256});
+    if(expected.wholeFormRgbSha256)regions.push({name:'whole form',x:0,y:0,width:expected.frame[0],height:expected.frame[1],sha:expected.wholeFormRgbSha256});
     let actual,captureAttempts=0;
     await until(async()=>{
       captureAttempts++;
@@ -44,16 +64,82 @@ exports.run=async()=>{
     const mismatches=actual.flatMap((r,i)=>{const e=regions[i];return(e.hex?r.hex!==e.hex:r.sha!==e.sha)?[{actual:r,expected:e}]:[];});
     if(mismatches.length&&process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`tab-borders-failure-${vscode.env.language}.json`),JSON.stringify({label,mismatches,geometry},null,2));
     assert.deepEqual(mismatches,[],label+' native tab pixels');
-    return {name:label,geometry,captureAttempts,cornerPixelsCompared:regions.filter(r=>r.hex).reduce((v,r)=>v+r.width*r.height,0),wholeTabPixelsCompared:regions.filter(r=>r.name.endsWith(' whole')).reduce((v,r)=>v+r.width*r.height,0),wholeFormPixelsCompared:regions.filter(r=>r.name==='whole form and shadow').reduce((v,r)=>v+r.width*r.height,0),differentRgbPixels:0};
+    return {name:label,geometry,captureAttempts,cornerPixelsCompared:regions.filter(r=>r.hex).reduce((v,r)=>v+r.width*r.height,0),wholeTabPixelsCompared:regions.filter(r=>r.name.endsWith(' whole')).reduce((v,r)=>v+r.width*r.height,0),wholeFormPixelsCompared:regions.filter(r=>r.name.startsWith('whole form')).reduce((v,r)=>v+r.width*r.height,0),differentRgbPixels:0};
   }
+  async function selectPage(ui, view, index) {
+    await ui.evaluate(`document.querySelectorAll('.taxi-tabs>[role=tab]')[${index}].click(); document.querySelector('.taxi-form-title').click()`);
+    await until(() => view.selected?.key?.kind === 'root', 'root selection after page navigation');
+  }
+
+  async function checkPictureUpdates(ui, view, panel, document, states) {
+    const original = document.getText();
+    const layout = value => original.replace('<Pages name="Pages" id="1">', '$&<PagesRepresentation>' + value + '</PagesRepresentation>');
+    const picture = (xml, name) => xml.replace('StdPicture.Parameters', 'CommonPicture.' + name);
+    const remember = "globalThis.__tabPictureOwners = [...document.querySelectorAll('.taxi-tabs>[role=tab], .taxi-page')]; true";
+    const retained = '__tabPictureOwners.every(node => node.isConnected)';
+    await ui.evaluate(remember);
+    await selectPage(ui, view, 1);
+    results.push(await sample(ui, states.second, 'picture-inactive'));
+    const tall = picture(original, 'ProbeTall');
+    await editFormSource(document, view, tall);
+    await until(() => ui.evaluate("document.querySelector('.taxi-tabs>[aria-selected=true]')?.getAttribute('aria-label') === 'Details'"), 'picture edit preserves active page');
+    assert.equal(await ui.evaluate(retained), true);
+    await selectPage(ui, view, 0);
+    results.push(await sample(ui, states.tall, 'dirty-tall-picture'));
+
+    const service = explorer.formPreview;
+    await service.receive(view, panel, {type:'detach'});
+    await until(() => view.frames.get('preview')?.ready, 'pictures in a separate window');
+    const detached = view.frames.get('preview');
+    const floating = await frame({detached:true, fixedFormArea:true, state:{title:detached.panel.title}});
+    const target = await floating.nativeWindow({detached:true});
+    results.push(await sample(floating, states.tall, 'floating-tall-picture', target.targetId));
+    await floating.evaluate(remember);
+    const asset = name => path.join(fixture.source, 'CommonPictures', name, 'Ext', 'Picture', 'Picture.svg');
+    const tallBytes = await fs.readFile(asset('ProbeTall'));
+    try {
+      const revision = view.snapshot.revision;
+      await fs.writeFile(asset('ProbeTall'), await fs.readFile(asset('ProbeTiny')));
+      await until(() => view.snapshot.revision !== revision && !view.running && !view.timer, 'picture resource refreshed');
+      results.push(await sample(floating, states.tiny, 'floating-picture-resized-from-disk', target.targetId));
+    } finally {
+      await fs.writeFile(asset('ProbeTall'), tallBytes);
+    }
+    const left = picture(layout('TabsOnLeftHorizontal'), 'ProbeTiny')
+      .replace('<ExtendedTooltip name="SecondPageTooltip" id="6"/>',
+        '<Picture><xr:Ref>CommonPicture.ProbeWideIcon</xr:Ref><xr:LoadTransparent>true</xr:LoadTransparent></Picture>$&');
+    await editFormSource(document, view, left);
+    results.push(await sample(floating, states.leftMixed, 'floating-side-picture-column', target.targetId));
+    await editFormSource(document, view, layout('TabsOnBottom'));
+    results.push(await sample(floating, states.bottom, 'floating-bottom-picture', target.targetId));
+    const iconOnly = original.replace('<ExtendedTooltip name="FirstPageTooltip" id="4"/>', '<ShowTitle>false</ShowTitle>$&');
+    await editFormSource(document, view, iconOnly);
+    results.push(await sample(floating, states.iconOnly, 'floating-icon-only-tab', target.targetId));
+    assert.equal(await floating.evaluate(retained), true);
+    assert.equal(await floating.evaluate("document.querySelector('.taxi-tabs>[role=tab]').getAttribute('aria-label')"), 'Service');
+    const emptyTitle = original.replace(/(<Page name="FirstPage" id="3">)\s*<Title>[\s\S]*?<\/Title>/u, '$1<Title/>');
+    assert.notEqual(emptyTitle, original);
+    await editFormSource(document, view, emptyTitle);
+    results.push(await sample(floating, states.iconOnly, 'floating-empty-tab-title', target.targetId));
+    assert.equal(await floating.evaluate("document.querySelector('.taxi-tabs>[role=tab]').getAttribute('aria-label')"), 'FirstPage');
+    assert.deepEqual(floating.scriptErrors(), []);
+    await editFormSource(document, view, original);
+    floating.close();
+    await service.receive(view, detached, {type:'dock'});
+    await until(() => !view.frames.has('preview'), 'picture preview docked');
+    ui.close();
+    const docked = await frame({fixedFormArea:true, state:{title:panel.panel.title}});
+    results.push(await sample(docked, states.initial, 'reattached-picture'));
+    return docked;
+  }
+
   for(const form of gallery.forms){
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');
     await until(()=>[...explorer.formPreview.views.values()].some(view=>sameSourcePath(view.path,form.path)&&view.phase==='ready'),'tab border form');
     const view=[...explorer.formPreview.views.values()].find(view=>sameSourcePath(view.path,form.path)),panel=view.frames.get('main');let ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});
     for(const expected of form.expected.states){
       await until(()=>ui.evaluate(`document.querySelectorAll('.taxi-tabs>[role=tab]').length===${expected.tabs.length}`),'tab nodes');
-      await ui.evaluate(`document.querySelectorAll('.taxi-tabs>[role=tab]')[${expected.selected}].click();document.querySelector('.taxi-form-title').click()`);
-      await until(()=>view.selected?.key?.kind==='root','root selection after page navigation');
+      await selectPage(ui, view, expected.selected);
       results.push(await sample(ui,expected,form.kind+'-'+expected.selected));
     }
     if(form.kind==='ColorFreshA'){
@@ -67,6 +153,7 @@ exports.run=async()=>{
       results.push(await sample(floating,own,'floating-FreshA',workbench.targetId));await floating.evaluate(remember);await change(changed);results.push(await sample(floating,target,'floating-dirty-FreshB',workbench.targetId));await change(original);await until(()=>ready(floating,own),'floating tab inputs restored');assert.equal(await floating.evaluate(retained),true);
       floating.close();detached.panel.dispose();ui.close();ui=await frame({fixedFormArea:true,state:{title:panel.panel.title}});results.push(await sample(ui,own,'reattached-FreshA'));
     }
+    if (form.pictureStates) ui = await checkPictureUpdates(ui, view, panel, document, form.pictureStates);
     assert.deepEqual(await fs.readFile(form.path),before);ui.close();panel.panel.dispose();await until(()=>explorer.formPreview.views.size===0,'tab session released');await Promise.all([...explorer.formPreview.closing]);
   }
   await explorer.shutdown();

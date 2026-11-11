@@ -265,6 +265,10 @@ export async function createTabBordersGallery(fixture) {
     const [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
     forms.push({...form,kind:row.name,expected:row});
   }
+  const pictures = JSON.parse(await readFile(join(input, 'pictures.json'), 'utf8'));
+  await addFixturePictures(fixture, join(input, '..', 'native-choice-button-pictures'), pictures.pictures);
+  const [pictured] = await createGallery(fixture, [basename(pictures.file, '.xml')], input);
+  forms.push({ ...pictured, expected: { states: [pictures.states.initial] }, pictureStates: pictures.states });
   return {forms};
 }
 
@@ -372,11 +376,15 @@ export async function createChoicePictureGallery(fixture) {
   const { pictures } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
   await addNativeUsers(fixture);
   await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
+  await addFixturePictures(fixture, input, pictures);
+  return createInputBordersGallery(fixture);
+}
+
+async function addFixturePictures(fixture, input, pictures) {
   await cp(join(input, 'CommonPictures'), join(fixture.source, 'CommonPictures'), { recursive: true });
   const configuration = join(fixture.source, 'Configuration.xml');
   const entries = pictures.map(name => `<CommonPicture>${name}</CommonPicture>`).join('');
   await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + entries));
-  return createInputBordersGallery(fixture);
 }
 
 export async function createTableHeightGallery(fixture) {

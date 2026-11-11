@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { createFontRaster } from '../webview/forms/font-raster.mjs';
 import { lcdCaptionPixels } from '../webview/forms/lcd-caption.mjs';
 import { fontLineMetrics } from '../webview/forms/model.mjs';
-import { tabMetrics } from '../webview/forms/tab-metrics.mjs';
+import { tabMetrics, tabPictureLayout } from '../webview/forms/tab-metrics.mjs';
 
 test('shared tab metrics and LCD pixels match native individual fonts, colors and inherited page titles', async () => {
   const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-tab-appearance/metrics.json',formReferenceRoot)));
@@ -38,4 +38,14 @@ test('unmeasured page title sizes retain fallback geometry without claiming cali
   assert.equal(tabMetrics([{points:13}]).calibrated,false);
   assert.equal(tabMetrics([{points:9},{points:16}]).calibrated,false);
   assert.equal(tabMetrics([]).calibrated,true);
+});
+
+test('empty tabs use the largest caption font and tall pictures enlarge the strip', () => {
+  for (const [fonts, width] of [[[8], 6], [[8, 10], 8], [[10, 14], 11], [[10, 32], 24]]) {
+    const metrics = tabMetrics(fonts.map(points => ({ points })));
+    assert.equal(tabPictureLayout(metrics, { caption: '', sharedWidth: 0, bottom: false }).leading, width);
+  }
+  assert.equal(tabMetrics([{ points: 8 }], 24).height, 34);
+  assert.equal(tabMetrics([{ points: 14 }], 24).height, 41);
+  assert.equal(tabMetrics([{ points: 10 }], 64).height, 76);
 });
