@@ -24,7 +24,7 @@ export function fixedCaptionTracks(available, tracks, fitWidth = available) {
     let spare = fitBudget - sum(wrapped);
     for (let index = retained.length - 1; index >= 0; index--) {
       const extra = profiles[index].preferred - retained[index];
-      if (extra > spare) continue;
+      if (extra > spare) break;
       retained[index] += extra;
       spare -= extra;
     }

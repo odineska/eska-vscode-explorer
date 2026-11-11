@@ -318,6 +318,10 @@ test('fixed page captions grow from their wrapped lines and retain a full traili
       { width: captions[1] + 66, caption: captions[1] },
     ]);
   }
+  assert.deepEqual(fixedCaptionTracks(439, [...tracks].reverse(), 445), [
+    { width: 165, caption: 99 },
+    { width: 274, caption: 108 },
+  ]);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
