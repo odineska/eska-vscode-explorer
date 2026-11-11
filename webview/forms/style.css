@@ -685,6 +685,11 @@ button { cursor: default; }
   width: max-content;
   flex: 0 0 auto !important;
 }
+/* A fixed input keeps its intrinsic value beside a stretching neighbor. */
+.taxi-preview[data-form-layout=preferred] .taxi-pages[data-native-side-tabs] > .taxi-page-stack
+  > .taxi-page > .taxi-items--horizontal > .taxi-element[data-stretch-x=false][data-kind=InputField] {
+  flex-shrink: 0;
+}
 /* Measure one native caption/value track per input with an authored top title. */
 .taxi-preview[data-form-layout=preferred] .taxi-items[data-authored-top-row] > .taxi-element {
   flex: 0 0 var(--taxi-field-track) !important;
@@ -830,7 +835,16 @@ button { cursor: default; }
   flex: 0 1 auto;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-page:has(> .taxi-items[data-native-page-scroll=true]) {
-  /* The scrollbar bands have their own background even on a colored page. */
+  position: relative;
+  isolation: isolate;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-page:has(> .taxi-items[data-native-page-scroll=true])::before {
+  /* Paint the white bands without replacing the solid backdrop of the labels. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image: linear-gradient(#fff, #fff), linear-gradient(#fff, #fff);
   background-position: left top calc(var(--taxi-page-row-height) - 7px), right top 9px;
   background-size: 100% 14px, 14px calc(var(--taxi-page-row-height) - 16px);
@@ -851,6 +865,10 @@ button { cursor: default; }
   --taxi-scroll-arrow-right: var(--taxi-page-scroll-right);
   --taxi-scroll-arrow-up: var(--taxi-page-scroll-up-disabled);
   --taxi-scroll-arrow-down: var(--taxi-page-scroll-down);
+  --taxi-page-scroll-button-height: max(0px, round(down, calc((var(--taxi-page-row-height) - 15px) / 2), 1px));
+}
+.taxi-items--vertical[data-native-page-scroll=true] {
+  grid-template-columns: var(--taxi-input-title-columns);
 }
 .taxi-items[data-native-page-scroll=true] > .taxi-element > .taxi-field-row {
   /* Glyph overhang must not change the horizontal scroll range. */
@@ -899,11 +917,14 @@ button { cursor: default; }
 .taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:horizontal:increment {
   background: var(--taxi-scroll-arrow-right) 1px 4px no-repeat;
 }
+.taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical {
+  height: var(--taxi-page-scroll-button-height);
+}
 .taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:decrement {
-  background: var(--taxi-scroll-arrow-up) 4px 6px no-repeat;
+  background: var(--taxi-scroll-arrow-up) 4px round(up, calc((var(--taxi-page-scroll-button-height) - 3px) / 2), 1px) no-repeat;
 }
 .taxi-items[data-native-page-scroll=true]::-webkit-scrollbar-button:single-button:vertical:increment {
-  background: var(--taxi-scroll-arrow-down) 4px 5px no-repeat;
+  background: var(--taxi-scroll-arrow-down) 4px round(down, calc((var(--taxi-page-scroll-button-height) - 3px) / 2), 1px) no-repeat;
 }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-x=true] > .taxi-field-row > .taxi-field-control > :is(.taxi-input,.taxi-special-stack,.taxi-picture-field,.taxi-label-field,.taxi-progress,.taxi-track) { width: 100% !important; min-width: var(--taxi-input-title-value-min, var(--taxi-lane-input-min-width, var(--taxi-inline-value-minimum, var(--taxi-control-min-width, 0px)))) !important; max-width: var(--taxi-input-title-value-max, var(--taxi-lane-input-max-width, var(--taxi-control-max-width, 100%))); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }

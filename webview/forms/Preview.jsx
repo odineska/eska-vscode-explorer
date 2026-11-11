@@ -27,7 +27,7 @@ import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
 import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
-import { authoredTopPageInputs, displayedInPreview, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
+import { authoredTopPageInputs, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
 import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
@@ -273,7 +273,8 @@ export function Items(props) {
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
   const pageTitleRow = createMemo(() => props.node.kind === 'Page' && (props.node.presentation.grouping === 'Horizontal'
-    || horizontal() && authoredTopPageInputs(children())));
+    || horizontal() && authoredTopPageInputs(children())
+    || props.sidePage && fixedPageInputs(children(), props.controller.state.os)));
   const horizontalGap = createMemo(() => {
     if (props.controller.state.os !== 'linux' || !horizontalGrouping(props.node)) return;
     const gap = horizontalGroupGap(props.node, children());
@@ -372,7 +373,10 @@ function Pages(props) {
   const side = () => state.os === 'linux' && !horizontal()
     ? representation() === 'TabsOnRightHorizontal' ? 'right' : 'left' : undefined;
   const sideMetrics = () => side() && pages().length ? metrics().side : undefined;
-  return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}>
+  const authoredStretch = () => flag(node(), 'HorizontalStretch', false)
+    || pages().some(page => flag(page, 'HorizontalStretch', false));
+  return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}
+    data-authored-side-stretch={side() && authoredStretch() ? '' : undefined}>
     <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={sideMetrics()?.fitMinimum}
       style={{ height:state.os === 'linux' && horizontal() ? `${metrics().height}px` : undefined,
         'min-width':sideMetrics() ? `${sideMetrics().buttonMinimum}px` : undefined }}>
@@ -381,7 +385,7 @@ function Pages(props) {
         pages={node()} controller={props.controller} metrics={metrics()} representation={representation()} horizontal={horizontal()} side={side()} sideMetrics={sideMetrics()} active={page.key === selected()}/>}</For>
     </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state)} class="taxi-page" aria-hidden={page.key !== selected()} inert={page.key !== selected()}
-      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained}/></div>}</For></div>
+      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained} sidePage={!!side()}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {

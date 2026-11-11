@@ -2,8 +2,24 @@ import { paintCanvas } from './native-control-paint.js';
 import { scrollbarFragment, scrollbarPaint } from './scrollbar-paint.mjs';
 import { tableHorizontalPaint } from './table-scrollbar.mjs';
 
+export function pageScrollbar(items, alignment, height) {
+  alignment.mark(items, 'data-native-page-scroll', 'false');
+  alignment.style(items.parentElement, '--taxi-page-row-height', `${height}px`);
+  return enabled => {
+    const value = String(!!enabled);
+    if (items.dataset.nativePageScroll === value) return false;
+    items.dataset.nativePageScroll = value;
+    if (enabled) preparePageScrollbarPaint(items);
+    else {
+      delete items.dataset.pageScrollX;
+      delete items.dataset.pageScrollY;
+    }
+    return true;
+  };
+}
+
 /** Paint Chromium's scrollbars with the shared Linux Designer fragments. */
-export function preparePageScrollbarPaint(items) {
+function preparePageScrollbarPaint(items) {
   const document = items.ownerDocument, style = document.documentElement.style;
   const prefix = '--taxi-page-scroll-';
   if (style.getPropertyValue(prefix + 'track-start')) return;

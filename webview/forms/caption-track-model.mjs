@@ -1,5 +1,17 @@
 import { cappedTrackGrowth, fitCaptionWidths, roundTrackWidths } from './layout-model.mjs';
 
+/** Share a shortfall between captions while retaining the widths of their fixed controls. */
+export function fixedCaptionTracks(available, tracks) {
+  const preferred = tracks.reduce((sum, {caption, reserve, value}) => sum + caption.preferred + reserve + value.preferred, 0);
+  const reductions = cappedTrackGrowth(Math.max(0, preferred - available), tracks.map(({caption}) => ({
+    weight: 1, limit: caption.preferred - caption.minimum,
+  })));
+  const captions = roundTrackWidths(tracks.map(({caption}, index) => caption.preferred - reductions[index]));
+  return tracks.map(({reserve, value}, index) => ({
+    width: reserve + captions[index] + value.preferred, caption: captions[index],
+  }));
+}
+
 /** Allocate captions and value boxes within horizontal field tracks, excluding the group gap. */
 export function narrowCaptionTracks(available, tracks, fitWidth = available) {
   const fit = fitCaptionWidths(fitWidth, tracks);

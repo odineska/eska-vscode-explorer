@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
+import { fixedCaptionTracks, narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 import { isolatedInputCaptionWidth } from '../webview/forms/field-caption-layout.js';
@@ -282,6 +282,19 @@ test('a page with side tabs fits captions against the nominal rail and allocates
   assert.deepEqual(narrowCaptionTracks(439, tracks, 445), [{ width: 256, caption: 91 }, { width: 183, caption: 117 }]);
   assert.deepEqual(narrowCaptionTracks(469, tracks, 475), [{ width: 286, caption: 102 }, { width: 183, caption: 117 }]);
   assert.deepEqual(narrowCaptionTracks(489, [...tracks].reverse(), 495), [{ width: 154, caption: 88 }, { width: 335, caption: 154 }]);
+});
+
+test('a fixed side-tab row shares the tab overlap between its captions', () => {
+  const address = { caption: { minimum: 90, preferred: 154 }, reserve: 5, value: { preferred: 161 } };
+  const port = { caption: { minimum: 87, preferred: 117 }, reserve: 5, value: { preferred: 61 } };
+  const tracks = [address, port];
+
+  assert.deepEqual(fixedCaptionTracks(497, tracks), [{ width: 317, caption: 151 }, { width: 180, caption: 114 }]);
+  assert.deepEqual(fixedCaptionTracks(502, tracks), [{ width: 320, caption: 154 }, { width: 182, caption: 116 }]);
+
+  const unbreakablePort = { ...port, caption: { minimum: 117, preferred: 117 } };
+  assert.deepEqual(fixedCaptionTracks(497, [address, unbreakablePort]),
+    [{ width: 314, caption: 148 }, { width: 183, caption: 117 }]);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {

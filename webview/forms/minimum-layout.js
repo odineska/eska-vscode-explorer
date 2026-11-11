@@ -149,7 +149,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
           value.fullWidth += width;
           value.sideWidth += width;
           value.width += width;
-          if (rail) value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
+          if (rail && !pages.hasAttribute('data-authored-side-stretch')) {
+            value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
+          }
         } else value.height += box.height;
       }
       value = add(value, insets(pages));
