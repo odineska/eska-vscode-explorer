@@ -336,11 +336,11 @@ exports.run = async () => {
       assert.deepEqual(ui.scriptErrors(), []);
       results.push({ name: form.kind, ...actual });
       await ui.parkPointer();
-      const pixelRegions = process.platform === 'linux' ? expected.pageScrollbarPixels : undefined;
+      const pixelRegions = process.platform === 'linux' ? expected.pagePixels : undefined;
       const screenshot = await ui.screenshot('separation-' + form.kind + '-' + vscode.env.language + '.png', !!pixelRegions);
       if (pixelRegions) {
         const pixels = await selectedFormPixels(ui, screenshot, expected.frame, pixelRegions);
-        assert.deepEqual(pixels, pixelRegions.map(({ name, sha }) => ({ name, sha })), 'page scrollbar pixels');
+        assert.deepEqual(pixels, pixelRegions.map(({ name, sha }) => ({ name, sha })), 'native page pixels');
       }
       const change = changes[form.kind];
       if (change) {

@@ -267,6 +267,23 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
   assert.equal(narrowCaptionTracks(357, tracks), undefined);
 });
 
+test('a page with side tabs fits captions against the nominal rail and allocates the painted width', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const tracks = [
+    {
+      caption: fieldCaptionProfile('Адрес сервера кластера:', undefined, options),
+      captionInset: 1, reserve: 5, value: { minimum: 71, preferred: 161, maximum: 500 },
+    },
+    {
+      caption: fieldCaptionProfile('Порт подключения:', undefined, options),
+      captionInset: 1, reserve: 5, value: { minimum: 61, preferred: 61, maximum: 61 },
+    },
+  ];
+  assert.deepEqual(narrowCaptionTracks(439, tracks, 445), [{ width: 256, caption: 91 }, { width: 183, caption: 117 }]);
+  assert.deepEqual(narrowCaptionTracks(469, tracks, 475), [{ width: 286, caption: 102 }, { width: 183, caption: 117 }]);
+  assert.deepEqual(narrowCaptionTracks(489, [...tracks].reverse(), 495), [{ width: 154, caption: 88 }, { width: 335, caption: 154 }]);
+});
+
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
   const left = {reserve:82, preferred:285, minimum:195, maximum:492, growthWeight:98};
   const right = {reserve:126, preferred:329, minimum:239, maximum:536, growthWeight:156};
