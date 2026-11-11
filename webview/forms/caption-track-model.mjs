@@ -1,15 +1,40 @@
-import { cappedTrackGrowth, fitCaptionWidths, roundTrackWidths } from './layout-model.mjs';
+import { allocateLaneSizes, cappedTrackGrowth, fitCaptionWidths, roundTrackWidths } from './layout-model.mjs';
+import { fieldCaptionOccupiedWidth } from './font-metrics.mjs';
 
-/** Share a shortfall between captions while retaining the widths of their fixed controls. */
-export function fixedCaptionTracks(available, tracks) {
-  const preferred = tracks.reduce((sum, {caption, reserve, value}) => sum + caption.preferred + reserve + value.preferred, 0);
-  const reductions = cappedTrackGrowth(Math.max(0, preferred - available), tracks.map(({caption}) => ({
-    weight: 1, limit: caption.preferred - caption.minimum,
-  })));
-  const captions = roundTrackWidths(tracks.map(({caption}, index) => caption.preferred - reductions[index]));
-  return tracks.map(({reserve, value}, index) => ({
-    width: reserve + captions[index] + value.preferred, caption: captions[index],
-  }));
+const sum = widths => widths.reduce((total, width) => total + width, 0);
+
+/** Fit caption lines against the nominal width, then allocate the painted width. */
+export function fixedCaptionTracks(available, tracks, fitWidth = available) {
+  const values = tracks.map(({reserve, value}) => reserve + value.preferred);
+  const profiles = tracks.map(({caption}) => caption);
+  const reserve = sum(values), preferred = sum(profiles.map(caption => caption.preferred));
+  const budget = available - reserve, fitBudget = fitWidth - reserve;
+  let sizes;
+  if (fitBudget >= preferred) {
+    // Only the painted tabs intrude into an otherwise unwrapped row.
+    const reductions = cappedTrackGrowth(Math.max(0, preferred - budget), profiles.map(caption => ({
+      weight: 1, limit: caption.preferred - caption.minimum,
+    })));
+    sizes = profiles.map((caption, index) => caption.preferred - reductions[index]);
+  } else {
+    const provisional = allocateLaneSizes(fitBudget, profiles, { fractional: true });
+    const wrapped = profiles.map((caption, index) => Math.max(caption.minimum,
+      fieldCaptionOccupiedWidth(caption, Math.round(provisional[index]))));
+    const retained = [...wrapped];
+    let spare = fitBudget - sum(wrapped);
+    for (let index = retained.length - 1; index >= 0; index--) {
+      const extra = profiles[index].preferred - retained[index];
+      if (extra > spare) continue;
+      retained[index] += extra;
+      spare -= extra;
+    }
+    const remaining = budget - sum(retained);
+    const adjustments = cappedTrackGrowth(Math.abs(remaining), retained.map((width, index) => remaining >= 0
+      ? { weight: width, limit: profiles[index].preferred - width }
+      : { weight: 1, limit: width - wrapped[index] }));
+    sizes = retained.map((width, index) => width + Math.sign(remaining) * adjustments[index]);
+  }
+  return roundTrackWidths(sizes).map((caption, index) => ({ width: values[index] + caption, caption }));
 }
 
 /** Allocate captions and value boxes within horizontal field tracks, excluding the group gap. */

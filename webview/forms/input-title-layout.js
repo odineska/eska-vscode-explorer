@@ -164,14 +164,14 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     const grouping = node.presentation.grouping;
     const authoredTop = page && authoredTopPageInputs(children);
     const tabs = page ? items?.closest('.taxi-pages')?.querySelector(':scope > .taxi-tabs[data-side-fit-minimum]') : undefined;
-    const fixed = !!tabs && fixedPageInputs(children, os);
+    const fixed = page && fixedPageInputs(children, os);
     const conditionalRow = (authoredTop || fixed) && grouping === 'HorizontalIfPossible'
       && items?.classList.contains('taxi-items--horizontal');
     if (items && (page || ordinaryGroup(node)) && (grouping === 'Horizontal' || conditionalRow)
         && (children.length > 1 || fixed) && number(node, 'Width') <= 0
         && !items.parentElement.querySelector(':scope > .taxi-group-title')
         && !items.hasAttribute('data-united-horizontal-lane')) register(node, items, children, page, authoredTop, tabs, fixed);
-    else if (fixed && items?.classList.contains('taxi-items--vertical') && number(node, 'Width') <= 0) {
+    else if (fixed && tabs && items?.classList.contains('taxi-items--vertical') && number(node, 'Width') <= 0) {
       registerStack(items, children, tabs);
     }
     for (const child of node.children) visit(child);
@@ -301,13 +301,14 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         const packed = plan && !abovePage && !keepSideTitles && sideTracks
           && narrowCaptionTracks(width, sideTracks, Math.round(fitWidth - spacing));
         // Share the remaining width once a whole caption can be retained beside its value.
-        const fixedFit = fixed && rail && sideTracks && !abovePage && available < preferred - .5 && fitWidth + .5 >= preferred;
-        const fixedSizes = fixedFit ? fixedCaptionTracks(width, sideTracks) : undefined;
+        const fixedFit = fixed && sideTracks && !abovePage && available < preferred - .5;
+        const fixedSizes = fixedFit ? fixedCaptionTracks(width, sideTracks, Math.round(fitWidth - spacing)) : undefined;
         const sideSizes = fixedSizes ?? (packed && packed.some(({caption}, index) => caption === sideTracks[index].caption.preferred
           && sideTracks[index].caption.minimum < caption) ? packed : undefined);
         const authored = top && allocateAuthoredPageTitles(width, fitWidth - spacing, top, lanes, rail);
-        const heightLimit = fixedSizes ? pageHeight() : 0;
-        const overflow = fixedSizes?.some(({caption}, index) =>
+        const clippedByTabs = fixedSizes && rail && fitWidth + .5 >= preferred;
+        const heightLimit = clippedByTabs ? pageHeight() : 0;
+        const overflow = clippedByTabs && fixedSizes.some(({caption}, index) =>
           wrappedSideHeight(columns[index].fields[0], caption) > heightLimit + .5);
         heightChanged = (viewport?.(authored?.scroll || overflow) ?? false) || heightChanged;
         let sizes = authored?.sizes ?? sideSizes?.map(size => size.width) ?? (lanes && allocateLaneSizes(available - spacing, lanes));

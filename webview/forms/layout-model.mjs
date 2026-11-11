@@ -2,7 +2,6 @@ import { buttonAuthoredWidth, color, property, number, scalar, flag, fieldWidth,
 import { commandBarContent } from './command-bar-model.mjs';
 import { hasTableSurface } from './table-model.mjs';
 import { additionKinds, additionStretches } from './addition-model.mjs';
-import { sideTabRepresentation } from './tab-metrics.mjs';
 
 const containers = new Set(['Form', 'UsualGroup', 'Page', 'Pages', 'ColumnGroup']);
 const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartField', 'PlannerField',
@@ -59,7 +58,6 @@ export function groupCanShrink(node, os, root = node) {
   const conditional = ordinaryGroup(node) && node.presentation.grouping === 'HorizontalIfPossible';
   const pages = node.kind === 'Pages' && number(node, 'Width') <= 0 && node.children.some(page => {
     if (containsConditionalGroup(page)) return true;
-    if (!sideTabRepresentation(scalar(node, 'PagesRepresentation'))) return false;
     const fields = page.children.filter(child => displayedInPreview(child, root));
     return fixedPageInputs(fields, os) && fields.some(field => ['Left', 'Top'].includes(field.presentation.titleLocation));
   });

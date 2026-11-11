@@ -289,12 +289,35 @@ test('a fixed side-tab row shares the tab overlap between its captions', () => {
   const port = { caption: { minimum: 87, preferred: 117 }, reserve: 5, value: { preferred: 61 } };
   const tracks = [address, port];
 
-  assert.deepEqual(fixedCaptionTracks(497, tracks), [{ width: 317, caption: 151 }, { width: 180, caption: 114 }]);
-  assert.deepEqual(fixedCaptionTracks(502, tracks), [{ width: 320, caption: 154 }, { width: 182, caption: 116 }]);
+  assert.deepEqual(fixedCaptionTracks(497, tracks, 503), [{ width: 317, caption: 151 }, { width: 180, caption: 114 }]);
+  assert.deepEqual(fixedCaptionTracks(502, tracks, 503), [{ width: 320, caption: 154 }, { width: 182, caption: 116 }]);
 
   const unbreakablePort = { ...port, caption: { minimum: 117, preferred: 117 } };
-  assert.deepEqual(fixedCaptionTracks(497, [address, unbreakablePort]),
+  assert.deepEqual(fixedCaptionTracks(497, [address, unbreakablePort], 503),
     [{ width: 314, caption: 148 }, { width: 183, caption: 117 }]);
+});
+
+test('fixed page captions grow from their wrapped lines and retain a full trailing caption when it fits', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const tracks = [
+    { caption: fieldCaptionProfile('Адрес сервера кластера:', undefined, options), reserve: 5, value: { preferred: 161 } },
+    { caption: fieldCaptionProfile('Порт подключения:', undefined, options), reserve: 5, value: { preferred: 61 } },
+  ];
+  const measured = [
+    [369, 375, [59, 84]],
+    [389, 395, [65, 92]],
+    [399, 405, [69, 98]],
+    [409, 415, [60, 117]],
+    [419, 425, [97, 90]],
+    [429, 435, [102, 95]],
+    [439, 445, [91, 116]],
+  ];
+  for (const [width, nominal, captions] of measured) {
+    assert.deepEqual(fixedCaptionTracks(width, tracks, nominal), [
+      { width: captions[0] + 166, caption: captions[0] },
+      { width: captions[1] + 66, caption: captions[1] },
+    ]);
+  }
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {
