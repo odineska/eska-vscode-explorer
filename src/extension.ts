@@ -168,6 +168,24 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       const project = await this.runtimeProject(entry);
       if (project) await action(project);
     }));
+    for (const [command, after] of [
+      ["applyApplicationTest", undefined],
+      ["applyApplicationAndRunTest", "run"],
+      ["applyApplicationAndDebugTest", "debug"],
+    ] as const) {
+      this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${command}`, async () => {
+        if (!this.tree) await this.connect(false);
+        const state = this.connection.state;
+        if (state.kind !== "ready" || state.target.backend !== "project" || !vscode.workspace.isTrusted
+          || !this.tree?.projects.some(item => item.info.scope.kind === "member")) {
+          void vscode.window.showErrorMessage(this.text("runtimeApplicationRequired"));
+          return;
+        }
+        await this.projectRuntime.applyApplication({
+          root: state.target.path, executable: state.target.executable, externalProcessing: false,
+        }, after, this.language.selectedApplication);
+      }));
+    }
     for (const [name, action] of [
       ["connect", () => this.connect(true)],
       ["restart", () => this.connect(false)],
@@ -1064,6 +1082,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   private updateActivityContexts(): void {
     void vscode.commands.executeCommand("setContext", "eska.explorer.workspaceActivity", !!this.tree?.session.activity);
+    void vscode.commands.executeCommand("setContext", "eska.explorer.workspaceApplication",
+      this.tree?.projects.some(item => item.info.scope.kind === "member") ?? false);
     void vscode.commands.executeCommand("setContext", "eska.explorer.hideDisabled", !!this.tree?.session.activity?.hideDisabled);
   }
 

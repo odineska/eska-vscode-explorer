@@ -34,7 +34,8 @@ try {
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
   const native = ["debug-http-host.cjs", "runtime-apply-host.cjs"].includes(basename(suite))
     ? JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE) : undefined;
-  const workspaceFolder = native?.scenario === "apply-extension-debug" ? root : fixture.root;
+  const applicationApply = native?.scenario === "apply-application-debug";
+  const workspaceFolder = applicationApply || native?.scenario === "apply-extension-debug" ? root : fixture.root;
   if (basename(suite) === "debug-http-host.cjs") {
     const source = join(fixture.root, "src");
     await rm(source, { recursive: true });
@@ -51,12 +52,13 @@ try {
         '[workspace.members.debug]\nconfiguration="base"\nexternal_objects=["project"]\n');
     }
   }
-  if (["extensions", "apply-extension-debug"].includes(native?.scenario)) {
+  if (["extensions", "apply-extension-debug", "apply-application-debug"].includes(native?.scenario)) {
     const members = native.extensions.map(directory => basename(directory));
     await Promise.all(native.extensions.map((directory, index) => cp(directory, join(root, members[index]), { recursive: true })));
     await writeFile(join(fixture.root, "eska.toml"), "[project]\nname='base'\ntype='configuration'\n");
-    const extensions = members.map(name => "{ path = " + JSON.stringify(name) + " }").join(", ");
-    await writeFile(join(root, "eska.toml"), '[workspace.members.debug]\nconfiguration="project"\nextensions=[' + extensions + ']\n');
+    const extensions = members.map((name, index) => "{ path = " + JSON.stringify(name) + (applicationApply && index === 0 ? `, depends_on = ["ext-two"]` : "") + " }").join(", ");
+    const alternative = applicationApply ? '\n[workspace.members.other]\nconfiguration="project"\n' : "";
+    await writeFile(join(root, "eska.toml"), '[workspace.members.debug]\nconfiguration="project"\nextensions=[' + extensions + ']\n' + alternative);
   }
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);

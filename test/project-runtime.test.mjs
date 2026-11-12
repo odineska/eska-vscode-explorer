@@ -142,3 +142,62 @@ test('apply and launch uses the Rust-selected test project and requires successf
   ]);
   assert.ok(!requests.at(-2).includes('--confirm'));
 });
+
+test('an application failure shows each outcome and a reviewed recovery launches its own source context', async t => {
+  const workspace = { root: '/workspace', executable: '/tools/eska-project' };
+  const base = { ...workspace, root: '/workspace/main' };
+  const launch = { project_dir: base.root, fingerprint: 'b'.repeat(64) };
+  const component = (member, mode) => ({
+    member, project_dir: `/workspace/${member}`,
+    plan: { mode, changes: { 'Module.bsl': 'modified' } },
+  });
+  const review = { member: 'second', project_dir: '/workspace/second', review: { reason: 'incomplete' } };
+  const requests = [], dialogs = [], starts = [];
+  let recover = false;
+  const f = fixture(t, async root => root === base.root ? base : undefined, async (_binary, args) => {
+    requests.push(Array.from(args));
+    if (args.includes('context')) return { status: 'error', error: { code: 'ambiguous_application', data: { available: ['demo', 'other'] } } };
+    if (args.includes('--confirm')) {
+      return {
+        kind: 'application_apply', status: recover ? 'applied' : 'error', launch, error: { code: 'apply_failed' },
+        outcomes: [
+          { member: 'main', status: recover ? 'unchanged' : 'applied' },
+          { member: 'second', status: recover ? 'applied' : 'failed' },
+          { member: 'third', status: recover ? 'applied' : 'not_started' },
+        ],
+      };
+    }
+    const full = args.includes('--initialize');
+    const components = [
+      component('main', recover ? 'unchanged' : 'incremental'),
+      recover && !full ? review : component('second', full ? 'initialize' : 'incremental'),
+      component('third', 'incremental'),
+    ];
+    return { kind: 'application_apply', status: 'preview', plan: {
+      application: 'demo', launch, components, confirmation: recover && !full ? null : 'reviewed',
+    } };
+  });
+  f.vscode.window.showQuickPick = async choices => choices[0];
+  f.vscode.window.showWarningMessage = async (title, options, action) => {
+    dialogs.push([title, options.detail]);
+    return action;
+  };
+  f.vscode.window.withProgress = async (_options, run) => run({ report() {} }, {
+    isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
+  });
+  f.vscode.debug.startDebugging = async (_folder, config) => { starts.push(config); return true; };
+
+  await f.runtime.applyApplication(workspace, 'debug');
+  assert.equal(starts.length, 0);
+  assert.match(dialogs.at(-1)[1], /main — Применено\nsecond — Ошибка обновления\nthird — Не начато/u);
+  recover = true;
+  await f.runtime.applyApplication(workspace, 'debug');
+  assert.match(dialogs.at(-1)[1], /main — Без изменений[\s\S]*second — Полный импорт[\s\S]*third — Частичный импорт/u);
+  assert.ok(requests.at(-1).includes('--initialize'));
+  assert.equal(starts.length, 1);
+  const config = await f.provider.resolveDebugConfiguration(undefined, starts[0]);
+  const descriptor = await f.factory.createDebugAdapterDescriptor({ configuration: config });
+  assert.deepEqual(Array.from(descriptor.args.slice(-4)), ['--expected-infobase', launch.fingerprint, '--application', 'demo']);
+  const restarted = await f.factory.createDebugAdapterDescriptor({ configuration: config });
+  assert.deepEqual(Array.from(restarted.args), Array.from(descriptor.args));
+});

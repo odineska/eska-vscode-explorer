@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import * as vscode from "vscode";
 import { message, type MessageKey } from "./messages.js";
 import { isRecord } from "./protocol.js";
@@ -21,6 +21,30 @@ function applyLaunch(plan: unknown): ApplyLaunch | undefined {
   }
 }
 
+interface ApplicationPart {
+  member: string;
+  root: string;
+  plan?: Record<string, unknown>;
+  review?: Record<string, unknown>;
+}
+
+function applicationParts(result: unknown, application: string): ApplicationPart[] | undefined {
+  if (!isRecord(result) || result.kind !== "application_apply" || result.status !== "preview"
+    || !isRecord(result.plan) || result.plan.application !== application
+    || !Array.isArray(result.plan.components) || !result.plan.components.length) return;
+  const parts: ApplicationPart[] = [];
+  for (const part of result.plan.components) {
+    if (!isRecord(part) || typeof part.member !== "string" || typeof part.project_dir !== "string" || !isAbsolute(part.project_dir)) return;
+    const root = vscode.Uri.file(part.project_dir).fsPath;
+    if (isRecord(part.plan) && ["unchanged", "initialize", "incremental", "unsupported"].includes(String(part.plan.mode))) {
+      parts.push({ member: part.member, root, plan: part.plan });
+    } else if (isRecord(part.review)) {
+      parts.push({ member: part.member, root, review: part.review });
+    } else return;
+  }
+  return parts;
+}
+
 const debugType = "eska-debug";
 const errors = new Map<string, MessageKey>([
   ["missing_profile", "runtimeMissingProfile"], ["platform_unavailable", "runtimePlatformMissing"],
@@ -30,6 +54,7 @@ const errors = new Map<string, MessageKey>([
   ["secret_unavailable", "runtimeSecretMissing"], ["busy", "runtimeBusy"],
   ["missing_admin_endpoint", "runtimeAdminMissing"], ["cluster_apply_unsupported", "runtimeClusterApply"],
   ["generation_failed", "runtimeGenerationFailed"],
+  ["application_required", "runtimeApplicationRequired"],
   ["launch_target_changed", "runtimeLaunchTargetChanged"],
   ["extension_application_required", "runtimeApplyExtensionApplication"],
   ["extension_scope_unsupported", "runtimeApplyExtensionScope"],
@@ -76,10 +101,10 @@ export class ProjectRuntime implements vscode.Disposable {
     await this.launchDebug(project, mode, profile.profile);
   }
 
-  private async launchDebug(project: RuntimeProject, mode: Mode, profile: Profile, expectedInfobase?: string): Promise<void> {
+  private async launchDebug(project: RuntimeProject, mode: Mode, profile: Profile, expectedInfobase?: string, application?: string): Promise<void> {
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(project.root));
     await vscode.debug.startDebugging(folder, { type: debugType, name: this.text(mode === "launch" ? "runtimeDebugLaunch" : "runtimeDebugAttach"),
-      request: mode, profile, projectDir: project.root, expectedInfobase });
+      request: mode, profile, projectDir: project.root, expectedInfobase, eskaApplication: application });
   }
 
   private async attachTarget(session: vscode.DebugSession | undefined): Promise<void> {
@@ -134,13 +159,7 @@ export class ProjectRuntime implements vscode.Disposable {
   async apply(project: RuntimeProject, after?: AfterApply): Promise<void> {
     const build = await this.tool(project, "build", "eska-build");
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
-    const dirty = vscode.workspace.textDocuments.filter(document => document.isDirty && document.uri.scheme === "file"
-      && relativeFile(project.root, document.uri.fsPath) !== undefined);
-    if (dirty.length) {
-      const save = this.text("runtimeSaveSources");
-      if (await vscode.window.showWarningMessage(this.text("runtimeUnsavedSources"), { modal: true }, save) !== save) return;
-      for (const document of dirty) if (!await document.save()) return;
-    }
+    if (!await this.saveSources([project.root])) return;
     let initialize = false;
     let result = await this.invoke(project, build, ["apply", "--format", "json"]);
     const error = isRecord(result) && isRecord(result.error) ? result.error.code : undefined;
@@ -180,23 +199,10 @@ export class ProjectRuntime implements vscode.Disposable {
     const detail = target + paths.slice(0, 40).join("\n") + (paths.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(paths.length - 40)) : "");
     if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
     const confirmation = plan.confirmation;
-    const applied = await vscode.window.withProgress({ title: this.text("runtimeApplyWorking"),
-      location: vscode.ProgressLocation.Notification, cancellable: true }, async (progress, cancel) => {
-      const abort = new AbortController();
-      const subscription = cancel.onCancellationRequested(() => abort.abort());
-      try {
-        if (cancel.isCancellationRequested) return null;
-        const result = await this.invoke(project, build, ["apply", ...(initialize ? ["--initialize"] : []),
-          "--confirm", confirmation, "--format", "json"], 0, abort.signal, event => {
-          if (isRecord(event) && event.schema_version === 1 && event.kind === "apply_progress") {
-            if (event.phase === "import") progress.report({ message: this.text("runtimeImporting") });
-            if (event.phase === "apply") progress.report({ message: this.text("runtimeApplying") });
-          }
-        });
-        return abort.signal.aborted ? null : result;
-      } finally { subscription.dispose(); }
-    });
-    if (applied === null) return;
+    const { result: applied, cancelled } = await this.executeApply(project, build, [
+      "apply", ...(initialize ? ["--initialize"] : []), "--confirm", confirmation, "--format", "json",
+    ]);
+    if (cancelled) return;
     if (!isRecord(applied) || applied.status !== "applied") { this.failure(applied); return; }
     if (!after || !launch) {
       void vscode.window.showInformationMessage(this.text("runtimeApplied"));
@@ -210,13 +216,178 @@ export class ProjectRuntime implements vscode.Disposable {
     await this.continueAfterApply(after, confirmed);
   }
 
-  private async continueAfterApply(after: AfterApply, launch: ApplyLaunch): Promise<void> {
+  async applyApplication(project: RuntimeProject, after?: AfterApply, current?: string): Promise<void> {
+    const application = await this.chooseApplication(project, current);
+    if (!application || !vscode.workspace.isTrusted) return;
+    const build = await this.tool(project, "build", "eska-build");
+    if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
+    const args = ["apply", "--application", application, "--format", "json"];
+    const preview = async () => {
+      const { result, cancelled } = await this.executeApply(project, build, args, "runtimeApplicationPlanning");
+      return cancelled ? null : result;
+    };
+    let result = await preview();
+    if (result === null) return;
+    let parts = applicationParts(result, application);
+    if (!parts) { this.failure(result); return; }
+
+    const roots = parts.map(part => part.root);
+    if (this.dirtySources(roots).length) {
+      if (!await this.saveSources(roots)) return;
+      result = await preview();
+      if (result === null) return;
+      parts = applicationParts(result, application);
+      if (!parts) { this.failure(result); return; }
+    }
+    let detail = this.applicationDetail(parts);
+    if (parts.some(part => !part.plan || part.plan.mode === "unsupported")) {
+      const review = this.text("runtimeReviewFull");
+      if (await vscode.window.showWarningMessage(this.text("runtimeApplicationNeedsFull", application),
+        { modal: true, detail }, review) !== review) return;
+      args.push("--initialize");
+      result = await preview();
+      if (result === null) return;
+      parts = applicationParts(result, application);
+      if (!parts) { this.failure(result); return; }
+      detail = this.applicationDetail(parts);
+    }
+    if (!isRecord(result) || !isRecord(result.plan)) return;
+    const launch = after ? applyLaunch(result.plan) : undefined;
+    if (after && (!launch || !await this.choose(launch.projectDir))) {
+      void vscode.window.showErrorMessage(this.text("runtimeApplyLaunchUnavailable"));
+      return;
+    }
+    if (parts.every(part => part.plan?.mode === "unchanged")) {
+      if (this.dirtySources(parts.map(part => part.root)).length) {
+        void vscode.window.showErrorMessage(this.text("runtimeStale"));
+        return;
+      }
+      if (after && launch) await this.continueAfterApply(after, launch, application);
+      else void vscode.window.showInformationMessage(this.text("runtimeUnchanged"));
+      return;
+    }
+    if (typeof result.plan.confirmation !== "string") { this.failure(result); return; }
+    const accept = this.text(after === "debug" ? "runtimeApplyThenDebug" : after === "run" ? "runtimeApplyThenRun" : "runtimeApplyConfirm");
+    if (await vscode.window.showWarningMessage(this.text("runtimeApplicationPreview", application),
+      { modal: true, detail }, accept) !== accept) return;
+    if (!vscode.workspace.isTrusted) return;
+    if (this.dirtySources(parts.map(part => part.root)).length) {
+      void vscode.window.showErrorMessage(this.text("runtimeStale"));
+      return;
+    }
+    const { result: applied, cancelled } = await this.executeApply(project, build, [...args, "--confirm", result.plan.confirmation]);
+    const outcomes = isRecord(applied) && applied.kind === "application_apply" && Array.isArray(applied.outcomes) ? applied.outcomes : [];
+    const complete = outcomes.length === parts.length && outcomes.every((outcome, index) => isRecord(outcome)
+      && outcome.member === parts[index]?.member && (outcome.status === "applied" || outcome.status === "unchanged"));
+    if (cancelled || !isRecord(applied) || applied.status !== "applied" || !complete) {
+      const statuses = outcomes.flatMap(outcome => {
+        if (!isRecord(outcome) || typeof outcome.member !== "string") return [];
+        const key = outcome.status === "applied" ? "runtimeComponentApplied" : outcome.status === "failed" ? "runtimeComponentFailed"
+          : outcome.status === "not_started" ? "runtimeComponentNotStarted"
+          : outcome.status === "unchanged" ? "runtimeComponentUnchanged" : undefined;
+        return key ? [`${outcome.member} — ${this.text(key)}`] : [];
+      });
+      if (!cancelled && !statuses.length) { this.failure(applied); return; }
+      const title = this.text(cancelled ? "runtimeApplicationCancelled" : this.failureKey(applied));
+      await vscode.window.showWarningMessage(title, { modal: true, detail: [...statuses, this.text("runtimeApplicationRetry")].join("\n") });
+      return;
+    }
+    if (!after || !launch) { void vscode.window.showInformationMessage(this.text("runtimeApplied")); return; }
+    const confirmed = applyLaunch(applied);
+    if (confirmed?.projectDir !== launch.projectDir || confirmed.fingerprint !== launch.fingerprint) {
+      void vscode.window.showErrorMessage(this.text("runtimeLaunchTargetChanged"));
+      return;
+    }
+    await this.continueAfterApply(after, confirmed, application);
+  }
+
+  private async chooseApplication(project: RuntimeProject, current?: string): Promise<string | undefined> {
+    const response = await this.invoke(project, project.executable, [
+      "context", "--format", "json", ...(current ? ["--application", current] : []),
+    ]);
+    const error = isRecord(response) && isRecord(response.error) ? response.error : undefined;
+    const available = error && isRecord(error.data) && Array.isArray(error.data.available)
+      ? error.data.available.filter((name): name is string => typeof name === "string" && !!name) : [];
+    const prompt = this.text("runtimeChooseApplication");
+    if (available.length) return vscode.window.showQuickPick(available, { placeHolder: prompt, ignoreFocusOut: true });
+    const context = isRecord(response) && isRecord(response.context) ? response.context : undefined;
+    if (context?.name === null) {
+      void vscode.window.showErrorMessage(this.text("runtimeApplicationRequired"));
+      return;
+    }
+    const entered = await vscode.window.showInputBox({ title: prompt, prompt: this.text("runtimeChooseApplicationHint"),
+      value: typeof context?.name === "string" ? context.name : current ?? "", ignoreFocusOut: true });
+    return entered?.trim() || undefined;
+  }
+
+  private applicationDetail(parts: ApplicationPart[]): string {
+    const target = parts.find(part => part.plan)?.plan;
+    const lines = target && typeof target.target === "string" && typeof target.platform_version === "string"
+      ? [`${target.target} (${target.platform_version})`, ""] : [];
+    let remaining = 40;
+    let omitted = 0;
+    for (const part of parts) {
+      const mode = part.plan?.mode;
+      const status = mode === "unchanged" ? "runtimeComponentUnchanged" : mode === "incremental" ? "runtimeComponentPartial"
+        : mode === "initialize" ? "runtimeComponentFull"
+        : part.review?.reason === "incomplete" ? "runtimeIncomplete"
+        : part.review?.reason === "baseline_changed" ? "runtimeBaselineChanged" : "runtimeNeedsFull";
+      lines.push(`${part.member} — ${this.text(status)}`);
+      const inspection = part.plan?.inspection;
+      const dependencies = isRecord(inspection) && isRecord(inspection.dependency_generations)
+        ? Object.keys(inspection.dependency_generations) : [];
+      if (dependencies.length) lines.push(`  ${this.text("runtimeComponentDependencies", dependencies.join(", "))}`);
+      const changes = part.plan?.changes ?? part.review?.changes;
+      const files = isRecord(changes) ? this.applyPlanPaths(changes, part.plan?.object_changes, part.plan?.import_files) : [];
+      lines.push(...files.slice(0, remaining).map(path => `  ${path}`));
+      const shown = Math.min(remaining, files.length);
+      remaining -= shown;
+      omitted += files.length - shown;
+    }
+    if (omitted) lines.push(this.text("runtimeAdditionalFiles", String(omitted)));
+    return lines.join("\n");
+  }
+
+  private dirtySources(roots: readonly string[]): vscode.TextDocument[] {
+    return vscode.workspace.textDocuments.filter(document => document.isDirty && document.uri.scheme === "file"
+      && roots.some(root => relativeFile(root, document.uri.fsPath) !== undefined));
+  }
+
+  private async saveSources(roots: readonly string[]): Promise<boolean> {
+    const dirty = this.dirtySources(roots);
+    if (!dirty.length) return true;
+    const save = this.text("runtimeSaveSources");
+    if (await vscode.window.showWarningMessage(this.text("runtimeUnsavedSources"), { modal: true }, save) !== save) return false;
+    for (const document of dirty) if (!await document.save()) return false;
+    return true;
+  }
+
+  private executeApply(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
+    return vscode.window.withProgress({ title: this.text(title),
+      location: vscode.ProgressLocation.Notification, cancellable: true }, async (progress, cancel) => {
+      const abort = new AbortController();
+      const subscription = cancel.onCancellationRequested(() => abort.abort());
+      try {
+        if (cancel.isCancellationRequested) return { cancelled: true };
+        const result = await this.invoke(project, build, args, 0, abort.signal, event => {
+          if (!isRecord(event) || event.schema_version !== 1 || event.kind !== "apply_progress") return;
+          const key = event.phase === "import" ? "runtimeImporting" : event.phase === "apply" ? "runtimeApplying" : undefined;
+          if (!key) return;
+          const message = this.text(key);
+          progress.report({ message: typeof event.component === "string" ? `${event.component} — ${message}` : message });
+        });
+        return { result, cancelled: abort.signal.aborted };
+      } finally { subscription.dispose(); }
+    });
+  }
+
+  private async continueAfterApply(after: AfterApply, launch: ApplyLaunch, application?: string): Promise<void> {
     const project = await this.choose(launch.projectDir);
     if (!project) {
       void vscode.window.showErrorMessage(this.text("runtimeApplyLaunchUnavailable"));
       return;
     }
-    if (after === "debug") await this.launchDebug(project, "launch", "test", launch.fingerprint);
+    if (after === "debug") await this.launchDebug(project, "launch", "test", launch.fingerprint, application);
     else await this.run(project, launch.fingerprint);
   }
 
@@ -260,12 +431,12 @@ export class ProjectRuntime implements vscode.Disposable {
   private async resolveDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {
     const prepared = await this.prepareDebug(config, folder);
     if (!prepared) return undefined;
-    const { root, profile, mode, descriptor, expectedInfobase } = prepared;
+    const { root, profile, mode, descriptor, expectedInfobase, application } = prepared;
     const id = randomUUID();
     this.descriptors.set(id, descriptor);
     const timer = setTimeout(() => this.descriptors.delete(id), 30_000);
     timer.unref();
-    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, projectDir: root, eskaSession: id, expectedInfobase };
+    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, projectDir: root, eskaSession: id, expectedInfobase, eskaApplication: application };
   }
 
   private async prepareDebug(config: vscode.DebugConfiguration, folder?: string) {
@@ -286,6 +457,11 @@ export class ProjectRuntime implements vscode.Disposable {
       if (profile !== "test" || mode !== "launch" || !/^[0-9a-f]{64}$/.test(expectedInfobase)) return undefined;
       args.push("--expected-infobase", expectedInfobase);
     }
+    const application = typeof config.eskaApplication === "string" ? config.eskaApplication : undefined;
+    if (application !== undefined) {
+      if (!expectedInfobase || !application.trim() || application.includes("\0")) return undefined;
+      args.push("--application", application);
+    }
     if (profile === "prod") {
       const unsaved = vscode.workspace.textDocuments.some(document => document.isDirty && document.uri.scheme === "file");
       const choice = await this.productionChoice(project, binary, unsaved);
@@ -298,7 +474,7 @@ export class ProjectRuntime implements vscode.Disposable {
       if (choice !== "verified") args.push("--sources", choice);
     }
     const descriptor = new vscode.DebugAdapterExecutable(binary, this.arguments(root, args), { cwd: root });
-    return { root, profile, mode, descriptor, expectedInfobase };
+    return { root, profile, mode, descriptor, expectedInfobase, application };
   }
 
   private async productionChoice(project: RuntimeProject, binary: string, unsaved: boolean): Promise<string | undefined> {
@@ -343,10 +519,13 @@ export class ProjectRuntime implements vscode.Disposable {
     return findTool(settings.get<string>(`${key}Executable`, name), name, dirname(project.executable)).catch(() => undefined);
   }
 
-  private failure(result: unknown): void {
+  private failureKey(result: unknown): MessageKey {
     const code = isRecord(result) && isRecord(result.error) ? result.error.code : undefined;
-    const key = typeof code === "string" ? errors.get(code) : undefined;
-    void vscode.window.showErrorMessage(this.text(key ?? "runtimeOperationFailed"));
+    return (typeof code === "string" ? errors.get(code) : undefined) ?? "runtimeOperationFailed";
+  }
+
+  private failure(result: unknown): void {
+    void vscode.window.showErrorMessage(this.text(this.failureKey(result)));
   }
 
   private text(key: MessageKey, ...values: string[]): string { return message(vscode.env.language, key, ...values); }

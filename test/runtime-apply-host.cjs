@@ -10,6 +10,14 @@ exports.run = async function () {
   const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
   const labels = vscode.env.language.startsWith("ru") ? {
     extension: "Расширение",
+    application: "Обновить приложение debug в тестовой базе?",
+    upToDate: "Без изменений",
+    partialImport: "Частичный импорт",
+    fullImport: "Полный импорт",
+    dependencies: "Зависимости: Two",
+    applied: "Применено",
+    failed: "Ошибка обновления",
+    notStarted: "Не начато",
     fullExtension: "Заменить выбранное расширение в тестовой базе",
     partial: "Применить перечисленные изменения Designer XML к тестовой базе?",
     review: "Просмотреть полный импорт",
@@ -22,6 +30,14 @@ exports.run = async function () {
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     extension: "Extension",
+    application: "Update the application debug in the test infobase?",
+    upToDate: "Up to date",
+    partialImport: "Partial import",
+    fullImport: "Full import",
+    dependencies: "Dependencies: Two",
+    applied: "Applied",
+    failed: "Update failed",
+    notStarted: "Not started",
     fullExtension: "Replace the selected test extension",
     partial: "Apply the listed Designer XML changes to the test infobase?",
     review: "Review Full Import",
@@ -34,7 +50,7 @@ exports.run = async function () {
     conflict: "Both the saved sources and the test database generation changed",
   };
   const until = async (check, label) => {
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + (native.scenario === "apply-application-debug" ? 60000 : 15000);
     while (Date.now() < deadline) {
       const result = await check();
       if (result) return result;
@@ -62,7 +78,7 @@ exports.run = async function () {
     const box = document.querySelector('.monaco-dialog-box');
     if (!box || !${JSON.stringify(expectedText)}.every(text => box.textContent.includes(text))) return false;
     const button = [...box.querySelectorAll('button, .monaco-button')]
-      .find(item => item.textContent.replaceAll('&', '').trim() === ${JSON.stringify(label)});
+      .find(item => ${JSON.stringify(label)} === null || item.textContent.replaceAll('&', '').trim() === ${JSON.stringify(label)});
     if (!button) return false;
     button.click();
     return true;
@@ -74,6 +90,91 @@ exports.run = async function () {
     return fs.readFile(path.join(state, name), "utf8");
   };
   try {
+    if (native.scenario === "apply-application-debug") {
+      const execute = debug => vscode.commands.executeCommand(
+        debug ? "eska.explorer.applyApplicationAndDebugTest" : "eska.explorer.applyApplicationTest");
+      const choose = async () => {
+        const point = await until(() => workbench.evaluate(`(() => {
+          const row = [...document.querySelectorAll('.quick-input-list .monaco-list-row')]
+            .find(item => item.offsetHeight && item.querySelector('.label-name')?.textContent === "debug");
+          if (!row) return false;
+          const rect = row.getBoundingClientRect();
+          return [rect.x + rect.width / 2, rect.y + rect.height / 2];
+        })()`), "the checked application choices are visible");
+        await workbench.click(...point);
+      };
+      const ordered = async (...text) => {
+        await until(() => workbench.evaluate(`(() => {
+          const body = document.querySelector('.monaco-dialog-box')?.textContent ?? "";
+          let last = -1;
+          return ${JSON.stringify(text)}.every(value => {
+            last = body.indexOf(value, last + 1);
+            return last >= 0;
+          });
+        })()`), text.join(", "));
+      };
+      const initialize = execute(false);
+      await choose();
+      await click(labels.review, "base", "ext-two", "ext-one");
+      await ordered(`base — ${labels.fullImport}`, `ext-two — ${labels.fullImport}`, `ext-one — ${labels.fullImport}`);
+      await click(labels.apply, labels.application);
+      await initialize;
+      const one = path.join(path.dirname(root), path.basename(native.extensions[0]), "src", "Ext", "ManagedApplicationModule.bsl");
+      const two = path.join(path.dirname(root), path.basename(native.extensions[1]), "src", "Ext", "ManagedApplicationModule.bsl");
+      for (const [module, before, after] of [
+        [path.join(source, "Ext", "ManagedApplicationModule.bsl"), "A = 41", "A = 61"],
+        [two, "Значение = 222", "Значение = 444"],
+        [one, "Значение = 111", "Значение = 333"],
+      ]) {
+        const text = await fs.readFile(module, "utf8");
+        assert.ok(text.includes(before));
+        await fs.writeFile(module, text.replace(before, after));
+      }
+
+      const executable = path.resolve(native.source, "../..", "platform", "ibcmd");
+      const original = await fs.readFile(executable, "utf8");
+      assert.ok(original.startsWith("#!/bin/sh\n"));
+      const failing = original.replace("#!/bin/sh\n", `#!/bin/sh
+case "$1:$2:$3" in
+  infobase:config:apply)
+    for arg in "$@"; do
+      if test "$arg" = "--extension=Two"; then exit 11; fi
+    done ;;
+esac
+`);
+      let starts = 0;
+      const tracker = vscode.debug.onDidStartDebugSession(session => {
+        if (session.type === "eska-debug") starts++;
+      });
+      try {
+        await fs.writeFile(executable, failing);
+        const failed = execute(true);
+        await choose();
+        await ordered(`base — ${labels.partialImport}`, `ext-two — ${labels.partialImport}`, `ext-one — ${labels.partialImport}`);
+        await click(labels.applyAndDebug, labels.application, labels.dependencies, "Ext/ManagedApplicationModule.bsl");
+        await ordered(`base — ${labels.applied}`, `ext-two — ${labels.failed}`, `ext-one — ${labels.notStarted}`);
+        await click(null, `ext-one — ${labels.notStarted}`);
+        await failed;
+        assert.equal(starts, 0);
+      } finally {
+        tracker.dispose();
+        await fs.writeFile(executable, original);
+      }
+
+      await verifyUpdatedDebugSession(folder, one, until, { line: 4, expression: "Значение", expected: "333", start: async () => {
+        const recovery = execute(true);
+        await choose();
+        await click(labels.review, "base", "ext-two", "ext-one");
+        await ordered(`base — ${labels.upToDate}`, `ext-two — ${labels.fullImport}`, `ext-one — ${labels.partialImport}`);
+        await click(labels.applyAndDebug, labels.application, labels.dependencies);
+        await recovery;
+      } });
+      await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+        passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+        application_apply: true, dependency_order: true, partial_failure: true, recovery: true, evaluate: "333",
+      }));
+      return;
+    }
     if (native.scenario === "apply-extension-debug") {
       const name = path.basename(native.extensions[0]);
       const member = path.join(path.dirname(root), name);

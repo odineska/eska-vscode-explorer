@@ -204,6 +204,9 @@
       { "command": "eska.explorer.applyTest", "title": "%applyTest%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.applyAndRunTest", "title": "%applyAndRunTest%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.applyAndDebugTest", "title": "%applyAndDebugTest%", "category": "ESKA Explorer" },
+      { "command": "eska.explorer.applyApplicationTest", "title": "%applyApplicationTest%", "category": "ESKA Explorer" },
+      { "command": "eska.explorer.applyApplicationAndRunTest", "title": "%applyApplicationAndRunTest%", "category": "ESKA Explorer" },
+      { "command": "eska.explorer.applyApplicationAndDebugTest", "title": "%applyApplicationAndDebugTest%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.debugLaunch", "title": "%debugLaunch%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.debugAttach", "title": "%debugAttach%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.attachDebugTarget", "title": "%attachDebugTarget%", "category": "ESKA Explorer", "enablement": "debugType == eska-debug" },
@@ -351,6 +354,9 @@
         }
       ],
       "view/title": [
+        { "command": "eska.explorer.applyApplicationTest", "when": "view == eska.explorer.projects && eska.explorer.workspaceApplication && isWorkspaceTrusted", "group": "runtime@1" },
+        { "command": "eska.explorer.applyApplicationAndRunTest", "when": "view == eska.explorer.projects && eska.explorer.workspaceApplication && isWorkspaceTrusted", "group": "runtime@2" },
+        { "command": "eska.explorer.applyApplicationAndDebugTest", "when": "view == eska.explorer.projects && eska.explorer.workspaceApplication && isWorkspaceTrusted", "group": "runtime@3" },
         {
           "command": "eska.explorer.connect",
           "when": "view == eska.explorer.projects",
