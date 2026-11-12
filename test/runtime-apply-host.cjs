@@ -14,6 +14,7 @@ exports.run = async function () {
     partial: "Применить перечисленные изменения Designer XML к тестовой базе?",
     review: "Просмотреть полный импорт",
     apply: "Применить к test",
+    applyAndDebug: "Применить и запустить с отладкой",
     cancel: "Отмена",
     companion: "Сопутствующий файл",
     rename: "Переименован Общая форма",
@@ -25,6 +26,7 @@ exports.run = async function () {
     partial: "Apply the listed Designer XML changes to the test infobase?",
     review: "Review Full Import",
     apply: "Apply to Test",
+    applyAndDebug: "Apply and Launch with Debugging",
     cancel: "Cancel",
     companion: "Companion file",
     rename: "Renamed Common form",
@@ -102,15 +104,44 @@ exports.run = async function () {
       const descriptor = await fs.readFile(role, "utf8");
       assert.ok(descriptor.includes("<Comment/>"));
       await fs.writeFile(role, descriptor.replace("<Comment/>", "<Comment>ESKA apply and debug</Comment>"));
-      const incremental = command();
-      await choose();
-      await click(labels.apply, labels.partial, selected, "Ext/ManagedApplicationModule.bsl", rolePath);
-      await incremental;
-      assert.notEqual(await snapshot(), initial);
-      await verifyUpdatedDebugSession(folder, module, until, { line: 4, expression: "Значение", expected: "333", projectDir: root });
+      const compose = () => vscode.commands.executeCommand("eska.explorer.applyAndDebugTest");
+      const details = [labels.partial, selected, "Ext/ManagedApplicationModule.bsl", rolePath];
+      let starts = 0;
+      const registration = vscode.debug.onDidStartDebugSession(session => {
+        if (session.type === "eska-debug") starts++;
+      });
+      try {
+        const cancelled = compose();
+        await choose();
+        await click(labels.cancel, ...details);
+        await cancelled;
+        assert.equal(starts, 0);
+        assert.equal(await snapshot(), initial);
+
+        const stale = compose();
+        await choose();
+        await until(() => workbench.evaluate(`document.querySelector('.monaco-dialog-box')?.textContent.includes(${JSON.stringify(labels.applyAndDebug)})`),
+          "composite confirmation is visible");
+        await fs.writeFile(module, original.replace("Значение = 111", "Значение = 334"));
+        await click(labels.applyAndDebug, ...details);
+        await stale;
+        assert.equal(starts, 0);
+        assert.equal(await snapshot(), initial);
+
+        await fs.writeFile(module, original.replace("Значение = 111", "Значение = 333"));
+        await verifyUpdatedDebugSession(folder, module, until, { line: 4, expression: "Значение", expected: "333", start: async () => {
+          const applying = compose();
+          await choose();
+          await click(labels.applyAndDebug, ...details);
+          await applying;
+        } });
+        assert.notEqual(await snapshot(), initial);
+      } finally {
+        registration.dispose();
+      }
       await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
         passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-        extension_apply: true, role_xml: true, debug_after_apply: true, evaluate: "333",
+        extension_apply: true, role_xml: true, debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
       }));
       return;
     }
@@ -188,7 +219,7 @@ exports.run = async function () {
 };
 
 
-async function verifyUpdatedDebugSession(folder, module, until, { line = 3, expression = "A", expected = "47", projectDir = folder.uri.fsPath } = {}) {
+async function verifyUpdatedDebugSession(folder, module, until, { line = 3, expression = "A", expected = "47", projectDir = folder.uri.fsPath, start } = {}) {
   const uri = vscode.Uri.file(module);
   const point = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)));
   let session;
@@ -203,7 +234,8 @@ async function verifyUpdatedDebugSession(folder, module, until, { line = 3, expr
   });
   vscode.debug.addBreakpoints([point]);
   try {
-    assert.equal(await vscode.debug.startDebugging(folder, {
+    if (start) await start();
+    else assert.equal(await vscode.debug.startDebugging(folder, {
       name: "ESKA debug after apply", type: "eska-debug", request: "launch", profile: "test",
       projectDir,
     }), true);

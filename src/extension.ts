@@ -160,6 +160,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     for (const [name, action] of [
       ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
       ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
+      ["applyAndRunTest", (project: RuntimeProject) => this.projectRuntime.apply(project, "run")],
+      ["applyAndDebugTest", (project: RuntimeProject) => this.projectRuntime.apply(project, "debug")],
       ["debugLaunch", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "launch")],
       ["debugAttach", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "attach")],
     ] as const) this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${name}`, async (entry?: Element) => {

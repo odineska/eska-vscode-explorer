@@ -97,6 +97,12 @@ workspace root and select the extension project. ESKA uses the main project's
 `test` profile. The confirmation identifies the extension by name and UUID.
 Changes to existing BSL files can be applied partially.
 
+The same menu offers **Update Test Infobase and Launch 1C** and **Update Test
+Infobase and Launch 1C with Debugging**. Confirm the update to launch against the
+reviewed test target. If it is already up to date, the client starts immediately.
+A cancelled or unsuccessful update stops the sequence. For an extension, the
+client uses the main configuration's test profile.
+
 For HTTP debugging, build the optional Rust executable with
 `cargo build --release -p eska-debug` in the ESKA repository. Use **Launch with Debugger** or **Attach
 Debugger** in the same menu. A VS Code launch configuration can use

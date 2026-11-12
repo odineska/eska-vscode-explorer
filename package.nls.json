@@ -45,6 +45,8 @@
   "configureProject": "Configure Project",
   "runTest": "Run Test Infobase",
   "applyTest": "Update Test Infobase",
+  "applyAndRunTest": "Update Test Infobase and Launch 1C",
+  "applyAndDebugTest": "Update Test Infobase and Launch 1C with Debugging",
   "debugLaunch": "Launch 1C with Debugging",
   "debugAttach": "Attach to 1C Debug Server",
   "debuggerLabel": "ESKA 1C HTTP Debugger",
