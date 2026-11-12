@@ -275,7 +275,7 @@ async function verifyDateBlock(main, view, document) {
 async function verifyDateLabelHeight(main, view, document) {
   const directory = process.env.ESKA_FORM_FIXTURES;
   const source = await fs.readFile(path.join(directory, 'DateLabelHeight.xml'), 'utf8');
-  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-label-height-metrics.json'), 'utf8'));
+  const { sourceSha256, cases, widthCases } = JSON.parse(await fs.readFile(path.join(directory, 'date-label-height-metrics.json'), 'utf8'));
   assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
   const original = document.getText();
   const ui = await frame({ state: { title: main.panel.title } });
@@ -287,7 +287,12 @@ async function verifyDateLabelHeight(main, view, document) {
     const tail = find(200)?.querySelector('.taxi-input');
     if (!group || !limit || !tail) return null;
     const frame = root.getBoundingClientRect(), value = limit.getBoundingClientRect(), last = tail.getBoundingClientRect();
+    const dateOrigins = [51, 52].map(id => {
+      const input = find(id)?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return input ? [input.x - frame.x, input.y - frame.y] : null;
+    });
     return {
+      dateOrigins,
       frame: [frame.width, frame.height],
       preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
       groupHeight: group.classList.contains('taxi-group--painted') ? group.getBoundingClientRect().height : null,
@@ -298,7 +303,7 @@ async function verifyDateLabelHeight(main, view, document) {
   })()`;
   const sizes = [];
   try {
-    for (const sample of [...cases, cases[0]]) {
+    for (const sample of [...cases, ...widthCases, cases[0]]) {
       const resized = source.replace('<Width>62</Width>', '<Width>' + sample.width + '</Width>');
       const xml = sample.painted ? resized : resized.replace('<BackColor>web:LightGoldenRodYellow</BackColor>', '');
       await editFormSource(document, view, xml);
@@ -308,10 +313,16 @@ async function verifyDateLabelHeight(main, view, document) {
         frame: sample.frame, preferredHeight: sample.frame[1], groupHeight: sample.groupHeight,
         titleLocation: sample.titleLocation, limitValue: sample.limitValue, tail: sample.tail,
       };
-      let actual;
+      let actual, stable = 0;
       await until(async () => {
         actual = await ui.evaluate(measure);
-        return isDeepStrictEqual(actual, expected);
+        const { dateOrigins, ...layout } = actual ?? {};
+        const matchDates = !sample.dateOrigins || sample.dateOrigins.every(([x, y], index) => {
+          const origin = dateOrigins?.[index];
+          return origin?.[1] === y && (sample.pendingHorizontal || origin[0] === x);
+        });
+        stable = isDeepStrictEqual(layout, expected) && matchDates ? stable + 1 : 0;
+        return stable >= 2;
       }, 'date label layout ' + sample.name).catch(error => {
         throw new Error('Date label height ' + sample.name + ' ' + JSON.stringify({ expected, actual }), { cause: error });
       });

@@ -28,9 +28,17 @@ function fixedDateField(node, { targets, os, scale }) {
     automatic: location === 'Auto' };
 }
 
-function captionWidths(space, date, checkbox) {
+function captionWidths(space, date, checkbox, fields) {
   if (space >= date.preferred + checkbox.preferred) return [date.preferred, checkbox.preferred];
   if (space >= date.shortest + checkbox.preferred) return [space - checkbox.preferred, checkbox.preferred];
+  if (fields) {
+    // Fit the wrapped lines before sharing the remaining width with the checkbox.
+    const packed = packSideCaptions(space, { base: 0, fields, date, checkbox, minimumWidth: 0, minimumTitle: date.minimum });
+    if (packed) {
+      const { title, check } = packed.allocate(space, Math.round);
+      return [title, check];
+    }
+  }
   if (space >= date.preferred + checkbox.compact) return [date.preferred, space - date.preferred];
   const widths = allocateLaneSizes(space, [date, checkbox]);
   if (widths[1] >= checkbox.compact) return widths;
@@ -277,8 +285,9 @@ export function dateBlockLayout(model, context) {
         const space = available - fixed - sideTrack;
         const minimum = active
           ? Math.max(lockedDate?.minimum ?? 0, Math.min(active.minimum, space - checkbox.caption.minimum)) : 0;
+        const standaloneFields = active === date && !through && !authoredTop ? fields : undefined;
         const [title, sideCheck] = packed?.title !== undefined ? [packed.title, packed.check] : active
-          ? captionWidths(Math.max(space, minimum + checkbox.caption.minimum), { ...active, minimum }, checkbox.caption) : [0, 0];
+          ? captionWidths(Math.max(space, minimum + checkbox.caption.minimum), { ...active, minimum }, checkbox.caption, standaloneFields) : [0, 0];
         // A top caption can still share the track reserved by its side-captioned siblings.
         const sideReserve = leading.top && active ? sideTrack + title : 0;
         const topTrack = leading.top
