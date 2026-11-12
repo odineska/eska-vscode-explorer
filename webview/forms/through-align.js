@@ -1,6 +1,6 @@
-import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
+import { fieldWidth, fontLineHeight, inputPaintedOutset, inputRowHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
-import { fieldCaptionProfile } from './font-metrics.mjs';
+import { fieldCaptionLines, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
@@ -180,6 +180,17 @@ function reservePageCaptions(tracks, { targets }, reserves) {
   }
 }
 
+// Designer reserves a compact side caption when its string value loses preferred width.
+function sideCaptionHeightReserve(field, capacity, captions, os) {
+  if (field.node.presentation.valueType.kind !== 'string' || field.element.dataset.stretchX !== 'true'
+      || field.caption.compact >= field.caption.preferred || field.preferredValue <= capacity + .5) return 0;
+  const lineHeight = fontLineHeight(field.node.presentation.titleFont);
+  const compactLines = fieldCaptionLines(field.caption, field.caption.compact).length;
+  const renderedLines = captions.get(field.key)?.split('\n').length ?? field.caption.paragraphs.length;
+  const rowHeight = inputRowHeight(field.node, os);
+  return Math.max(0, compactLines * lineHeight + 2 - Math.max(rowHeight, renderedLines * lineHeight + 2));
+}
+
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
 export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptiveFields) {
   const { alignment, os, scale, targets } = context;
@@ -299,6 +310,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
   }
 
   function allocateWidths(allocations, captions, minima, above, leadingEdges) {
+    const heightReserves = leadingEdges && new Map();
     for (const allocation of allocations) {
       const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField, local } = allocation;
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
@@ -336,14 +348,18 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         const assigned = full ? fullWidth : independent
           ? Math.max(leading.minimum, Math.min(capacity, leading.caption.preferred + inputCaptionInset)) : shared;
         updateStyle(container, '--taxi-through-allocated-label-width', full ? '' : `${assigned}px`);
+        let reserve = 0;
         for (const field of fields) {
           const wrap = !full && assigned < field.caption.preferred + inputCaptionInset;
           allocateFieldCaption(captions, field, wrap ? assigned - inputCaptionInset : undefined, inputCaptionInset);
           if (field.capped) updateStyle(field.element, '--taxi-through-caption-reserve', `${assigned - field.minimum}px`);
           if (independentCaptions) updateStyle(field.element, '--taxi-field-columns', '');
+          if (heightReserves) reserve += sideCaptionHeightReserve(field, available - assigned, captions, os);
         }
+        if (reserve) heightReserves.set(container, reserve);
       }
     }
+    return heightReserves;
   }
   return {
     stackLimits, minimumInputs, pageCaptionReserves,

@@ -6,6 +6,13 @@ const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
+
+function withFormWidth(source, width) {
+  const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
+  assert.notEqual(sized, source);
+  return sized;
+}
+
 const key = node => `${node.identity.source}:current:${node.identity.key.value}`;
 
 function named(root, name) {
@@ -418,13 +425,6 @@ async function verifyColumnSurplus(service, main, view, document) {
     assert.equal(view.snapshot.revision, revision);
     return actual;
   }
-
-  function withFormWidth(source, width) {
-    const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
-    assert.notEqual(sized, source);
-    return sized;
-  }
-
   async function verifyDateStretch(surface, file, source) {
     const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-through-stretch-metrics.json'), 'utf8'));
     assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
@@ -656,6 +656,104 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
 }
 
+
+async function verifyCaptionHeight(service, main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'ReferenceCaptionHeight.xml'), 'utf8');
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'reference-caption-height-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const original = document.getText();
+  const orderTag = '<InputField name="Any" id="1093">';
+  const servicesTag = '<UsualGroup name="Services" id="1089">';
+
+  function sourceFor({ width, condition, stretch }) {
+    const xml = withFormWidth(source, width).replace('<VerticalStretch>true</VerticalStretch>',
+      `<VerticalStretch>${stretch}</VerticalStretch>`);
+    if (condition.startsWith('SmallFont')) {
+      return xml.replace(orderTag, '$&<TitleFont ref="sys:DefaultGUIFont" height="8" kind="WindowsFont"/>');
+    }
+    switch (condition) {
+      case 'ShortTitle': return xml.replaceAll('Номер заказа', 'Заказ');
+      case 'ManualMax': return xml.replace(orderTag, '$&<AutoMaxWidth>false</AutoMaxWidth>');
+      case 'AuthoredWidth': return xml.replace(orderTag, '$&<Width>20</Width>');
+      case 'NestedStretch': return xml.replace(servicesTag, '$&<VerticalStretch>true</VerticalStretch>');
+      case 'Stack':
+      case 'StackFixed': {
+        const stack = xml.match(/<UsualGroup name="Services" id="1089">.*?<\/UsualGroup>/su)?.[0];
+        assert.ok(stack);
+        const group = stack.replace(servicesTag, `$&<VerticalStretch>${stretch}</VerticalStretch>`);
+        return xml.replace(/<UsualGroup name="Pair" id="1">.*?(?=\s*<InputField name="Footer")/su, group);
+      }
+      default: return xml;
+    }
+  }
+
+  const geometry = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect(), scroll = root.querySelector('.taxi-form-scrollport');
+    const box = id => {
+      const field = root.querySelector('[data-element$=":current:' + id + '"] .taxi-input')?.getBoundingClientRect();
+      return field ? [field.y - frame.y, field.height] : null;
+    };
+    return { width: frame.width, height: frame.height,
+      preferred: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      footer: box(6030), order: box(1093), range: scroll.scrollHeight - scroll.clientHeight,
+    };
+  })()`;
+  let surface, preview;
+  try {
+    await editFormSource(document, view, source);
+    await service.receive(view, main, { type: 'detach' });
+    await until(() => view.frames.get('preview')?.ready, 'caption height preview detached');
+    preview = view.frames.get('preview');
+    surface = await frame({ detached: true, state: { title: preview.panel.title } });
+
+    async function observe(sample, height = sample.frame[1], scrolled = false) {
+      const [width, preferred] = sample.frame;
+      await allocateFormViewport(surface, [width, height]);
+      const range = preferred - height;
+      if (scrolled) {
+        await surface.evaluate("const scroll = document.querySelector('.taxi-form-scrollport'); scroll.scrollTop = scroll.scrollHeight; true");
+      }
+      const atScroll = ([top, size]) => [top - (scrolled ? range : 0), size];
+      const expected = { width, height, preferred, range, footer: atScroll(sample.footer), order: atScroll(sample.order) };
+      let actual, stable = 0;
+      await until(async () => {
+        actual = await surface.evaluate(geometry);
+        stable = isDeepStrictEqual(actual, expected) ? stable + 1 : 0;
+        return stable >= 2;
+      }, 'caption opening height ' + sample.name).catch(error => {
+        throw new Error(sample.name + ' ' + JSON.stringify({ expected, actual }), { cause: error });
+      });
+      return actual;
+    }
+
+    const sizes = [];
+    for (const sample of cases) {
+      await editFormSource(document, view, sourceFor(sample));
+      sizes.push({ name: sample.name, ...await observe(sample) });
+      if (sample.name === 'W96Grow') {
+        const revision = view.snapshot.revision;
+        const height = sample.frame[1] - 9;
+        await observe(sample, height);
+        await observe(sample, height, true);
+        await observe(sample);
+        assert.equal(view.snapshot.revision, revision);
+      }
+    }
+    assert.equal(document.isDirty, true);
+    return { kind: 'ReferenceCaptionHeight', sizes };
+  } finally {
+    surface?.close();
+    if (preview) {
+      await service.receive(view, preview, { type: 'dock' });
+      await until(() => !view.frames.has('preview'), 'caption height preview docked');
+    }
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -712,6 +810,7 @@ exports.run = async () => {
       results.push(await verifyDateBlock(main, view, document));
       results.push(await verifyDateLabelHeight(main, view, document));
       results.push(await verifyColumnSurplus(service, main, view, document));
+      results.push(await verifyCaptionHeight(service, main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));

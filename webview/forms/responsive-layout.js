@@ -75,6 +75,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   let allocateInlineRows, pageFits, natural, referenceFrame, needsNatural = true, referencePending = true;
   let headingTitles = [];
   const headingHeights = new Map();
+  let captionHeightReserves = new Map();
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -230,7 +231,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, minimumInputs: throughCaptions.minimumInputs,
         commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
-        fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, available, conditionalWidth: state.os === 'linux',
+        fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, captionHeightReserves, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry(measured);
       content.dataset.formLayout = 'allocated';
@@ -286,7 +287,13 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
-    throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
+    const nextReserves = throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
+    if (nextReserves.size !== captionHeightReserves.size
+        || [...nextReserves].some(([stack, height]) => captionHeightReserves.get(stack) !== height)) {
+      captionHeightReserves = nextReserves;
+      needsMinimum = true;
+      schedule();
+    }
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
     for (const title of headingTitles) {
