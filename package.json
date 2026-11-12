@@ -196,6 +196,11 @@
         "category": "ESKA Explorer"
       },
       {
+        "command": "eska.explorer.configureProject",
+        "title": "%configureProject%",
+        "category": "ESKA Explorer"
+      },
+      {
         "command": "eska.explorer.selectAnalysisContext",
         "title": "%selectAnalysisContext%",
         "category": "ESKA Explorer"
@@ -386,6 +391,11 @@
       ],
       "view/item/context": [
         {
+          "command": "eska.explorer.configureProject",
+          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
+          "group": "navigation"
+        },
+        {
           "command": "eska.explorer.properties",
           "when": "view == eska.explorer.projects && (viewItem == eskaMetadata || viewItem == eskaCommonModule || viewItem == eskaModuleObject || viewItem == eskaForm || viewItem =~ /^eskaRoot(Filtered|Unfiltered)?(Sorted)?$/)",
           "group": "navigation@1"
@@ -397,7 +407,7 @@
         },
         {
           "command": "eska.explorer.refreshNode",
-          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaMetadataGroup || viewItem == eskaMetadata || viewItem == eskaCommonModule || viewItem == eskaModuleObject || viewItem == eskaForm || viewItem =~ /^eskaRoot(Sorted)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?$/)",
+          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaProjectSettings || viewItem == eskaMetadataGroup || viewItem == eskaMetadata || viewItem == eskaCommonModule || viewItem == eskaModuleObject || viewItem == eskaForm || viewItem =~ /^eskaRoot(Sorted)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?$/)",
           "group": "inline@3"
         },
         {

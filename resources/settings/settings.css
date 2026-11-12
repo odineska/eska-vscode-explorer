@@ -1,0 +1,12 @@
+body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
+article { max-width: 42rem; margin: 1.75rem auto; padding: 0 1rem; }
+h1 { font-size: 1.35rem; font-weight: 600; }
+fieldset { border: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .85rem; padding: 1rem 0; }
+label { display: grid; gap: .35rem; }
+label.enable { display: flex; align-items: center; gap: .45rem; margin: .85rem 0; }
+input:not([type="checkbox"]), select {
+  min-width: 0; padding: .4rem .5rem; font: inherit; color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
+}
+input:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+button[aria-pressed="true"] { border-color: var(--vscode-focusBorder); }

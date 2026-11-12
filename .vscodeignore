@@ -6,6 +6,7 @@
 !CHANGELOG.md
 !out/extension.js
 !out/query-designer.js
+!out/project-settings.js
 !out/form-preview.js
 !out/THIRD-PARTY-NOTICES.txt
 !resources/analyzer-notices/*
@@ -23,6 +24,7 @@
 !resources/icons/support/NOTICE.md
 !resources/query/*.css
 !resources/shared/*.css
+!resources/settings/*.css
 
 !out/form-preview.css
 !out/form-fonts/*.ttf

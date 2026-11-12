@@ -42,6 +42,7 @@
   "recoverAnalyzerInstallation": "Recover Analyzer installation",
   "languageFeatures": "Run Explorer’s own BSL language client for the selected ESKA application. Grammar remains available when disabled.",
   "restartLanguage": "Restart BSL Analyzer and Reanalyze",
+  "configureProject": "Configure Project",
   "selectAnalysisContext": "Choose analysis application",
   "queryEditBsl": "Edit query separately",
   "queryApply": "Apply query to module",

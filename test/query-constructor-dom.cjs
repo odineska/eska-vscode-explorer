@@ -53,7 +53,7 @@ exports.connectWorkbench = async function (until) {
 };
 
 /** A visible webview frame is located by its own DOM, rather than inferred from a tab title. */
-exports.connect = async function (until) {
+exports.connect = async function (until, selector = ".sections") {
   const port = Number(process.env.ESKA_HOST_DEBUG_PORT); assert.ok(port > 0);
   const connections = new Map(); let found;
   await until(async () => {
@@ -63,7 +63,7 @@ exports.connect = async function (until) {
       catch { /* A disposed webview can remain in the target list until Chromium removes it. */ }
     }
     for (const connection of connections.values()) for (const contextId of connection.contexts) {
-      const result = await connection.request('Runtime.evaluate', { contextId, expression: '!!document.getElementById("root")?.querySelector(".sections")', returnByValue: true }).catch(() => undefined);
+      const result = await connection.request('Runtime.evaluate', { contextId, expression: `!!document.getElementById("root")?.querySelector(${JSON.stringify(selector)})`, returnByValue: true }).catch(() => undefined);
       if (result?.result.value === true) { found = { connection, contextId }; return true; }
     }
     return false;
