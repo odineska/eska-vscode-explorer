@@ -25,6 +25,13 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "pause") {
+    await runPause(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, pause: true,
+    }));
+    return;
+  }
   if (native.scenario === "restart") {
     await runRestart(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -145,6 +152,46 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runPause(folder, module, until) {
+  let session;
+  let requested;
+  let stopped;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "pause") requested = message.arguments.threadId;
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stopped = message.body;
+        },
+      };
+    },
+  });
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP Pause", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const threadId = await until(async () => (await session.customRequest("threads")).threads
+      .find(thread => thread.name.startsWith("ManagedClient"))?.id, "running native client");
+    await until(async () => {
+      if (requested === undefined) await vscode.commands.executeCommand("workbench.action.debug.pause", undefined, { sessionId: session.id });
+      return requested !== undefined;
+    }, "VS Code sent the Pause request");
+    const stop = await until(() => stopped, "native client stopped by the VS Code Pause command");
+    assert.equal(requested, threadId);
+    assert.equal(stop.threadId, threadId);
+    assert.equal(stop.reason, "pause");
+    const stack = await session.customRequest("stackTrace", { threadId });
+    assert.equal(stack.stackFrames[0].line, 6);
+    assert.equal(stack.stackFrames[0].source.path, module.fsPath);
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+  }
+}
 
 async function runRestart(folder, module, until) {
   const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(2, 0)));
