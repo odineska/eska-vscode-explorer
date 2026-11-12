@@ -32,6 +32,9 @@ exports.run = async function () {
     moduleAdded: "Добавлен Общий модуль",
     moduleRenamed: "Переименован Общий модуль",
     moduleRemoved: "Удалён Общий модуль",
+    pictureAdded: "Добавлен Общая картинка",
+    pictureRenamed: "Переименован Общая картинка",
+    pictureRemoved: "Удалён Общая картинка",
     removed: "Удалён Общая форма",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
@@ -58,6 +61,9 @@ exports.run = async function () {
     moduleAdded: "Added Common module",
     moduleRenamed: "Renamed Common module",
     moduleRemoved: "Removed Common module",
+    pictureAdded: "Added Common picture",
+    pictureRenamed: "Renamed Common picture",
+    pictureRemoved: "Removed Common picture",
     removed: "Removed Common form",
     conflict: "Both the saved sources and the test database generation changed",
   };
@@ -238,6 +244,46 @@ esac
       await fs.unlink(path.join(source, rolePathFor(renamedName)));
       await applyStructure(`${labels.roleRemoved} ${renamedName}`, defaultRolePath);
 
+      const pictureName = "One_ProbeIcon";
+      const renamedPicture = "One_RenamedIcon";
+      const pictureRoot = name => `CommonPictures/${name}`;
+      const pictureElement = name => `<CommonPicture>${name}</CommonPicture>`;
+      const pictureDescriptor = name => `${pictureRoot(name)}.xml`;
+      const picturePackage = name => `${pictureRoot(name)}/Ext/Picture.xml`;
+      const pictureSvg = name => `${pictureRoot(name)}/Ext/Picture/Picture.svg`;
+      const withPicture = configuration.replace(defaultElement, defaultElement + pictureElement(pictureName));
+      const descriptorXml = `<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">
+<CommonPicture uuid="a0b2c3de-0c11-41bb-bccf-58e477f4a3ef"><Properties><Name>${pictureName}</Name>
+<Synonym/><Comment/><AvailabilityForChoice>false</AvailabilityForChoice><AvailabilityForAppearance>false</AvailabilityForAppearance>
+</Properties></CommonPicture></MetaDataObject>`;
+      const packageXml = `<ExtPicture xmlns="http://v8.1c.ru/8.3/xcf/extrnprops" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+<Picture><xr:Abs>Picture.svg</xr:Abs><xr:LoadTransparent>false</xr:LoadTransparent></Picture></ExtPicture>`;
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#E02020"/></svg>';
+      await fs.writeFile(configurationPath, withPicture);
+      await fs.mkdir(path.dirname(path.join(source, pictureSvg(pictureName))), { recursive: true });
+      await fs.writeFile(path.join(source, pictureDescriptor(pictureName)), descriptorXml);
+      await fs.writeFile(path.join(source, picturePackage(pictureName)), packageXml);
+      await fs.writeFile(path.join(source, pictureSvg(pictureName)), svg);
+      await applyStructure(`${labels.pictureAdded} ${pictureName}`, pictureDescriptor(pictureName), picturePackage(pictureName), pictureSvg(pictureName));
+
+      await fs.writeFile(path.join(source, pictureSvg(pictureName)), svg.replace("#E02020", "#104090"));
+      const applyPicture = command();
+      await choose();
+      await click(labels.apply, labels.partial, selected, pictureSvg(pictureName),
+        `${labels.companion}  ${picturePackage(pictureName)}`);
+      await applyPicture;
+
+      await fs.writeFile(configurationPath, withPicture.replace(pictureElement(pictureName), pictureElement(renamedPicture)));
+      await fs.rename(path.join(source, pictureRoot(pictureName)), path.join(source, pictureRoot(renamedPicture)));
+      await fs.writeFile(path.join(source, pictureDescriptor(renamedPicture)), descriptorXml.replace(pictureName, renamedPicture));
+      await fs.unlink(path.join(source, pictureDescriptor(pictureName)));
+      await applyStructure(`${labels.pictureRenamed} ${pictureName} → ${renamedPicture}`, pictureDescriptor(renamedPicture), pictureSvg(renamedPicture));
+
+      await fs.writeFile(configurationPath, configuration);
+      await fs.rm(path.join(source, pictureRoot(renamedPicture)), { recursive: true });
+      await fs.unlink(path.join(source, pictureDescriptor(renamedPicture)));
+      await applyStructure(`${labels.pictureRemoved} ${renamedPicture}`, defaultRolePath);
+
       const module = path.join(source, "Ext", "ManagedApplicationModule.bsl");
       const original = await fs.readFile(module, "utf8");
       assert.ok(original.includes("Значение = 111"));
@@ -324,7 +370,7 @@ esac
       }
       await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
         passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-        extension_apply: true, role_xml: true, structural_role: true, structural_common_module: true, common_module_evaluate: "719", debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
+        extension_apply: true, role_xml: true, structural_role: true, common_picture_bundle: true, structural_common_module: true, common_module_evaluate: "719", debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
       }));
       return;
     }

@@ -171,7 +171,11 @@ export class ProjectRuntime implements vscode.Disposable {
       const reason = error === "baseline_changed"
         ? inspection?.status === "both_changed" ? "runtimeSourcesAndDatabaseChanged" : "runtimeBaselineChanged"
         : error === "incomplete_apply" ? "runtimeIncomplete" : "runtimeNeedsFull";
-      if (await vscode.window.showWarningMessage(this.text(reason), { modal: true }, review) !== review) return;
+      const plan = isRecord(result) && isRecord(result.plan) ? result.plan : undefined;
+      const references = this.pictureReferenceLines(plan?.picture_references);
+      const detail = references.slice(0, 40).join("\n")
+        + (references.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(references.length - 40)) : "");
+      if (await vscode.window.showWarningMessage(this.text(reason), { modal: true, detail }, review) !== review) return;
       initialize = true;
       result = await this.invoke(project, build, ["apply", "--initialize", "--format", "json"]);
     }
@@ -338,7 +342,8 @@ export class ProjectRuntime implements vscode.Disposable {
         ? Object.keys(inspection.dependency_generations) : [];
       if (dependencies.length) lines.push(`  ${this.text("runtimeComponentDependencies", dependencies.join(", "))}`);
       const changes = part.plan?.changes ?? part.review?.changes;
-      const files = isRecord(changes) ? this.applyPlanPaths(changes, part.plan?.object_changes, part.plan?.import_files) : [];
+      const paths = isRecord(changes) ? this.applyPlanPaths(changes, part.plan?.object_changes, part.plan?.import_files) : [];
+      const files = this.pictureReferenceLines(part.plan?.picture_references).concat(paths);
       lines.push(...files.slice(0, remaining).map(path => `  ${path}`));
       const shown = Math.min(remaining, files.length);
       remaining -= shown;
@@ -391,6 +396,11 @@ export class ProjectRuntime implements vscode.Disposable {
     else await this.run(project, launch.fingerprint);
   }
 
+  private pictureReferenceLines(paths: unknown): string[] {
+    return Array.isArray(paths) ? paths.flatMap(path => typeof path === "string"
+      ? [this.text("runtimeApplyPictureReference", path)] : []) : [];
+  }
+
   private applyPlanPaths(changes: Record<string, unknown>, objects: unknown, files: unknown): string[] {
     const paths: string[] = [];
     const grouped = new Set<string>();
@@ -400,7 +410,8 @@ export class ProjectRuntime implements vscode.Disposable {
         const kind = object.kind === "language" ? "runtimeObjectLanguage"
           : object.kind === "common_form" ? "runtimeObjectCommonForm"
             : object.kind === "role" ? "runtimeObjectRole"
-              : object.kind === "common_module" ? "runtimeObjectCommonModule" : undefined;
+              : object.kind === "common_module" ? "runtimeObjectCommonModule"
+                : object.kind === "common_picture" ? "runtimeObjectCommonPicture" : undefined;
         const action = object.operation === "added" ? "runtimeChangeAdded"
           : object.operation === "removed" ? "runtimeChangeRemoved"
           : object.operation === "renamed" ? "runtimeChangeRenamed" : undefined;
