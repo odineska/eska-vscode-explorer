@@ -60,7 +60,8 @@ exports.run = async function () {
     await runEditorControls(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
       passed: true, suite: "debug-http", vscode: vscode.version,
-      editor_hover: "41", editor_step_lines: [9, 10, 5], caller_frame: true, editor_continue: true,
+      editor_hover: "41", console_evaluations: 1, console_nested_value: "1",
+      editor_step_lines: [9, 10, 5], caller_frame: true, editor_continue: true,
     }));
     return;
   }
@@ -215,6 +216,71 @@ exports.run = async function () {
   }));
 };
 
+async function exerciseDebugConsole(workbench, frameId, requests, responses, until) {
+  const submit = async expression => {
+    const input = await until(() => workbench.evaluate(`(() => {
+      const editor = document.querySelector('.repl-input-wrapper .monaco-editor');
+      const box = editor?.getBoundingClientRect();
+      return box?.width && box.height ? [box.left + 8, box.top + 8] : false;
+    })()`), "visible Debug Console input");
+    await workbench.click(...input);
+    await until(() => workbench.evaluate("!!document.activeElement.closest('.repl-input-wrapper')"),
+      "focused Debug Console input");
+    await workbench.submitInput(expression);
+    const evaluate = await until(() => requests.find(message => message.command === "evaluate"
+      && message.arguments.context === "repl" && message.arguments.expression === expression), `Debug Console evaluated ${expression}`);
+    assert.equal(evaluate.arguments.frameId, frameId);
+    const response = await until(() => responses.get(evaluate.seq), `Debug Console result for ${expression}`);
+    assert.equal(response.success, true);
+    return response.body;
+  };
+  const toggle = async value => {
+    const point = await until(() => workbench.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.repl-tree .monaco-list-row')].find(candidate =>
+        candidate.textContent.includes(${JSON.stringify(value)})
+        && candidate.querySelector('.monaco-tl-twistie.collapsible'));
+      const box = row?.querySelector('.monaco-tl-twistie')?.getBoundingClientRect();
+      return box?.width && box.height ? [box.x + box.width / 2, box.y + box.height / 2] : false;
+    })()`), `visible Debug Console disclosure for ${value}`);
+    await workbench.click(...point);
+  };
+  const contains = (name, value = "") => workbench.evaluate(`[...document.querySelectorAll('.repl-tree .monaco-list-row')]
+    .some(row => row.textContent.includes(${JSON.stringify(name)})
+      && row.textContent.trimEnd().endsWith(${JSON.stringify(value)}))`);
+  const childrenOf = async reference => {
+    const request = await until(() => requests.find(message => message.command === "variables"
+      && message.arguments.variablesReference === reference), `Debug Console expanded reference ${reference}`);
+    const response = await until(() => responses.get(request.seq), `variables for reference ${reference}`);
+    assert.equal(response.success, true);
+    return response.body.variables;
+  };
+  await vscode.commands.executeCommand("workbench.debug.action.focusRepl");
+  const expression = "ПолучитьСнимок()";
+  const result = await submit(expression);
+  assert.equal(result.result, "Структура");
+  assert.ok(result.variablesReference > 0);
+  await toggle(result.result);
+  const children = await childrenOf(result.variablesReference);
+  const data = children.find(child => child.name === "Данные");
+  assert.ok(data?.variablesReference > 0);
+  await toggle("Данные");
+  const elements = await childrenOf(data.variablesReference);
+  assert.equal(elements.length, 1);
+  assert.ok(elements[0].variablesReference > 0);
+  await toggle(elements[0].name);
+  const fields = await childrenOf(elements[0].variablesReference);
+  assert.equal(fields.find(field => field.name === "Номер")?.value, "1");
+  await until(() => contains("Номер", "1"), "visible nested snapshot value");
+  await toggle(result.result);
+  await until(async () => !await contains("Данные"), "collapsed Debug Console result");
+  await toggle(result.result);
+  await until(() => contains("Номер", "1"), "reopened Debug Console result");
+  assert.equal((await submit("Счетчик")).result, "1");
+  assert.equal(requests.filter(message => message.command === "evaluate"
+    && message.arguments.expression === expression).length, 1);
+  return result.variablesReference;
+}
+
 async function runEditorControls(folder, module, until) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");
   const workbench = await connectWorkbench(until);
@@ -263,7 +329,7 @@ async function runEditorControls(folder, module, until) {
     await vscode.window.showTextDocument(document);
     await workbench.focus();
     assert.equal(await vscode.debug.startDebugging(folder, {
-      name: "ESKA HTTP editor controls", type: "eska-debug", request: "launch", profile: "test",
+      name: "ESKA HTTP editor controls", internalConsoleOptions: "openOnSessionStart", type: "eska-debug", request: "launch", profile: "test",
       projectDir: folder.uri.fsPath,
     }), true);
     const first = await stopAt(5, "breakpoint");
@@ -293,6 +359,7 @@ async function runEditorControls(folder, module, until) {
       return !!hover && hover.getBoundingClientRect().height > 0 && hover.textContent.includes('41');
     })()`), "value 41 rendered in the debug hover");
     await workbench.movePointer(0, 0);
+    const snapshot = await exerciseDebugConsole(workbench, first.frames[0].id, requests, responses, until);
     vscode.debug.removeBreakpoints([breakpoint]);
     const removal = await until(() => requests.find(message => message.command === "setBreakpoints"
       && message.arguments.source.path === module.fsPath && message.arguments.breakpoints?.length === 0),
@@ -300,6 +367,7 @@ async function runEditorControls(folder, module, until) {
     assert.equal((await until(() => responses.get(removal.seq), "breakpoint removal response")).success, true);
     await command("stepInto", "stepIn", first.threadId);
     const inside = await stopAt(9, "step");
+    await assert.rejects(session.customRequest("variables", { variablesReference: snapshot }));
     assert.equal(inside.threadId, first.threadId);
     assert.equal(inside.frames[1].line, 5);
     assert.equal((await session.customRequest("evaluate", {
