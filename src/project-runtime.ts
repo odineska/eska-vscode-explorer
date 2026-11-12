@@ -124,7 +124,11 @@ export class ProjectRuntime implements vscode.Disposable {
     if (error === "baseline_required" || error === "baseline_changed" || error === "incomplete_apply"
       || isRecord(result) && isRecord(result.plan) && result.plan.mode === "unsupported") {
       const review = this.text("runtimeReviewFull");
-      const reason = error === "baseline_changed" ? "runtimeBaselineChanged" : error === "incomplete_apply" ? "runtimeIncomplete" : "runtimeNeedsFull";
+      const inspection = isRecord(result) && isRecord(result.review) && isRecord(result.review.inspection)
+        ? result.review.inspection : undefined;
+      const reason = error === "baseline_changed"
+        ? inspection?.status === "both_changed" ? "runtimeSourcesAndDatabaseChanged" : "runtimeBaselineChanged"
+        : error === "incomplete_apply" ? "runtimeIncomplete" : "runtimeNeedsFull";
       if (await vscode.window.showWarningMessage(this.text(reason), { modal: true }, review) !== review) return;
       initialize = true;
       result = await this.invoke(project, build, ["apply", "--initialize", "--format", "json"]);
