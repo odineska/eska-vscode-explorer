@@ -1195,8 +1195,13 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block=authored][data-stretch-x=false] {
   width: var(--taxi-fixed-date-width);
 }
+.taxi-preview[data-form-layout=minimum] .taxi-element[data-fixed-date-block=authored][data-stretch-x=false]:not([data-group-shrink-x]) {
+  width: min-content;
+  min-width: 0;
+}
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-block][data-stretch-x=false] {
   width: min(100%, var(--taxi-fixed-date-width, var(--taxi-preferred-width)));
+  min-width: var(--taxi-min-width);
 }
 
 /* Fixed inputs retain their value width when a side caption moves above them. */

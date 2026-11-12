@@ -78,7 +78,9 @@ export function minimumFormLayout(root, scale, {
         const through = fixedThroughWidths.get(child);
         if (!through) continue;
         const bounds = children[index];
-        reserveWidth(value, bounds.width + through.trailingMinimum, widthWithHeadings(bounds) + through.trailingMinimum);
+        const width = through.authoredWidth ?? 0;
+        reserveWidth(value, Math.max(width, bounds.width) + through.trailingMinimum,
+          Math.max(width, widthWithHeadings(bounds)) + through.trailingMinimum);
       }
     }
     const measured = add(add(value, padding), margins(element));
@@ -210,7 +212,7 @@ export function minimumFormLayout(root, scale, {
       || element.style.getPropertyValue('--taxi-united-cell-width'));
     reserveWidth(value, columnWidth);
     if (element.dataset.layoutContainer === 'true') {
-      if (element.dataset.stretchX === 'false' && !element.hasAttribute('data-group-shrink-x')) {
+      if (element.dataset.stretchX === 'false' && !element.hasAttribute('data-group-shrink-x') && !element.hasAttribute('data-fixed-date-block')) {
         reserveWidth(value, pixels(element.style.getPropertyValue('--taxi-preferred-width')));
       }
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));

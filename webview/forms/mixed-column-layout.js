@@ -194,9 +194,11 @@ export function mixedColumnLayout(context) {
   }
 
   function occupiedWidth(fields, origin) {
-    return Math.max(0, ...fields.map(({ element, outset, width = 0 }) => {
+    return Math.max(0, ...fields.map(({ element, outset, width = 0, authoredWidth }) => {
       const { left, right } = element.getBoundingClientRect();
-      return Math.round(Math.max(right / scale, left / scale + width) + outset - origin);
+      // The leading track can grow beyond the authored date width during allocation.
+      const end = authoredWidth ? left / scale + authoredWidth : Math.max(right / scale, left / scale + width);
+      return Math.round(end + outset - origin);
     }));
   }
 
@@ -273,7 +275,12 @@ export function mixedColumnLayout(context) {
         // With the date titles above, all three tracks share growth from their compact widths.
         if (scope.automaticDate) layout.compactLeadingWidth = (limit, minimum) =>
           minimum + Math.round(Math.max(0, limit - minimum) * minimum / (minimum + trailing));
-        for (const { element } of fixedDates) fixedThroughWidths.set(element, layout);
+        for (const date of fixedDates) {
+          const { element } = date;
+          const authoredWidth = dateProfiles.get(element.dataset.element)?.authoredWidth;
+          date.authoredWidth = authoredWidth;
+          fixedThroughWidths.set(element, authoredWidth ? { ...layout, authoredWidth, column } : layout);
+        }
       }
     }
   }

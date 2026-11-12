@@ -287,6 +287,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     for (const key of alignedAbove) above.add(key);
     dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
+    dateBlocks.allocateAuthored(captions, above, unitedColumns.fixedThroughWidths, leadingEdges);
     const nextReserves = throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
     if (nextReserves.size !== captionHeightReserves.size
         || [...nextReserves].some(([stack, height]) => captionHeightReserves.get(stack) !== height)) {

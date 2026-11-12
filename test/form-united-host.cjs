@@ -657,7 +657,65 @@ async function verifyColumnSurplus(service, main, view, document) {
 }
 
 
-async function verifyCaptionHeight(service, main, view, document) {
+async function verifyAuthoredDateWidths(surface, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'authored-date-width-metrics.json'), 'utf8'));
+  const sources = new Map();
+  for (const [file, hash] of Object.entries(sourceSha256)) {
+    const xml = await fs.readFile(path.join(directory, file), 'utf8');
+    assert.equal(createHash('sha256').update(xml).digest('hex'), hash);
+    sources.set(file, xml);
+  }
+
+  const measure = (groupId, dateIds) => `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect();
+    const find = id => root.querySelector('[data-element$=":current:' + id + '"]');
+    const group = find(${groupId})?.getBoundingClientRect();
+    if (!group) return null;
+    const dates = ${JSON.stringify(dateIds)}.map(id => {
+      const row = find(id)?.querySelector('.taxi-field-row');
+      const input = row?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return input ? [input.x - frame.x, input.y - frame.y, row.dataset.titleLocation] : null;
+    });
+    return { frame: [frame.width, frame.height],
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      group: [group.x - frame.x, group.y - frame.y, group.width, group.height], dates };
+  })()`;
+
+  const standalone = measure(5, [51, 52]), columns = measure(40, [41, 42]);
+  const sizes = [];
+  for (const sample of cases) {
+    const source = sources.get(sample.source), solo = sample.source === 'DateBlock.xml';
+    const sized = solo ? source.replace('<Width>62</Width>', `<Width>${sample.formWidth}</Width>`)
+      : withFormWidth(source, sample.formWidth);
+    const stretch = sample.fixed ? '<HorizontalStretch>false</HorizontalStretch>' : '';
+    const xml = sized.replace(/<UsualGroup name="Dates" id="\d+">/u, `$&<Width>${sample.groupWidth}</Width>${stretch}`);
+    assert.notEqual(xml, sized, 'date group present in ' + sample.source);
+    await editFormSource(document, view, xml);
+    await allocateFormViewport(surface, sample.frame);
+    let actual, previous;
+    await until(async () => {
+      actual = await surface.evaluate(solo ? standalone : columns);
+      const stable = isDeepStrictEqual(actual, previous);
+      previous = actual;
+      const tolerance = solo ? 0 : 1;
+      return stable && isDeepStrictEqual(actual?.frame, sample.frame) && actual.preferredHeight === sample.frame[1]
+        && sample.group.every((value, axis) => Math.abs(actual.group[axis] - value) <= (axis % 2 === 0 ? tolerance : 0))
+        && sample.dates.every(([x, y, title], index) => {
+          const date = actual.dates[index];
+          return date && Math.abs(date[0] - x) <= tolerance && date[1] === y && date[2] === title;
+        });
+    }, 'authored date width ' + sample.name).catch(error => {
+      throw new Error(sample.name + ' ' + JSON.stringify({ expected: sample, actual }), { cause: error });
+    });
+    sizes.push({ name: sample.name, ...actual });
+  }
+  return { kind: 'AuthoredDateWidths', sizes };
+}
+
+async function verifyFormDimensions(service, main, view, document) {
   const directory = process.env.ESKA_FORM_FIXTURES;
   const source = await fs.readFile(path.join(directory, 'ReferenceCaptionHeight.xml'), 'utf8');
   const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'reference-caption-height-metrics.json'), 'utf8'));
@@ -705,7 +763,7 @@ async function verifyCaptionHeight(service, main, view, document) {
   try {
     await editFormSource(document, view, source);
     await service.receive(view, main, { type: 'detach' });
-    await until(() => view.frames.get('preview')?.ready, 'caption height preview detached');
+    await until(() => view.frames.get('preview')?.ready, 'form dimensions preview detached');
     preview = view.frames.get('preview');
     surface = await frame({ detached: true, state: { title: preview.panel.title } });
 
@@ -742,13 +800,14 @@ async function verifyCaptionHeight(service, main, view, document) {
         assert.equal(view.snapshot.revision, revision);
       }
     }
+    const authored = await verifyAuthoredDateWidths(surface, view, document);
     assert.equal(document.isDirty, true);
-    return { kind: 'ReferenceCaptionHeight', sizes };
+    return [{ kind: 'ReferenceCaptionHeight', sizes }, authored];
   } finally {
     surface?.close();
     if (preview) {
       await service.receive(view, preview, { type: 'dock' });
-      await until(() => !view.frames.has('preview'), 'caption height preview docked');
+      await until(() => !view.frames.has('preview'), 'form dimensions preview docked');
     }
     await editFormSource(document, view, original);
   }
@@ -810,7 +869,7 @@ exports.run = async () => {
       results.push(await verifyDateBlock(main, view, document));
       results.push(await verifyDateLabelHeight(main, view, document));
       results.push(await verifyColumnSurplus(service, main, view, document));
-      results.push(await verifyCaptionHeight(service, main, view, document));
+      results.push(...await verifyFormDimensions(service, main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));
