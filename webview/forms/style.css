@@ -980,6 +980,9 @@ button { cursor: default; }
 .taxi-preview[data-form-layout=allocated] .taxi-items--horizontal[data-content-vertical-align]:not([data-united-columns]) > .taxi-element[data-stretch-y=true][data-capped-input-height=authored] {
   align-self: var(--taxi-content-vertical-align);
 }
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-native-inline-row] > .taxi-element[data-stretch-y=true][data-inline-fixed-height] {
+  height: var(--taxi-min-height);
+}
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Top] { grid-template-rows: max-content minmax(0, 1fr); }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row[data-title-location=Bottom] { grid-template-rows: minmax(0, 1fr) max-content; }
 .taxi-preview[data-form-layout=allocated] .taxi-element[data-stretch-y=true] > .taxi-field-row > .taxi-field-control { height: 100%; min-height: 0; }

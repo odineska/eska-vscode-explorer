@@ -100,6 +100,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         width: (vertical ? Math.max(title.width, content.width) : title.width + gap + content.width) + padding.width,
         height: Math.max(rowHeight(content.height), pixels(css.minHeight)),
       };
+      if (element.hasAttribute('data-inline-fixed-height')) {
+        value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
+      }
       const inputMinimum = minimumInputs.get(element.dataset.element);
       if (inputMinimum) {
         if (inputMinimum.aboveWidth !== undefined) value.width = inputMinimum.aboveWidth + padding.width;

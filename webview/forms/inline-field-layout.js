@@ -38,7 +38,10 @@ function fieldTrack(node, element, { os, scale, collapsed }, fixed) {
   const inset = boxInsets(getComputedStyle(field)).width;
   const reserve = inset + (location === 'Left' ? 5 : 0);
   const movableTitle = !!label && location === 'Left' && !!profile && scalar(node, 'TitleLocation', 'Auto') === 'Auto';
-  return { element, field, key: node.key, multiline, preferredHeight: multiline ? inputControlHeight(node, os) : undefined, label, caption, reserve, inset, movableTitle, shrinkCaptionWidth: caption.preferred,
+  const preferredHeight = multiline ? inputControlHeight(node, os) : undefined;
+  const authoredHeight = multiline && (element.hasAttribute('data-height-constrained') || !!element.closest('[data-authored-height]'));
+  const maximumHeight = multiline ? controlBounds(node, 'y', preferredHeight, os, { authoredHeight }).maximum : undefined;
+  return { element, field, key: node.key, multiline, preferredHeight, maximumHeight, label, caption, reserve, inset, movableTitle, shrinkCaptionWidth: caption.preferred,
     titleLineHeight: fontLineHeight(node.presentation.titleFont), valueMinimum: Math.min(minimum, valueCap),
     value: { minimum, preferred, maximum } };
 }
@@ -87,13 +90,18 @@ function setLabelBand(items, height, fallback = '') {
 function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
   const groups = branch.parts.filter(part => part.parts).map(part => ({ part, tracks: flattenTracks(part) }));
   const growing = groups.filter(({ part }) => part.element.dataset.stretchY === 'true');
-  if (growing.length !== 1) return;
-  const [source] = growing;
+  const sources = growing.length ? growing : groups.filter(({ tracks }) => tracks.some(track => track.multiline));
+  if (sources.length !== 1) return;
+  const [source] = sources;
   if (source.part.element.hasAttribute('data-authored-group-height')) return;
   const inputs = source.tracks.filter(track => track.multiline);
   if (inputs.length !== 1) return;
   const [input] = inputs;
-  if (input.element.dataset.stretchY !== 'true') return;
+  const canPadGroup = verticalAlign === 'Bottom' && !input.element.hasAttribute('data-height-constrained');
+  const sourceStretches = growing.length === 1;
+  const inputStretches = input.element.dataset.stretchY === 'true';
+  const stretchesField = sourceStretches && inputStretches;
+  if (!stretchesField && !canPadGroup) return;
   const references = source.tracks.filter(track => track.label).map(track => ({
     element: track.element, control: valueControl(track, '.taxi-label-field'),
   })).filter(reference => reference.control);
@@ -111,9 +119,22 @@ function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
     alignment.style(part.items, '--taxi-inline-label-align', 'initial');
   }
   for (const { part } of peers) alignment.style(part.element, groupOffset, '');
-  const canReserve = verticalAlign === 'Bottom' && branch.element.dataset.stretchY === 'false'
-    && !input.element.hasAttribute('data-height-constrained') && !input.element.closest('[data-authored-height]');
-  if (canReserve) alignment.style(input.element, fieldHeightReserve, '');
+  const { items: sourceItems } = source.part;
+  const basePadding = canPadGroup ? pixels(getComputedStyle(sourceItems).paddingBottom) : 0;
+  const inputLimit = input.maximumHeight ?? Infinity;
+  if (!sourceStretches && inputStretches && inputLimit >= input.preferredHeight) {
+    alignment.mark(input.element, 'data-inline-fixed-height');
+  }
+  const canExtendInput = canPadGroup && stretchesField && branch.element.dataset.stretchY === 'false'
+    && !input.element.closest('[data-authored-height]');
+  if (canPadGroup) alignment.style(sourceItems, 'padding-bottom', '');
+  if (canExtendInput) alignment.style(input.element, fieldHeightReserve, '');
+
+  function reserveHeight(group, field) {
+    const paddingChanged = canPadGroup && updateStyle(sourceItems, 'padding-bottom', group ? `${basePadding + group}px` : '');
+    const inputChanged = canExtendInput && updateStyle(input.element, fieldHeightReserve, field ? `${field}px` : '');
+    return paddingChanged || inputChanged;
+  }
 
   return {
     labelBands(captions, above) {
@@ -129,7 +150,7 @@ function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
       const memo = control.getBoundingClientRect();
       if (memo.height / scale + .5 < input.preferredHeight) {
         for (const { part } of peers) updateStyle(part.element, groupOffset, '');
-        return canReserve && updateStyle(input.element, fieldHeightReserve, '');
+        return reserveHeight(0, 0);
       }
       // Separate groups follow the reference band at the input's preferred height.
       // The labels beside the input follow its full allocated height.
@@ -142,7 +163,11 @@ function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
       const row = branch.items.getBoundingClientRect(), rowStyle = getComputedStyle(branch.items);
       const top = row.top + (pixels(rowStyle.paddingTop) + pixels(rowStyle.borderTopWidth)) * scale;
       const bottom = row.bottom - (pixels(rowStyle.paddingBottom) + pixels(rowStyle.borderBottomWidth)) * scale;
-      const trailing = canReserve ? source.part.element.getBoundingClientRect().bottom - field.bottom : 0;
+      // When the control stops at its preferred height, the extra space belongs below the group.
+      const padGroup = canPadGroup && (!stretchesField || inputLimit <= input.preferredHeight);
+      const canReserve = padGroup || canExtendInput;
+      const addedPadding = sourceItems.style.paddingBottom ? pixels(sourceItems.style.paddingBottom) - basePadding : 0;
+      const trailing = canReserve ? source.part.element.getBoundingClientRect().bottom - field.bottom - addedPadding * scale : 0;
       let reserve = 0;
       for (const peer of peers) {
         const element = peer.part.element, box = element.getBoundingClientRect();
@@ -155,8 +180,7 @@ function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
         if (canReserve) reserve = Math.max(reserve, Math.round((box.bottom + shift - end - trailing) / scale));
         updateStyle(element, groupOffset, offset ? `${offset}px` : '');
       }
-      if (!canReserve) return false;
-      return updateStyle(input.element, fieldHeightReserve, reserve ? `${reserve}px` : '');
+      return reserveHeight(padGroup ? reserve : 0, padGroup ? 0 : reserve);
     },
   };
 }
