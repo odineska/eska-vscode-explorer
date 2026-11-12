@@ -202,6 +202,7 @@
       },
       { "command": "eska.explorer.runTest", "title": "%runTest%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.applyTest", "title": "%applyTest%", "category": "ESKA Explorer" },
+      { "command": "eska.explorer.installExtensionTest", "title": "%installExtensionTest%", "category": "ESKA Explorer", "enablement": "isWorkspaceTrusted" },
       { "command": "eska.explorer.removeExtensionTest", "title": "%removeExtensionTest%", "category": "ESKA Explorer", "enablement": "isWorkspaceTrusted" },
       { "command": "eska.explorer.applyAndRunTest", "title": "%applyAndRunTest%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.applyAndDebugTest", "title": "%applyAndDebugTest%", "category": "ESKA Explorer" },

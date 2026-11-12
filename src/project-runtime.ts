@@ -64,6 +64,8 @@ const errors = new Map<string, MessageKey>([
   ["extension_not_installed", "runtimeApplyExtensionNotInstalled"],
   ["extension_identity_mismatch", "runtimeApplyExtensionIdentity"],
   ["extension_has_dependent", "runtimeExtensionHasDependent"], ["remove_failed", "runtimeExtensionRemoveFailed"],
+  ["extension_already_installed", "runtimeExtensionAlreadyInstalled"], ["extension_uuid_in_use", "runtimeExtensionUuidInUse"],
+  ["extension_installation_incomplete", "runtimeExtensionInstallationIncomplete"],
 ]);
 
 /** Native commands resolve only project identity. The platform tools own every operation and policy check. */
@@ -222,43 +224,58 @@ export class ProjectRuntime implements vscode.Disposable {
     await this.continueAfterApply(after, confirmed);
   }
 
-  async removeExtension(project: RuntimeProject): Promise<void> {
+  async changeExtension(project: RuntimeProject, operation: "install" | "remove"): Promise<void> {
     const build = await this.tool(project, "build", "eska-build");
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
     if (!await this.saveSources([project.root])) return;
-    const args = ["extension", "remove", "--format", "json"];
+    const installing = operation === "install";
+    const args = ["extension", operation, "--format", "json"];
+    const kind = installing ? "extension_install" : "extension_remove";
     const result = await this.invoke(project, build, args);
-    const plan = isRecord(result) && result.schema_version === 1 && result.kind === "extension_remove"
+    const plan = isRecord(result) && result.schema_version === 1 && result.kind === kind
       && result.status === "preview" && isRecord(result.plan) ? result.plan : undefined;
     const extension = isRecord(plan?.extension) ? plan.extension : undefined;
     if (!plan || typeof plan.confirmation !== "string" || !/^[0-9a-f]{64}$/.test(plan.confirmation)
       || typeof plan.target !== "string" || typeof plan.platform_version !== "string"
       || typeof extension?.name !== "string" || typeof extension.uuid !== "string"
-      || !(plan.extension_generation === null || typeof plan.extension_generation === "string")) {
+      || (installing ? !Array.isArray(plan.import_files) || !isRecord(plan.dependency_generations)
+        : !(plan.extension_generation === null || typeof plan.extension_generation === "string"))) {
       this.failure(result);
       return;
     }
-    const recovery = plan.extension_generation === null;
-    const title = this.text(recovery ? "runtimeExtensionFinalize" : "runtimeExtensionRemoveData");
-    const accept = this.text(recovery ? "runtimeExtensionFinalizeConfirm" : "runtimeExtensionRemoveConfirm");
-    const detail = [
+    const recovery = !installing && plan.extension_generation === null;
+    const title = this.text(installing ? "runtimeExtensionInstallPreview"
+      : recovery ? "runtimeExtensionFinalize" : "runtimeExtensionRemoveData");
+    const accept = this.text(installing ? "runtimeExtensionInstallConfirm"
+      : recovery ? "runtimeExtensionFinalizeConfirm" : "runtimeExtensionRemoveConfirm");
+    const lines = [
       `${plan.target} (${plan.platform_version})`,
       `${this.text("runtimeApplyExtension")} ${extension.name} (${extension.uuid})`,
-      ...(typeof plan.extension_generation === "string" ? [plan.extension_generation] : []),
-    ].join("\n");
+    ];
+    if (installing && Array.isArray(plan.import_files) && isRecord(plan.dependency_generations)) {
+      const dependencies = Object.keys(plan.dependency_generations);
+      if (dependencies.length) lines.push(this.text("runtimeComponentDependencies", dependencies.join(", ")));
+      const files = plan.import_files.filter((file): file is string => typeof file === "string");
+      lines.push("", ...files.slice(0, 40));
+      if (files.length > 40) lines.push(this.text("runtimeAdditionalFiles", String(files.length - 40)));
+    } else if (typeof plan.extension_generation === "string") {
+      lines.push(plan.extension_generation);
+    }
+    const detail = lines.join("\n");
     if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
     if (this.dirtySources([project.root]).length) {
       void vscode.window.showErrorMessage(this.text("runtimeSourcesUnsaved"));
       return;
     }
-    const { result: removed, cancelled } = await this.executeWrite(project, build,
-      [...args, "--confirm", plan.confirmation, "--force"], "runtimeExtensionRemoving");
+    const { result: confirmed, cancelled } = await this.executeWrite(project, build,
+      [...args, "--confirm", plan.confirmation, ...(installing ? [] : ["--force"])],
+      installing ? "runtimeExtensionInstalling" : "runtimeExtensionRemoving");
     if (cancelled) return;
-    if (!isRecord(removed) || removed.kind !== "extension_remove" || removed.status !== "removed") {
-      this.failure(removed);
+    if (!isRecord(confirmed) || confirmed.kind !== kind || confirmed.status !== (installing ? "installed" : "removed")) {
+      this.failure(confirmed);
       return;
     }
-    void vscode.window.showInformationMessage(this.text("runtimeExtensionRemoved"));
+    void vscode.window.showInformationMessage(this.text(installing ? "runtimeExtensionInstalled" : "runtimeExtensionRemoved"));
   }
 
   async applyApplication(project: RuntimeProject, after?: AfterApply, current?: string): Promise<void> {
@@ -416,7 +433,7 @@ export class ProjectRuntime implements vscode.Disposable {
       try {
         if (cancel.isCancellationRequested) return { cancelled: true };
         const result = await this.invoke(project, build, args, 0, abort.signal, event => {
-          if (!isRecord(event) || event.schema_version !== 1 || event.kind !== "apply_progress") return;
+          if (!isRecord(event) || event.schema_version !== 1 || (event.kind !== "apply_progress" && event.kind !== "extension_progress")) return;
           const key = event.phase === "import" ? "runtimeImporting" : event.phase === "apply" ? "runtimeApplying" : undefined;
           if (!key) return;
           const message = this.text(key);
@@ -581,7 +598,8 @@ export class ProjectRuntime implements vscode.Disposable {
         ? this.text(key, error.dependent)
         : this.text("runtimeOperationFailed");
     }
-    if (key === "runtimeApplyExtensionNotInstalled") {
+    if (key === "runtimeApplyExtensionNotInstalled" || key === "runtimeExtensionAlreadyInstalled"
+      || key === "runtimeExtensionUuidInUse" || key === "runtimeExtensionInstallationIncomplete") {
       return typeof error?.extension === "string" && error.extension.length > 0
         ? this.text(key, error.extension)
         : this.text("runtimeApplyExtensionUnavailable");

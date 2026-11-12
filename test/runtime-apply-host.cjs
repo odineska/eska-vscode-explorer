@@ -10,6 +10,8 @@ exports.run = async function () {
   const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
   const labels = vscode.env.language.startsWith("ru") ? {
     extension: "Расширение",
+    installation: "Установить расширение",
+    installPreview: "Установить это расширение Designer XML",
     removal: "Удалить расширение",
     removalWarning: "Данные расширения могут быть безвозвратно потеряны.",
     missingExtension: "Расширение Two отсутствует в тестовой базе.",
@@ -42,6 +44,8 @@ exports.run = async function () {
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     extension: "Extension",
+    installation: "Install Extension",
+    installPreview: "Install this Designer XML extension",
     removal: "Remove Extension",
     removalWarning: "Data owned by the extension may be lost permanently.",
     missingExtension: "Extension Two is not installed in the test infobase.",
@@ -233,7 +237,7 @@ esac
       await initialize;
 
       const source = path.join(member, "src");
-      if (process.env.ESKA_HOST_EXTENSION_REMOVE === "1") {
+      if (process.env.ESKA_HOST_EXTENSION_REMOVE === "1" || process.env.ESKA_HOST_EXTENSION_INSTALL === "1") {
         const removal = () => vscode.commands.executeCommand("eska.explorer.removeExtensionTest");
         const baseline = await snapshot();
         const cancellation = removal();
@@ -250,6 +254,26 @@ esac
         const inspect = spawnSync(native.build, ["--project-dir", member, "extension", "remove", "--format", "json"], { encoding: "utf8" });
         assert.equal(inspect.status, 1, inspect.stderr);
         assert.deepEqual(JSON.parse(inspect.stdout).error, { code: "extension_not_installed", extension: "One" });
+        if (process.env.ESKA_HOST_EXTENSION_INSTALL === "1") {
+          const install = () => vscode.commands.executeCommand("eska.explorer.installExtensionTest");
+          const cancelledInstall = install();
+          await choose();
+          await click(labels.cancel, labels.installPreview, selected, "Configuration.xml", "Ext/ManagedApplicationModule.bsl");
+          await cancelledInstall;
+          const missing = spawnSync(native.build, ["--project-dir", member, "extension", "remove", "--format", "json"], { encoding: "utf8" });
+          assert.deepEqual(JSON.parse(missing.stdout).error, { code: "extension_not_installed", extension: "One" });
+          const installing = install();
+          await choose();
+          await click(labels.installation, labels.installPreview, selected, "Configuration.xml", "Ext/ManagedApplicationModule.bsl");
+          await installing;
+          const current = JSON.parse(execFileSync(native.build, ["--project-dir", member, "apply", "--format", "json"]));
+          assert.equal(current.plan.mode, "unchanged");
+          await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+            passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+            extension_removal: true, extension_installation: true, cancel_preserved_baseline: true,
+          }));
+          return;
+        }
         await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
           passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
           extension_removal: true, cancel_preserved_baseline: true,

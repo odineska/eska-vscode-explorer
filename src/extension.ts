@@ -168,10 +168,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       const project = await this.runtimeProject(entry);
       if (project) await action(project);
     }));
-    this.disposables.push(vscode.commands.registerCommand("eska.explorer.removeExtensionTest", async () => {
-      const project = await this.runtimeProject(undefined, undefined, undefined, "extension");
-      if (project) await this.projectRuntime.removeExtension(project);
-    }));
+    for (const [name, operation] of [["installExtensionTest", "install"], ["removeExtensionTest", "remove"]] as const) {
+      this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${name}`, async () => {
+        const project = await this.runtimeProject(undefined, undefined, undefined, "extension");
+        if (project) await this.projectRuntime.changeExtension(project, operation);
+      }));
+    }
     for (const [command, after] of [
       ["applyApplicationTest", undefined],
       ["applyApplicationAndRunTest", "run"],
