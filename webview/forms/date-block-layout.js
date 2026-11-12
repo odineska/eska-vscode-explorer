@@ -1,7 +1,7 @@
 import { checkboxField } from './checkbox-layout.js';
 import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
 import { fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateLaneSizes, cappedTrackGrowth, groupCanShrink, roundTrackWidths } from './layout-model.mjs';
+import { allocateLaneSizes, cappedTrackGrowth, explicitNo, groupCanShrink, roundTrackWidths } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fontLineHeight, inputPaintedOutset, scalar, textLabelMetrics } from './model.mjs';
 
@@ -213,12 +213,13 @@ export function dateBlockLayout(model, context) {
     const widthAt = fraction => outer + (authoredTop ? preferred : sideMinimum + (preferred - sideMinimum) * fraction);
     const insets = outer - spacing + boxInsets(getComputedStyle(items)).width;
     const minimumWidth = minimum + insets;
+    const stretch = !explicitNo(scalar(node, 'HorizontalStretch'));
     const automaticTop = !authoredTop && !locked.length
       ? { leading: leading.key, minimum: minimumWidth, sideWidth: Math.round(mixedWidth + insets) } : undefined;
     if (fixedTop) {
       const profile = { base: fixed + topValue + outer, minimum: minimumWidth, preferred: preferred + outer, checkbox: checkbox.caption };
       titleFloors.set(node.key, {
-        mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
+        stretch, mixed: 0, side: 0, compactWidth: Math.round(fixed + topPreferred + checkbox.caption.compact + outer),
         top: { minimum: minimumWidth, pack: available => packTopCaption(available, profile) },
       });
     } else {
@@ -239,7 +240,7 @@ export function dateBlockLayout(model, context) {
         }) : undefined,
       } : undefined;
       titleFloors.set(node.key, {
-        mixed: canMove ? Math.max(0, mixedWidth - minimum) : 0,
+        stretch, mixed: canMove ? Math.max(0, mixedWidth - minimum) : 0,
         side: canMove ? Math.max(0, sideWidth - minimum) : 0,
         pack: canMove || sideValue === lockedValue ? width => packSideCaptions(width, profile) : undefined,
         widthAt: authoredTop ? undefined : widthAt,

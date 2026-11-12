@@ -229,6 +229,7 @@ export function mixedColumnLayout(context) {
       }
       const width = Math.max(leading.preferred, scope.stackWidth, rigid, fixedDates.length ? fixed : 0);
       const [date] = fixedDates;
+      if (fixedDates.length === 1) scope.dateKey = date.element.dataset.element;
       const automaticTop = date && dateProfiles.get(date.element.dataset.element)?.automaticTop;
       if (fixedDates.length === 1 && automaticTop && compactReserve !== undefined) {
         scope.automaticDate = { ...date, ...automaticTop, fullWidth: leading.preferred, fullReserve: leading.reserve,
@@ -282,7 +283,7 @@ export function mixedColumnLayout(context) {
     const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale)));
     const origin = leadingOrigin(lanes);
     const automatic = automaticDate && above.has(automaticDate.leading);
-    let planned = packedDates.get(topDateKey)?.leadingWidth;
+    let planned = packedDates.get(topDateKey ?? scope.dateKey)?.leadingWidth;
     if (topDateKey) {
       const compact = planned !== undefined && planned + .5 < fullReferenceWidth;
       for (const title of titles) {

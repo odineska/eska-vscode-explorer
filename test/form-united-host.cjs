@@ -371,8 +371,13 @@ async function verifyColumnSurplus(service, main, view, document) {
       ? [through[0][0] - box(referenceLabel)[0], referenceLabel.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
     const referenceLabelFits = referenceCaption
       && box(referenceLabel)[1] + parseFloat(getComputedStyle(referenceLabel.parentElement).columnGap) <= referenceCaption[0];
-    const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
-    return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
+    const dates = find(40), court = find(1051)?.querySelector('.taxi-input');
+    const dateBlock = box(dates), trace = box(find(1091)?.querySelector('.taxi-input'));
+    return { width: frame.width, height: frame.height,
+      preferredHeight: parseFloat(form.style.getPropertyValue('--taxi-form-preferred-height')),
+      dateBlockHeight: dates?.getBoundingClientRect().height ?? null,
+      courtTop: court ? court.getBoundingClientRect().y - frame.y : null,
+      columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
       dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
       dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
@@ -381,12 +386,15 @@ async function verifyColumnSurplus(service, main, view, document) {
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
     columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
-    checkCaption, dateLabel, referenceRow, referenceCaption, divider }) {
+    checkCaption, dateLabel, referenceRow, referenceCaption, divider, height, dateBlockHeight, courtTop }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
     if (dateBlockWidth !== undefined) expected.dateBlockWidth = dateBlockWidth;
+    if (height !== undefined) Object.assign(expected, { height, preferredHeight: height });
+    if (dateBlockHeight !== undefined) expected.dateBlockHeight = dateBlockHeight;
+    if (courtTop !== undefined) expected.courtTop = courtTop;
     if (traceOffset !== undefined) expected.traceOffset = traceOffset;
     if (dateFields) expected.dateFields = dateFields;
     if (dateLocations) expected.dateLocations = dateLocations;
@@ -407,6 +415,38 @@ async function verifyColumnSurplus(service, main, view, document) {
     }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
     assert.equal(view.snapshot.revision, revision);
     return actual;
+  }
+
+  async function verifyDateStretch(surface, file, source) {
+    const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-through-stretch-metrics.json'), 'utf8'));
+    assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+    const geometry = sample => ({
+      width: sample.frame[0], viewportHeight: sample.frame[1], height: sample.frame[1], divider: true,
+      dateBlockHeight: sample.dateBlock[3], courtTop: sample.courtTop,
+    });
+    const sizes = [];
+    for (const { width, auto, fixed } of cases) {
+      const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
+      const fixedSource = sized.replace('<UsualGroup name="Dates" id="40">', '$&<HorizontalStretch>false</HorizontalStretch>');
+      assert.notEqual(sized, source);
+      assert.notEqual(fixedSource, sized);
+      await editFormSource(document, view, sized);
+      const automatic = await observe(surface, file, geometry(auto));
+      await editFormSource(document, view, fixedSource);
+      const packed = await observe(surface, file, { ...geometry(fixed), dateBlockWidth: fixed.dateBlock[2] });
+      assert.equal(packed.dateBlock[0], automatic.dateBlock[0], 'fixed dates keep their leading edge');
+      assert.ok(Math.abs(packed.dateBlock[0] - fixed.dateBlock[0]) <= 1, 'the date block starts at the native column edge');
+      assert.ok(packed.dateBlockWidth < automatic.dateBlockWidth, 'date block stops at its packed width');
+      assert.deepEqual(packed.columns, automatic.columns, 'the two columns retain their widths');
+      assert.deepEqual(packed.through, automatic.through, 'sibling references, picture and label keep their own allocation');
+      assert.equal(packed.traceOffset, automatic.traceOffset, 'service fields retain the common edge');
+      await editFormSource(document, view, sized);
+      const restored = await observe(surface, file, { ...geometry(auto), dateBlockWidth: automatic.dateBlockWidth });
+      assert.deepEqual(restored.through, automatic.through);
+      sizes.push({ width: fixed.frame[0], automatic, packed });
+    }
+    await editFormSource(document, view, source);
+    return sizes;
   }
 
   async function verifyThroughEnd(surface, width) {
@@ -508,6 +548,7 @@ async function verifyColumnSurplus(service, main, view, document) {
           await editFormSource(document, view, source);
           await observe(floating, file, cases[1]);
         }
+        if (through) result.fixedDateStretch = await verifyDateStretch(floating, file, source);
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
         await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));

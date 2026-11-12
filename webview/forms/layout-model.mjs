@@ -8,7 +8,7 @@ const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartF
   'SpreadSheetDocumentField', 'TextDocumentField', 'FormattedDocumentField', 'HTMLDocumentField',
   'PDFDocumentField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PictureField']);
 const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
-const explicitNo = value => ['false', 'No', '0'].includes(value);
+export const explicitNo = value => ['false', 'No', '0'].includes(value);
 const explicitYes = value => ['true', 'Yes', '1'].includes(value);
 
 // In Linux Designer, authored heights of forms and ordinary groups use a 16 px unit.
