@@ -54,6 +54,14 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "multi-step") {
+    await runMultiStep(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, multi_step: true,
+      continued_threads: 2, stale_frames_rejected: true,
+    }));
+    return;
+  }
   if (native.scenario === "pause") {
     await runPause(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -721,5 +729,72 @@ async function runServerProcessing(folder, caller, external, until, reload) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints([point, externalPoint]);
+  }
+}
+
+async function runMultiStep(folder, module, until) {
+  const point = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(5, 0)));
+  let session;
+  let next;
+  const stops = [];
+  const resumed = [];
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "next") next = message.arguments;
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stops.push(message.body);
+          if (message.event === "continued") resumed.push(message.body);
+        },
+      };
+    },
+  });
+  vscode.debug.addBreakpoints([point]);
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP multi-step", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const clients = await until(async () => {
+      const { targets } = await session.customRequest("eska/listDebugTargets");
+      for (const target of targets.filter(item => item.kind === "ManagedClient")) {
+        await session.customRequest("eska/attachDebugTarget", { id: target.id });
+      }
+      const { threads } = await session.customRequest("threads");
+      const attached = threads.filter(thread => thread.name.startsWith("ManagedClient")).map(thread => thread.id);
+      return attached.length === 2 ? attached : undefined;
+    }, "two attached native clients");
+    await until(() => stops.length === 2, "both native clients stopped on the breakpoint");
+    assert.deepEqual(new Set(stops.map(event => event.threadId)), new Set(clients));
+    assert.ok(stops.every(event => event.reason === "breakpoint"), JSON.stringify(stops));
+    const previous = await Promise.all(clients.map(async threadId => {
+      const { stackFrames } = await session.customRequest("stackTrace", { threadId });
+      assert.equal(stackFrames[0].source.path, module.fsPath);
+      assert.equal(stackFrames[0].line, 6);
+      return stackFrames[0].id;
+    }));
+    vscode.debug.removeBreakpoints([point]);
+    await session.customRequest("setBreakpoints", { source: { path: module.fsPath }, breakpoints: [] });
+    await until(async () => {
+      if (!next) await vscode.commands.executeCommand("workbench.action.debug.stepOver");
+      return next;
+    }, "VS Code sent Step Over for a stopped client");
+    assert.ok(clients.includes(next.threadId));
+    const stop = await until(() => stops[2], "selected client stopped after the step");
+    assert.equal(stop.reason, "step");
+    assert.equal(stop.threadId, next.threadId);
+    assert.deepEqual(resumed.map(event => event.threadId).sort((a, b) => a - b), [...clients].sort((a, b) => a - b));
+    assert.ok(resumed.every(event => event.allThreadsContinued === false));
+    const { stackFrames } = await session.customRequest("stackTrace", { threadId: stop.threadId });
+    assert.equal(stackFrames[0].line, 7);
+    const other = clients.find(id => id !== stop.threadId);
+    await assert.rejects(session.customRequest("stackTrace", { threadId: other }));
+    for (const frameId of previous) await assert.rejects(session.customRequest("scopes", { frameId }));
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point]);
   }
 }
