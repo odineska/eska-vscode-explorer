@@ -99,13 +99,11 @@ conditional modes, explicit accessibility и actionable hints сохраняют
 выбранной базы и файлов. Для первого импорта и неподдерживаемых частичных правок
 открывается отдельный предпросмотр полного импорта.
 
-Для HTTP-отладки соберите опциональный Rust-бинарник командой
-`cargo build --release -p eska-debug` в репозитории ESKA и отдельно установите
-`OnecDebugAdapter` 0.4.1. Выберите в том же меню запуск с отладкой или подключение.
-В конфигурации запуска VS Code доступны `"type": "eska-debug"`,
-`"request": "launch"` или `"attach"` и `"profile": "test"` или `"prod"`.
-Пути задаются параметрами `eska.explorer.debugExecutable` и
-`eska.explorer.debugAdapterExecutable`. Перед запуском с отладкой или
+Для HTTP-отладки соберите Rust-бинарник командой
+`cargo build --release -p eska-debug` в репозитории ESKA. Выберите в том же
+меню запуск с отладкой или подключение. В конфигурации запуска VS Code доступны
+`"type": "eska-debug"`, `"request": "launch"` или `"attach"` и `"profile": "test"` или `"prod"`.
+Путь к бинарнику задаётся параметром `eska.explorer.debugExecutable`. Перед запуском с отладкой или
 подключением запустите HTTP-сервер отладки из профиля. Для уже запущенного
 клиента выберите его предмет отладки. Команда **Выбрать предмет отладки 1С**
 обновляет список в активной сессии. В профиле `prod` VS Code

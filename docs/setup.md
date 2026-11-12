@@ -95,12 +95,10 @@ and files. The first import and unsupported partial changes require a separate
 full-import preview.
 
 For HTTP debugging, build the optional Rust executable with
-`cargo build --release -p eska-debug` in the ESKA repository and install
-`OnecDebugAdapter` 0.4.1 separately. Use **Launch with Debugger** or **Attach
+`cargo build --release -p eska-debug` in the ESKA repository. Use **Launch with Debugger** or **Attach
 Debugger** in the same menu. A VS Code launch configuration can use
 `"type": "eska-debug"`, `"request": "launch"` or `"attach"`, and
-`"profile": "test"` or `"prod"`. The tool paths can be set with
-`eska.explorer.debugExecutable` and `eska.explorer.debugAdapterExecutable`.
+`"profile": "test"` or `"prod"`. Set `eska.explorer.debugExecutable` to the path of the resulting executable.
 Start the HTTP debug server configured in the profile before attaching or
 launching. For an existing client, choose its target after attaching. The
 **Select 1C Debug Target** command refreshes the list in an active session.

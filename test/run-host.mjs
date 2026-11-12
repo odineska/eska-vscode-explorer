@@ -32,6 +32,15 @@ try {
     "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  if (basename(suite) === "debug-http-host.cjs") {
+    const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
+    const source = join(fixture.root, "src");
+    await rm(source, { recursive: true });
+    await cp(native.source, source, { recursive: true });
+    const state = join(fixture.root, ".eska");
+    await mkdir(state, { recursive: true });
+    await cp(native.settings, join(state, "settings_local.toml"));
+  }
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
     const fields = Array.from({ length: 48 }, (_, index) => `${index} AS КолонкаРезультата${index}WithLongEnglishName`).join(',\r\n|');

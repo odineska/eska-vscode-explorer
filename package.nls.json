@@ -51,7 +51,6 @@
   "debugProfile": "Project-local infobase profile",
   "buildExecutable": "Path or command name for the separately installed eska-build.",
   "debugExecutable": "Path or command name for the optional eska-debug tool.",
-  "debugAdapterExecutable": "Path or command name for the separately installed onec-debug-adapter.",
   "selectAnalysisContext": "Choose analysis application",
   "queryEditBsl": "Edit query separately",
   "queryApply": "Apply query to module",

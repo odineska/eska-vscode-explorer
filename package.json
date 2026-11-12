@@ -572,7 +572,6 @@
       "properties": {
         "eska.explorer.buildExecutable": { "type": "string", "default": "eska-build", "scope": "machine-overridable", "description": "%buildExecutable%" },
         "eska.explorer.debugExecutable": { "type": "string", "default": "eska-debug", "scope": "machine-overridable", "description": "%debugExecutable%" },
-        "eska.explorer.debugAdapterExecutable": { "type": "string", "default": "OnecDebugAdapter", "scope": "machine-overridable", "description": "%debugAdapterExecutable%" },
         "eska.explorer.backend": {
           "type": "string",
           "enum": [

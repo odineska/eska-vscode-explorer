@@ -51,7 +51,6 @@
   "debugProfile": "Локальный профиль информационной базы",
   "buildExecutable": "Путь или имя команды отдельно установленного eska-build.",
   "debugExecutable": "Путь или имя команды опционального eska-debug.",
-  "debugAdapterExecutable": "Путь или имя команды отдельно установленного onec-debug-adapter.",
   "selectAnalysisContext": "Выбрать приложение для анализа",
   "queryEditBsl": "Редактировать запрос отдельно",
   "queryApply": "Применить запрос к модулю",

@@ -61,11 +61,11 @@ export class ProjectRuntime implements vscode.Disposable {
   private async attachTarget(session: vscode.DebugSession | undefined): Promise<void> {
     if (!vscode.workspace.isTrusted || session?.type !== debugType) return;
     try {
-      const response: unknown = await session.customRequest("DebugTargetsRequest");
-      const items = isRecord(response) && Array.isArray(response.Items) ? response.Items : [];
-      const targets = items.flatMap(item => isRecord(item) && typeof item.Id === "string"
-        && typeof item.Type === "string" && typeof item.Seance === "string" && typeof item.User === "string"
-        ? [{ id: item.Id, label: this.text("runtimeDebugTargetLabel", item.Type, item.Seance), description: item.User }]
+      const response: unknown = await session.customRequest("eska/listDebugTargets");
+      const items = isRecord(response) && Array.isArray(response.targets) ? response.targets : [];
+      const targets = items.flatMap(item => isRecord(item) && typeof item.id === "string"
+        && typeof item.kind === "string" && typeof item.session === "string" && typeof item.user === "string"
+        ? [{ id: item.id, label: this.text("runtimeDebugTargetLabel", item.kind, item.session), description: item.user }]
         : []);
       if (!targets.length) {
         void vscode.window.showInformationMessage(this.text("runtimeNoDebugTargets"));
@@ -73,7 +73,7 @@ export class ProjectRuntime implements vscode.Disposable {
       }
       const target = await vscode.window.showQuickPick(targets, { placeHolder: this.text("runtimeChooseDebugTarget") });
       if (target && vscode.debug.activeDebugSession?.id === session.id) {
-        await session.customRequest("AttachDebugTargetRequest", { Id: target.id });
+        await session.customRequest("eska/attachDebugTarget", { id: target.id });
       }
     } catch {
       void vscode.window.showErrorMessage(this.text("runtimeDebugTargetFailed"));
@@ -146,14 +146,13 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!project) return undefined;
     const root = project.root;
     const binary = await this.tool(project, "debug", "eska-debug");
-    const adapter = await this.tool(project, "debugAdapter", "OnecDebugAdapter");
-    if (!binary || !adapter) {
-      void vscode.window.showErrorMessage(this.text(binary ? "runtimeDebugAdapterMissing" : "runtimeDebugMissing"));
+    if (!binary) {
+      void vscode.window.showErrorMessage(this.text("runtimeDebugMissing"));
       return undefined;
     }
     const profile: Profile = config.profile === "prod" ? "prod" : "test";
     const mode: Mode = config.request === "attach" ? "attach" : "launch";
-    const args = ["dap", "--profile", profile, "--mode", mode, "--adapter", adapter];
+    const args = ["dap", "--profile", profile, "--mode", mode];
     if (profile === "prod") {
       const unsaved = vscode.workspace.textDocuments.some(document => document.isDirty && document.uri.scheme === "file");
       const choice = await this.productionChoice(project, binary, unsaved);

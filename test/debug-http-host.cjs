@@ -22,12 +22,7 @@ exports.run = async function () {
   const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(root));
   const configuration = vscode.workspace.getConfiguration("eska.explorer", folder.uri);
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
-  await configuration.update("debugAdapterExecutable", native.adapter, vscode.ConfigurationTarget.Workspace);
-  const state = path.join(root, ".eska");
-  await fs.mkdir(state, { recursive: true });
-  await fs.copyFile(native.settings, path.join(state, "settings_local.toml"));
   const source = path.join(root, "src");
-  await fs.cp(native.source, source, { recursive: true });
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
   const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(2, 0)));
   vscode.debug.addBreakpoints([breakpoint]);
@@ -38,10 +33,11 @@ exports.run = async function () {
   const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
     createDebugAdapterTracker(active) {
       session = active;
-      return { onDidSendMessage(message) {
+      return { onError(error) { console.error(error); }, onDidSendMessage(message) {
+        if (message.type === "response" && message.success === false) console.error(message.command, message.message);
         if (message.event === "stopped") stops.push(message.body.threadId);
-        if (message.command === "DebugTargetsRequest" && message.success) targets = message.body.Items;
-        if (message.command === "AttachDebugTargetRequest" && message.success) attached = true;
+        if (message.command === "eska/listDebugTargets" && message.success) targets = message.body.targets;
+        if (message.command === "eska/attachDebugTarget" && message.success) attached = true;
       } };
     },
   });
@@ -55,10 +51,11 @@ exports.run = async function () {
     assert.equal(stack.stackFrames[0].line, 3);
     const scopes = await session.customRequest("scopes", { frameId: stack.stackFrames[0].id });
     const variables = await session.customRequest("variables", { variablesReference: scopes.scopes[0].variablesReference });
-    assert.ok(variables.variables.some(variable => variable.name.startsWith("A ") && variable.value === "41"));
+    assert.ok(variables.variables.some(variable => variable.name === "A" && variable.value === "41"));
     const evaluate = (frameId, expression) => session.customRequest("evaluate", { frameId, expression, context: "repl" });
     assert.equal((await evaluate(stack.stackFrames[0].id, "A + 1")).result, "42");
     await session.customRequest("stepIn", { threadId });
+    await assert.rejects(evaluate(stack.stackFrames[0].id, "A"));
     await until(() => stops[1], "native 1C client stepped into the callee");
     const nested = await session.customRequest("stackTrace", { threadId: stops[1] });
     assert.equal((await evaluate(nested.stackFrames[1].id, "A + 2")).result, "43");
@@ -66,6 +63,8 @@ exports.run = async function () {
     await until(() => stops[2], "step over");
     await session.customRequest("stepOut", { threadId });
     await until(() => stops[3], "step out");
+    vscode.debug.removeBreakpoints([breakpoint]);
+    await session.customRequest("setBreakpoints", { source: { path: module.fsPath }, breakpoints: [] });
     await session.customRequest("continue", { threadId });
     const launched = session;
     await vscode.debug.stopDebugging(launched);
