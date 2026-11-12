@@ -402,7 +402,7 @@ async function runExtensions(folder, base, files, until) {
 async function runPaging(folder, module, until, enumerable) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");
   const workbench = await connectWorkbench(until);
-  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(enumerable ? 5 : 6, 0)));
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(enumerable ? 5 : 8, 0)));
   vscode.debug.addBreakpoints([breakpoint]);
   const requests = [];
   let session;
@@ -436,7 +436,22 @@ async function runPaging(folder, module, until, enumerable) {
     assert.equal(await vscode.debug.startDebugging(folder, {
       name: "ESKA HTTP collection paging", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
     }), true);
-    await until(() => stopped, "client stopped with the large array in scope");
+    const threadId = await until(() => stopped, "client stopped with the collection in scope");
+    const stack = await session.customRequest("stackTrace", { threadId });
+    const frameId = stack.stackFrames[0].id;
+    const expression = enumerable ? "ФиксированныйРяд" : "ПолучитьРяд(Ряд)";
+    const evaluated = await session.customRequest("evaluate", { frameId, expression });
+    assert.equal(evaluated.indexedVariables, enumerable ? 2 : 600);
+    const evaluatedPage = await session.customRequest("variables", {
+      variablesReference: evaluated.variablesReference, filter: "indexed",
+      start: enumerable ? 1 : 550, count: 1,
+    });
+    assert.equal(evaluatedPage.variables.length, 1);
+    if (!enumerable) {
+      assert.equal(evaluatedPage.variables[0].name, "550");
+      const calls = await session.customRequest("evaluate", { frameId, expression: "Счетчик" });
+      assert.equal(calls.result, "1");
+    }
     await vscode.commands.executeCommand("workbench.debug.action.focusVariablesView");
     await expandRow(vscode.env.language.startsWith("ru") ? "Локальные переменные" : "Local variables");
     if (enumerable) {
