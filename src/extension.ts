@@ -154,7 +154,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
     this.projectSettings = new ProjectSettings(context);
-    this.projectRuntime = new ProjectRuntime(root => this.runtimeProject(undefined, root));
+    this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
     for (const [name, action] of [
@@ -870,7 +870,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if (project) this.projectSettings.show(project.root, project.executable);
   }
 
-  private async runtimeProject(entry?: Element, root?: string): Promise<RuntimeProject | undefined> {
+  private async runtimeProject(entry?: Element, root?: string, folder?: string): Promise<RuntimeProject | undefined> {
     if (!this.tree) await this.connect(false);
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
@@ -878,7 +878,9 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
     if (root && !project) return undefined;
     if (!project) {
-      const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info));
+      const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info)
+        && (folder === undefined || folder === nativePath(item.info.rootPath)
+          || relativeFile(folder, nativePath(item.info.rootPath)) !== undefined));
       if (projects.length === 1) project = projects[0];
       else if (projects.length > 1) {
         const selected = await vscode.window.showQuickPick(projects.map(item => ({

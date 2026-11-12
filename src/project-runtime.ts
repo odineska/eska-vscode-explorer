@@ -27,14 +27,14 @@ export class ProjectRuntime implements vscode.Disposable {
   private readonly registrations: vscode.Disposable[];
   private readonly descriptors = new Map<string, vscode.DebugAdapterExecutable>();
 
-  constructor(private readonly choose: (root?: string) => Promise<RuntimeProject | undefined>) {
+  constructor(private readonly choose: (root?: string, folder?: string) => Promise<RuntimeProject | undefined>) {
     this.registrations = [
       vscode.debug.onDidStartDebugSession(session => {
         if (session.type === debugType && session.configuration.request === "attach") void this.attachTarget(session);
       }),
       vscode.commands.registerCommand("eska.explorer.attachDebugTarget", () => this.attachTarget(vscode.debug.activeDebugSession)),
       vscode.debug.registerDebugConfigurationProvider(debugType, {
-        resolveDebugConfiguration: (_folder, config) => this.prepareDebug(config),
+        resolveDebugConfiguration: (folder, config) => this.prepareDebug(config, folder?.uri.fsPath),
       }),
       vscode.debug.registerDebugAdapterDescriptorFactory(debugType, {
         createDebugAdapterDescriptor: session => {
@@ -140,9 +140,9 @@ export class ProjectRuntime implements vscode.Disposable {
     else this.failure(applied);
   }
 
-  private async prepareDebug(config: vscode.DebugConfiguration): Promise<vscode.DebugConfiguration | undefined> {
+  private async prepareDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {
     if (!vscode.workspace.isTrusted) return undefined;
-    const project = await this.choose(typeof config.projectDir === "string" ? config.projectDir : undefined);
+    const project = await this.choose(typeof config.projectDir === "string" ? config.projectDir : undefined, folder);
     if (!project) return undefined;
     const root = project.root;
     const binary = await this.tool(project, "debug", "eska-debug");
@@ -168,7 +168,7 @@ export class ProjectRuntime implements vscode.Disposable {
     this.descriptors.set(id, new vscode.DebugAdapterExecutable(binary, this.arguments(root, args), { cwd: root }));
     const timer = setTimeout(() => this.descriptors.delete(id), 30_000);
     timer.unref();
-    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, eskaSession: id };
+    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, projectDir: root, eskaSession: id };
   }
 
   private async productionChoice(project: RuntimeProject, binary: string, unsaved: boolean): Promise<string | undefined> {
