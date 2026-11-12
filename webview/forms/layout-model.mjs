@@ -154,13 +154,16 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
   const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
   const nativeMultiline = axis === 'x' && linuxFixedInputWidth(node, os) && inputRows(node) > 1;
+  const nativeHeight = axis === 'y' && authoredHeight && os === 'linux'
+    && node.kind === 'InputField' && flag(node, 'MultiLine', false);
   let maximum = nativeMultiline ? automaticMultilineMaximum(node, os) ?? manualLaneMaximum(node) : undefined;
-  if (maximum === undefined && (explicit <= 0 || numericLabel)) {
+  if (maximum === undefined && (explicit <= 0 || numericLabel || nativeHeight)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
-      // Manual bounds apply after leaving the initial Designer size.
       const limit = positive(number(node, `Max${dimension}`));
-      if (!atPreferred && limit) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
+      // Designer measures multiline limits in text rows even at an authored form height.
+      if (limit && nativeHeight) maximum = inputControlHeight(node, os, limit);
+      else if (limit && !atPreferred) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
     } else if (numericLabel) {
       maximum = numericLabel.maximum;
     } else if (axis === 'x' && node.kind === 'InputField') {

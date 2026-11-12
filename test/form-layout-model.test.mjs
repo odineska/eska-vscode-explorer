@@ -113,6 +113,20 @@ test('Linux multiline input keeps its XML height under viewport pressure', () =>
   assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
 });
 
+test('manual Linux multiline limits use native rows in an authored vertical allocation', () => {
+  const props = { MultiLine: true, AutoMaxHeight: false, MaxHeight: 4 };
+  const memo = node('InputField', props);
+  const options = { atPreferred: true, authoredHeight: true };
+  assert.deepEqual(controlBounds(memo, 'y', undefined, 'linux', options), { minimum: 23, maximum: 107 });
+  assert.deepEqual(controlBounds(memo, 'y', undefined, 'linux'), { minimum: 51, maximum: 80 });
+  const authored = node('InputField', { ...props, Height: 2, VerticalStretch: true });
+  authored.presentation.font = { points: 14 };
+  const height = controlBounds(authored, 'y', undefined, 'linux', options);
+  assert.deepEqual(height, { minimum: 35, maximum: 158 });
+  const fixed = node('InputField', { ...props, Height: 2, VerticalStretch: false });
+  assert.deepEqual(controlBounds(fixed, 'y', undefined, 'linux'), {});
+});
+
 test('manual Linux memo width uses the Taxi unit at the preferred size', () => {
   const memo = node('InputField',{MultiLine:true, HorizontalStretch:true, AutoMaxWidth:false, MaxWidth:80});
   assert.equal(controlBounds(memo,'x',undefined,'linux',{atPreferred:true}).maximum,810);

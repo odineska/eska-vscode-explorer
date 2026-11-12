@@ -273,11 +273,11 @@ export function inputHeightUnit(node, os) {
   const single = inputHeight(node, os);
   return os === 'linux' ? single + (single < 29 ? 5 : 6) : 20;
 }
-export function inputControlHeight(node, os) {
+export function inputControlHeight(node, os, rows = inputRows(node)) {
   const single = inputHeight(node, os);
   if (os !== 'linux') return flag(node, 'MultiLine', false) ? Math.max(2, number(node, 'Height', 3)) * 20 : single;
   // Linux Designer height units use the control height plus a gap measured at 8–20pt.
-  return single + (inputRows(node) - 1) * inputHeightUnit(node, os);
+  return single + (rows - 1) * inputHeightUnit(node, os);
 }
 export function inputRowHeight(node, os, captioned = true) {
   const height=inputHeight(node,os)+2;

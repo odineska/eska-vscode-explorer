@@ -82,11 +82,12 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
     const pages = element.querySelector(':scope > .taxi-pages'), table = element.querySelector(':scope > .taxi-table-field');
-    let value;
+    let value, maximumHeight;
     if (field) {
       const label = field.querySelector(':scope > .taxi-field-label'), control = field.querySelector(':scope > .taxi-field-control');
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
-      content.height += pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
+      const titleOffset = pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
+      content.height += titleOffset;
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') title.width = Math.max(title.width, throughCaptionWidth(element));
       const fullTitleWidth = title.width;
@@ -103,6 +104,10 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       if (inputMinimum) {
         if (inputMinimum.aboveWidth !== undefined) value.width = inputMinimum.aboveWidth + padding.width;
         value.sideWidth = Math.max(value.width, content.width + inputMinimum.alignedCaption + inputMinimum.gap + padding.width);
+      }
+      if (child && element.dataset.cappedInputHeight === 'authored') {
+        const limit = pixels(element.style.getPropertyValue('--taxi-control-max-height'));
+        if (limit) maximumHeight = Math.max(value.height, rowHeight(limit + margins(child).height + titleOffset));
       }
       const widthLimit = pixels(element.style.getPropertyValue('--taxi-control-max-width'));
       if (widthLimit && child?.classList.contains('taxi-input')) {
@@ -190,6 +195,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       height: pixels(element.style.getPropertyValue('--taxi-group-spacing-y')) };
     if (element.dataset.stretchX === 'false') value.maximumWidth = widthWithHeadings(value);
     value = add(value, spacing);
+    if (maximumHeight) value.maximumHeight = maximumHeight;
     value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value));
     minima.set(element.dataset.element, value);
     if (value.fullWidth > value.width) headingFloors.set(element, value);

@@ -978,9 +978,10 @@ function LabelDecoration(props) {
 
 export function Element(props) {
   const node = () => props.node, state = props.controller.state, layout = useFormLayout();
+  const authoredHeight = () => props.heightConstrained || !!layout?.authoredHeight();
   const bounds = axis => controlBounds(node(), axis, undefined, state.os, {
     atPreferred: layout?.atPreferred(axis),
-    authoredHeight: axis === 'y' && (props.heightConstrained || !!layout?.authoredHeight()),
+    authoredHeight: axis === 'y' && authoredHeight(),
   });
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
@@ -988,9 +989,13 @@ export function Element(props) {
   const group = () => ['UsualGroup', 'Page', 'Pages', 'ColumnGroup', 'CommandBar', 'ButtonGroup', 'Popup'].includes(node().kind);
   const addition = createMemo(() => additionKinds.has(node().kind) ?
     additionWidth(node(), state.os, props.inlineAddition, layout?.stretch(node(), 'x')) : undefined);
-  const maximumWidth = () => layout?.minimumFor(node())?.maximumWidth;
-  const cappedInputHeight = () => state.os === 'linux' && node().kind === 'InputField'
-    && !flag(node(), 'AutoMaxHeight') && number(node(), 'MaxHeight') > 0;
+  const measuredBounds = () => layout?.minimumFor(node());
+  const maximumWidth = () => measuredBounds()?.maximumWidth;
+  const maximumHeight = () => measuredBounds()?.maximumHeight;
+  const cappedInputHeight = () => {
+    if (state.os !== 'linux' || node().kind !== 'InputField' || flag(node(), 'AutoMaxHeight') || number(node(), 'MaxHeight') <= 0) return;
+    return authoredHeight() && flag(node(), 'MultiLine', false) ? 'authored' : '';
+  };
   const layoutStyle = () => ({
     ...font(node().presentation.font, state.os),
     '--taxi-content-maximum-width': Number.isFinite(maximumWidth()) ? `${maximumWidth()}px` : undefined,
@@ -1005,10 +1010,11 @@ export function Element(props) {
     '--taxi-control-max-width': x().maximum ? `${x().maximum}px` : undefined,
     '--taxi-control-min-height': y().minimum ? `${y().minimum}px` : undefined,
     '--taxi-control-max-height': y().maximum ? `${y().maximum}px` : undefined,
+    '--taxi-field-max-height': maximumHeight() ? `${maximumHeight()}px` : undefined,
     '--taxi-horizontal-input-maximum': horizontalMaximum() ? `${horizontalMaximum()}px` : undefined,
   });
   return <Show when={displayedInPreview(node(), state.model.root)}><div data-element={node().key} data-kind={node().kind}
-    data-capped-input-height={cappedInputHeight() ? '' : undefined}
+    data-capped-input-height={cappedInputHeight()}
     data-standalone-addition={addition() ? '' : undefined} data-group-horizontal-align={addition() ? scalar(node(), 'GroupHorizontalAlign') || undefined : undefined} data-joined-table={props.joinedTable ? '' : undefined} data-stretch-x={layout?.stretch(node(), 'x')} data-stretch-y={layout?.stretch(node(), 'y')} data-layout-container={group()} data-compact-command-bars={compactCommandBarGroup(node(), state.model.root) ? '' : undefined} data-horizontal-location={node().kind === 'CommandBar' ? scalar(node(), 'HorizontalLocation', 'Left') : undefined} data-authored-group-height={hasAuthoredGroupHeight(node(), state.os) ? '' : undefined} data-height-constrained={props.heightConstrained ? '' : undefined} data-group-shrink-x={groupCanShrink(node(), state.os, state.model.root) ? '' : undefined} data-group-vertical-align={scalar(node(), 'GroupVerticalAlign') || undefined} data-horizontal-input-limit={horizontalMaximum() ? '' : undefined} classList={{ 'taxi-element': true, 'taxi-element--field': node().kind?.endsWith('Field'), 'taxi-selected': state.selected === node().key, 'taxi-disabled': !flag(node(), 'Enabled'), 'taxi-element--stretch': flag(node(), 'HorizontalStretch', false) }}
     style={layoutStyle()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }} onDblClick={event => { event.stopPropagation(); props.controller.post({ type: 'locate', target: { kind: 'element', identity: node().identity } }); }}>
