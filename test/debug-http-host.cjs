@@ -19,12 +19,24 @@ exports.run = async function () {
     }
     throw new Error(label);
   };
-  await until(() => explorer.connection.state.kind === "ready", "metadata connected");
+  if (explorer) await until(() => explorer.connection.state.kind === "ready", "metadata connected");
+  else await vscode.commands.executeCommand("eska.explorer.restart");
   const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(root));
   const configuration = vscode.workspace.getConfiguration("eska.explorer", folder.uri);
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (["epf-test", "epf-prod", "epf-attach"].includes(native.scenario)) {
+    const form = vscode.Uri.file(path.join(source, "EskaEpfWire/Forms/ProbeForm/Ext/Form/Module.bsl"));
+    const production = native.scenario === "epf-prod";
+    const attach = native.scenario === "epf-attach";
+    const value = await runExternalProcessing(folder, form, until, { production, attach });
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, epf_launch: !attach, epf_attach: attach,
+      prod_git_confirmation: production, form_source: true, evaluate: value,
+    }));
+    return;
+  }
   if (native.scenario === "assign") {
     await runAssignment(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -546,5 +558,75 @@ async function runParity(folder, module, scenario, until) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints(breakpoints);
+  }
+}
+
+async function runExternalProcessing(folder, module, until, { production, attach }) {
+  const line = attach ? 14 : 4;
+  const point = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(line - 1, 0)));
+  let session;
+  let stopped;
+  let failure;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onError(error) { failure = String(error); },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stopped = message.body;
+          if (message.type === "response" && message.success === false) failure = message.message;
+        },
+      };
+    },
+  });
+  vscode.debug.addBreakpoints([point]);
+  let workbench;
+  try {
+    const launch = () => vscode.debug.startDebugging(folder, {
+      name: "ESKA EPF", type: "eska-debug", request: attach ? "attach" : "launch",
+      profile: production ? "prod" : "test", projectDir: folder.uri.fsPath,
+    });
+    if (production) {
+      await vscode.workspace.getConfiguration("window").update("dialogStyle", "custom", vscode.ConfigurationTarget.Global);
+      const { connectWorkbench } = require("./query-constructor-dom.cjs");
+      workbench = await connectWorkbench(until);
+      const russian = vscode.env.language.startsWith("ru");
+      const choose = label => until(() => workbench.evaluate(`(() => {
+        const box = document.querySelector(".monaco-dialog-box");
+        if (!box?.textContent.includes(${JSON.stringify(russian ? "совпадают с конфигурацией prod" : "deployed production configuration")})) return false;
+        const button = [...box.querySelectorAll("button, .monaco-button")]
+          .find(item => item.textContent.replaceAll("&", "").trim() === ${JSON.stringify(label)});
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`), label);
+      const cancelled = launch();
+      await choose(russian ? "Отмена" : "Cancel");
+      assert.equal(await cancelled, false);
+      assert.equal(session, undefined);
+      const approved = launch();
+      await choose(russian ? "Запустить с текущими исходниками" : "Use Current Sources");
+      assert.equal(await approved, true);
+    } else {
+      assert.equal(await launch(), true);
+    }
+    const event = await until(() => {
+      assert.equal(failure, undefined);
+      return stopped;
+    }, "external processing breakpoint");
+    assert.equal(event.reason, "breakpoint");
+    const stack = await session.customRequest("stackTrace", { threadId: event.threadId });
+    const top = stack.stackFrames[0];
+    assert.equal(top.line, line);
+    assert.equal(top.source.path, module.fsPath);
+    const value = await session.customRequest("evaluate", { frameId: top.id, expression: "Значение" });
+    if (attach) assert.ok(Number(value.result) >= 2, value.result);
+    else assert.equal(value.result, "73");
+    return value.result;
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    workbench?.close();
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point]);
   }
 }

@@ -41,6 +41,8 @@ exports.run = async function () {
   })()`);
   const chooseProd = panel => panel.evaluate("document.querySelectorAll('button[aria-pressed]')[1].click()");
   const save = panel => panel.evaluate("document.querySelector('button.primary').click()");
+  const processing = process.env.ESKA_HOST_PROJECT_TYPE === "processing";
+  const epfUrl = "file:///Развёртывание/" + "a".repeat(64) + "/Демо.epf";
   const russian = vscode.env.language.startsWith("ru");
   const text = (en, ru) => russian ? ru : en;
   const first = await open();
@@ -58,6 +60,12 @@ exports.run = async function () {
     await fill(first, "endpoint", "http://127.0.0.1:1550");
     await first.evaluate("document.querySelector('input[name=customAutoAttach]').click()");
     await fill(first, "autoAttach", "ManagedClient, ServerEmulation");
+    if (processing) {
+      await fill(first, "epfArtifact", "artifacts/Демо.epf");
+      await fill(first, "epfDebugUrl", epfUrl);
+    } else {
+      assert.equal(await first.evaluate("document.querySelector('input[name=epfArtifact]') === null"), true);
+    }
     await fill(first, "user", "demo");
     await fill(first, "secret", "ESKA_DEMO_SECRET");
     await save(first);
@@ -70,12 +78,20 @@ exports.run = async function () {
   assert.match(contents, /password_env = "ESKA_DEMO_SECRET"/);
   assert.match(contents, /auto_attach_types = \[\s*"ManagedClient",\s*"ServerEmulation",?\s*\]/);
   assert.doesNotMatch(contents, /\[test/);
+  if (processing) {
+    assert.match(contents, /\[prod\.debug\.external_processing\]/);
+    assert.ok(contents.includes(epfUrl));
+  }
   await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   const restored = await open();
   try {
     await chooseProd(restored);
     assert.equal(await restored.evaluate("document.querySelector('input[name=path]').value"), "Демо база");
     assert.equal(await restored.evaluate("document.querySelector('input[name=autoAttach]').value"), "ManagedClient, ServerEmulation");
+    if (processing) {
+      assert.equal(await restored.evaluate("document.querySelector('input[name=epfArtifact]').value"), "artifacts/Демо.epf");
+      assert.equal(await restored.evaluate("document.querySelector('input[name=epfDebugUrl]').value"), epfUrl);
+    }
     await restored.evaluate("document.querySelector('input[name=managedDebug]').click()");
     await fill(restored, "debugPort", "0");
     await save(restored);
@@ -86,10 +102,10 @@ exports.run = async function () {
     const managed = await fs.readFile(file, "utf8");
     assert.match(managed, /managed = true/);
     assert.match(managed, /port = 39150/);
-    assert.doesNotMatch(managed, /url =/);
+    assert.doesNotMatch(managed, /^url =/m);
   } finally { restored.close(); }
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
     passed: true, suite: "project-settings", vscode: vscode.version, prod_only: true,
-    shared_validation: true, settings_restored: true, auto_attach_settings: true,
+    shared_validation: true, settings_restored: true, auto_attach_settings: true, epf_settings: processing,
   }));
 };

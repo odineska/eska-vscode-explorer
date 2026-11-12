@@ -100,6 +100,11 @@ Debugger** in the same menu. A VS Code launch configuration can use
 `"type": "eska-debug"`, `"request": "launch"` or `"attach"`, and
 `"profile": "test"` or `"prod"`. Set `eska.explorer.debugExecutable` to the path of the resulting executable.
 Start the configured external HTTP debug server before attaching or launching.
+
+For an ESKA external processing project, set **Built EPF file** in its local
+runtime profile. Keep the build manifest beside the artifact. For attach, set
+**Deployed EPF URL for attach** to the exact URL reported by the 1C debugger.
+[EPF deployment and source verification](https://github.com/odineska/eska/blob/main/docs/1c-http-debug.md#epf-в-проекте-explorer)
 For a file infobase, **Start a local debug server** lets ESKA start and stop
 its own server and show the address in Debug Console. The port is optional.
 For an existing client, choose its target after attaching. The

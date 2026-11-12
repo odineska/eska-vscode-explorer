@@ -867,7 +867,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   private async configureProject(entry?: Element): Promise<void> {
     const project = await this.runtimeProject(entry);
-    if (project) this.projectSettings.show(project.root, project.executable);
+    if (project) this.projectSettings.show(project.root, project.executable, project.externalProcessing);
   }
 
   private async runtimeProject(entry?: Element, root?: string, folder?: string): Promise<RuntimeProject | undefined> {
@@ -890,7 +890,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       }
     }
     if (!project || state !== this.connection.state || !tree.projects.includes(project) || !projectEnabled(project.info)) return;
-    return { root: nativePath(project.info.rootPath), executable: state.target.executable };
+    return { root: nativePath(project.info.rootPath), executable: state.target.executable, externalProcessing: project.info.type === "processing" };
   }
 
   /** Open a dedicated settings-style editor tab for this metadata object. */

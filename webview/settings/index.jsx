@@ -15,6 +15,8 @@ function draft(profile) {
     ibcmd: profile?.runner.ibcmd ?? "", container: profile?.runner.container ?? "",
     endpoint: profile?.debug?.url ?? "", user: profile?.authentication?.user ?? "", secret: profile?.authentication?.password_env ?? "",
     managedDebug: profile?.debug?.managed === true, debugPort: String(profile?.debug?.port ?? ""),
+    epfArtifact: profile?.debug?.external_processing?.artifact ?? "",
+    epfDebugUrl: profile?.debug?.external_processing?.debug_url ?? "",
     customAutoAttach: Array.isArray(profile?.debug?.auto_attach_types),
     autoAttach: profile?.debug?.auto_attach_types?.join(", ") ?? "",
   };
@@ -30,6 +32,10 @@ function serialize(value) {
   const managed = value.kind === "file" && value.managedDebug;
   const debug = managed ? { managed: true } : value.endpoint ? { url: value.endpoint } : null;
   if (managed && value.debugPort) debug.port = /^\d+$/.test(value.debugPort) ? Number(value.debugPort) : value.debugPort;
+  if (debug && (value.epfArtifact || value.epfDebugUrl)) {
+    debug.external_processing = { artifact: value.epfArtifact };
+    if (value.epfDebugUrl) debug.external_processing.debug_url = value.epfDebugUrl;
+  }
   if (debug && value.customAutoAttach) debug.auto_attach_types = value.autoAttach.split(",").map(kind => kind.trim()).filter(Boolean);
   return { infobase, runner, debug,
     authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
@@ -42,6 +48,7 @@ function App() {
   const [notice, setNotice] = createSignal("");
   const [warning, setWarning] = createSignal("");
   const [loaded, setLoaded] = createSignal(false);
+  const [externalProcessing, setExternalProcessing] = createSignal(false);
   const [drafts, setDrafts] = createStore({ test: draft(), prod: draft() });
   const profile = () => drafts[active()];
   const edit = (field, value) => { setDrafts(active(), field, value); setNotice(""); };
@@ -50,6 +57,7 @@ function App() {
     if (data.type === "settings") {
       for (const name of profiles) setDrafts(name, draft(data.settings[name]));
       setLoaded(true);
+      setExternalProcessing(data.externalProcessing);
       setWarning(data.warning ?? "");
       setNotice(data.saved ? data.labels.saved : "");
     } else if (data.type === "error" || data.type === "probe") setNotice(data.detail);
@@ -101,6 +109,9 @@ function App() {
             <label class="enable"><input type="checkbox" name="customAutoAttach" checked={profile().customAutoAttach}
               onChange={event => edit("customAutoAttach", event.currentTarget.checked)} />{labels().customAutoAttach}</label>
             <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>
+            <Show when={externalProcessing() || profile().epfArtifact || profile().epfDebugUrl}>
+              {input("epfArtifact")}{input("epfDebugUrl")}
+            </Show>
           </Show>
           {input("user")}{input("secret")}
         </fieldset>

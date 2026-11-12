@@ -14,6 +14,7 @@ const labels = {
   version: "runtimeVersion", ibcmd: "runtimeIbcmd", endpoint: "runtimeEndpoint", user: "runtimeUser",
   managedDebug: "runtimeManagedDebug", debugPort: "runtimeDebugPort",
   customAutoAttach: "runtimeCustomAutoAttach", autoAttach: "runtimeAutoAttach",
+  epfArtifact: "runtimeEpfArtifact", epfDebugUrl: "runtimeEpfDebugUrl",
   secret: "runtimeSecret", save: "runtimeSave", saved: "runtimeSaved", reload: "runtimeReload", probe: "runtimeProbe",
 } satisfies Record<string, MessageKey>;
 
@@ -35,7 +36,7 @@ export class ProjectSettings implements vscode.Disposable {
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  show(root: string, executable: string): void {
+  show(root: string, executable: string, externalProcessing: boolean): void {
     const existing = this.panels.get(root);
     if (existing) { existing.reveal(); return; }
     const language = vscode.env.language;
@@ -71,7 +72,7 @@ export class ProjectSettings implements vscode.Disposable {
           snapshot = { revision: result.revision, settings: result.settings, git_protection: result.git_protection };
           const warning = protections.get(snapshot.git_protection);
           await panel.webview.postMessage({ type: "settings", settings: snapshot.settings,
-            warning: warning && text(warning), saved: saving, labels: strings });
+            warning: warning && text(warning), saved: saving, labels: strings, externalProcessing });
           return;
         }
         const error = isRecord(result) && isRecord(result.error) ? result.error : undefined;

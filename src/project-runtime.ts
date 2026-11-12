@@ -7,7 +7,7 @@ import { relativeFile } from "./reveal.js";
 import { runtimeJson } from "./runtime-tools.js";
 import { findTool } from "./tooling/inspect.js";
 
-export interface RuntimeProject { root: string; executable: string }
+export interface RuntimeProject { root: string; executable: string; externalProcessing: boolean }
 type Profile = "test" | "prod";
 type Mode = "launch" | "attach";
 
