@@ -6,7 +6,7 @@ export function runtimeJson(executable: string, args: string[], options: {
 }): Promise<unknown> {
   return new Promise(resolve => {
     const child = execFile(executable, args, { signal: options.signal, timeout: options.timeout,
-      maxBuffer: 1024 * 1024, windowsHide: true }, (_error, stdout) => {
+      maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (_error, stdout) => {
       try { resolve(JSON.parse(stdout)); } catch { resolve(undefined); }
     });
     if (options.onProgress && child.stderr) {
