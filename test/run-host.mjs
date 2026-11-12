@@ -40,7 +40,7 @@ try {
     const state = join(fixture.root, ".eska");
     await mkdir(state, { recursive: true });
     await cp(native.settings, join(state, "settings_local.toml"));
-    if (native.scenario === "epf-server" || native.scenario === "epf-server-reload") {
+    if (["epf-server", "epf-server-reload", "epf-server-opaque"].includes(native.scenario)) {
       const base = join(root, "base");
       await mkdir(base);
       await cp(native.configuration, join(base, "src"), { recursive: true });

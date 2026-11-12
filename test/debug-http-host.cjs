@@ -26,6 +26,15 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "epf-server-opaque") {
+    const external = vscode.Uri.file(path.join(source, "EskaEpfWire/Ext/ObjectModule.bsl"));
+    await runServerOpaqueSnapshot(folder, external, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version,
+      server_opaque_snapshot: true, nested_properties: true, evaluations: 2,
+    }));
+    return;
+  }
   if (native.scenario === "epf-server" || native.scenario === "epf-server-reload") {
     const external = vscode.Uri.file(path.join(source, "EskaEpfWire/Ext/ObjectModule.bsl"));
     const caller = vscode.Uri.file(path.join(path.dirname(root), "base/src/CommonModules/EskaEpfLoader/Ext/Module.bsl"));
@@ -549,12 +558,24 @@ async function runParity(folder, module, scenario, until) {
         assert.equal(nested.find(field => field.name === "Номер").value, "1");
       }
       assert.equal((await evaluate(first.frameId, "Счетчик", "hover")).result, "1");
+      let opaque;
+      try {
+        opaque = await evaluate(first.frameId, "СоздатьЗаписьJSON()", "repl");
+      } catch (error) {
+        assert.ok(String(error).length > 0);
+      }
+      if (opaque) {
+        assert.ok(opaque.variablesReference > 0);
+        await expand(opaque.variablesReference);
+      }
+      assert.equal((await evaluate(first.frameId, "Счетчик", "hover")).result, "2");
       await session.customRequest("stepIn", { threadId: first.threadId });
       await assert.rejects(expand(result.variablesReference));
       const nested = await stop(["step", "breakpoint"], 9);
       const stack = await session.customRequest("stackTrace", { threadId: nested.threadId });
-      assert.equal((await evaluate(stack.stackFrames[1].id, "A + Счетчик", "hover")).result, "42");
-      return { snapshot: true, hover: true, caller_frame: true };
+      assert.equal((await evaluate(stack.stackFrames[1].id, "A + Счетчик", "hover")).result, "43");
+      return { snapshot: true, hover: true, caller_frame: true,
+        opaque_evaluation_once: true, opaque_snapshot_available: !!opaque };
     }
     assert.equal(scenario, "breakpoints");
     assert.equal((await evaluate(first.frameId, "I", "repl")).result, "2");
@@ -792,6 +813,48 @@ async function runMultiStep(folder, module, until) {
     const other = clients.find(id => id !== stop.threadId);
     await assert.rejects(session.customRequest("stackTrace", { threadId: other }));
     for (const frameId of previous) await assert.rejects(session.customRequest("scopes", { frameId }));
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point]);
+  }
+}
+
+async function runServerOpaqueSnapshot(folder, module, until) {
+  const point = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(4, 0)));
+  let session;
+  let stop;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) {
+        if (message.event === "stopped") stop = message.body;
+      } };
+    },
+  });
+  vscode.debug.addBreakpoints([point]);
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA server Evaluate", type: "eska-debug", request: "attach", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const { threadId } = await until(() => stop, "server frame stopped");
+    const { stackFrames: [frame] } = await session.customRequest("stackTrace", { threadId });
+    assert.equal(frame.source.path, module.fsPath);
+    assert.equal(frame.line, 5);
+    const evaluate = expression => session.customRequest("evaluate", { frameId: frame.id, expression, context: "watch" });
+    const expand = async variablesReference => (await session.customRequest("variables", { variablesReference })).variables;
+    const writer = await evaluate("СоздатьЗаписьJSON()");
+    assert.equal(writer.type, "ЗаписьJSON");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const fields = await expand(writer.variablesReference);
+      const parameters = fields.find(field => field.name === "Параметры");
+      assert.equal(parameters.type, "ПараметрыЗаписиJSON");
+      assert.ok((await expand(parameters.variablesReference)).some(field => field.name === "ПереносСтрок"));
+    }
+    const reader = await evaluate("СоздатьЧтениеJSON()");
+    assert.equal(reader.type, "ЧтениеJSON");
+    assert.ok((await expand(reader.variablesReference)).some(field => field.name === "ТипТекущегоЗначения"));
+    assert.equal((await evaluate("Счетчик")).result, "2");
   } finally {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
