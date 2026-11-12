@@ -233,6 +233,11 @@ esac
         const descriptor = "CommonPictures/ProbeIcon.xml";
         const packagePath = "CommonPictures/ProbeIcon/Ext/Picture.xml";
         const svg = "CommonPictures/ProbeIcon/Ext/Picture/Picture.svg";
+        const png = "CommonPictures/ProbeIcon/Ext/Picture/Picture.png";
+        const pngBytes = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAQUlEQVR4nGOU6xFhoCVgoqnpoxaMWjBqAX0sYMEqajNnHzGaj6Q4EVQz9INo1IJRC0YtGLVg1IIhYQHjaOOXEAAA2JUEvXdAEQgAAAAASUVORK5CYII=",
+          "base64",
+        );
         const original = await fs.readFile(path.join(source, descriptor), "utf8");
         const originalPackage = await fs.readFile(path.join(source, packagePath));
         const originalSvg = await fs.readFile(path.join(source, svg), "utf8");
@@ -246,8 +251,13 @@ esac
         await fs.writeFile(path.join(source, svg), originalSvg.replace("#2050EE", "#A820E0"));
         await partial(svg, `${labels.companion}  ${packagePath}`);
         await fs.unlink(path.join(source, svg));
+        await fs.writeFile(path.join(source, png), pngBytes);
+        await fs.writeFile(path.join(source, packagePath),
+          originalPackage.toString("utf8").replace("Picture.svg", "Picture.png"));
+        await partial(svg, png, packagePath);
+        await fs.unlink(path.join(source, png));
         await fs.unlink(path.join(source, packagePath));
-        await partial(svg, packagePath, `${labels.companion}  ${descriptor}`);
+        await partial(png, packagePath, `${labels.companion}  ${descriptor}`);
         const inherited = original.replace(/<InternalInfo>[\s\S]*?<\/InternalInfo>/u, "<InternalInfo/>");
         assert.notEqual(inherited, original);
         await fs.writeFile(path.join(source, descriptor), inherited);
@@ -261,7 +271,7 @@ esac
         assert.equal(final.plan.mode, "unchanged");
         await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
           passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-          borrowed_picture: ["replace", "clear", "inherit", "restore"],
+          borrowed_picture: ["replace", "switch-format", "clear", "inherit", "restore"],
         }));
         return;
       }
