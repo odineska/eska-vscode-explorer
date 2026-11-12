@@ -99,8 +99,10 @@ For HTTP debugging, build the optional Rust executable with
 Debugger** in the same menu. A VS Code launch configuration can use
 `"type": "eska-debug"`, `"request": "launch"` or `"attach"`, and
 `"profile": "test"` or `"prod"`. Set `eska.explorer.debugExecutable` to the path of the resulting executable.
-Start the HTTP debug server configured in the profile before attaching or
-launching. For an existing client, choose its target after attaching. The
+Start the configured external HTTP debug server before attaching or launching.
+For a file infobase, **Start a local debug server** lets ESKA start and stop
+its own server and show the address in Debug Console. The port is optional.
+For an existing client, choose its target after attaching. The
 **Select 1C Debug Target** command refreshes the list in an active session.
 Use **Select 1C Auto-Attach Types** to change which new targets join the
 active session automatically. To set the initial types for future sessions,

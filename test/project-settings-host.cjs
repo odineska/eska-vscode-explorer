@@ -76,6 +76,17 @@ exports.run = async function () {
     await chooseProd(restored);
     assert.equal(await restored.evaluate("document.querySelector('input[name=path]').value"), "Демо база");
     assert.equal(await restored.evaluate("document.querySelector('input[name=autoAttach]').value"), "ManagedClient, ServerEmulation");
+    await restored.evaluate("document.querySelector('input[name=managedDebug]').click()");
+    await fill(restored, "debugPort", "0");
+    await save(restored);
+    await until(() => restored.evaluate("document.querySelector('[role=status]').textContent.includes('debug.port')"), "invalid local port rejected");
+    await fill(restored, "debugPort", "39150");
+    await save(restored);
+    await until(() => restored.evaluate(`document.querySelector('[role=status]').textContent.includes(${JSON.stringify(text("Local settings saved", "Локальные настройки сохранены"))})`), "managed profile saved");
+    const managed = await fs.readFile(file, "utf8");
+    assert.match(managed, /managed = true/);
+    assert.match(managed, /port = 39150/);
+    assert.doesNotMatch(managed, /url =/);
   } finally { restored.close(); }
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
     passed: true, suite: "project-settings", vscode: vscode.version, prod_only: true,

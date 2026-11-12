@@ -14,6 +14,7 @@ function draft(profile) {
     runner: profile?.runner.kind ?? "local", version: profile?.runner.version ?? "",
     ibcmd: profile?.runner.ibcmd ?? "", container: profile?.runner.container ?? "",
     endpoint: profile?.debug?.url ?? "", user: profile?.authentication?.user ?? "", secret: profile?.authentication?.password_env ?? "",
+    managedDebug: profile?.debug?.managed === true, debugPort: String(profile?.debug?.port ?? ""),
     customAutoAttach: Array.isArray(profile?.debug?.auto_attach_types),
     autoAttach: profile?.debug?.auto_attach_types?.join(", ") ?? "",
   };
@@ -26,7 +27,9 @@ function serialize(value) {
     : { kind: "standalone", url: value.url, name: value.name, admin_pid: value.admin ? (/^[0-9]+$/.test(value.admin) ? Number(value.admin) : value.admin) : null };
   const runner = { kind: value.runner, version: value.version || null, ibcmd: value.ibcmd || null };
   if (value.runner === "distrobox") runner.container = value.container;
-  const debug = value.endpoint ? { url: value.endpoint } : null;
+  const managed = value.kind === "file" && value.managedDebug;
+  const debug = managed ? { managed: true } : value.endpoint ? { url: value.endpoint } : null;
+  if (managed && value.debugPort) debug.port = /^\d+$/.test(value.debugPort) ? Number(value.debugPort) : value.debugPort;
   if (debug && value.customAutoAttach) debug.auto_attach_types = value.autoAttach.split(",").map(kind => kind.trim()).filter(Boolean);
   return { infobase, runner, debug,
     authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
@@ -88,8 +91,13 @@ function App() {
           </Show>
           {select("runner", "runner", ["local", "distrobox"])}
           <Show when={profile().runner === "distrobox"}>{input("container")}</Show>
-          {input("version")}{input("ibcmd")}{input("endpoint")}
-          <Show when={profile().endpoint}>
+          {input("version")}{input("ibcmd")}
+          <Show when={profile().kind === "file"}>
+            <label class="enable"><input type="checkbox" name="managedDebug" checked={profile().managedDebug}
+              onChange={event => edit("managedDebug", event.currentTarget.checked)} />{labels().managedDebug}</label>
+          </Show>
+          <Show when={profile().kind === "file" && profile().managedDebug} fallback={input("endpoint")}>{input("debugPort")}</Show>
+          <Show when={profile().endpoint || profile().kind === "file" && profile().managedDebug}>
             <label class="enable"><input type="checkbox" name="customAutoAttach" checked={profile().customAutoAttach}
               onChange={event => edit("customAutoAttach", event.currentTarget.checked)} />{labels().customAutoAttach}</label>
             <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>

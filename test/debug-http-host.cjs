@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const net = require("node:net");
 const vscode = require("vscode");
 
 exports.run = async function () {
@@ -47,7 +48,7 @@ exports.run = async function () {
     }));
     return;
   }
-  if (native.scenario) {
+  if (native.scenario && native.scenario !== "managed") {
     const result = await runParity(folder, module, native.scenario, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
       passed: true, suite: "debug-http", vscode: vscode.version, ...result,
@@ -60,12 +61,17 @@ exports.run = async function () {
   let session;
   let targets;
   let attached;
+  let managedPort;
   const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
     createDebugAdapterTracker(active) {
       session = active;
       return { onError(error) { console.error(error); }, onDidSendMessage(message) {
         if (message.type === "response" && message.success === false) console.error(message.command, message.message);
         if (message.event === "stopped") stops.push(message.body.threadId);
+        if (message.event === "output") {
+          const address = message.body.output?.match(/http:\/\/127\.0\.0\.1:(\d+)/);
+          if (address) managedPort = Number(address[1]);
+        }
         if (message.command === "eska/listDebugTargets" && message.success) targets = message.body.targets;
         if (message.command === "eska/attachDebugTarget" && message.success) attached = true;
       } };
@@ -100,6 +106,18 @@ exports.run = async function () {
     await vscode.debug.stopDebugging(launched);
     await until(() => vscode.debug.activeDebugSession?.id !== launched.id, "launch disconnected");
     session = undefined;
+    if (native.scenario === "managed") {
+      assert.ok(managedPort);
+      await until(() => new Promise(resolve => {
+        const socket = net.connect(managedPort, "127.0.0.1");
+        socket.once("connect", () => { socket.destroy(); resolve(false); });
+        socket.once("error", () => resolve(true));
+      }), "owned dbgs listener closed");
+      await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+        passed: true, suite: "debug-http", vscode: vscode.version, managed_dbgs: true,
+      }));
+      return;
+    }
     assert.equal(await vscode.debug.startDebugging(folder, {
       name: "ESKA HTTP attach", type: "eska-debug", request: "attach", profile: "test", projectDir: root,
     }), true);
