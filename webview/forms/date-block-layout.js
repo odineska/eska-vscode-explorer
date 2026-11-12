@@ -1,6 +1,6 @@
 import { checkboxField } from './checkbox-layout.js';
-import { allocateFieldCaption, inputCaptionInset } from './field-caption-layout.js';
-import { fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
+import { allocateFieldCaption, inputCaptionInset, sideCaptionRowHeight } from './field-caption-layout.js';
+import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateLaneSizes, cappedTrackGrowth, explicitNo, groupCanShrink, groupPreferredSize, ordinaryGroup, roundTrackWidths } from './layout-model.mjs';
 import { availableTrackWidth, borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fontLineHeight, inputPaintedOutset, scalar, textLabelMetrics } from './model.mjs';
@@ -60,7 +60,8 @@ function authoredCaptionWidths(space, date, checkbox, { authoredWidth, surplus, 
   const fraction = mixed ? .6 : initial / authoredWidth;
   const growth = Math.round((space - initialSpace + insetGrowth) * fraction) - insetGrowth;
   const title = Math.min(date.preferred, Math.max(initial + growth, space - checkbox.preferred));
-  return [title, Math.min(checkbox.preferred, space - title)];
+  return { title, check: Math.min(checkbox.preferred, space - title),
+    compact: { title: initial, check: Math.min(checkbox.preferred, initialSpace - initial) } };
 }
 
 function dateCaptions(fields, minimum = Math.max(0, ...fields.map(field => field.caption.minimum))) {
@@ -87,9 +88,21 @@ function packSideCaptions(available, { base, fields, date, checkbox, minimumWidt
         { weight: check, limit: checkbox.preferred - check },
       ]);
       const [titleWidth, checkWidth] = roundTrackWidths([title + growth[0], check + growth[1]], round);
-      return { width: base + titleWidth + checkWidth, title: titleWidth, check: checkWidth };
+      return { width: base + titleWidth + checkWidth, title: titleWidth, check: checkWidth, compact: { title, check } };
     },
   };
+}
+
+function dateCaptionHeight(field, width) {
+  const lines = fieldCaptionLines(field.caption, width).length;
+  return lines > 1 ? sideCaptionRowHeight(field.height, lines, field.wrappedLineHeight) : field.height;
+}
+
+function sideDateBlockHeight({ fields, slots, leading, checkbox }, { title, check }) {
+  const rowHeight = Math.max(...slots.map(({ element, offset, height }) => offset
+    + (element === leading.element ? dateCaptionHeight(leading, title)
+      : element === checkbox.element ? dateCaptionHeight(checkbox, check) : height)));
+  return fields.reduce((height, field) => field === leading ? height : height + dateCaptionHeight(field, title), rowHeight);
 }
 
 function packTopCaption(available, { base, minimum, preferred, checkbox }) {
@@ -213,12 +226,15 @@ export function dateBlockLayout(model, context) {
         alignment.style(field.element, '--taxi-date-label-caption-width', '');
         alignment.style(field.element, '--taxi-date-label-offset', '');
       }
+      field.height = borderBoxSize(field.element, scale).height;
     }
     const elements = [leading.element, ...middle, checkbox.element];
     const heights = elements.map(element => borderBoxSize(element, scale).height);
     heights[0] -= leading.aboveHeight;
     const rowHeight = Math.max(...heights);
-    const slots = elements.map((element, index) => ({ element, offset: (rowHeight - heights[index]) / 2 }));
+    const slots = elements.map((element, index) => ({ element, height: heights[index], offset: (rowHeight - heights[index]) / 2 }));
+    checkbox.height = heights.at(-1);
+    checkbox.wrappedLineHeight = fontLineHeight(rest.at(-1).presentation.titleFont);
     for (const element of elements) {
       alignment.style(element, '--taxi-field-track', '');
       alignment.style(element, '--taxi-fixed-date-top', '');
@@ -284,7 +300,7 @@ export function dateBlockLayout(model, context) {
     }
   }
 
-  function allocateBlock(block, captions, above, through, allocated, packed) {
+  function allocateBlock(block, captions, above, through, allocated, packed, heightReserves) {
     const { items, row, owner, fields, leading, checkbox, date, fixed, sideValue, topValue, topPreferred,
       canMove, authoredTop, slots, mixedInset, mixedWidth, sideWidth, spacing, lockedValue, lockedDate,
       authoredWidth, insets } = block;
@@ -307,9 +323,9 @@ export function dateBlockLayout(model, context) {
     const space = available - fixed - sideTrack;
     const minimum = active
       ? Math.max(lockedDate?.minimum ?? 0, Math.min(active.minimum, space - checkbox.caption.minimum)) : 0;
-    let title = 0, sideCheck = 0;
+    let title = 0, sideCheck = 0, compact;
     if (packed?.title !== undefined) {
-      ({ title, check: sideCheck } = packed);
+      ({ title, check: sideCheck, compact } = packed);
     } else if (active) {
       const minimumSpace = minimum + checkbox.caption.minimum;
       const room = Math.max(space, minimumSpace);
@@ -317,9 +333,9 @@ export function dateBlockLayout(model, context) {
       if (authoredWidth) {
         const mixed = moveStandalone && !sideUnavailable;
         const insetGrowth = mixed ? inset - (inputCaptionInset - mixedInset) : 0;
-        [title, sideCheck] = authoredCaptionWidths(room, profile, checkbox.caption, {
+        ({ title, check: sideCheck, compact } = authoredCaptionWidths(room, profile, checkbox.caption, {
           authoredWidth, surplus: contentWidth - placementWidth, mixed, insetGrowth,
-        });
+        }));
       } else {
         [title, sideCheck] = captionWidths(room, profile, checkbox.caption, active === date && !through && !authoredTop ? fields : undefined);
       }
@@ -332,6 +348,11 @@ export function dateBlockLayout(model, context) {
     const track = packed?.track ?? (moveRow ? Math.max(topTrack, sideReserve) : sideTrack + title);
     const check = packed?.sideKeys ? sideCheck : moveRow
       ? Math.min(checkbox.caption.preferred, Math.max(checkbox.caption.minimum, available - fixed - track)) : sideCheck;
+    // A stretching ancestor retains the height required by the compact side captions.
+    if (through && compact && (compact.title !== title || compact.check !== check) && fields.every(field => !moveAbove(field))) {
+      const reserve = sideDateBlockHeight(block, compact) - sideDateBlockHeight(block, { title, check });
+      if (reserve > 0) heightReserves.set(items, reserve);
+    }
     const shared = active || packed?.sideKeys ? `${title + inset}px` : '';
     for (const container of [items, row]) updateStyle(container, '--taxi-through-allocated-label-width', shared);
     updateStyle(leading.element, '--taxi-field-track', `${track}px`);
@@ -361,7 +382,7 @@ export function dateBlockLayout(model, context) {
   if (os === 'linux') visit(model);
   return {
     minimumRows, minimumCaptions, titleFloors,
-    allocate(captions, above, columnFraction, packedDates, fixedThroughWidths) {
+    allocate(captions, above, columnFraction, packedDates, fixedThroughWidths, heightReserves) {
       for (const block of automaticBlocks) {
         const { key, owner, automaticTop, minimumWidth, widthAt } = block;
         const through = fixedThroughWidths.get(owner);
@@ -371,10 +392,10 @@ export function dateBlockLayout(model, context) {
         const requested = packed?.width ?? Math.min(limit, Math.round(widthAt(columnFraction(owner))));
         const compact = through?.compactLeadingWidth && automaticTop && requested < automaticTop.sideWidth;
         const allocated = compact ? through.compactLeadingWidth(requested, minimumWidth) : requested;
-        allocateBlock(block, captions, above, through, allocated, packed);
+        allocateBlock(block, captions, above, through, allocated, packed, heightReserves);
       }
     },
-    allocateAuthored(captions, above, fixedThroughWidths, leadingEdges) {
+    allocateAuthored(captions, above, fixedThroughWidths, leadingEdges, heightReserves) {
       for (const block of authoredBlocks) {
         const { owner, authoredWidth, expandedWidth, minimumWidth, stretch } = block;
         const through = fixedThroughWidths.get(owner);
@@ -384,7 +405,7 @@ export function dateBlockLayout(model, context) {
         const parent = owner.parentElement, port = parent.parentElement;
         const bodyWidth = port.classList.contains('taxi-form-scrollport') ? availableTrackWidth(port, 1, scale) : Infinity;
         const room = Math.min(availableTrackWidth(parent, 1, scale), bodyWidth);
-        allocateBlock(block, captions, above, through, Math.max(minimumWidth, Math.min(width, room)));
+        allocateBlock(block, captions, above, through, Math.max(minimumWidth, Math.min(width, room)), undefined, heightReserves);
       }
     },
   };

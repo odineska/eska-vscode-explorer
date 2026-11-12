@@ -285,10 +285,11 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     });
     dividers?.publish();
     for (const key of alignedAbove) above.add(key);
-    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
+    const nextReserves = new Map();
+    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths, nextReserves);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
-    dateBlocks.allocateAuthored(captions, above, unitedColumns.fixedThroughWidths, leadingEdges);
-    const nextReserves = throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
+    dateBlocks.allocateAuthored(captions, above, unitedColumns.fixedThroughWidths, leadingEdges, nextReserves);
+    throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges, nextReserves);
     if (nextReserves.size !== captionHeightReserves.size
         || [...nextReserves].some(([stack, height]) => captionHeightReserves.get(stack) !== height)) {
       captionHeightReserves = nextReserves;

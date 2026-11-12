@@ -1,7 +1,7 @@
 import { fieldWidth, fontLineHeight, inputPaintedOutset, inputRowHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
 import { fieldCaptionLines, fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
+import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth, sideCaptionRowHeight } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
@@ -188,7 +188,7 @@ function sideCaptionHeightReserve(field, capacity, captions, os) {
   const compactLines = fieldCaptionLines(field.caption, field.caption.compact).length;
   const renderedLines = captions.get(field.key)?.split('\n').length ?? field.caption.paragraphs.length;
   const rowHeight = inputRowHeight(field.node, os);
-  return Math.max(0, compactLines * lineHeight + 2 - Math.max(rowHeight, renderedLines * lineHeight + 2));
+  return Math.max(0, sideCaptionRowHeight(rowHeight, compactLines, lineHeight) - sideCaptionRowHeight(rowHeight, renderedLines, lineHeight));
 }
 
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
@@ -309,8 +309,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
   }
 
-  function allocateWidths(allocations, captions, minima, above, leadingEdges) {
-    const heightReserves = leadingEdges && new Map();
+  function allocateWidths(allocations, captions, minima, above, leadingEdges, heightReserves) {
     for (const allocation of allocations) {
       const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField, local } = allocation;
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
@@ -359,7 +358,6 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         if (reserve) heightReserves.set(container, reserve);
       }
     }
-    return heightReserves;
   }
   return {
     stackLimits, minimumInputs, pageCaptionReserves,
@@ -373,6 +371,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         updateStyle(element, '--taxi-field-columns', width === undefined ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
       }
     },
-    allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, undefined, leadingEdges),
+    allocateStacks: (captions, minima, leadingEdges, heightReserves) =>
+      allocateWidths(stacks, captions, minima, undefined, leadingEdges, heightReserves),
   };
 }

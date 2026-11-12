@@ -715,6 +715,82 @@ async function verifyAuthoredDateWidths(surface, view, document) {
   return { kind: 'AuthoredDateWidths', sizes };
 }
 
+async function verifyDateHeightReserve(surface, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'DateThroughColumns.xml'), 'utf8');
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-caption-height-reserve-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const memo = '<InputField name="Memo" id="13"><DataPath>Left</DataPath><TitleLocation>None</TitleLocation>'
+    + '<MultiLine>true</MultiLine><Height>2</Height><VerticalStretch>true</VerticalStretch><BackColor>web:PaleGreen</BackColor></InputField>';
+  const footer = '<LabelField name="Footer" id="4000"><DataPath>Left</DataPath><TitleLocation>None</TitleLocation>'
+    + '<Width>8</Width><HorizontalStretch>false</HorizontalStretch><BackColor>web:LightSalmon</BackColor></LabelField>';
+  const template = source.replace(/<LabelField name="LeftMarker".*?<\/LabelField>/su, '$&' + memo)
+    .replace(/<\/UsualGroup>(?=\s*<\/ChildItems>\s*<Attributes>)/u, '$&' + footer);
+  assert.ok(template.includes(memo) && template.includes(footer));
+
+  const measure = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect();
+    const box = (id, selector = '') => {
+      const element = root.querySelector('[data-element$=":current:' + id + '"]' + selector);
+      const rect = element?.getBoundingClientRect();
+      return rect ? [rect.x - frame.x, rect.y - frame.y, rect.width, rect.height] : null;
+    };
+    return { width: frame.width, height: frame.height,
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      dates: box(40), memo: box(13, ' .taxi-input'), footer: box(4000, ' .taxi-label-field') };
+  })()`;
+
+  async function observe(frameWidth, reference) {
+    await allocateFormViewport(surface, [frameWidth, reference.frameHeight]);
+    let previous, actual, requestedHeight = reference.frameHeight, stable = 0;
+    await until(async () => {
+      actual = await surface.evaluate(measure);
+      if (actual?.dates && actual.width === frameWidth && actual.preferredHeight > 0
+          && actual.preferredHeight !== requestedHeight) {
+        requestedHeight = actual.preferredHeight;
+        await allocateFormViewport(surface, [frameWidth, requestedHeight]);
+        stable = 0;
+        return false;
+      }
+      stable = isDeepStrictEqual(actual, previous) ? stable + 1 : 0;
+      previous = actual;
+      return stable >= 3 && actual?.width === frameWidth && actual.height === requestedHeight
+        && actual.dates && actual.memo && actual.footer;
+    }, 'stable date caption height').catch(error => {
+      throw new Error(JSON.stringify({ frameWidth, requestedHeight, reference, actual }), { cause: error });
+    });
+    for (const [axis, value] of reference.dateBlock.entries()) {
+      assert.ok(Math.abs(actual.dates[axis] - value) <= (axis % 2 ? 0 : 1), JSON.stringify({ reference, actual }));
+    }
+    return actual;
+  }
+
+  const sizes = [];
+  for (const sample of cases) {
+    const sized = withFormWidth(template, sample.width);
+    const xml = sample.dateWidth ? sized.replace('<UsualGroup name="Dates" id="40">',
+      `$&<Width>${sample.dateWidth}</Width>`) : sized;
+    const sourceFor = stretch => xml.replace('<UsualGroup name="Pair" id="1">', `$&<VerticalStretch>${stretch}</VerticalStretch>`);
+    const frameWidth = sample.width * 10 + 34;
+    await editFormSource(document, view, sourceFor(false));
+    const fixed = await observe(frameWidth, sample.fixed);
+    await editFormSource(document, view, sourceFor(true));
+    const stretch = await observe(frameWidth, sample.stretch);
+    assert.deepEqual(
+      [stretch.preferredHeight - fixed.preferredHeight, stretch.memo[3] - fixed.memo[3], stretch.footer[1] - fixed.footer[1]],
+      [sample.stretch.frameHeight - sample.fixed.frameHeight, sample.stretch.memoFillHeight - sample.fixed.memoFillHeight,
+        sample.stretch.footerY - sample.fixed.footerY],
+      sample.name + ' keeps the visible date rows and reserves height for the stretching group',
+    );
+    await editFormSource(document, view, sourceFor(false));
+    assert.deepEqual(await observe(frameWidth, sample.fixed), fixed, sample.name + ' restores the fixed layout');
+    sizes.push({ name: sample.name, fixed, stretch });
+  }
+  return { kind: 'DateHeightReserve', sizes };
+}
+
 async function verifyFormDimensions(service, main, view, document) {
   const directory = process.env.ESKA_FORM_FIXTURES;
   const source = await fs.readFile(path.join(directory, 'ReferenceCaptionHeight.xml'), 'utf8');
@@ -801,8 +877,9 @@ async function verifyFormDimensions(service, main, view, document) {
       }
     }
     const authored = await verifyAuthoredDateWidths(surface, view, document);
+    const dateHeights = await verifyDateHeightReserve(surface, view, document);
     assert.equal(document.isDirty, true);
-    return [{ kind: 'ReferenceCaptionHeight', sizes }, authored];
+    return [{ kind: 'ReferenceCaptionHeight', sizes }, authored, dateHeights];
   } finally {
     surface?.close();
     if (preview) {
