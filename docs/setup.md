@@ -102,6 +102,10 @@ Debugger** in the same menu. A VS Code launch configuration can use
 Start the HTTP debug server configured in the profile before attaching or
 launching. For an existing client, choose its target after attaching. The
 **Select 1C Debug Target** command refreshes the list in an active session.
+Use **Select 1C Auto-Attach Types** to change which new targets join the
+active session automatically. To set the initial types for future sessions,
+enable **Customize automatic attachment** in the profile's Project Settings.
+An empty custom list allows manual selection only.
 Production prompts for a source decision after checking the
 configured Git remote. Evaluate can modify infobase data.
 

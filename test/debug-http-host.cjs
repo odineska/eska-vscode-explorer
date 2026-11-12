@@ -24,6 +24,13 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "auto-types") {
+    await runAutoAttach(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, auto_attach: true,
+    }));
+    return;
+  }
   if (native.scenario) {
     const result = await runParity(folder, module, native.scenario, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -95,6 +102,54 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runAutoAttach(folder, module, until) {
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(2, 0)));
+  vscode.debug.addBreakpoints([breakpoint]);
+  let session;
+  let stopped;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) { if (message.event === "stopped") stopped = message.body.threadId; } };
+    },
+  });
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP auto-attach", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    await until(() => stopped, "managed client stopped");
+    assert.deepEqual((await session.customRequest("eska/getAutoAttachTypes")).selected, ["ManagedClient"]);
+    const select = vscode.commands.executeCommand("eska.explorer.selectAutoAttachTypes");
+    await until(() => workbench.evaluate("[...document.querySelectorAll('.quick-input-list .monaco-list-row')].some(row => row.textContent.trim() === 'ManagedClient')"), "auto-attach picker opened");
+    const toggle = async kind => {
+      await workbench.evaluate(`(() => {
+        const input = document.querySelector('.quick-input-widget input[type=text]');
+        input.focus(); input.value = ${JSON.stringify(kind)}; input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      const point = await until(() => workbench.evaluate(`(() => {
+        const row = [...document.querySelectorAll('.quick-input-list .monaco-list-row')].find(row => row.textContent.trim() === ${JSON.stringify(kind)});
+        const box = row?.querySelector('[role=checkbox], input[type=checkbox]');
+        if (!box) return null;
+        const rect = box.getBoundingClientRect(); return [rect.x + rect.width / 2, rect.y + rect.height / 2];
+      })()`), `checkbox for ${kind}`);
+      await workbench.click(...point);
+    };
+    await toggle("ManagedClient");
+    await toggle("ServerEmulation");
+    await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+    await select;
+    assert.deepEqual((await session.customRequest("eska/getAutoAttachTypes")).selected, ["ServerEmulation"]);
+    assert.ok((await session.customRequest("threads")).threads.some(thread => thread.id === stopped));
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint]);
+    workbench.close();
+  }
+}
 
 async function runParity(folder, module, scenario, until) {
   const stopEvents = [];

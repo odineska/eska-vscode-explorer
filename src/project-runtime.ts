@@ -33,6 +33,7 @@ export class ProjectRuntime implements vscode.Disposable {
         if (session.type === debugType && session.configuration.request === "attach") void this.attachTarget(session);
       }),
       vscode.commands.registerCommand("eska.explorer.attachDebugTarget", () => this.attachTarget(vscode.debug.activeDebugSession)),
+      vscode.commands.registerCommand("eska.explorer.selectAutoAttachTypes", () => this.selectAutoAttachTypes(vscode.debug.activeDebugSession)),
       vscode.debug.registerDebugConfigurationProvider(debugType, {
         resolveDebugConfiguration: (folder, config) => this.prepareDebug(config, folder?.uri.fsPath),
       }),
@@ -77,6 +78,24 @@ export class ProjectRuntime implements vscode.Disposable {
       }
     } catch {
       void vscode.window.showErrorMessage(this.text("runtimeDebugTargetFailed"));
+    }
+  }
+
+  private async selectAutoAttachTypes(session: vscode.DebugSession | undefined): Promise<void> {
+    if (!vscode.workspace.isTrusted || session?.type !== debugType) return;
+    try {
+      const response: unknown = await session.customRequest("eska/getAutoAttachTypes");
+      if (!isRecord(response) || !Array.isArray(response.available) || !Array.isArray(response.selected)) {
+        throw new Error("invalid auto-attach types");
+      }
+      const selected = new Set(response.selected);
+      const items = response.available.flatMap(kind => typeof kind === "string" ? [{ label: kind, picked: selected.has(kind) }] : []);
+      const types = await vscode.window.showQuickPick(items, { canPickMany: true, placeHolder: this.text("runtimeSelectAutoAttachTypes") });
+      if (types && vscode.debug.activeDebugSession?.id === session.id) {
+        await session.customRequest("eska/setAutoAttachTypes", { types: types.map(item => item.label) });
+      }
+    } catch {
+      void vscode.window.showErrorMessage(this.text("runtimeAutoAttachFailed"));
     }
   }
 

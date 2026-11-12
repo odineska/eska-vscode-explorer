@@ -56,6 +56,8 @@ exports.run = async function () {
     await until(() => first.evaluate("document.querySelector('[role=status]').textContent.includes('debug.url')"), "shared backend rejected an invalid endpoint");
     await assert.rejects(fs.access(file));
     await fill(first, "endpoint", "http://127.0.0.1:1550");
+    await first.evaluate("document.querySelector('input[name=customAutoAttach]').click()");
+    await fill(first, "autoAttach", "ManagedClient, ServerEmulation");
     await fill(first, "user", "demo");
     await fill(first, "secret", "ESKA_DEMO_SECRET");
     await save(first);
@@ -66,15 +68,17 @@ exports.run = async function () {
   assert.match(contents, /\[prod\.infobase\]/);
   assert.match(contents, /Демо база/);
   assert.match(contents, /password_env = "ESKA_DEMO_SECRET"/);
+  assert.match(contents, /auto_attach_types = \[\s*"ManagedClient",\s*"ServerEmulation",?\s*\]/);
   assert.doesNotMatch(contents, /\[test/);
   await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
   const restored = await open();
   try {
     await chooseProd(restored);
     assert.equal(await restored.evaluate("document.querySelector('input[name=path]').value"), "Демо база");
+    assert.equal(await restored.evaluate("document.querySelector('input[name=autoAttach]').value"), "ManagedClient, ServerEmulation");
   } finally { restored.close(); }
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
     passed: true, suite: "project-settings", vscode: vscode.version, prod_only: true,
-    shared_validation: true, settings_restored: true,
+    shared_validation: true, settings_restored: true, auto_attach_settings: true,
   }));
 };

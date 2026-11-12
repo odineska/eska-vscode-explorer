@@ -68,5 +68,6 @@
   "showDisabledProjects": "Показать отключенные",
   "previewForm": "Открыть просмотр формы (beta)",
   "openFormXml": "Открыть XML формы",
-  "attachDebugTarget": "Выбрать предмет отладки 1С"
+  "attachDebugTarget": "Выбрать предмет отладки 1С",
+  "selectAutoAttachTypes": "Выбрать типы автоподключения 1С"
 }

@@ -12,6 +12,7 @@ const labels = {
   path: "runtimePath", host: "runtimeHost", name: "runtimeName", url: "runtimeUrl", admin: "runtimeAdmin",
   runner: "runtimeRunner", local: "runtimeLocal", distrobox: "runtimeDistrobox", container: "runtimeContainer",
   version: "runtimeVersion", ibcmd: "runtimeIbcmd", endpoint: "runtimeEndpoint", user: "runtimeUser",
+  customAutoAttach: "runtimeCustomAutoAttach", autoAttach: "runtimeAutoAttach",
   secret: "runtimeSecret", save: "runtimeSave", saved: "runtimeSaved", reload: "runtimeReload", probe: "runtimeProbe",
 } satisfies Record<string, MessageKey>;
 

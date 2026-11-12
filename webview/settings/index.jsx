@@ -14,6 +14,8 @@ function draft(profile) {
     runner: profile?.runner.kind ?? "local", version: profile?.runner.version ?? "",
     ibcmd: profile?.runner.ibcmd ?? "", container: profile?.runner.container ?? "",
     endpoint: profile?.debug?.url ?? "", user: profile?.authentication?.user ?? "", secret: profile?.authentication?.password_env ?? "",
+    customAutoAttach: Array.isArray(profile?.debug?.auto_attach_types),
+    autoAttach: profile?.debug?.auto_attach_types?.join(", ") ?? "",
   };
 }
 
@@ -24,7 +26,9 @@ function serialize(value) {
     : { kind: "standalone", url: value.url, name: value.name, admin_pid: value.admin ? (/^[0-9]+$/.test(value.admin) ? Number(value.admin) : value.admin) : null };
   const runner = { kind: value.runner, version: value.version || null, ibcmd: value.ibcmd || null };
   if (value.runner === "distrobox") runner.container = value.container;
-  return { infobase, runner, debug: value.endpoint ? { url: value.endpoint } : null,
+  const debug = value.endpoint ? { url: value.endpoint } : null;
+  if (debug && value.customAutoAttach) debug.auto_attach_types = value.autoAttach.split(",").map(kind => kind.trim()).filter(Boolean);
+  return { infobase, runner, debug,
     authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
 }
 
@@ -84,7 +88,13 @@ function App() {
           </Show>
           {select("runner", "runner", ["local", "distrobox"])}
           <Show when={profile().runner === "distrobox"}>{input("container")}</Show>
-          {input("version")}{input("ibcmd")}{input("endpoint")}{input("user")}{input("secret")}
+          {input("version")}{input("ibcmd")}{input("endpoint")}
+          <Show when={profile().endpoint}>
+            <label class="enable"><input type="checkbox" name="customAutoAttach" checked={profile().customAutoAttach}
+              onChange={event => edit("customAutoAttach", event.currentTarget.checked)} />{labels().customAutoAttach}</label>
+            <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>
+          </Show>
+          {input("user")}{input("secret")}
         </fieldset>
       </Show>
     </Show>

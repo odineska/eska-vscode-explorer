@@ -205,6 +205,7 @@
       { "command": "eska.explorer.debugLaunch", "title": "%debugLaunch%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.debugAttach", "title": "%debugAttach%", "category": "ESKA Explorer" },
       { "command": "eska.explorer.attachDebugTarget", "title": "%attachDebugTarget%", "category": "ESKA Explorer", "enablement": "debugType == eska-debug" },
+      { "command": "eska.explorer.selectAutoAttachTypes", "title": "%selectAutoAttachTypes%", "category": "ESKA Explorer", "enablement": "debugType == eska-debug" },
       {
         "command": "eska.explorer.selectAnalysisContext",
         "title": "%selectAnalysisContext%",

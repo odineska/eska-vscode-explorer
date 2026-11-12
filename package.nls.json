@@ -68,5 +68,6 @@
   "showDisabledProjects": "Show disabled projects",
   "previewForm": "Open form preview (beta)",
   "openFormXml": "Open form XML",
-  "attachDebugTarget": "Select 1C Debug Target"
+  "attachDebugTarget": "Select 1C Debug Target",
+  "selectAutoAttachTypes": "Select 1C Auto-Attach Types"
 }
