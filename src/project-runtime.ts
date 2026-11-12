@@ -35,14 +35,16 @@ export class ProjectRuntime implements vscode.Disposable {
       vscode.commands.registerCommand("eska.explorer.attachDebugTarget", () => this.attachTarget(vscode.debug.activeDebugSession)),
       vscode.commands.registerCommand("eska.explorer.selectAutoAttachTypes", () => this.selectAutoAttachTypes(vscode.debug.activeDebugSession)),
       vscode.debug.registerDebugConfigurationProvider(debugType, {
-        resolveDebugConfiguration: (folder, config) => this.prepareDebug(config, folder?.uri.fsPath),
+        resolveDebugConfiguration: (folder, config) => this.resolveDebug(config, folder?.uri.fsPath),
       }),
       vscode.debug.registerDebugAdapterDescriptorFactory(debugType, {
-        createDebugAdapterDescriptor: session => {
-          const id = session.configuration.eskaSession;
-          const descriptor = this.descriptors.get(id);
-          this.descriptors.delete(id);
-          return descriptor;
+        createDebugAdapterDescriptor: async session => {
+          if (!vscode.workspace.isTrusted) return undefined;
+          const config = session.configuration;
+          const descriptor = this.descriptors.get(config.eskaSession);
+          this.descriptors.delete(config.eskaSession);
+          // VS Code can restart using the resolved configuration without calling its provider again.
+          return descriptor ?? (await this.prepareDebug(config, session.workspaceFolder?.uri.fsPath))?.descriptor;
         },
       }),
     ];
@@ -159,7 +161,18 @@ export class ProjectRuntime implements vscode.Disposable {
     else this.failure(applied);
   }
 
-  private async prepareDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {
+  private async resolveDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {
+    const prepared = await this.prepareDebug(config, folder);
+    if (!prepared) return undefined;
+    const { root, profile, mode, descriptor } = prepared;
+    const id = randomUUID();
+    this.descriptors.set(id, descriptor);
+    const timer = setTimeout(() => this.descriptors.delete(id), 30_000);
+    timer.unref();
+    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, projectDir: root, eskaSession: id };
+  }
+
+  private async prepareDebug(config: vscode.DebugConfiguration, folder?: string) {
     if (!vscode.workspace.isTrusted) return undefined;
     const project = await this.choose(typeof config.projectDir === "string" ? config.projectDir : undefined, folder);
     if (!project) return undefined;
@@ -183,11 +196,8 @@ export class ProjectRuntime implements vscode.Disposable {
       if (unsaved) args.push("--unsaved");
       if (choice !== "verified") args.push("--sources", choice);
     }
-    const id = randomUUID();
-    this.descriptors.set(id, new vscode.DebugAdapterExecutable(binary, this.arguments(root, args), { cwd: root }));
-    const timer = setTimeout(() => this.descriptors.delete(id), 30_000);
-    timer.unref();
-    return { type: debugType, request: mode, name: config.name || this.text("runtimeDebugLaunch"), profile, projectDir: root, eskaSession: id };
+    const descriptor = new vscode.DebugAdapterExecutable(binary, this.arguments(root, args), { cwd: root });
+    return { root, profile, mode, descriptor };
   }
 
   private async productionChoice(project: RuntimeProject, binary: string, unsaved: boolean): Promise<string | undefined> {

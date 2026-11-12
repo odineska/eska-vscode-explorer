@@ -25,6 +25,13 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "restart") {
+    await runRestart(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, restarted: true,
+    }));
+    return;
+  }
   if (native.scenario === "extensions") {
     const files = native.extensions.map(directory =>
       path.join(path.dirname(root), path.basename(directory), "src", "Ext", "ManagedApplicationModule.bsl"));
@@ -138,6 +145,56 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runRestart(folder, module, until) {
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(2, 0)));
+  vscode.debug.addBreakpoints([breakpoint]);
+  const stops = [];
+  const ports = [];
+  const launches = [];
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(session) {
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "launch") launches.push(session);
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stops.push(message.body.threadId);
+          if (message.event === "output") {
+            const address = message.body.output?.match(/http:\/\/127\.0\.0\.1:(\d+)/);
+            if (address) ports.push(Number(address[1]));
+          }
+        },
+      };
+    },
+  });
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP restart", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    await until(() => stops.length === 1 && ports.length === 1 && launches.length === 1, "first managed debug stop");
+    await vscode.commands.executeCommand("workbench.action.debug.restart");
+    await until(() => stops.length === 2 && ports.length === 2 && launches.length === 2, "managed debug stop after VS Code restart");
+    const stack = await launches[1].customRequest("stackTrace", { threadId: stops[1] });
+    assert.equal(stack.stackFrames[0].source.path, module.fsPath);
+    assert.equal(stack.stackFrames[0].line, 3);
+    const value = await launches[1].customRequest("evaluate", { frameId: stack.stackFrames[0].id, expression: "A + 1" });
+    assert.equal(value.result, "42");
+    await vscode.debug.stopDebugging(launches[1]);
+    await until(async () => {
+      const closed = await Promise.all(ports.map(port => new Promise(resolve => {
+        const socket = net.connect(port, "127.0.0.1");
+        socket.once("connect", () => { socket.destroy(); resolve(false); });
+        socket.once("error", () => resolve(true));
+      })));
+      return closed.every(Boolean);
+    }, "managed dbgs listeners from both sessions closed");
+  } finally {
+    if (vscode.debug.activeDebugSession?.type === "eska-debug") await vscode.debug.stopDebugging(vscode.debug.activeDebugSession);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint]);
+  }
+}
 
 async function runExtensions(folder, base, files, until) {
   const breakpoint = (uri, line) => new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)));
