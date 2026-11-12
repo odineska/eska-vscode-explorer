@@ -29,6 +29,9 @@ exports.run = async function () {
     roleAdded: "Добавлен Роль",
     roleRenamed: "Переименован Роль",
     roleRemoved: "Удалён Роль",
+    moduleAdded: "Добавлен Общий модуль",
+    moduleRenamed: "Переименован Общий модуль",
+    moduleRemoved: "Удалён Общий модуль",
     removed: "Удалён Общая форма",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
@@ -52,6 +55,9 @@ exports.run = async function () {
     roleAdded: "Added Role",
     roleRenamed: "Renamed Role",
     roleRemoved: "Removed Role",
+    moduleAdded: "Added Common module",
+    moduleRenamed: "Renamed Common module",
+    moduleRemoved: "Removed Common module",
     removed: "Removed Common form",
     conflict: "Both the saved sources and the test database generation changed",
   };
@@ -212,10 +218,10 @@ esac
       const defaultElement = roleElement("One_DefaultRole");
       assert.ok(configuration.includes(defaultElement));
       const defaultRole = await fs.readFile(path.join(source, defaultRolePath), "utf8");
-      const applyRole = async (group, companion) => {
+      const applyStructure = async (group, ...paths) => {
         const applying = command();
         await choose();
-        await click(labels.apply, labels.partial, selected, group, "Configuration.xml", companion);
+        await click(labels.apply, labels.partial, selected, group, "Configuration.xml", ...paths);
         await applying;
       };
       const addedConfiguration = configuration.replace(defaultElement, defaultElement + roleElement(addedName));
@@ -223,19 +229,58 @@ esac
         .replaceAll("One_DefaultRole", addedName);
       await fs.writeFile(configurationPath, addedConfiguration);
       await fs.writeFile(path.join(source, rolePathFor(addedName)), addedRole);
-      await applyRole(`${labels.roleAdded} ${addedName}`, rolePathFor(addedName));
+      await applyStructure(`${labels.roleAdded} ${addedName}`, rolePathFor(addedName));
       await fs.writeFile(configurationPath, addedConfiguration.replace(roleElement(addedName), roleElement(renamedName)));
       await fs.writeFile(path.join(source, rolePathFor(renamedName)), addedRole.replaceAll(addedName, renamedName));
       await fs.unlink(path.join(source, rolePathFor(addedName)));
-      await applyRole(`${labels.roleRenamed} ${addedName} → ${renamedName}`, rolePathFor(renamedName));
+      await applyStructure(`${labels.roleRenamed} ${addedName} → ${renamedName}`, rolePathFor(renamedName));
       await fs.writeFile(configurationPath, configuration);
       await fs.unlink(path.join(source, rolePathFor(renamedName)));
-      await applyRole(`${labels.roleRemoved} ${renamedName}`, defaultRolePath);
-      const initial = await snapshot();
+      await applyStructure(`${labels.roleRemoved} ${renamedName}`, defaultRolePath);
 
-      const module = path.join(member, "src", "Ext", "ManagedApplicationModule.bsl");
+      const module = path.join(source, "Ext", "ManagedApplicationModule.bsl");
       const original = await fs.readFile(module, "utf8");
       assert.ok(original.includes("Значение = 111"));
+      const firstCommon = "One_ProbeCommon";
+      const renamedCommon = "One_RenamedCommon";
+      const commonDirectory = name => `CommonModules/${name}`;
+      const commonXml = name => `${commonDirectory(name)}.xml`;
+      const commonBsl = name => `${commonDirectory(name)}/Ext/Module.bsl`;
+      const commonElement = name => `<CommonModule>${name}</CommonModule>`;
+      const commonDescriptor = `<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">
+<CommonModule uuid="9ce6fcbb-d41a-4828-aa8b-4bbc9ce78d7a"><Properties><Name>${firstCommon}</Name>
+<Synonym/><Comment/><Global>false</Global><ClientManagedApplication>true</ClientManagedApplication>
+<Server>false</Server><ExternalConnection>false</ExternalConnection>
+<ClientOrdinaryApplication>false</ClientOrdinaryApplication><ServerCall>false</ServerCall>
+<Privileged>false</Privileged><ReturnValuesReuse>DontUse</ReturnValuesReuse>
+</Properties></CommonModule></MetaDataObject>`;
+      const withCommon = configuration.replace(defaultElement, defaultElement + commonElement(firstCommon));
+      await fs.writeFile(configurationPath, withCommon);
+      await fs.mkdir(path.dirname(path.join(source, commonBsl(firstCommon))), { recursive: true });
+      await fs.writeFile(path.join(source, commonXml(firstCommon)), commonDescriptor);
+      await fs.writeFile(path.join(source, commonBsl(firstCommon)), "Функция Значение() Экспорт\n    Возврат 719;\nКонецФункции\n");
+      await applyStructure(`${labels.moduleAdded} ${firstCommon}`, commonXml(firstCommon), commonBsl(firstCommon));
+
+      await fs.writeFile(configurationPath, withCommon.replace(commonElement(firstCommon), commonElement(renamedCommon)));
+      await fs.rename(path.join(source, commonDirectory(firstCommon)), path.join(source, commonDirectory(renamedCommon)));
+      await fs.writeFile(path.join(source, commonXml(renamedCommon)), commonDescriptor.replace(firstCommon, renamedCommon));
+      await fs.unlink(path.join(source, commonXml(firstCommon)));
+      await fs.writeFile(module, original.replace("Значение = 111", `Значение = ${renamedCommon}.Значение()`));
+      await verifyUpdatedDebugSession(folder, module, until, { line: 4, expression: "Значение", expected: "719", start: async () => {
+        const applying = vscode.commands.executeCommand("eska.explorer.applyAndDebugTest");
+        await choose();
+        await click(labels.applyAndDebug, labels.partial, selected,
+          `${labels.moduleRenamed} ${firstCommon} → ${renamedCommon}`, commonXml(renamedCommon), commonBsl(renamedCommon));
+        await applying;
+      } });
+
+      await fs.writeFile(configurationPath, configuration);
+      await fs.writeFile(module, original);
+      await fs.rm(path.join(source, commonDirectory(renamedCommon)), { recursive: true });
+      await fs.unlink(path.join(source, commonXml(renamedCommon)));
+      await applyStructure(`${labels.moduleRemoved} ${renamedCommon}`, defaultRolePath);
+      const initial = await snapshot();
       await fs.writeFile(module, original.replace("Значение = 111", "Значение = 333"));
       const rolePath = "Roles/One_DefaultRole.xml";
       const role = path.join(member, "src", rolePath);
@@ -279,7 +324,7 @@ esac
       }
       await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
         passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-        extension_apply: true, role_xml: true, structural_role: true, debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
+        extension_apply: true, role_xml: true, structural_role: true, structural_common_module: true, common_module_evaluate: "719", debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
       }));
       return;
     }

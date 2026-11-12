@@ -399,7 +399,8 @@ export class ProjectRuntime implements vscode.Disposable {
         if (!isRecord(object) || typeof object.name !== "string" || !Array.isArray(object.paths)) continue;
         const kind = object.kind === "language" ? "runtimeObjectLanguage"
           : object.kind === "common_form" ? "runtimeObjectCommonForm"
-            : object.kind === "role" ? "runtimeObjectRole" : undefined;
+            : object.kind === "role" ? "runtimeObjectRole"
+              : object.kind === "common_module" ? "runtimeObjectCommonModule" : undefined;
         const action = object.operation === "added" ? "runtimeChangeAdded"
           : object.operation === "removed" ? "runtimeChangeRemoved"
           : object.operation === "renamed" ? "runtimeChangeRenamed" : undefined;
