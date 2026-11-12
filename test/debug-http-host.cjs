@@ -31,6 +31,13 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "paging") {
+    await runPaging(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, collection_paging: true,
+    }));
+    return;
+  }
   if (native.scenario) {
     const result = await runParity(folder, module, native.scenario, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -102,6 +109,60 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runPaging(folder, module, until) {
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(6, 0)));
+  vscode.debug.addBreakpoints([breakpoint]);
+  const requests = [];
+  let session;
+  let stopped;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onDidSendMessage(message) { if (message.event === "stopped") stopped = message.body.threadId; },
+        onWillReceiveMessage(message) { if (message.command === "variables") requests.push(message.arguments); },
+      };
+    },
+  });
+  const expandRow = async label => {
+    const point = await until(() => workbench.evaluate(`(() => {
+      const rows = [...document.querySelectorAll('.debug-variables .monaco-list-row')];
+      const twistie = rows.find(row => row.textContent.includes(${JSON.stringify(label)}))?.querySelector('.monaco-tl-twistie.collapsible');
+      if (!twistie) return null;
+      if (!twistie.classList.contains('collapsed')) return true;
+      const rect = twistie.getBoundingClientRect(); return [rect.x + rect.width / 2, rect.y + rect.height / 2];
+    })()`), `expand variables row ${label}`).catch(async error => {
+      const rows = await workbench.evaluate("[...document.querySelectorAll('.debug-variables .monaco-list-row')].slice(0,8).map(row => [row.textContent, row.querySelector('.monaco-tl-twistie')?.className])");
+      throw new Error(`${error.message}: ${JSON.stringify({ rows, requests })}`);
+    });
+    if (Array.isArray(point)) await workbench.click(...point);
+  };
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP collection paging", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    await until(() => stopped, "client stopped with the large array in scope");
+    await vscode.commands.executeCommand("workbench.debug.action.focusVariablesView");
+    await expandRow(vscode.env.language.startsWith("ru") ? "Локальные переменные" : "Local variables");
+    await expandRow("Ряд");
+    await expandRow("[500..599]");
+    const page = await until(() => requests.find(request => request.filter === "indexed" && request.start === 500), "VS Code requested an indexed page");
+    assert.equal(page.count, 100);
+    const result = await session.customRequest("variables", page);
+    assert.equal(result.variables.length, 100);
+    assert.equal(result.variables[50].name, "550");
+    const nested = await session.customRequest("variables", { variablesReference: result.variables[50].variablesReference });
+    assert.equal(nested.variables[0].value, "550");
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint]);
+    workbench.close();
+  }
+}
 
 async function runAutoAttach(folder, module, until) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");
