@@ -92,7 +92,10 @@ endpoint reachability. The project settings file belongs in the local Git ignore
 The project settings context menu starts a normal test client or previews the
 changes for a test infobase. Apply requires confirmation for the displayed base
 and files. The first import and unsupported partial changes require a separate
-full-import preview.
+full-import preview. To update an installed `InfoBase` extension, open the ESKA
+workspace root and select the extension project. ESKA uses the main project's
+`test` profile. The confirmation identifies the extension by name and UUID.
+Changes to existing BSL files can be applied partially.
 
 For HTTP debugging, build the optional Rust executable with
 `cargo build --release -p eska-debug` in the ESKA repository. Use **Launch with Debugger** or **Attach

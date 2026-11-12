@@ -9,6 +9,8 @@ exports.run = async function () {
   const { root } = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
   const labels = vscode.env.language.startsWith("ru") ? {
+    extension: "Расширение",
+    fullExtension: "Заменить выбранное расширение в тестовой базе",
     review: "Просмотреть полный импорт",
     apply: "Применить к test",
     cancel: "Отмена",
@@ -17,6 +19,8 @@ exports.run = async function () {
     removed: "Удалён Общая форма",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
+    extension: "Extension",
+    fullExtension: "Replace the selected test extension",
     review: "Review Full Import",
     apply: "Apply to Test",
     cancel: "Cancel",
@@ -28,7 +32,8 @@ exports.run = async function () {
   const until = async (check, label) => {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
-      if (await check()) return;
+      const result = await check();
+      if (result) return result;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     throw new Error(label);
@@ -65,6 +70,43 @@ exports.run = async function () {
     return fs.readFile(path.join(state, name), "utf8");
   };
   try {
+    if (native.scenario === "apply-extension-debug") {
+      const name = path.basename(native.extensions[0]);
+      const member = path.join(path.dirname(root), name);
+      const selected = labels.extension + " One (";
+      const choose = async () => {
+        const point = await until(() => workbench.evaluate(`(() => {
+          const row = [...document.querySelectorAll('.quick-input-list .monaco-list-row')]
+            .find(item => item.offsetHeight && item.querySelector('.label-name')?.textContent === ${JSON.stringify(name)});
+          if (!row) return false;
+          const rect = row.getBoundingClientRect();
+          return [rect.x + rect.width / 2, rect.y + rect.height / 2];
+        })()`), "extension available in project picker");
+        await workbench.click(...point);
+      };
+      const initialize = command();
+      await choose();
+      await click(labels.review, "");
+      await click(labels.apply, labels.fullExtension, selected, "Configuration.xml");
+      await initialize;
+      const initial = await snapshot();
+
+      const module = path.join(member, "src", "Ext", "ManagedApplicationModule.bsl");
+      const original = await fs.readFile(module, "utf8");
+      assert.ok(original.includes("Значение = 111"));
+      await fs.writeFile(module, original.replace("Значение = 111", "Значение = 333"));
+      const incremental = command();
+      await choose();
+      await click(labels.apply, selected, "Ext/ManagedApplicationModule.bsl");
+      await incremental;
+      assert.notEqual(await snapshot(), initial);
+      await verifyUpdatedDebugSession(folder, module, until, { line: 4, expression: "Значение", expected: "333", projectDir: root });
+      await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+        passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+        extension_apply: true, debug_after_apply: true, evaluate: "333",
+      }));
+      return;
+    }
     const initialize = command();
     await click(labels.review, "");
     await click(labels.apply, "Configuration.xml");
@@ -139,9 +181,9 @@ exports.run = async function () {
 };
 
 
-async function verifyUpdatedDebugSession(folder, module, until) {
+async function verifyUpdatedDebugSession(folder, module, until, { line = 3, expression = "A", expected = "47", projectDir = folder.uri.fsPath } = {}) {
   const uri = vscode.Uri.file(module);
-  const point = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(2, 0)));
+  const point = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)));
   let session;
   let threadId;
   const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
@@ -156,13 +198,13 @@ async function verifyUpdatedDebugSession(folder, module, until) {
   try {
     assert.equal(await vscode.debug.startDebugging(folder, {
       name: "ESKA debug after apply", type: "eska-debug", request: "launch", profile: "test",
-      projectDir: folder.uri.fsPath,
+      projectDir,
     }), true);
     await until(() => threadId, "updated configuration reached its breakpoint");
     const { stackFrames: [frame] } = await session.customRequest("stackTrace", { threadId });
     assert.equal(frame.source.path, uri.fsPath);
-    const result = await session.customRequest("evaluate", { frameId: frame.id, expression: "A" });
-    assert.equal(result.result, "47");
+    const result = await session.customRequest("evaluate", { frameId: frame.id, expression });
+    assert.equal(result.result, expected);
   } finally {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();

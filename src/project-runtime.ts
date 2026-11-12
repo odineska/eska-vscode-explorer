@@ -20,6 +20,12 @@ const errors = new Map<string, MessageKey>([
   ["secret_unavailable", "runtimeSecretMissing"], ["busy", "runtimeBusy"],
   ["missing_admin_endpoint", "runtimeAdminMissing"], ["cluster_apply_unsupported", "runtimeClusterApply"],
   ["generation_failed", "runtimeGenerationFailed"],
+  ["extension_application_required", "runtimeApplyExtensionApplication"],
+  ["extension_scope_unsupported", "runtimeApplyExtensionScope"],
+  ["extension_descriptor_invalid", "runtimeApplyExtensionDescriptor"],
+  ["extension_ambiguous", "runtimeApplyExtensionAmbiguous"],
+  ["extension_unavailable", "runtimeApplyExtensionUnavailable"],
+  ["extension_identity_mismatch", "runtimeApplyExtensionIdentity"],
 ]);
 
 /** Native commands resolve only project identity. The platform tools own every operation and policy check. */
@@ -138,9 +144,13 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!plan || typeof plan.confirmation !== "string" || !isRecord(plan.changes)) { this.failure(result); return; }
     const paths = this.applyPlanPaths(plan.changes, plan.object_changes, plan.import_files);
     const accept = this.text("runtimeApplyConfirm");
-    const title = this.text(initialize ? "runtimeFullPreview" : "runtimeDeltaPreview");
-    const target = typeof plan.target === "string" && typeof plan.platform_version === "string"
-      ? `${plan.target} (${plan.platform_version})\n\n` : "";
+    const location = typeof plan.target === "string" && typeof plan.platform_version === "string"
+      ? `${plan.target} (${plan.platform_version})` : "";
+    const extension = isRecord(plan.extension) && typeof plan.extension.name === "string" && typeof plan.extension.uuid === "string"
+      ? `${this.text("runtimeApplyExtension")} ${plan.extension.name} (${plan.extension.uuid})` : "";
+    const title = this.text(initialize ? extension ? "runtimeFullExtensionPreview" : "runtimeFullPreview" : "runtimeDeltaPreview");
+    const heading = [location, extension].filter(Boolean).join("\n");
+    const target = heading ? `${heading}\n\n` : "";
     const detail = target + paths.slice(0, 40).join("\n") + (paths.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(paths.length - 40)) : "");
     if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
     const confirmation = plan.confirmation;

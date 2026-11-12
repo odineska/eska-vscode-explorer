@@ -32,8 +32,10 @@ try {
     "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  const native = ["debug-http-host.cjs", "runtime-apply-host.cjs"].includes(basename(suite))
+    ? JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE) : undefined;
+  const workspaceFolder = native?.scenario === "apply-extension-debug" ? root : fixture.root;
   if (basename(suite) === "debug-http-host.cjs") {
-    const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
     const source = join(fixture.root, "src");
     await rm(source, { recursive: true });
     await cp(native.source, source, { recursive: true });
@@ -48,13 +50,13 @@ try {
       await writeFile(join(root, "eska.toml"),
         '[workspace.members.debug]\nconfiguration="base"\nexternal_objects=["project"]\n');
     }
-    if (native.scenario === "extensions") {
-      const members = native.extensions.map(directory => basename(directory));
-      await Promise.all(native.extensions.map((directory, index) => cp(directory, join(root, members[index]), { recursive: true })));
-      await writeFile(join(fixture.root, "eska.toml"), "[project]\nname='base'\ntype='configuration'\n");
-      const extensions = members.map(name => "{ path = " + JSON.stringify(name) + " }").join(", ");
-      await writeFile(join(root, "eska.toml"), '[workspace.members.debug]\nconfiguration="project"\nextensions=[' + extensions + ']\n');
-    }
+  }
+  if (["extensions", "apply-extension-debug"].includes(native?.scenario)) {
+    const members = native.extensions.map(directory => basename(directory));
+    await Promise.all(native.extensions.map((directory, index) => cp(directory, join(root, members[index]), { recursive: true })));
+    await writeFile(join(fixture.root, "eska.toml"), "[project]\nname='base'\ntype='configuration'\n");
+    const extensions = members.map(name => "{ path = " + JSON.stringify(name) + " }").join(", ");
+    await writeFile(join(root, "eska.toml"), '[workspace.members.debug]\nconfiguration="project"\nextensions=[' + extensions + ']\n');
   }
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
@@ -178,13 +180,13 @@ try {
   const executableName = process.platform === "win32" ? `${component}.exe` : component;
   if (process.platform === "win32") await cp(globalBinary, join(bin, executableName));
   else await symlink(globalBinary, join(bin, executableName));
-  await mkdir(join(fixture.root, ".vscode"), { recursive: true });
+  await mkdir(join(workspaceFolder, ".vscode"), { recursive: true });
   // Prevent the first-run welcome page from taking focus during native formatting/menu assertions.
   const nativeUiSettings = ["formatting-readonly-host.cjs", "tool-status-host.cjs", "language-host.cjs"].includes(basename(suite)) ? { "workbench.startupEditor": "none" } : {};
   // Configure the binary before activation: a later settings notification deliberately disconnects.
   // The general explorer suite separately exercises discovery through the isolated PATH.
   const explicitBinary = process.env.ESKA_HOST_GLOBAL_BINARY || basename(suite) !== "extension-host.cjs";
-  await writeFile(join(fixture.root, ".vscode/settings.json"), JSON.stringify({ ...nativeUiSettings, "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
+  await writeFile(join(workspaceFolder, ".vscode/settings.json"), JSON.stringify({ ...nativeUiSettings, "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false, "eska.explorer.checkForFormatterUpdates": false, ...(process.env.ESKA_TEST_FMT_BINARY ? { "eska.explorer.formatterExecutable": process.env.ESKA_TEST_FMT_BINARY } : {}), "eska.explorer.languageFeatures": process.env.ESKA_TEST_LANGUAGE === "1", "eska.explorer.analyzerExecutable": fixture.activity?.analyzer ?? process.env.ESKA_TEST_ANALYZER_BINARY ?? join(root, "missing-analyzer"), "eska.explorer.backend": backend,
     ...(explicitBinary ? { "eska.explorer.executable": binary } : {}),
     ...(process.env.ESKA_HOST_SUPPORT_DISABLED ? { "eska.explorer.supportPolicy": false } : {}) }));
   const executable = process.env.VSCODE_EXECUTABLE ?? "code";
@@ -251,7 +253,7 @@ try {
     console.log(JSON.stringify({installedVsix:process.env.ESKA_TEST_VSIX,runtimeFiles:receipt.runtimeAssets.files.length,runtimeManifestSha256:receipt.runtimeAssets.manifestSha256}));
     // Test mode exposes the provider only for acceptance. All runtime files come from the installed VSIX.
   }
-  let workspace = fixture.root;
+  let workspace = workspaceFolder;
   let secondFixture;
   if (process.env.ESKA_HOST_MULTI_ROOT) {
     secondFixture = await createTreeProject(join(root, "second"));
