@@ -41,6 +41,7 @@ exports.connectWorkbench = async function (until) {
     await fs.writeFile(file, Buffer.from(result.data, 'base64'));
   },
   /** Exercise the native pointer path instead of synthetic DOM event dispatch. */
+  movePointer: (x, y) => connection.request('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }),
   click: async (x, y) => {
     await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });

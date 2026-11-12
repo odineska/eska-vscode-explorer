@@ -56,6 +56,14 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "editor-controls") {
+    await runEditorControls(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version,
+      editor_hover: "41", editor_step_lines: [9, 10, 5], caller_frame: true, editor_continue: true,
+    }));
+    return;
+  }
   if (native.scenario === "assign") {
     await runAssignment(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -206,6 +214,111 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runEditorControls(folder, module, until) {
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(4, 0)));
+  const stops = [];
+  const requests = [];
+  const responses = new Map();
+  let session;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onWillReceiveMessage(message) {
+          if (message.type === "request") requests.push(message);
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stops.push(message.body);
+          if (message.type === "response") responses.set(message.request_seq, message);
+        },
+      };
+    },
+  });
+  const stopAt = async (line, reason) => {
+    const event = await until(() => stops.shift(), `VS Code stopped on line ${line}`);
+    assert.equal(event.reason, reason);
+    const { stackFrames } = await session.customRequest("stackTrace", { threadId: event.threadId });
+    assert.equal(stackFrames[0].source.path, module.fsPath);
+    assert.equal(stackFrames[0].line, line);
+    return { threadId: event.threadId, frames: stackFrames };
+  };
+  const command = async (name, request, threadId) => {
+    const start = requests.length;
+    const id = `workbench.action.debug.${name}`;
+    const sent = await until(async () => {
+      const sent = requests.slice(start).find(message => message.command === request);
+      if (sent) return sent;
+      await vscode.commands.executeCommand(id);
+      return false;
+    }, `VS Code sent ${request}`);
+    assert.equal(sent.arguments.threadId, threadId);
+    assert.equal((await until(() => responses.get(sent.seq), `${request} response`)).success, true);
+  };
+  vscode.debug.addBreakpoints([breakpoint]);
+  try {
+    const document = await vscode.workspace.openTextDocument(module);
+    await vscode.window.showTextDocument(document);
+    await workbench.focus();
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP editor controls", type: "eska-debug", request: "launch", profile: "test",
+      projectDir: folder.uri.fsPath,
+    }), true);
+    const first = await stopAt(5, "breakpoint");
+    const point = await until(() => workbench.evaluate(`(() => {
+      const line = [...document.querySelectorAll('.monaco-editor .view-lines .view-line')]
+        .find(node => node.textContent.includes('Увеличить(A)') && node.getBoundingClientRect().width > 0);
+      if (!line) return false;
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      for (let node; node = walker.nextNode();) {
+        const index = node.textContent.indexOf('A');
+        if (index < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        const { x, y, width, height } = range.getBoundingClientRect();
+        return [x + width / 2, y + height / 2];
+      }
+      return false;
+    })()`), "visible A in the stopped editor");
+    await workbench.movePointer(...point);
+    const hover = await until(() => requests.find(message => message.command === "evaluate"
+      && message.arguments.context === "hover" && message.arguments.expression === "A"), "native editor hover DAP request");
+    assert.equal(hover.arguments.frameId, first.frames[0].id);
+    assert.equal((await until(() => responses.get(hover.seq), "hover value")).body.result, "41");
+    await until(() => workbench.evaluate(`(() => {
+      const hover = document.querySelector('.debug-hover-widget');
+      return !!hover && hover.getBoundingClientRect().height > 0 && hover.textContent.includes('41');
+    })()`), "value 41 rendered in the debug hover");
+    await workbench.movePointer(0, 0);
+    vscode.debug.removeBreakpoints([breakpoint]);
+    const removal = await until(() => requests.find(message => message.command === "setBreakpoints"
+      && message.arguments.source.path === module.fsPath && message.arguments.breakpoints?.length === 0),
+    "VS Code removed the source breakpoint");
+    assert.equal((await until(() => responses.get(removal.seq), "breakpoint removal response")).success, true);
+    await command("stepInto", "stepIn", first.threadId);
+    const inside = await stopAt(9, "step");
+    assert.equal(inside.threadId, first.threadId);
+    assert.equal(inside.frames[1].line, 5);
+    assert.equal((await session.customRequest("evaluate", {
+      frameId: inside.frames[1].id, expression: "A + 2", context: "watch",
+    })).result, "43");
+    await command("stepOver", "next", first.threadId);
+    await stopAt(10, "step");
+    await command("stepOut", "stepOut", first.threadId);
+    const outside = await stopAt(5, "step");
+    assert.equal(outside.threadId, first.threadId);
+    await assert.rejects(session.customRequest("scopes", { frameId: inside.frames[0].id }));
+    await command("continue", "continue", first.threadId);
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint]);
+    workbench.close();
+  }
+}
 
 async function runAssignment(folder, module, until) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");
