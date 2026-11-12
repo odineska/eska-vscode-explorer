@@ -501,6 +501,16 @@ button { cursor: default; }
 .taxi-view-status-chip i { flex: 0 0 12px; font-style: normal; background: #847e68; color: #fef2c7; border-radius: 50%; height: 12px; line-height: 11px; text-align: center; }
 .taxi-table-field { --taxi-table-min-height: var(--taxi-table-compressed-height); }
 .taxi-table-field[data-native-column-sizing] { --taxi-table-min-height: var(--taxi-table-preferred-height); }
+.taxi-preview:not([data-reference-layout]) :where(.taxi-form-frame[data-vertical-scroll=useIfNecessary])
+  .taxi-table-field[data-native-column-sizing] {
+  --taxi-table-min-height: var(--taxi-table-compressed-height);
+}
+/* Preferred measurements keep the original grid height. Explicit group sizes still constrain it. */
+.taxi-preview[data-reference-layout] :where(.taxi-element:not([data-height-constrained])) > .taxi-table-field[data-native-dynamic-list],
+.taxi-form-frame:not([data-authored-height]):is([data-vertical-scroll=use], [data-vertical-scroll=useWithoutStretch])
+  :where(.taxi-element:not([data-height-constrained])) > .taxi-table-field[data-native-dynamic-list] {
+  --taxi-table-min-height: var(--taxi-table-preferred-height);
+}
 .taxi-form-frame[data-authored-height] .taxi-table-field[data-native-column-sizing] {
   --taxi-table-min-height: var(--taxi-table-compressed-height);
 }

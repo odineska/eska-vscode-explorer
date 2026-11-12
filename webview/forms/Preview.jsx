@@ -244,6 +244,7 @@ export function Preview(props) {
       data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" classList={{ 'taxi-selected': state.selected === root().key }}
         data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.nativeFormScroll() ? '' : undefined}
+        data-vertical-scroll={layout.nativeFormScroll() ? scalar(root(), 'VerticalScroll') || undefined : undefined}
         style={frameStyle()}
         onClick={() => props.controller.select(root())}>
         <div class="taxi-form-shadow" aria-hidden="true"/>

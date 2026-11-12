@@ -12,6 +12,7 @@ const readGeometry = `(() => {
   const origin = root.getBoundingClientRect(), rect = grid.getBoundingClientRect();
   const body = root.querySelector('.taxi-form-scrollport');
   const footer = root.querySelector('.taxi-root-commands button')?.getBoundingClientRect();
+  const tail = root.querySelector('[data-element$=":current:200"] .taxi-input')?.getBoundingClientRect();
   const content = grid.querySelector('.taxi-table-content');
   const columns = [...grid.querySelectorAll('[data-column]')];
   const shown = selector => !!table.querySelector(selector)?.getClientRects().length;
@@ -21,6 +22,7 @@ const readGeometry = `(() => {
     preferred: ['width', 'height'].map(axis => parseFloat(root.style.getPropertyValue('--taxi-form-preferred-' + axis))),
     bodyScroll: [body.scrollTop, body.scrollHeight - body.clientHeight],
     footerButton: footer ? [footer.x - origin.x, footer.y - origin.y, footer.width, footer.height] : null,
+    tail: tail ? [tail.x - origin.x, tail.y - origin.y, tail.width, tail.height] : null,
     content: [content.clientWidth, content.scrollWidth], columnWidths: columns.map(e => e.getBoundingClientRect().width),
     scrollLeft: content.scrollLeft, selected: table.classList.contains('taxi-selected'),
     search: shown('.taxi-table-search'), more: shown('[data-table-more]'), movement: shown('.taxi-table-move'),
@@ -41,6 +43,14 @@ async function geometry(ui) {
   return actual;
 }
 
+function rememberTableOwners(ui) {
+  return ui.evaluate(`(() => {
+    const table = document.querySelector('[data-kind=Table]'), grid = table.querySelector('.taxi-table-scroll');
+    const content = grid.querySelector('.taxi-table-content');
+    globalThis.__tableViewportOwners = { table, grid, content, columns: [...grid.querySelectorAll('[data-column]')] };
+  })()`);
+}
+
 async function allocate(ui, native) {
   await until(() => ui.evaluate("!!document.querySelector('.taxi-table-scroll')"), 'table viewport mounted');
   await allocateFormViewport(ui, native.frame);
@@ -54,11 +64,12 @@ async function allocate(ui, native) {
       assert.deepEqual(actual.grid, native.grid, 'table grid');
     }
     if (native.footerButton) assert.deepEqual(actual.footerButton, native.footerButton, 'bottom command');
+    if (native.tail) assert.deepEqual(actual.tail, native.tail, 'field below the grid');
   }
   return actual;
 }
 
-async function resizeAndEdit(service, view, main, ui, document, forms, results) {
+async function withDetachedTable(service, view, main, ui, run) {
   const workbench = await ui.nativeWindow();
   const identity = [...view.nodes.values()].find(node => node.name === 'Rows').identity;
   await service.receive(view, main, { type: 'select', identity });
@@ -67,48 +78,96 @@ async function resizeAndEdit(service, view, main, ui, document, forms, results) 
   await until(() => view.frames.get('preview')?.ready, 'table viewport detached');
   const preview = view.frames.get('preview');
   const floating = await frame({ detached: true, state: { title: preview.panel.title } });
-  const native = name => forms.find(form => form.kind === name).expected.native;
-  const source = document.getText();
   try {
     assert.notEqual((await floating.nativeWindow({ detached: true })).targetId, workbench.targetId);
-    const initial = await allocate(floating, native('Table30'));
-    assert.ok(initial.selected, 'selection propagated to the floating preview');
-    assert.ok(initial.content[1] > initial.content[0], 'columns overflow the viewport');
-    await floating.evaluate(`(() => {
-      const table = document.querySelector('[data-kind=Table]'), grid = table.querySelector('.taxi-table-scroll');
-      const content = grid.querySelector('.taxi-table-content');
-      globalThis.__tableViewportOwners = {table, grid, content, columns: [...grid.querySelectorAll('[data-column]')]};
-      content.scrollLeft = 24;
-    })()`);
-    assert.equal((await geometry(floating)).scrollLeft, 24, 'column content scrolls independently');
-    const wideFrame = native('Table65').frame;
-    const wide = await allocate(floating, { frame: wideFrame, grid: initial.grid });
-    assert.deepEqual(wide.preferred, initial.preferred, 'resize keeps the authored size');
-    assert.deepEqual(wide.content, initial.content, 'the fixed grid viewport stays the same in a wider window');
-    const narrow = await allocate(floating, native('Table30'));
-    assert.deepEqual(narrow.columnWidths, initial.columnWidths, 'resize restores column widths');
-    const change = async (xml, name, label) => {
-      await editFormSource(document, view, xml);
-      await until(() => floating.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'floating table XML revision');
-      const actual = await allocate(floating, native(name));
-      assert.deepEqual(actual.preferred, native(name).frame, 'source width changes the preferred frame');
-      assert.ok(actual.selected && actual.stableOwners, 'dirty layout preserves selection and DOM owners');
-      results.push({ name: label, ...actual });
-    };
-    const edited = source.replace('<Width>30</Width>', '<Width>45</Width>');
-    assert.notEqual(edited, source);
-    await change(edited, 'Table45', 'floating-dirty-width');
-    assert.equal(document.isDirty, true);
-    await change(source, 'Table30', 'floating-restored-width');
-    assert.ok(wide.stableOwners && narrow.stableOwners, 'resize preserves DOM owners');
-    assert.deepEqual(floating.scriptErrors(), []);
+    await run(floating);
   } finally {
     try {
-      await editFormSource(document, view, source);
       await service.receive(view, preview, { type: 'dock' });
       await until(() => !view.frames.has('preview'), 'table viewport docked');
     } finally { floating.close(); }
   }
+}
+
+async function resizeAndEdit(service, view, main, ui, document, forms, results) {
+  const native = name => forms.find(form => form.kind === name).expected.native;
+  const source = document.getText();
+  await withDetachedTable(service, view, main, ui, async floating => {
+    try {
+      const initial = await allocate(floating, native('Table30'));
+      assert.ok(initial.selected, 'selection propagated to the floating preview');
+      assert.ok(initial.content[1] > initial.content[0], 'columns overflow the viewport');
+      await rememberTableOwners(floating);
+      await floating.evaluate('globalThis.__tableViewportOwners.content.scrollLeft = 24; true');
+      assert.equal((await geometry(floating)).scrollLeft, 24, 'column content scrolls independently');
+      const wideFrame = native('Table65').frame;
+      const wide = await allocate(floating, { frame: wideFrame, grid: initial.grid });
+      assert.deepEqual(wide.preferred, initial.preferred, 'resize keeps the authored size');
+      assert.deepEqual(wide.content, initial.content, 'the fixed grid viewport stays the same in a wider window');
+      const narrow = await allocate(floating, native('Table30'));
+      assert.deepEqual(narrow.columnWidths, initial.columnWidths, 'resize restores column widths');
+      const change = async (xml, name, label) => {
+        await editFormSource(document, view, xml);
+        await until(() => floating.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'floating table XML revision');
+        const actual = await allocate(floating, native(name));
+        assert.deepEqual(actual.preferred, native(name).frame, 'source width changes the preferred frame');
+        assert.ok(actual.selected && actual.stableOwners, 'dirty layout preserves selection and DOM owners');
+        results.push({ name: label, ...actual });
+      };
+      const edited = source.replace('<Width>30</Width>', '<Width>45</Width>');
+      assert.notEqual(edited, source);
+      await change(edited, 'Table45', 'floating-dirty-width');
+      assert.equal(document.isDirty, true);
+      await change(source, 'Table30', 'floating-restored-width');
+      assert.ok(wide.stableOwners && narrow.stableOwners, 'resize preserves DOM owners');
+      assert.deepEqual(floating.scriptErrors(), []);
+    } finally { await editFormSource(document, view, source); }
+  });
+}
+
+async function checkScrollModes(service, view, main, ui, document, expected, results) {
+  const source = document.getText();
+  const read = async (floating, sample) => {
+    await allocateFormViewport(floating, sample.frame);
+    const actual = await geometry(floating);
+    assert.deepEqual(actual.frame, sample.frame);
+    assert.deepEqual(actual.grid, sample.grid);
+    assert.deepEqual(actual.tail, sample.tail);
+    assert.deepEqual(actual.bodyScroll, [0, sample.scrollRange]);
+    assert.deepEqual(actual.preferred, expected.native.frame);
+    assert.ok(actual.selected && actual.stableOwners, 'vertical scrolling keeps the selected table and its DOM');
+    return actual;
+  };
+  await withDetachedTable(service, view, main, ui, async floating => {
+    try {
+      await geometry(floating);
+      await rememberTableOwners(floating);
+      for (const sample of expected.scrollModes) {
+        const xml = sample.mode ? source.replace('<ChildItems>', '<VerticalScroll>' + sample.mode + '</VerticalScroll><ChildItems>') : source;
+        assert.ok(!sample.mode || xml !== source);
+        if (document.getText() !== xml) {
+          await editFormSource(document, view, xml);
+          await until(() => floating.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'floating scroll mode revision');
+        }
+        await floating.evaluate("document.querySelector('.taxi-form-scrollport').scrollTop=0; true");
+        const actual = await read(floating, sample);
+        const name = expected.name + '-' + (sample.mode ?? 'auto');
+        results.push({ name, ...actual });
+        if (sample.scrollRange > 0) {
+          await floating.evaluate("document.querySelector('.taxi-form-scrollport').scrollTop=1e6; true");
+          const end = await geometry(floating);
+          assert.equal(end.bodyScroll[0], sample.scrollRange);
+          assert.equal(end.tail[1], actual.tail[1] - sample.scrollRange, 'the last field scrolls into view');
+          assert.ok(end.tail[1] + end.tail[3] < end.frame[1]);
+        }
+      }
+      await editFormSource(document, view, source);
+      await until(() => floating.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)), 'original scroll mode restored');
+      await floating.evaluate("document.querySelector('.taxi-form-scrollport').scrollTop=0; true");
+      await read(floating, expected.scrollModes[0]);
+      assert.deepEqual(floating.scriptErrors(), []);
+    } finally { await editFormSource(document, view, source); }
+  });
 }
 
 exports.run = async () => {
@@ -135,7 +194,9 @@ exports.run = async () => {
       const actual = await allocate(ui, native);
       results.push({ name: form.kind, ...actual });
       if (process.platform === 'linux') {
-        if (['Table6', 'Fixed4NoStatus'].includes(form.kind)) {
+        if (form.expected.scrollModes) {
+          await checkScrollModes(service, view, main, ui, document, form.expected, results);
+        } else if (['Table6', 'Fixed4NoStatus'].includes(form.kind)) {
           assert.ok(actual.search && !actual.more && !actual.movement, 'search occupies the narrow toolbar');
         } else if (form.kind === 'Table30') {
           assert.ok(actual.search && actual.more && !actual.movement, 'commands fold into the menu');
