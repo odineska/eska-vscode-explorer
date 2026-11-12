@@ -229,7 +229,7 @@ async function runParity(folder, module, scenario, until) {
   const breakpoints = scenario === "snapshot" ? [new vscode.SourceBreakpoint(location(5))] : [
     new vscode.SourceBreakpoint(location(3), true, "A < 0"),
     new vscode.SourceBreakpoint(location(5), true, undefined, "2"),
-    new vscode.SourceBreakpoint(location(7), true, undefined, undefined, '"ESKA log " + Строка(A)'),
+    new vscode.SourceBreakpoint(location(7), true, undefined, undefined, "ESKA log {A}, {{текст}}"),
     new vscode.SourceBreakpoint(location(8), true, "A = 5"),
     new vscode.SourceBreakpoint(location(24)),
   ];
@@ -274,7 +274,7 @@ async function runParity(folder, module, scenario, until) {
     });
     await resume(first.threadId);
     const condition = await stop("breakpoint", 8);
-    assert.ok(output.some(body => body.category === "console" && body.output.includes("ESKA log 4")));
+    assert.ok(output.some(body => body.category === "console" && body.output.includes("ESKA log 4, {текст}")));
     await resume(condition.threadId);
     const exception = await stop("exception", 15);
     assert.ok(output.some(body => body.category === "stderr" && body.output.includes("ESKA match")));
