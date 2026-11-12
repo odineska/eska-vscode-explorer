@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { frame, until, sameSourcePath, editFormSource, allocateFormViewport } = require('./webview-host.cjs');
+const { frame, until, sameSourcePath, editFormSource, allocateFormViewport, selectedFormPixels } = require('./webview-host.cjs');
 
 const verifyPreferredFrame = process.platform === 'linux' && process.env.ESKA_FORM_VERIFY_PREFERRED_FRAME === '1';
 const preferredFrame = ui => ui.evaluate(`(() => {
@@ -11,6 +11,7 @@ const preferredFrame = ui => ui.evaluate(`(() => {
   return ['width','height'].map(axis => parseFloat(root.style.getPropertyValue('--taxi-form-preferred-' + axis)));
 })()`);
 const sameFrame = (left, right) => left?.[0] === right[0] && left?.[1] === right[1];
+const pageScrollSelector = '.taxi-page[aria-hidden=false] > .taxi-items[data-native-page-scroll=true]';
 
 async function waitForPreferredFrame(ui, expected, label) {
   await until(async () => sameFrame(await preferredFrame(ui), expected), label);
@@ -44,12 +45,15 @@ async function geometry(ui, keys, expected) {
     }));
     const label = name => nodes.get(keys[name])?.querySelector('.taxi-field-label');
     const captionLines = name => [...(label(name)?.querySelectorAll('.taxi-field-caption-line') ?? [])];
+    const pageScroll = ${JSON.stringify(expected.pageScroll !== undefined)} ? [...root.querySelectorAll(${JSON.stringify(pageScrollSelector)})]
+      .map(items => ({ box: box(items), client: [items.clientWidth, items.clientHeight] })) : undefined;
     return {
       frame: [origin.width, origin.height],
       dividers: ${JSON.stringify(expected.dividers !== undefined)} ? [...root.querySelectorAll('.taxi-column-divider')]
         .map(box).filter(([, , , height]) => height > 0)
         .map(([x,y,w,h]) => [Math.floor(x + (w - 2) / 2),y,h]) : undefined,
       pageGroups,
+      pageScroll,
       fields: Object.fromEntries(fields.map(name => [name, box(nodes.get(keys[name])?.querySelector('.taxi-input'))])),
       groups: Object.fromEntries(groups.map(([name, element]) => [name, box(element)])),
       fills,
@@ -71,7 +75,7 @@ function matches(actual, expected, frame = true) {
   return actual && (process.platform !== 'linux'
     || (!frame || JSON.stringify(actual.frame) === JSON.stringify(expected.frame))
     && JSON.stringify(actual.fields) === JSON.stringify(expected.fields)
-    && ['headingLines', 'captionLines', 'captionLocations', 'captionText', 'pageGroups', 'dividers'].every(key => expected[key] === undefined
+    && ['headingLines', 'captionLines', 'captionLocations', 'captionText', 'pageGroups', 'dividers', 'pageScroll'].every(key => expected[key] === undefined
       || JSON.stringify(actual[key]) === JSON.stringify(expected[key]))
     && (expected.fills === undefined || Object.keys(actual.fills).length === Object.keys(expected.fills).length
       && Object.entries(expected.fills).every(([name, box]) => JSON.stringify(actual.fills[name]) === JSON.stringify(box))));
@@ -167,8 +171,8 @@ async function verifyPageDivider(ui, narrow, hidden, observe) {
     assert.deepEqual(current.tracks, [initial.tracks[0] + shift, initial.tracks[1] - shift]);
     return current;
   }
-  const delta = Math.min(10, maximum - value);
-  assert.ok(delta > 0, 'automatic position leaves room for dragging');
+  const delta = Math.min(10, maximum - value) || Math.max(-10, minimum - value);
+  assert.notEqual(delta, 0, 'automatic position leaves room for dragging');
   await ui.dragHorizontally(selector, delta);
   await at(value + delta, 'dragged page divider');
   for (const [key, bound] of [['Home', minimum], ['End', maximum]]) {
@@ -182,6 +186,29 @@ async function verifyPageDivider(ui, narrow, hidden, observe) {
   }
   await allocateFormViewport(ui, narrow.frame);
   return at(maximum, 'page divider restores the manual position');
+}
+
+async function verifyPageScroll(ui, field) {
+  const moved = await ui.evaluate(`(() => {
+    const page = document.querySelector(${JSON.stringify(pageScrollSelector)});
+    const body = page.closest('.taxi-form-scrollport');
+    const input = page.querySelector('[data-element="' + ${JSON.stringify(field)} + '"] .taxi-input');
+    const start = {x: input.getBoundingClientRect().x, y: input.getBoundingClientRect().y,
+      page: page.getBoundingClientRect().y, body: body.scrollTop};
+    page.scrollTo(page.scrollWidth, page.scrollHeight);
+    const end = {x: input.getBoundingClientRect().x, y: input.getBoundingClientRect().y,
+      page: page.getBoundingClientRect().y, body: body.scrollTop};
+    const offset = [page.scrollLeft, page.scrollTop];
+    const visible = end.y < end.page + page.clientHeight;
+    page.scrollTo(0, 0);
+    return { start, end, offset, visible };
+  })()`);
+  assert.ok(moved.offset.every(offset => offset > 0), 'both axes scroll');
+  assert.equal(moved.start.x - moved.end.x, moved.offset[0]);
+  assert.equal(moved.start.y - moved.end.y, moved.offset[1]);
+  assert.equal(moved.start.page, moved.end.page, 'scroll only moves page contents');
+  assert.equal(moved.start.body, moved.end.body, 'form scroll position stays independent');
+  assert.equal(moved.visible, true, 'scroll reveals the input');
 }
 
 async function verifyReflow({ service, view, main, ui, keys, expected, gallery, plan, document, original }) {
@@ -221,6 +248,10 @@ async function verifyReflow({ service, view, main, ui, keys, expected, gallery, 
         })()`);
         assert.equal(width, profile.frame[0]);
         await observe(target, profile, mode + '-resize-' + width);
+        if (plan.scrollPage && index === 0) {
+          await verifyPageScroll(target, keys[plan.scrollPage]);
+          assert.deepEqual(view.selected, identity);
+        }
         if (changed && index === 0) {
           await editFormSource(document, view, changed);
           await until(() => target.evaluate('globalThis.__eskaNativeFormRevision === ' + JSON.stringify(view.snapshot.revision)),
@@ -305,7 +336,12 @@ exports.run = async () => {
       assert.deepEqual(ui.scriptErrors(), []);
       results.push({ name: form.kind, ...actual });
       await ui.parkPointer();
-      await ui.screenshot('separation-' + form.kind + '-' + vscode.env.language + '.png');
+      const pixelRegions = process.platform === 'linux' ? expected.pagePixels : undefined;
+      const screenshot = await ui.screenshot('separation-' + form.kind + '-' + vscode.env.language + '.png', !!pixelRegions);
+      if (pixelRegions) {
+        const pixels = await selectedFormPixels(ui, screenshot, expected.frame, pixelRegions);
+        assert.deepEqual(pixels, pixelRegions.map(({ name, sha }) => ({ name, sha })), 'native page pixels');
+      }
       const change = changes[form.kind];
       if (change) {
         const control = fixture.formGallery.find(sample => sample.kind === change.control).expected;

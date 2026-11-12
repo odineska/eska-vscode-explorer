@@ -72,7 +72,7 @@ function referencePictureLabel(lane, os) {
   const [field, picture, label] = lane.children;
   return lane.children.length === 3 && field.kind === 'field' && stretchReference(field, os)
     && picture.node.kind === 'PictureField' && !picture.size.growthWeight
-    && label.node.kind === 'LabelField' && label.size.growthWeight > 0;
+    && label.node.kind === 'LabelField';
 }
 
 function placementPlans(lanes, preferred) {
@@ -111,7 +111,7 @@ export function mixedColumnLayout(context) {
 
   function register(items, lanes, setCell, setLane) {
     sizeEntries(lanes.flatMap(lane => lane.children));
-    const adaptive = lanes.every(lane => referencePictureLabel(lane, os));
+    const adaptive = lanes.every(lane => referencePictureLabel(lane, os) && lane.children[2].size.growthWeight > 0);
     const title = adaptive && items.parentElement.querySelector(':scope > .taxi-group-title[data-native-heading-minimum]');
     const heading = title ? { items, preferred: Number(title.dataset.nativeTextWidth) } : undefined;
     const shared = lanes.filter(lane => !lane.node.presentation.united);
@@ -194,9 +194,11 @@ export function mixedColumnLayout(context) {
   }
 
   function occupiedWidth(fields, origin) {
-    return Math.max(0, ...fields.map(({ element, outset, width = 0 }) => {
+    return Math.max(0, ...fields.map(({ element, outset, width = 0, authoredWidth }) => {
       const { left, right } = element.getBoundingClientRect();
-      return Math.round(Math.max(right / scale, left / scale + width) + outset - origin);
+      // The leading track can grow beyond the authored date width during allocation.
+      const end = authoredWidth ? left / scale + authoredWidth : Math.max(right / scale, left / scale + width);
+      return Math.round(end + outset - origin);
     }));
   }
 
@@ -229,6 +231,7 @@ export function mixedColumnLayout(context) {
       }
       const width = Math.max(leading.preferred, scope.stackWidth, rigid, fixedDates.length ? fixed : 0);
       const [date] = fixedDates;
+      if (fixedDates.length === 1) scope.dateKey = date.element.dataset.element;
       const automaticTop = date && dateProfiles.get(date.element.dataset.element)?.automaticTop;
       if (fixedDates.length === 1 && automaticTop && compactReserve !== undefined) {
         scope.automaticDate = { ...date, ...automaticTop, fullWidth: leading.preferred, fullReserve: leading.reserve,
@@ -272,7 +275,12 @@ export function mixedColumnLayout(context) {
         // With the date titles above, all three tracks share growth from their compact widths.
         if (scope.automaticDate) layout.compactLeadingWidth = (limit, minimum) =>
           minimum + Math.round(Math.max(0, limit - minimum) * minimum / (minimum + trailing));
-        for (const { element } of fixedDates) fixedThroughWidths.set(element, layout);
+        for (const date of fixedDates) {
+          const { element } = date;
+          const authoredWidth = dateProfiles.get(element.dataset.element)?.authoredWidth;
+          date.authoredWidth = authoredWidth;
+          fixedThroughWidths.set(element, authoredWidth ? { ...layout, authoredWidth, column } : layout);
+        }
       }
     }
   }
@@ -282,7 +290,7 @@ export function mixedColumnLayout(context) {
     const available = Math.min(...lanes.map(lane => availableTrackWidth(lane.items, lane.children.length, scale)));
     const origin = leadingOrigin(lanes);
     const automatic = automaticDate && above.has(automaticDate.leading);
-    let planned = packedDates.get(topDateKey)?.leadingWidth;
+    let planned = packedDates.get(topDateKey ?? scope.dateKey)?.leadingWidth;
     if (topDateKey) {
       const compact = planned !== undefined && planned + .5 < fullReferenceWidth;
       for (const title of titles) {

@@ -1,4 +1,4 @@
-import { scrollbarPaint } from './scrollbar-paint.mjs';
+import { scrollbarFragment as fragment, scrollbarPaint } from './scrollbar-paint.mjs';
 
 /** The disabled vertical arrow is shared with the other native scrollbars. */
 export const tableScrollbarGrays = Object.freeze(scrollbarPaint.disabled.upArrow.flat());
@@ -40,12 +40,6 @@ export function scrollTableByColumn(columns, viewport, position, direction) {
   return direction < 0 ? 0 : Math.max(0, start - viewport);
 }
 
-function fragment(rows) {
-  const width = rows[0].length, height = rows.length;
-  const rgba = new Uint8ClampedArray(width * height * 4);
-  rows.flat().forEach((gray, index) => rgba.set([gray, gray, gray, 255], index * 4));
-  return { rgba, width, height };
-}
 const reverseRows = rows => rows.map(row => [...row].reverse());
 const trackStart = [
   [255, 249, 227, 216], [249, 217, 214, 214], [227, 214, 214, 214], [216, 214, 214, 214],

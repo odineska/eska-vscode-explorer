@@ -6,6 +6,13 @@ const { isDeepStrictEqual } = require('node:util');
 const vscode = require('vscode');
 const { until, frame, editFormSource, allocateFormViewport, sameSourcePath } = require('./webview-host.cjs');
 
+
+function withFormWidth(source, width) {
+  const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
+  assert.notEqual(sized, source);
+  return sized;
+}
+
 const key = node => `${node.identity.source}:current:${node.identity.key.value}`;
 
 function named(root, name) {
@@ -272,6 +279,69 @@ async function verifyDateBlock(main, view, document) {
   }
 }
 
+async function verifyDateLabelHeight(main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'DateLabelHeight.xml'), 'utf8');
+  const { sourceSha256, cases, widthCases } = JSON.parse(await fs.readFile(path.join(directory, 'date-label-height-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const original = document.getText();
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const find = id => root.querySelector('[data-element$=":current:' + id + '"]');
+    const group = find(5)?.querySelector('.taxi-group'), limit = find(54)?.querySelector('.taxi-label-field');
+    const tail = find(200)?.querySelector('.taxi-input');
+    if (!group || !limit || !tail) return null;
+    const frame = root.getBoundingClientRect(), value = limit.getBoundingClientRect(), last = tail.getBoundingClientRect();
+    const dateOrigins = [51, 52].map(id => {
+      const input = find(id)?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return input ? [input.x - frame.x, input.y - frame.y] : null;
+    });
+    return {
+      dateOrigins,
+      frame: [frame.width, frame.height],
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      groupHeight: group.classList.contains('taxi-group--painted') ? group.getBoundingClientRect().height : null,
+      titleLocation: limit.closest('.taxi-field-row').dataset.titleLocation,
+      limitValue: [value.y - frame.y, value.height],
+      tail: [last.x - frame.x, last.y - frame.y, last.width, last.height],
+    };
+  })()`;
+  const sizes = [];
+  try {
+    for (const sample of [...cases, ...widthCases, cases[0]]) {
+      const resized = source.replace('<Width>62</Width>', '<Width>' + sample.width + '</Width>');
+      const xml = sample.painted ? resized : resized.replace('<BackColor>web:LightGoldenRodYellow</BackColor>', '');
+      await editFormSource(document, view, xml);
+      await until(() => ui.evaluate("!!document.querySelector('[data-element$=\":current:200\"] .taxi-input')"), 'field after the date block');
+      await allocateFormViewport(ui, sample.frame);
+      const expected = {
+        frame: sample.frame, preferredHeight: sample.frame[1], groupHeight: sample.groupHeight,
+        titleLocation: sample.titleLocation, limitValue: sample.limitValue, tail: sample.tail,
+      };
+      let actual, stable = 0;
+      await until(async () => {
+        actual = await ui.evaluate(measure);
+        const { dateOrigins, ...layout } = actual ?? {};
+        const matchDates = !sample.dateOrigins || sample.dateOrigins.every(([x, y], index) => {
+          const origin = dateOrigins?.[index];
+          return origin?.[1] === y && (sample.pendingHorizontal || origin[0] === x);
+        });
+        stable = isDeepStrictEqual(layout, expected) && matchDates ? stable + 1 : 0;
+        return stable >= 2;
+      }, 'date label layout ' + sample.name).catch(error => {
+        throw new Error('Date label height ' + sample.name + ' ' + JSON.stringify({ expected, actual }), { cause: error });
+      });
+      sizes.push({ name: sample.name, ...actual });
+    }
+    return { kind: 'DateLabelHeight', sizes };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 async function verifyColumnSurplus(service, main, view, document) {
   const directory = process.env.ESKA_FORM_FIXTURES;
   const { fixtures } = JSON.parse(await fs.readFile(path.join(directory, 'column-surplus-metrics.json'), 'utf8'));
@@ -308,28 +378,38 @@ async function verifyColumnSurplus(service, main, view, document) {
       ? [through[0][0] - box(referenceLabel)[0], referenceLabel.querySelectorAll('.taxi-field-caption-line').length || 1] : null;
     const referenceLabelFits = referenceCaption
       && box(referenceLabel)[1] + parseFloat(getComputedStyle(referenceLabel.parentElement).columnGap) <= referenceCaption[0];
-    const dateBlock = box(find(40)), trace = box(find(1091)?.querySelector('.taxi-input'));
-    return { width: frame.width, columns: [10, 20].map(id => box(find(id))),
+    const dates = find(40), court = find(1051)?.querySelector('.taxi-input');
+    const dateBlock = box(dates), trace = box(find(1091)?.querySelector('.taxi-input'));
+    return { width: frame.width, height: frame.height,
+      preferredHeight: parseFloat(form.style.getPropertyValue('--taxi-form-preferred-height')),
+      dateBlockHeight: dates?.getBoundingClientRect().height ?? null,
+      courtTop: court ? court.getBoundingClientRect().y - frame.y : null,
+      columns: [10, 20].map(id => box(find(id))),
       inputs: [11, 21].map(id => box(find(id)?.querySelector('.taxi-input'))),
       dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
       dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
       dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
-      through, referenceCaption, referenceLabelFits };
+      through, referenceCaption, referenceLabelFits,
+      trailingLabels: [through[3], box(find(1083)?.querySelector('.taxi-label-field'))] };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
     columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
-    checkCaption, dateLabel, referenceRow, referenceCaption, divider }) {
+    checkCaption, dateLabel, referenceRow, referenceCaption, divider, height, dateBlockHeight, courtTop, trailingLabels }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
     if (columns) Object.assign(expected, { columns, inputs, dateBlock });
     if (dateBlockWidth !== undefined) expected.dateBlockWidth = dateBlockWidth;
+    if (height !== undefined) Object.assign(expected, { height, preferredHeight: height });
+    if (dateBlockHeight !== undefined) expected.dateBlockHeight = dateBlockHeight;
+    if (courtTop !== undefined) expected.courtTop = courtTop;
     if (traceOffset !== undefined) expected.traceOffset = traceOffset;
     if (dateFields) expected.dateFields = dateFields;
     if (dateLocations) expected.dateLocations = dateLocations;
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
     if (referenceRow) expected.through = referenceRow;
+    if (trailingLabels) expected.trailingLabels = trailingLabels;
     if (referenceCaption) {
       expected.referenceCaption = referenceCaption;
       if (referenceCaption[1] > 1) expected.referenceLabelFits = true;
@@ -344,6 +424,62 @@ async function verifyColumnSurplus(service, main, view, document) {
     }, description).catch(error => { throw new Error(`${description}: ${JSON.stringify({ expected, actual })}`, { cause: error }); });
     assert.equal(view.snapshot.revision, revision);
     return actual;
+  }
+  async function verifyDateStretch(surface, file, source) {
+    const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-through-stretch-metrics.json'), 'utf8'));
+    assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+    const geometry = sample => ({
+      width: sample.frame[0], viewportHeight: sample.frame[1], height: sample.frame[1], divider: true,
+      dateBlockHeight: sample.dateBlock[3], courtTop: sample.courtTop,
+    });
+    const sizes = [];
+    for (const { width, auto, fixed } of cases) {
+      const sized = withFormWidth(source, width);
+      const fixedSource = sized.replace('<UsualGroup name="Dates" id="40">', '$&<HorizontalStretch>false</HorizontalStretch>');
+      assert.notEqual(fixedSource, sized);
+      await editFormSource(document, view, sized);
+      const automatic = await observe(surface, file, geometry(auto));
+      await editFormSource(document, view, fixedSource);
+      const packed = await observe(surface, file, { ...geometry(fixed), dateBlockWidth: fixed.dateBlock[2] });
+      assert.equal(packed.dateBlock[0], automatic.dateBlock[0], 'fixed dates keep their leading edge');
+      assert.ok(Math.abs(packed.dateBlock[0] - fixed.dateBlock[0]) <= 1, 'the date block starts at the native column edge');
+      assert.ok(packed.dateBlockWidth < automatic.dateBlockWidth, 'date block stops at its packed width');
+      assert.deepEqual(packed.columns, automatic.columns, 'the two columns retain their widths');
+      assert.deepEqual(packed.through, automatic.through, 'sibling references, picture and label keep their own allocation');
+      assert.equal(packed.traceOffset, automatic.traceOffset, 'service fields retain the common edge');
+      await editFormSource(document, view, sized);
+      const restored = await observe(surface, file, { ...geometry(auto), dateBlockWidth: automatic.dateBlockWidth });
+      assert.deepEqual(restored.through, automatic.through);
+      sizes.push({ width: fixed.frame[0], automatic, packed });
+    }
+    await editFormSource(document, view, source);
+    return sizes;
+  }
+
+  async function verifyFixedTrailingLabels(surface, file, source) {
+    const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'through-label-stretch-metrics.json'), 'utf8'));
+    assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+    const painted = source.replace(/(<LabelField name="IncomingOrg" id="1083">.*?<BackColor>)web:LightGreen/su, '$1web:LightPink');
+    assert.notEqual(painted, source);
+    const sizes = [];
+    for (const sample of cases) {
+      const { width, fixedLabels, labelWidth, frame: [pixels, height], dateBlock: [x, , datesWidth, dateBlockHeight],
+        divider, labels } = sample;
+      const sized = withFormWidth(painted, width);
+      const xml = sized.replace(/<LabelField name="(OutgoingOrg|IncomingOrg)" id="\d+">/gu, (tag, name) => {
+        if (!fixedLabels.includes(name)) return tag;
+        return `${tag}<HorizontalStretch>false</HorizontalStretch>${labelWidth ? `<Width>${labelWidth}</Width>` : ''}`;
+      });
+      assert.notEqual(xml, sized);
+      await editFormSource(document, view, xml);
+      const actual = await observe(surface, file, { width: pixels, viewportHeight: height, height, divider, dateBlockHeight,
+        trailingLabels: labels.map(([left, , span]) => [left, span]) });
+      assert.ok(Math.abs(actual.dateBlock[0] - x) <= 1, 'fixed labels leave room for the native column boundary');
+      assert.ok(Math.abs(actual.dateBlockWidth - datesWidth) <= 2, 'the date block is allocated from the remaining width');
+      sizes.push({ name: sample.name, ...actual });
+    }
+    await editFormSource(document, view, source);
+    return sizes;
   }
 
   async function verifyThroughEnd(surface, width) {
@@ -445,6 +581,10 @@ async function verifyColumnSurplus(service, main, view, document) {
           await editFormSource(document, view, source);
           await observe(floating, file, cases[1]);
         }
+        if (through) {
+          result.fixedDateStretch = await verifyDateStretch(floating, file, source);
+          result.fixedTrailingLabels = await verifyFixedTrailingLabels(floating, file, source);
+        }
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
         await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));
@@ -516,6 +656,240 @@ async function verifyColumnSurplus(service, main, view, document) {
   }
 }
 
+
+async function verifyAuthoredDateWidths(surface, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'authored-date-width-metrics.json'), 'utf8'));
+  const sources = new Map();
+  for (const [file, hash] of Object.entries(sourceSha256)) {
+    const xml = await fs.readFile(path.join(directory, file), 'utf8');
+    assert.equal(createHash('sha256').update(xml).digest('hex'), hash);
+    sources.set(file, xml);
+  }
+
+  const measure = (groupId, dateIds) => `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect();
+    const find = id => root.querySelector('[data-element$=":current:' + id + '"]');
+    const group = find(${groupId})?.getBoundingClientRect();
+    if (!group) return null;
+    const dates = ${JSON.stringify(dateIds)}.map(id => {
+      const row = find(id)?.querySelector('.taxi-field-row');
+      const input = row?.querySelector('.taxi-input')?.getBoundingClientRect();
+      return input ? [input.x - frame.x, input.y - frame.y, row.dataset.titleLocation] : null;
+    });
+    return { frame: [frame.width, frame.height],
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      group: [group.x - frame.x, group.y - frame.y, group.width, group.height], dates };
+  })()`;
+
+  const standalone = measure(5, [51, 52]), columns = measure(40, [41, 42]);
+  const sizes = [];
+  for (const sample of cases) {
+    const source = sources.get(sample.source), solo = sample.source === 'DateBlock.xml';
+    const sized = solo ? source.replace('<Width>62</Width>', `<Width>${sample.formWidth}</Width>`)
+      : withFormWidth(source, sample.formWidth);
+    const stretch = sample.fixed ? '<HorizontalStretch>false</HorizontalStretch>' : '';
+    const xml = sized.replace(/<UsualGroup name="Dates" id="\d+">/u, `$&<Width>${sample.groupWidth}</Width>${stretch}`);
+    assert.notEqual(xml, sized, 'date group present in ' + sample.source);
+    await editFormSource(document, view, xml);
+    await allocateFormViewport(surface, sample.frame);
+    let actual, previous;
+    await until(async () => {
+      actual = await surface.evaluate(solo ? standalone : columns);
+      const stable = isDeepStrictEqual(actual, previous);
+      previous = actual;
+      const tolerance = solo ? 0 : 1;
+      return stable && isDeepStrictEqual(actual?.frame, sample.frame) && actual.preferredHeight === sample.frame[1]
+        && sample.group.every((value, axis) => Math.abs(actual.group[axis] - value) <= (axis % 2 === 0 ? tolerance : 0))
+        && sample.dates.every(([x, y, title], index) => {
+          const date = actual.dates[index];
+          return date && Math.abs(date[0] - x) <= tolerance && date[1] === y && date[2] === title;
+        });
+    }, 'authored date width ' + sample.name).catch(error => {
+      throw new Error(sample.name + ' ' + JSON.stringify({ expected: sample, actual }), { cause: error });
+    });
+    sizes.push({ name: sample.name, ...actual });
+  }
+  return { kind: 'AuthoredDateWidths', sizes };
+}
+
+async function verifyDateHeightReserve(surface, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'DateThroughColumns.xml'), 'utf8');
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-caption-height-reserve-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const memo = '<InputField name="Memo" id="13"><DataPath>Left</DataPath><TitleLocation>None</TitleLocation>'
+    + '<MultiLine>true</MultiLine><Height>2</Height><VerticalStretch>true</VerticalStretch><BackColor>web:PaleGreen</BackColor></InputField>';
+  const footer = '<LabelField name="Footer" id="4000"><DataPath>Left</DataPath><TitleLocation>None</TitleLocation>'
+    + '<Width>8</Width><HorizontalStretch>false</HorizontalStretch><BackColor>web:LightSalmon</BackColor></LabelField>';
+  const template = source.replace(/<LabelField name="LeftMarker".*?<\/LabelField>/su, '$&' + memo)
+    .replace(/<\/UsualGroup>(?=\s*<\/ChildItems>\s*<Attributes>)/u, '$&' + footer);
+  assert.ok(template.includes(memo) && template.includes(footer));
+
+  const measure = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect();
+    const box = (id, selector = '') => {
+      const element = root.querySelector('[data-element$=":current:' + id + '"]' + selector);
+      const rect = element?.getBoundingClientRect();
+      return rect ? [rect.x - frame.x, rect.y - frame.y, rect.width, rect.height] : null;
+    };
+    return { width: frame.width, height: frame.height,
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      dates: box(40), memo: box(13, ' .taxi-input'), footer: box(4000, ' .taxi-label-field') };
+  })()`;
+
+  async function observe(frameWidth, reference) {
+    await allocateFormViewport(surface, [frameWidth, reference.frameHeight]);
+    let previous, actual, requestedHeight = reference.frameHeight, stable = 0;
+    await until(async () => {
+      actual = await surface.evaluate(measure);
+      if (actual?.dates && actual.width === frameWidth && actual.preferredHeight > 0
+          && actual.preferredHeight !== requestedHeight) {
+        requestedHeight = actual.preferredHeight;
+        await allocateFormViewport(surface, [frameWidth, requestedHeight]);
+        stable = 0;
+        return false;
+      }
+      stable = isDeepStrictEqual(actual, previous) ? stable + 1 : 0;
+      previous = actual;
+      return stable >= 3 && actual?.width === frameWidth && actual.height === requestedHeight
+        && actual.dates && actual.memo && actual.footer;
+    }, 'stable date caption height').catch(error => {
+      throw new Error(JSON.stringify({ frameWidth, requestedHeight, reference, actual }), { cause: error });
+    });
+    for (const [axis, value] of reference.dateBlock.entries()) {
+      assert.ok(Math.abs(actual.dates[axis] - value) <= (axis % 2 ? 0 : 1), JSON.stringify({ reference, actual }));
+    }
+    return actual;
+  }
+
+  const sizes = [];
+  for (const sample of cases) {
+    const sized = withFormWidth(template, sample.width);
+    const xml = sample.dateWidth ? sized.replace('<UsualGroup name="Dates" id="40">',
+      `$&<Width>${sample.dateWidth}</Width>`) : sized;
+    const sourceFor = stretch => xml.replace('<UsualGroup name="Pair" id="1">', `$&<VerticalStretch>${stretch}</VerticalStretch>`);
+    const frameWidth = sample.width * 10 + 34;
+    await editFormSource(document, view, sourceFor(false));
+    const fixed = await observe(frameWidth, sample.fixed);
+    await editFormSource(document, view, sourceFor(true));
+    const stretch = await observe(frameWidth, sample.stretch);
+    assert.deepEqual(
+      [stretch.preferredHeight - fixed.preferredHeight, stretch.memo[3] - fixed.memo[3], stretch.footer[1] - fixed.footer[1]],
+      [sample.stretch.frameHeight - sample.fixed.frameHeight, sample.stretch.memoFillHeight - sample.fixed.memoFillHeight,
+        sample.stretch.footerY - sample.fixed.footerY],
+      sample.name + ' keeps the visible date rows and reserves height for the stretching group',
+    );
+    await editFormSource(document, view, sourceFor(false));
+    assert.deepEqual(await observe(frameWidth, sample.fixed), fixed, sample.name + ' restores the fixed layout');
+    sizes.push({ name: sample.name, fixed, stretch });
+  }
+  return { kind: 'DateHeightReserve', sizes };
+}
+
+async function verifyFormDimensions(service, main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'ReferenceCaptionHeight.xml'), 'utf8');
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'reference-caption-height-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const original = document.getText();
+  const orderTag = '<InputField name="Any" id="1093">';
+  const servicesTag = '<UsualGroup name="Services" id="1089">';
+
+  function sourceFor({ width, condition, stretch }) {
+    const xml = withFormWidth(source, width).replace('<VerticalStretch>true</VerticalStretch>',
+      `<VerticalStretch>${stretch}</VerticalStretch>`);
+    if (condition.startsWith('SmallFont')) {
+      return xml.replace(orderTag, '$&<TitleFont ref="sys:DefaultGUIFont" height="8" kind="WindowsFont"/>');
+    }
+    switch (condition) {
+      case 'ShortTitle': return xml.replaceAll('Номер заказа', 'Заказ');
+      case 'ManualMax': return xml.replace(orderTag, '$&<AutoMaxWidth>false</AutoMaxWidth>');
+      case 'AuthoredWidth': return xml.replace(orderTag, '$&<Width>20</Width>');
+      case 'NestedStretch': return xml.replace(servicesTag, '$&<VerticalStretch>true</VerticalStretch>');
+      case 'Stack':
+      case 'StackFixed': {
+        const stack = xml.match(/<UsualGroup name="Services" id="1089">.*?<\/UsualGroup>/su)?.[0];
+        assert.ok(stack);
+        const group = stack.replace(servicesTag, `$&<VerticalStretch>${stretch}</VerticalStretch>`);
+        return xml.replace(/<UsualGroup name="Pair" id="1">.*?(?=\s*<InputField name="Footer")/su, group);
+      }
+      default: return xml;
+    }
+  }
+
+  const geometry = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const frame = root.getBoundingClientRect(), scroll = root.querySelector('.taxi-form-scrollport');
+    const box = id => {
+      const field = root.querySelector('[data-element$=":current:' + id + '"] .taxi-input')?.getBoundingClientRect();
+      return field ? [field.y - frame.y, field.height] : null;
+    };
+    return { width: frame.width, height: frame.height,
+      preferred: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      footer: box(6030), order: box(1093), range: scroll.scrollHeight - scroll.clientHeight,
+    };
+  })()`;
+  let surface, preview;
+  try {
+    await editFormSource(document, view, source);
+    await service.receive(view, main, { type: 'detach' });
+    await until(() => view.frames.get('preview')?.ready, 'form dimensions preview detached');
+    preview = view.frames.get('preview');
+    surface = await frame({ detached: true, state: { title: preview.panel.title } });
+
+    async function observe(sample, height = sample.frame[1], scrolled = false) {
+      const [width, preferred] = sample.frame;
+      await allocateFormViewport(surface, [width, height]);
+      const range = preferred - height;
+      if (scrolled) {
+        await surface.evaluate("const scroll = document.querySelector('.taxi-form-scrollport'); scroll.scrollTop = scroll.scrollHeight; true");
+      }
+      const atScroll = ([top, size]) => [top - (scrolled ? range : 0), size];
+      const expected = { width, height, preferred, range, footer: atScroll(sample.footer), order: atScroll(sample.order) };
+      let actual, stable = 0;
+      await until(async () => {
+        actual = await surface.evaluate(geometry);
+        stable = isDeepStrictEqual(actual, expected) ? stable + 1 : 0;
+        return stable >= 2;
+      }, 'caption opening height ' + sample.name).catch(error => {
+        throw new Error(sample.name + ' ' + JSON.stringify({ expected, actual }), { cause: error });
+      });
+      return actual;
+    }
+
+    const sizes = [];
+    for (const sample of cases) {
+      await editFormSource(document, view, sourceFor(sample));
+      sizes.push({ name: sample.name, ...await observe(sample) });
+      if (sample.name === 'W96Grow') {
+        const revision = view.snapshot.revision;
+        const height = sample.frame[1] - 9;
+        await observe(sample, height);
+        await observe(sample, height, true);
+        await observe(sample);
+        assert.equal(view.snapshot.revision, revision);
+      }
+    }
+    const authored = await verifyAuthoredDateWidths(surface, view, document);
+    const dateHeights = await verifyDateHeightReserve(surface, view, document);
+    assert.equal(document.isDirty, true);
+    return [{ kind: 'ReferenceCaptionHeight', sizes }, authored, dateHeights];
+  } finally {
+    surface?.close();
+    if (preview) {
+      await service.receive(view, preview, { type: 'dock' });
+      await until(() => !view.frames.has('preview'), 'form dimensions preview docked');
+    }
+    await editFormSource(document, view, original);
+  }
+}
+
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const explorer = await vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer').activate();
@@ -570,7 +944,9 @@ exports.run = async () => {
     if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
       results.push(await verifyUnitedRowHeight(main, view, document, keys));
       results.push(await verifyDateBlock(main, view, document));
+      results.push(await verifyDateLabelHeight(main, view, document));
       results.push(await verifyColumnSurplus(service, main, view, document));
+      results.push(...await verifyFormDimensions(service, main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
       const left = key(named(root,'Left'));

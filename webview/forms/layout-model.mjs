@@ -8,7 +8,7 @@ const surfaces = new Set(['Table', 'ChartField', 'DendrogramField', 'GanttChartF
   'SpreadSheetDocumentField', 'TextDocumentField', 'FormattedDocumentField', 'HTMLDocumentField',
   'PDFDocumentField', 'GeographicalSchemaField', 'GraphicalSchemaField', 'PictureField']);
 const positive = value => Number.isFinite(value) && value > 0 ? value : 0;
-const explicitNo = value => ['false', 'No', '0'].includes(value);
+export const explicitNo = value => ['false', 'No', '0'].includes(value);
 const explicitYes = value => ['true', 'Yes', '1'].includes(value);
 
 // In Linux Designer, authored heights of forms and ordinary groups use a 16 px unit.
@@ -16,6 +16,18 @@ export const linuxContainerHeightUnit = 16;
 
 export function horizontalGrouping(node) {
   return ['Horizontal', 'HorizontalIfPossible'].includes(node.presentation.grouping);
+}
+
+export function pageInputTitlePair(children, location) {
+  if (children.length !== 2 || children.some(child => child.kind !== 'InputField' || child.presentation.titleLocation !== location)) return false;
+  const kinds = children.map(child => child.presentation.valueType.kind);
+  return kinds.includes('string') && kinds.some(kind => kind === 'number' || kind === 'date');
+}
+
+export function fixedPageInputs(children, os) {
+  return children.some(child => textInputWidthBounds(child, os)) && children.every(child =>
+    child.kind === 'InputField' && !stretches(child, 'x') && inputRows(child) === 1
+      && (linuxFixedInputWidth(child, os) || nativeReferenceInput(child, os)));
 }
 
 export function ordinaryGroup(node) {
@@ -44,7 +56,11 @@ export function groupCanShrink(node, os, root = node) {
   if (os !== 'linux') return false;
   const automatic = (ordinaryGroup(node) || node.kind === 'CommandBar') && number(node, 'Width') <= 0;
   const conditional = ordinaryGroup(node) && node.presentation.grouping === 'HorizontalIfPossible';
-  const pages = node.kind === 'Pages' && number(node, 'Width') <= 0 && node.children.some(containsConditionalGroup);
+  const pages = node.kind === 'Pages' && number(node, 'Width') <= 0 && node.children.some(page => {
+    if (containsConditionalGroup(page)) return true;
+    const fields = page.children.filter(child => displayedInPreview(child, root));
+    return fixedPageInputs(fields, os) && fields.some(field => ['Left', 'Top'].includes(field.presentation.titleLocation));
+  });
   return automatic || conditional || pages || compactCommandBarGroup(node, root);
 }
 
@@ -138,13 +154,16 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
   const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
   const nativeMultiline = axis === 'x' && linuxFixedInputWidth(node, os) && inputRows(node) > 1;
+  const nativeHeight = axis === 'y' && authoredHeight && os === 'linux'
+    && node.kind === 'InputField' && flag(node, 'MultiLine', false);
   let maximum = nativeMultiline ? automaticMultilineMaximum(node, os) ?? manualLaneMaximum(node) : undefined;
-  if (maximum === undefined && (explicit <= 0 || numericLabel)) {
+  if (maximum === undefined && (explicit <= 0 || numericLabel || nativeHeight)) {
     const manual = explicitNo(scalar(node, `AutoMax${dimension}`, 'Auto'));
     if (manual) {
-      // Manual bounds apply after leaving the initial Designer size.
       const limit = positive(number(node, `Max${dimension}`));
-      if (!atPreferred && limit) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
+      // Designer measures multiline limits in text rows even at an authored form height.
+      if (limit && nativeHeight) maximum = inputControlHeight(node, os, limit);
+      else if (limit && !atPreferred) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
     } else if (numericLabel) {
       maximum = numericLabel.maximum;
     } else if (axis === 'x' && node.kind === 'InputField') {

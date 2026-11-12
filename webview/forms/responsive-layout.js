@@ -20,7 +20,7 @@ import { commandBarLayout } from './command-bar-layout.js';
 import { layoutGroupSpacing } from './group-spacing-layout.js';
 import { measureDecorations } from './decoration-layout.js';
 import { sameDecorationLines } from './decoration-metrics.mjs';
-import { conditionalPageFits, sideTabWidths } from './page-fit-layout.js';
+import { conditionalPageFits, rowFitWidth, sideTabWidths } from './page-fit-layout.js';
 
 export const FormLayoutContext = createContext();
 export const useFormLayout = () => useContext(FormLayoutContext);
@@ -75,6 +75,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   let allocateInlineRows, pageFits, natural, referenceFrame, needsNatural = true, referencePending = true;
   let headingTitles = [];
   const headingHeights = new Map();
+  let captionHeightReserves = new Map();
   const undoAlignment = [];
   const alignment = {
     mark(element, attribute, value = '') {
@@ -230,7 +231,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, minimumInputs: throughCaptions.minimumInputs,
         commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
-        fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, available, conditionalWidth: state.os === 'linux',
+        fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, captionHeightReserves, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry(measured);
       content.dataset.formLayout = 'allocated';
@@ -250,7 +251,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
       // Recheck fit against the resized area before scrollbars from the old arrangement settle.
       const recheckGroups = resized && conditionalGroups.length > 0;
-      const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
+      const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0
+        || decorationsLayout.size > 0 || headingTitles.length > 0 || allocateInlineRows.hasRows);
       if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
       if (resized && previous.outerWidth !== undefined) setViewportResized(true);
       if (Object.keys(next).some(key => previous[key] !== next[key])) {
@@ -275,14 +277,25 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       }
     }
     numericRows?.allocateWidths(captions);
-    allocateInlineRows(captions, alignedAbove);
+    const inlineHeightChanged = allocateInlineRows.allocateWidths(captions, alignedAbove);
     checkboxes.allocate(captions);
-    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve);
+    const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve, () => {
+      const requested = reference ? authoredWidth() + 4 : formAllocation(size(), preferred(), {}, state.ui.zoom).width;
+      return Math.max(0, rect(root).width - requested);
+    });
     dividers?.publish();
     for (const key of alignedAbove) above.add(key);
-    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths);
+    const nextReserves = new Map();
+    dateBlocks.allocate(captions, above, unitedRows.columnFraction, packedDates, unitedColumns.fixedThroughWidths, nextReserves);
     const leadingEdges = unitedColumns.allocate(above, captions, packedDates);
-    throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges);
+    dateBlocks.allocateAuthored(captions, above, unitedColumns.fixedThroughWidths, leadingEdges, nextReserves);
+    throughCaptions.allocateStacks(captions, geometry().minima, leadingEdges, nextReserves);
+    if (nextReserves.size !== captionHeightReserves.size
+        || [...nextReserves].some(([stack, height]) => captionHeightReserves.get(stack) !== height)) {
+      captionHeightReserves = nextReserves;
+      needsMinimum = true;
+      schedule();
+    }
     allocateGroupRows(geometry().minima);
     allocateCommandBars(geometry().minima);
     for (const title of headingTitles) {
@@ -307,12 +320,13 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);
-    if (moved || heightChanged) { needsMinimum = true; schedule(); }
+    if (moved || heightChanged || inlineHeightChanged) { needsMinimum = true; schedule(); }
     if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
       setFieldCaptions(captions);
       needsMinimum = true;
       schedule();
     }
+    if (allocateInlineRows.alignGroups()) { needsMinimum = true; schedule(); }
     const wrap = measureWrapping(root, conditionalGroups);
     setWrapped(previous => {
       if (previous.size === wrap.size && [...previous].every(key => wrap.has(key))) return previous;
@@ -345,7 +359,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
           : footprint.width;
         const fit = pageFits?.get(key);
         if (fit && !measuredFits.has(fit)) measuredFits.set(fit, fit());
-        const available = rect(items).width - boxInsets(getComputedStyle(items)).width + (measuredFits.get(fit) ?? 0);
+        const available = rowFitWidth(items) + (measuredFits.get(fit) ?? 0);
         if (available + .5 < required) wrap.add(key);
       }
     } finally {

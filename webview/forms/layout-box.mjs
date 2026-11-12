@@ -38,5 +38,7 @@ export function availableTrackWidth(element, trackCount, scale) {
 }
 
 export function updateStyle(element, name, value) {
-  if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
+  if (element.style.getPropertyValue(name) === value) return false;
+  element.style.setProperty(name, value);
+  return true;
 }

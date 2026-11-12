@@ -6,6 +6,7 @@ import { sideTabWidths } from './page-fit-layout.js';
 const widthWithHeadings = value => value.fullWidth ?? value.width;
 const widthWithSideCaptions = value => value.sideWidth ?? value.width;
 const maximumWidth = value => value.maximumWidth ?? Infinity;
+const heightWithCaptionReserve = value => Math.max(value.height, value.captionHeight ?? 0);
 
 function reserveWidth(value, width, fullWidth = width) {
   value.fullWidth = Math.max(widthWithHeadings(value), fullWidth);
@@ -15,7 +16,10 @@ function reserveWidth(value, width, fullWidth = width) {
 }
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
-export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs, commandWidth, minimumRows, widthFloors, fixedThroughWidths, headingHeights, available, conditionalWidth }) {
+export function minimumFormLayout(root, scale, {
+  minimumCaptions, minimumInputs, commandWidth, minimumRows, widthFloors, fixedThroughWidths,
+  headingHeights, captionHeightReserves, available, conditionalWidth,
+}) {
   const minima = new Map(), headingFloors = new Map();
   const size = element => borderBoxSize(element, scale);
   const margins = element => {
@@ -30,7 +34,8 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
   const add = (value, spacing) => ({ width: value.width + spacing.width,
     fullWidth: widthWithHeadings(value) + widthWithHeadings(spacing),
     sideWidth: widthWithSideCaptions(value) + widthWithSideCaptions(spacing),
-    maximumWidth: maximumWidth(value) + spacing.width, height: value.height + spacing.height });
+    maximumWidth: maximumWidth(value) + spacing.width, height: value.height + spacing.height,
+    captionHeight: value.captionHeight === undefined ? undefined : value.captionHeight + spacing.height });
   function items(element) {
     if (!element) return { width: 0, maximumWidth: 0, height: 0 };
     const elements = [...element.children].filter(child => child.classList.contains('taxi-element'));
@@ -43,9 +48,13 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       ? children.reduce((sum, child) => sum + sizeOf(child), gap)
       : Math.max(0, ...children.map((child, index) => sizeOf(child) - (reflows && horizontal
         ? pixels(elements[index].style.getPropertyValue('--taxi-group-spacing-x')) : 0)));
+    const height = sizeOf => horizontal ? Math.max(0, ...children.map(sizeOf))
+      : children.reduce((sum, child) => sum + sizeOf(child), gap);
     const value = { width: width(child => child.width), fullWidth: width(widthWithHeadings),
-      sideWidth: width(widthWithSideCaptions), height: horizontal
-      ? Math.max(0, ...children.map(value => value.height)) : children.reduce((sum, value) => sum + value.height, gap) };
+      sideWidth: width(widthWithSideCaptions), height: height(child => child.height) };
+    if (captionHeightReserves.size) {
+      value.captionHeight = height(heightWithCaptionReserve) + (captionHeightReserves.get(element) ?? 0);
+    }
     value.maximumWidth = horizontal ? children.reduce((sum, child) => sum + maximumWidth(child), gap)
       : Math.max(0, ...children.map(maximumWidth));
     const padding = insets(element);
@@ -57,6 +66,9 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
     if (element.hasAttribute('data-united-columns') || element.hasAttribute('data-fixed-date-row')) {
       value.height = Math.max(value.height, size(element).height - padding.height);
     }
+    if (element.dataset.nativePageScroll === 'true') {
+      value.height = value.captionHeight = pixels(css.getPropertyValue('--taxi-page-row-height'));
+    }
     const minimum = minimumRows.get(element);
     if (minimum !== undefined && !reflows) value.width = value.fullWidth = value.sideWidth = minimum;
     const floor = widthFloors.get(element);
@@ -66,19 +78,27 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         const through = fixedThroughWidths.get(child);
         if (!through) continue;
         const bounds = children[index];
-        reserveWidth(value, bounds.width + through.trailingMinimum, widthWithHeadings(bounds) + through.trailingMinimum);
+        const width = through.authoredWidth ?? 0;
+        reserveWidth(value, Math.max(width, bounds.width) + through.trailingMinimum,
+          Math.max(width, widthWithHeadings(bounds)) + through.trailingMinimum);
       }
     }
-    return add(add(value, padding), margins(element));
+    const measured = add(add(value, padding), margins(element));
+    const titleMinimum = pixels(element.style.getPropertyValue('--taxi-page-title-minimum'));
+    if (titleMinimum) reserveWidth(measured, titleMinimum);
+    const titleMaximum = pixels(element.style.getPropertyValue('--taxi-page-title-maximum'));
+    if (titleMaximum) measured.maximumWidth = titleMaximum;
+    return measured;
   }
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
     const pages = element.querySelector(':scope > .taxi-pages'), table = element.querySelector(':scope > .taxi-table-field');
-    let value;
+    let value, maximumHeight;
     if (field) {
       const label = field.querySelector(':scope > .taxi-field-label'), control = field.querySelector(':scope > .taxi-field-control');
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
-      content.height += pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
+      const titleOffset = pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
+      content.height += titleOffset + pixels(element.style.getPropertyValue('--taxi-inline-field-height-reserve'));
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') title.width = Math.max(title.width, throughCaptionWidth(element));
       const fullTitleWidth = title.width;
@@ -91,10 +111,17 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         width: (vertical ? Math.max(title.width, content.width) : title.width + gap + content.width) + padding.width,
         height: Math.max(rowHeight(content.height), pixels(css.minHeight)),
       };
+      if (element.hasAttribute('data-inline-fixed-height')) {
+        value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
+      }
       const inputMinimum = minimumInputs.get(element.dataset.element);
       if (inputMinimum) {
         if (inputMinimum.aboveWidth !== undefined) value.width = inputMinimum.aboveWidth + padding.width;
         value.sideWidth = Math.max(value.width, content.width + inputMinimum.alignedCaption + inputMinimum.gap + padding.width);
+      }
+      if (child && element.dataset.cappedInputHeight === 'authored') {
+        const limit = pixels(element.style.getPropertyValue('--taxi-control-max-height'));
+        if (limit) maximumHeight = Math.max(value.height, rowHeight(limit + margins(child).height + titleOffset));
       }
       const widthLimit = pixels(element.style.getPropertyValue('--taxi-control-max-width'));
       if (widthLimit && child?.classList.contains('taxi-input')) {
@@ -116,11 +143,19 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         height: children.reduce((sum, value) => sum + value.height, spacing.height) };
     } else if (group) {
       value = items(group.querySelector(':scope > .taxi-items'));
+      if (value.captionHeight > value.height && element.dataset.stretchY === 'true'
+          && !element.hasAttribute('data-authored-group-height') && !element.hasAttribute('data-height-constrained')) {
+        // The reserve belongs to the growing group so its rows keep their measured heights.
+        value.height = value.captionHeight;
+      }
       const title = group.querySelector(':scope > .taxi-group-title');
       if (title) {
         const height = (headingHeights.get(title) ?? size(title).height) + margins(title).height;
-        if (group.hasAttribute('data-united-horizontal-title')) value.height = Math.max(value.height, height);
-        else value.height += height;
+        const joined = group.hasAttribute('data-united-horizontal-title');
+        if (value.captionHeight !== undefined) {
+          value.captionHeight = joined ? Math.max(value.captionHeight, height) : value.captionHeight + height;
+        }
+        value.height = joined ? Math.max(value.height, height) : value.height + height;
         const preferred = textWidth(title, scale);
         reserveWidth(value, Number(title.dataset.nativeHeadingMinimum ?? preferred), preferred);
       }
@@ -132,10 +167,13 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
         value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-group-height')));
       }
     } else if (pages) {
-      const children = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')].map(page => add(items(page.querySelector(':scope > .taxi-items')), add(insets(page), margins(page))));
+      const panels = [...pages.querySelectorAll(':scope > .taxi-page-stack > .taxi-page')]
+        .map(page => ({ page, content: page.querySelector(':scope > .taxi-items') }));
+      const children = panels.map(({page, content}) => add(items(content), add(insets(page), margins(page))));
       value = { width: Math.max(0, ...children.map(value => value.width)), fullWidth: Math.max(0, ...children.map(widthWithHeadings)),
         sideWidth: Math.max(0, ...children.map(widthWithSideCaptions)),
         height: Math.max(0, ...children.map(value => value.height)) };
+      if (captionHeightReserves.size) value.captionHeight = Math.max(0, ...children.map(heightWithCaptionReserve));
       const tabs = pages.querySelector(':scope > .taxi-tabs');
       const side = sideTabRepresentation(pages.dataset.representation);
       const rail = side ? sideTabWidths(tabs, scale) : undefined;
@@ -146,14 +184,20 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
           value.fullWidth += width;
           value.sideWidth += width;
           value.width += width;
-          if (rail) value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
-        } else value.height += box.height;
+          if (rail && !pages.hasAttribute('data-authored-side-stretch')) {
+            value.maximumWidth = Math.max(0, ...children.map(maximumWidth)) + rail.nominal;
+          }
+        } else {
+          value.height += box.height;
+          if (value.captionHeight !== undefined) value.captionHeight += box.height;
+        }
       }
       value = add(value, insets(pages));
       if (tabs?.dataset.sideFitMinimum !== undefined) {
         const authored = pixels(element.style.getPropertyValue('--taxi-group-width'));
         value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value), authored);
-        const limit = element.dataset.stretchX === 'true' && Number.isFinite(value.maximumWidth)
+        const compactTitles = panels.some(({content}) => content?.style.getPropertyValue('--taxi-page-title-maximum'));
+        const limit = (element.dataset.stretchX === 'true' || compactTitles) && Number.isFinite(value.maximumWidth)
           ? `${value.maximumWidth}px` : 'none';
         updateStyle(pages, '--taxi-side-page-maximum', limit);
       }
@@ -168,7 +212,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       || element.style.getPropertyValue('--taxi-united-cell-width'));
     reserveWidth(value, columnWidth);
     if (element.dataset.layoutContainer === 'true') {
-      if (element.dataset.stretchX === 'false' && !element.hasAttribute('data-group-shrink-x')) {
+      if (element.dataset.stretchX === 'false' && !element.hasAttribute('data-group-shrink-x') && !element.hasAttribute('data-fixed-date-block')) {
         reserveWidth(value, pixels(element.style.getPropertyValue('--taxi-preferred-width')));
       }
       if (element.dataset.stretchY === 'false') value.height = Math.max(value.height, pixels(element.style.getPropertyValue('--taxi-preferred-height')));
@@ -177,6 +221,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       height: pixels(element.style.getPropertyValue('--taxi-group-spacing-y')) };
     if (element.dataset.stretchX === 'false') value.maximumWidth = widthWithHeadings(value);
     value = add(value, spacing);
+    if (maximumHeight) value.maximumHeight = maximumHeight;
     value.maximumWidth = Math.max(value.maximumWidth, widthWithHeadings(value));
     minima.set(element.dataset.element, value);
     if (value.fullWidth > value.width) headingFloors.set(element, value);

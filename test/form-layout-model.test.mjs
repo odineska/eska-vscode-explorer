@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { narrowCaptionTracks } from '../webview/forms/caption-track-model.mjs';
+import { fixedCaptionTracks, fixedTopPageTracks, narrowCaptionTracks, narrowInlineCaptionTracks, retainsFullPageTitle } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 import { isolatedInputCaptionWidth } from '../webview/forms/field-caption-layout.js';
@@ -111,6 +111,20 @@ test('Linux multiline input keeps its XML height under viewport pressure', () =>
   assert.equal(minimum({}, 10, { authoredHeight: true }), 23);
   const capped = node('InputField', { MultiLine: true, AutoMaxHeight: false, MaxHeight: 1 });
   assert.deepEqual(controlBounds(capped, 'y', undefined, 'linux'), { minimum: 51, maximum: 51 });
+});
+
+test('manual Linux multiline limits use native rows in an authored vertical allocation', () => {
+  const props = { MultiLine: true, AutoMaxHeight: false, MaxHeight: 4 };
+  const memo = node('InputField', props);
+  const options = { atPreferred: true, authoredHeight: true };
+  assert.deepEqual(controlBounds(memo, 'y', undefined, 'linux', options), { minimum: 23, maximum: 107 });
+  assert.deepEqual(controlBounds(memo, 'y', undefined, 'linux'), { minimum: 51, maximum: 80 });
+  const authored = node('InputField', { ...props, Height: 2, VerticalStretch: true });
+  authored.presentation.font = { points: 14 };
+  const height = controlBounds(authored, 'y', undefined, 'linux', options);
+  assert.deepEqual(height, { minimum: 35, maximum: 158 });
+  const fixed = node('InputField', { ...props, Height: 2, VerticalStretch: false });
+  assert.deepEqual(controlBounds(fixed, 'y', undefined, 'linux'), {});
 });
 
 test('manual Linux memo width uses the Taxi unit at the preferred size', () => {
@@ -265,6 +279,131 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
   assert.deepEqual(narrowCaptionTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
   assert.deepEqual(narrowCaptionTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
   assert.equal(narrowCaptionTracks(357, tracks), undefined);
+});
+
+test('wrapped inline captions reserve width within the limits of their values', () => {
+  const reference = { minimum: 62, preferred: 152, maximum: Infinity };
+  const fixed = { minimum: 152, preferred: 152, maximum: 152 };
+  const label = (text, value, weight = 400) => ({
+    caption: fieldCaptionProfile(text, { face: 'Arial', points: 10, weight }), reserve: 5, value,
+  });
+  const tracks = [
+    {
+      caption: { minimum: 0, compact: 0, preferred: 0 }, reserve: 0,
+      value: { minimum: 85, preferred: 511, maximum: 511 },
+    },
+    label('Корректируемый документ:', reference),
+    label('Ответственный:', reference),
+    label('Сумма документа:', fixed, 700),
+  ];
+  assert.deepEqual(narrowInlineCaptionTracks(1160, tracks), [
+    { width: 425, caption: 0 }, { width: 267, caption: 104 },
+    { width: 236, caption: 97 }, { width: 232, caption: 75 },
+  ]);
+  const fixedReference = tracks.map((track, index) => index === 1 ? { ...track, value: fixed } : track);
+  assert.deepEqual(narrowInlineCaptionTracks(1160, fixedReference), [
+    { width: 430, caption: 0 }, { width: 261, caption: 104 },
+    { width: 237, caption: 97 }, { width: 232, caption: 75 },
+  ]);
+  assert.deepEqual(narrowInlineCaptionTracks(1300, tracks), narrowCaptionTracks(1300, tracks));
+});
+
+test('a page with side tabs fits captions against the nominal rail and allocates the painted width', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const tracks = [
+    {
+      caption: fieldCaptionProfile('Адрес сервера кластера:', undefined, options),
+      captionInset: 1, reserve: 5, value: { minimum: 71, preferred: 161, maximum: 500 },
+    },
+    {
+      caption: fieldCaptionProfile('Порт подключения:', undefined, options),
+      captionInset: 1, reserve: 5, value: { minimum: 61, preferred: 61, maximum: 61 },
+    },
+  ];
+  assert.deepEqual(narrowCaptionTracks(439, tracks, 445), [{ width: 256, caption: 91 }, { width: 183, caption: 117 }]);
+  assert.deepEqual(narrowCaptionTracks(469, tracks, 475), [{ width: 286, caption: 102 }, { width: 183, caption: 117 }]);
+  assert.deepEqual(narrowCaptionTracks(489, [...tracks].reverse(), 495), [{ width: 154, caption: 88 }, { width: 335, caption: 154 }]);
+});
+
+test('a fixed side-tab row shares the tab overlap between its captions', () => {
+  const address = { caption: { minimum: 90, preferred: 154 }, reserve: 5, value: { preferred: 161 } };
+  const port = { caption: { minimum: 87, preferred: 117 }, reserve: 5, value: { preferred: 61 } };
+  const tracks = [address, port];
+
+  assert.deepEqual(fixedCaptionTracks(497, tracks, 503), [{ width: 317, caption: 151 }, { width: 180, caption: 114 }]);
+  assert.deepEqual(fixedCaptionTracks(502, tracks, 503), [{ width: 320, caption: 154 }, { width: 182, caption: 116 }]);
+
+  const unbreakablePort = { ...port, caption: { minimum: 117, preferred: 117 } };
+  assert.deepEqual(fixedCaptionTracks(497, [address, unbreakablePort], 503),
+    [{ width: 314, caption: 148 }, { width: 183, caption: 117 }]);
+});
+
+test('fixed page captions grow from their wrapped lines and retain a full trailing caption when it fits', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const tracks = [
+    { caption: fieldCaptionProfile('Адрес сервера кластера:', undefined, options), reserve: 5, value: { preferred: 161 } },
+    { caption: fieldCaptionProfile('Порт подключения:', undefined, options), reserve: 5, value: { preferred: 61 } },
+  ];
+  const measured = [
+    [369, 375, [59, 84]],
+    [389, 395, [65, 92]],
+    [399, 405, [69, 98]],
+    [409, 415, [60, 117]],
+    [419, 425, [97, 90]],
+    [429, 435, [102, 95]],
+    [439, 445, [91, 116]],
+  ];
+  for (const [width, nominal, captions] of measured) {
+    assert.deepEqual(fixedCaptionTracks(width, tracks, nominal), [
+      { width: captions[0] + 166, caption: captions[0] },
+      { width: captions[1] + 66, caption: captions[1] },
+    ]);
+  }
+  assert.deepEqual(fixedCaptionTracks(439, [...tracks].reverse(), 445), [
+    { width: 165, caption: 99 },
+    { width: 274, caption: 108 },
+  ]);
+});
+
+test('a long fixed page title can retain its natural width when only the final word wraps in the caption measure', () => {
+  const title = text => fieldCaptionProfile(text + ':', undefined, { wordRuns: true, splitTerminalColon: true });
+  const address = title('Адрес удаленного сервера резервного кластера');
+  const trailingPair = title('Адрес удаленного сервера кластера новой базы');
+  const longerPrefix = title('Адрес сервера долгосрочного кластера базы');
+  assert.equal(retainsFullPageTitle(address), true);
+  assert.equal(retainsFullPageTitle(trailingPair), false);
+  assert.equal(retainsFullPageTitle(longerPrefix), false);
+  assert.equal(retainsFullPageTitle(title('Адрес удаленного сервера кластера A')), false);
+  assert.equal(retainsFullPageTitle(title('Адрес удаленного сервера кластера M')), true);
+});
+
+test('fixed top page tracks preserve nominal height and expand the compact row only when the request fits the title', () => {
+  const options = { wordRuns: true, splitTerminalColon: true };
+  const fields = [
+    { kind: 'string', caption: fieldCaptionProfile('Адрес удаленного сервера резервного кластера:', undefined, options) },
+    { kind: 'number', caption: fieldCaptionProfile('Порт подключения:', undefined, options) },
+  ];
+  const lanes = [
+    { minimum: 161, preferred: 161, maximum: 296, growthWeight: 161 },
+    { minimum: 84, preferred: 84, maximum: 117, growthWeight: 84 },
+  ];
+  const tracks = (width, fitWidth, requestedRowWidth, automatic = true) =>
+    fixedTopPageTracks(width, fitWidth, fields, lanes, { requestedRowWidth, retainText: true, automatic });
+  assert.deepEqual(tracks(259, 265, 275), { sizes: [170, 89], scroll: false, divider: true });
+  assert.deepEqual(tracks(279, 285, 295), { sizes: [162, 117], scroll: true, nominalSizes: [163, 117] });
+  assert.deepEqual(tracks(374, 380, 305), { sizes: [290, 84], scroll: false, minimum: 380, nominalSizes: [296, 84] });
+  assert.deepEqual(tracks(407, 413, 425), { sizes: [296, 111], scroll: true, minimum: 380, nominalSizes: [296, 117] });
+  assert.deepEqual(tracks(407, 413, 425, false), { sizes: [292, 115], scroll: true, minimum: 380, nominalSizes: [296, 117] });
+  const shorter = [
+    { minimum: 131, preferred: 131, maximum: 154, growthWeight: 131 },
+    lanes[1],
+  ];
+  const authored = fixedTopPageTracks(265, 271, fields, shorter, {
+    requestedRowWidth: 295, retainText: false, automatic: false,
+  });
+  assert.deepEqual(authored.sizes, [151, 114]);
+  assert.equal(authored.scroll, true);
+  assert.equal(authored.divider, undefined);
 });
 
 test('automatic lanes grow from their preferred widths and share space after a cap', () => {

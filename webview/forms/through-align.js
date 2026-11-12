@@ -1,7 +1,7 @@
-import { fieldWidth, inputPaintedOutset, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
+import { fieldWidth, fontLineHeight, inputPaintedOutset, inputRowHeight, inputRows, linuxFixedInputWidth, linuxReferenceInput, number, scalar, textInputWidthBounds } from './model.mjs';
 import { horizontalGrouping, laneInputBounds, ordinaryGroup, referenceInputMinimum, sharesGroupLabels } from './layout-model.mjs';
-import { fieldCaptionProfile } from './font-metrics.mjs';
-import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth } from './field-caption-layout.js';
+import { fieldCaptionLines, fieldCaptionProfile } from './font-metrics.mjs';
+import { allocateFieldCaption, growFieldCaption, inputCaptionInset, isolatedInputCaptionWidth, sideCaptionRowHeight } from './field-caption-layout.js';
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 
 const leftLabelRow = '.taxi-field-row[data-title-location=Left]:has(> .taxi-field-label)';
@@ -138,6 +138,18 @@ function captionStep(steps, tracks, minima, available) {
   })));
 }
 
+function stackCaptionStep(allocation, minima, available) {
+  const { tracks, steps, compact, minimum } = allocation;
+  const step = captionStep(steps, tracks, minima, [available]) ?? minimum;
+  if (step >= compact) return step;
+  // Preserve two caption lines when the controls can still keep their native minimum.
+  const fits = tracks[0].fields.every(field => {
+    const reserve = Math.max(sideReserve(field, minima), field.compactValueMinimum);
+    return compact + reserve <= available + .5;
+  });
+  return fits ? compact : step;
+}
+
 function allocateIndependentCaption(field, available, minima, captions, above, profileMinimum) {
   const reserve = sideReserve(field, minima);
   const capacity = available - reserve;
@@ -166,6 +178,17 @@ function reservePageCaptions(tracks, { targets }, reserves) {
     };
     for (const group of pages) reserves.set(group.key, reserve);
   }
+}
+
+// Designer reserves a compact side caption when its string value loses preferred width.
+function sideCaptionHeightReserve(field, capacity, captions, os) {
+  if (field.node.presentation.valueType.kind !== 'string' || field.element.dataset.stretchX !== 'true'
+      || field.caption.compact >= field.caption.preferred || field.preferredValue <= capacity + .5) return 0;
+  const lineHeight = fontLineHeight(field.node.presentation.titleFont);
+  const compactLines = fieldCaptionLines(field.caption, field.caption.compact).length;
+  const renderedLines = captions.get(field.key)?.split('\n').length ?? field.caption.paragraphs.length;
+  const rowHeight = inputRowHeight(field.node, os);
+  return Math.max(0, sideCaptionRowHeight(rowHeight, compactLines, lineHeight) - sideCaptionRowHeight(rowHeight, renderedLines, lineHeight));
 }
 
 /** Reflow ordinary caption scopes while keeping their shared track and field owners. */
@@ -260,9 +283,12 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     const pageField = page && fields.reduce((widest, field) =>
       field.caption.preferred + inputCaptionInset === preferred && (!widest || field.preferredValue > widest.preferredValue)
         ? field : widest, undefined);
-    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField };
+    const allocation = { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField, local };
     if (local) {
       const [track] = tracks;
+      for (const field of track.fields) {
+        field.compactValueMinimum = (referenceInputMinimum(field.node, os) ?? 0) + field.gap;
+      }
       alignment.mark(track.container, 'data-through-input-stack');
       alignment.style(track.container, '--taxi-through-stack-width', '');
       track.parent = targets.elements.get(track.node.key).parentElement;
@@ -275,7 +301,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         return width + inputPaintedOutset(node, os);
       }));
       stackLimits.set(track.container, (available, minima) => {
-        const step = captionStep(steps, tracks, minima, [available - insets]) ?? minimum;
+        const step = stackCaptionStep(allocation, minima, available - insets);
         return leading + (step === preferred ? track.fullWidth : step) + maximumValue;
       });
     } else {
@@ -283,8 +309,9 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
     }
   }
 
-  function allocateWidths(allocations, captions, minima, above, leadingEdges) {
-    for (const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField } of allocations) {
+  function allocateWidths(allocations, captions, minima, above, leadingEdges, heightReserves) {
+    for (const allocation of allocations) {
+      const { tracks, preferred, compact, minimum, steps, independentCaptions, compactReferences, pageField, local } = allocation;
       const measured = tracks.map(({node, container, fields, horizontal, preferredValue, parent}) => {
         // The stack has its own captions but occupies the leading track of the mixed rows.
         const edge = leadingEdges?.get(parent);
@@ -297,7 +324,8 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
           : Math.max(...fields.map(field => sideReserve(field, minima)));
         return { available, capacity: available - reserve, full: preferred + Math.max(reserve, preferredValue) <= available + .5 };
       });
-      const step = steps && captionStep(steps, tracks, minima, measured.map(track => track.available));
+      const step = local ? stackCaptionStep(allocation, minima, measured[0].available)
+        : captionStep(steps, tracks, minima, measured.map(track => track.available));
       const compactWidth = pageField && step === undefined
         ? Math.min(measured[0].capacity,
           growFieldCaption({ minimum, preferred }, measured[0].available, minimum + pageField.preferredValue, pageField.gap))
@@ -319,12 +347,15 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         const assigned = full ? fullWidth : independent
           ? Math.max(leading.minimum, Math.min(capacity, leading.caption.preferred + inputCaptionInset)) : shared;
         updateStyle(container, '--taxi-through-allocated-label-width', full ? '' : `${assigned}px`);
+        let reserve = 0;
         for (const field of fields) {
           const wrap = !full && assigned < field.caption.preferred + inputCaptionInset;
           allocateFieldCaption(captions, field, wrap ? assigned - inputCaptionInset : undefined, inputCaptionInset);
           if (field.capped) updateStyle(field.element, '--taxi-through-caption-reserve', `${assigned - field.minimum}px`);
           if (independentCaptions) updateStyle(field.element, '--taxi-field-columns', '');
+          if (heightReserves) reserve += sideCaptionHeightReserve(field, available - assigned, captions, os);
         }
+        if (reserve) heightReserves.set(container, reserve);
       }
     }
   }
@@ -340,6 +371,7 @@ export function layoutThroughCaptions(scopes, context, minimumCaptions, adaptive
         updateStyle(element, '--taxi-field-columns', width === undefined ? '' : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
       }
     },
-    allocateStacks: (captions, minima, leadingEdges) => allocateWidths(stacks, captions, minima, undefined, leadingEdges),
+    allocateStacks: (captions, minima, leadingEdges, heightReserves) =>
+      allocateWidths(stacks, captions, minima, undefined, leadingEdges, heightReserves),
   };
 }

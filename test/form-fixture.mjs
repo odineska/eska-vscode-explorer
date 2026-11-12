@@ -265,6 +265,10 @@ export async function createTabBordersGallery(fixture) {
     const [form] = await createGallery(fixture,[basename(source,'.xml')],dirname(source));
     forms.push({...form,kind:row.name,expected:row});
   }
+  const pictures = JSON.parse(await readFile(join(input, 'pictures.json'), 'utf8'));
+  await addFixturePictures(fixture, join(input, '..', 'native-choice-button-pictures'), pictures.pictures);
+  const [pictured] = await createGallery(fixture, [basename(pictures.file, '.xml')], input);
+  forms.push({ ...pictured, expected: { states: [pictures.states.initial] }, pictureStates: pictures.states });
   return {forms};
 }
 
@@ -307,6 +311,12 @@ export async function createMeasuredFormGallery(fixture, input = process.env.ESK
   return (await createGallery(fixture, metrics.rows.map(row => row.name), input)).map(form => ({...form, expected:metrics.rows.find(row => row.name === form.kind)}));
 }
 
+export async function createTableViewportGallery(fixture, input = process.env.ESKA_FORM_FIXTURES) {
+  const forms = await createMeasuredFormGallery(fixture, input);
+  await addNativeGoods(fixture, join(input, '..', 'native-table-height', 'Catalog.xml'));
+  return forms;
+}
+
 export async function createResponsiveFormGallery(fixture) { return createGallery(fixture, ['Main']); }
 
 async function addProbeStyleItems(fixture, input) {
@@ -320,7 +330,8 @@ export async function createGroupGallery(fixture) {
   const input = process.env.ESKA_FORM_FIXTURES;
   if (!input || !isAbsolute(input)) throw new Error('ESKA_FORM_FIXTURES must identify the absolute native fixture directory.');
   await addProbeStyleItems(fixture, input);
-  const rows = await createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible',
+  await addNativeGoods(fixture, join(input, '..', 'native-reference-widths', 'Catalog.xml'));
+  const rows = await createGallery(fixture, ['GroupDefault', 'GroupNone', 'GroupStrong', 'GroupWeak', 'GroupBackColor', 'GroupTitleFont', 'GroupHidden', 'GroupCollapsible', 'CompactGroupCaptions',
     'PagesTop', 'PagesBottom', 'PagesNone', 'PagesAuto', 'PagesLeft', 'PagesRight', 'PagesSwipe', 'CommandBar', 'ButtonGroup', 'Popup', 'BarWithButtonGroup', 'BarWithPopup', 'StyleReferences', 'Decorations']);
   const reference = JSON.parse(await readFile(join(input, 'frame-locales.json'), 'utf8'));
   return rows.map(row => ({ ...row, nativeFrameLocales: reference.rows.find(native => native.name === row.kind)?.locales }));
@@ -371,11 +382,15 @@ export async function createChoicePictureGallery(fixture) {
   const { pictures } = JSON.parse(await readFile(join(input, 'metrics.json'), 'utf8'));
   await addNativeUsers(fixture);
   await addNativeChoices(fixture, join(input, '..', 'native-reference-widths', 'Enum.xml'));
+  await addFixturePictures(fixture, input, pictures);
+  return createInputBordersGallery(fixture);
+}
+
+async function addFixturePictures(fixture, input, pictures) {
   await cp(join(input, 'CommonPictures'), join(fixture.source, 'CommonPictures'), { recursive: true });
   const configuration = join(fixture.source, 'Configuration.xml');
   const entries = pictures.map(name => `<CommonPicture>${name}</CommonPicture>`).join('');
   await writeFile(configuration, (await readFile(configuration, 'utf8')).replace('<ChildObjects>', '<ChildObjects>' + entries));
-  return createInputBordersGallery(fixture);
 }
 
 export async function createTableHeightGallery(fixture) {

@@ -5,6 +5,11 @@ import { allocateLaneSizes } from './layout-model.mjs';
 // Designer leaves one extra pixel between a field's caption track and its control.
 export const inputCaptionInset = 1;
 
+/** A wrapped side caption keeps the row's upper and lower edge pixels. */
+export function sideCaptionRowHeight(height, lines, lineHeight) {
+  return Math.max(height, lines * lineHeight + 2);
+}
+
 /** Share growth between a standalone caption and its input, up to the unwrapped width. */
 export function growFieldCaption({ minimum, preferred }, available, minimumWidth, reserve, sharedInset = 0) {
   const growth = Math.max(0, available - minimumWidth);

@@ -9,6 +9,12 @@ async function pressDivider(ui, key) {
     new KeyboardEvent('keydown', {key:${JSON.stringify(key)}, bubbles:true}));true`);
 }
 
+function matchesBoxes(actual, expected, tolerance) {
+  return Object.entries(expected ?? {}).every(([name, rect]) =>
+    rect === null ? !actual[name] : actual[name]?.every((value, index) =>
+      rect[index] === null || Math.abs(value - rect[index]) <= tolerance));
+}
+
 async function pose(ui, keys, expected) {
   await allocateFormViewport(ui, expected.viewport ?? expected.frame);
   if (expected.dividerKey) {
@@ -24,8 +30,19 @@ async function pose(ui, keys, expected) {
       actual = await ui.evaluate(`(() => {
         const root=document.querySelector('.taxi-form-frame'), origin=root.getBoundingClientRect();
         const fields=new Map([...root.querySelectorAll('.taxi-element--field')].map(field=>[field.dataset.element,field]));
+        const nodeKeys = ${JSON.stringify(keys)};
+        const groupNames = ${JSON.stringify(Object.keys(expected.groupBoxes ?? {}))};
+        const groupBoxes = {};
+        if (groupNames.length) {
+          const groups = new Map([...root.querySelectorAll('.taxi-element[data-kind=UsualGroup]')]
+            .map(group => [group.dataset.element, group]));
+          for (const name of groupNames) {
+            const rect = groups.get(nodeKeys[name])?.getBoundingClientRect();
+            if (rect) groupBoxes[name] = [rect.x-origin.x, rect.y-origin.y, rect.width, rect.height];
+          }
+        }
         const controls={}, captions={}, locations={};
-        for (const [name,key] of Object.entries(${JSON.stringify(keys)})) {
+        for (const [name,key] of Object.entries(nodeKeys)) {
           const field=fields.get(key), control=field?.querySelector('.taxi-input,.taxi-checkbox,.taxi-picture-field,.taxi-label-field');
           if (!control) continue;
           const r=control.getBoundingClientRect();
@@ -37,11 +54,16 @@ async function pose(ui, keys, expected) {
           const lines = field.dataset.kind === 'LabelField' ? label.textContent.split('\\n') : [label.textContent];
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : lines};
         }
-        return {frame:[origin.width,origin.height],preferredWidth:parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),controls,captions,locations,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
+        const body = root.querySelector('.taxi-form-scrollport');
+        const viewport = document.querySelector('.preview-scroll');
+        return {frame:[origin.width,origin.height],preferredWidth:parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),
+          controls,captions,locations,groupBoxes,layout:root.closest('.taxi-preview').dataset.formLayout,
+          bodyScrollable:body.hasAttribute('data-scrollable'),
+          viewport:{client:[viewport.clientWidth,viewport.clientHeight],style:viewport.getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
       actual.browserErrors=ui.scriptErrors();
       // The viewport can reach its target before the allocator updates the controls.
-      const signature = JSON.stringify(actual.controls);
+      const signature = JSON.stringify([actual.controls, actual.groupBoxes, actual.bodyScrollable]);
       const settled = signature === previousControls;
       previousControls = signature;
       const tolerance = expected.tolerancePx ?? 0;
@@ -53,13 +75,14 @@ async function pose(ui, keys, expected) {
       return settled && actual.layout === 'allocated' && actual.browserErrors.length === 0
         && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
         && (expected.preferredWidth === undefined || actual.preferredWidth === expected.preferredWidth)
+        && (expected.bodyScrollable === undefined || actual.bodyScrollable === expected.bodyScrollable)
         && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
         && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
         && (!aligned || Math.max(...aligned) - Math.min(...aligned) <= tolerance)
         && (!trailing || Math.max(...trailing) - Math.min(...trailing) <= tolerance)
-        && Object.entries(expected.controls ?? {}).every(([name, rect]) =>
-          rect === null ? !actual.controls[name] : actual.controls[name]?.every((value,i) => rect[i] === null || Math.abs(value-rect[i]) <= tolerance))
+        && matchesBoxes(actual.controls, expected.controls, tolerance)
+        && matchesBoxes(actual.groupBoxes, expected.groupBoxes, tolerance)
         && Object.entries(expected.captions ?? {}).every(([name, lines]) => {
           const caption = actual.captions[name];
           return caption?.accessible === lines.join(' ') && caption.lines.length === lines.length
@@ -245,7 +268,7 @@ exports.run = async () => {
     const ui = await frame({state:{title:main.panel.title}});
     await ui.evaluate('document.fonts.ready.then(()=>true)');
     await ui.evaluate("globalThis.__columnErrors=[];window.addEventListener('error',event=>__columnErrors.push({message:event.message,stack:event.error?.stack}));true");
-    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField', 'LabelField'].includes(node.kind));
+    const nodes = [...view.nodes.values()].filter(node => ['InputField', 'CheckBoxField', 'PictureField', 'LabelField', 'UsualGroup'].includes(node.kind));
     const keys = Object.fromEntries(nodes.map(node => [node.name,`${node.identity.source}:current:${node.identity.key.value}`]));
     const replace = xml => editFormSource(document, view, xml);
     const checkbox = nodes.find(node => node.kind === 'CheckBoxField');

@@ -337,8 +337,58 @@ async function editFormSource(document, view, xml) {
     && view.snapshot.dependencies.some(dep => dep.role === 'form' && dep.version === String(document.version)), 'dirty form XML updated');
 }
 
+/** Read RGB regions relative to the selected form in a native workbench screenshot. */
+async function selectedFormPixels(ui, png, [width, height], regions) {
+  return ui.evaluate(`(async () => {
+    if (devicePixelRatio !== 1) throw new Error('form-reference-dpi');
+    const bytes = Uint8Array.from(atob(${JSON.stringify(png)}), value => value.charCodeAt(0));
+    const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = new OffscreenCanvas(image.width, image.height), context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    image.close();
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const blue = new Set(), frames = [];
+    for (let pixel = 0; pixel < canvas.width * canvas.height; pixel++) {
+      const offset = pixel * 4;
+      if (data[offset] === 30 && data[offset + 1] === 144 && data[offset + 2] === 255) blue.add(pixel);
+    }
+    while (blue.size) {
+      const stack = [blue.values().next().value];
+      blue.delete(stack[0]);
+      let left = canvas.width, top = canvas.height, right = 0, bottom = 0;
+      while (stack.length) {
+        const pixel = stack.pop(), x = pixel % canvas.width, y = Math.floor(pixel / canvas.width);
+        left = Math.min(left, x); top = Math.min(top, y);
+        right = Math.max(right, x); bottom = Math.max(bottom, y);
+        const neighbors = [x > 0 ? pixel - 1 : -1, x + 1 < canvas.width ? pixel + 1 : -1,
+          y > 0 ? pixel - canvas.width : -1, y + 1 < canvas.height ? pixel + canvas.width : -1];
+        for (const neighbor of neighbors) if (blue.delete(neighbor)) stack.push(neighbor);
+      }
+      if (right - left + 1 === ${width} - 2 && bottom - top + 1 === ${height} - 2) frames.push({ x: left - 1, y: top - 1 });
+    }
+    if (frames.length !== 1) return { waitingForFrame: true, frames };
+    const origin = frames[0], results = [];
+    const hex = bytes => [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+    for (const region of ${JSON.stringify(regions)}) {
+      const rgb = new Uint8Array(region.width * region.height * 3);
+      let offset = 0;
+      for (let y = 0; y < region.height; y++) {
+        for (let x = 0; x < region.width; x++) {
+          const pixel = ((origin.y + region.y + y) * canvas.width + origin.x + region.x + x) * 4;
+          rgb.set(data.subarray(pixel, pixel + 3), offset);
+          offset += 3;
+        }
+      }
+      results.push({ name: region.name, hex: region.hex ? hex(rgb) : undefined,
+        sha: region.sha ? hex(new Uint8Array(await crypto.subtle.digest('SHA-256', rgb))) : undefined });
+    }
+    return results;
+  })()`);
+}
+
 exports.frame = frame;
 exports.sameSourcePath = sameSourcePath;
 exports.until = until;
 exports.allocateFormViewport = allocateFormViewport;
 exports.editFormSource = editFormSource;
+exports.selectedFormPixels = selectedFormPixels;

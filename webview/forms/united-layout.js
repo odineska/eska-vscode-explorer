@@ -64,8 +64,9 @@ function packThroughDate(block, track, insets, provisional, allocated, minima) {
   return {
     width,
     allocate(leadingWidth) {
-      const plan = packed.allocate(leadingWidth, Math.round);
-      return top ? { ...plan, leadingWidth } : plan;
+      // A fixed date block keeps its packed width while the mixed rows retain the shared slot.
+      const plan = packed.allocate(block.stretch ? leadingWidth : packed.width, Math.round);
+      return top || !block.stretch ? { ...plan, leadingWidth } : plan;
     },
   };
 }
@@ -110,10 +111,10 @@ function packedDateColumn(pair, tracks, available, widths, partial, minima) {
   const plan = (fit, width) => fit?.allocate(Math.max(fit.width, width - insets - trailing));
   return {
     key: block.key, widths: allocated, plan: plan(packed, width),
-    manual: block.top && (firstTrack => {
+    manual: block.top || (through && !block.stretch) ? firstTrack => {
       const actual = index === 0 ? firstTrack : available - firstTrack;
       return plan(packThroughDate(block, tracks[index], insets, actual, actual, minima), actual);
-    }),
+    } : undefined,
   };
 }
 

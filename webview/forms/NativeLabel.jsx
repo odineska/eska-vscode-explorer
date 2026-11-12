@@ -36,7 +36,7 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   const height = parseFloat(style.height);
   if (!Number.isFinite(height)) throw new Error('font-raster-layout');
   let baseline = (height + metrics.ascent - metrics.descent) / 2;
-  if (tab || title || link) baseline = Math.round(baseline) - Number(tab);
+  if (tab || title || link) baseline = Math.round(baseline) - Number(tab && !props.tabBottom);
   if (input) baseline = inputTextBaseline(height, props.font);
   // Adjacent captions keep their own baseline when another column enlarges the band.
   if (table) baseline = metrics.ascent + (tableHeader ? 6 : 7);
@@ -52,7 +52,9 @@ function paintLabel(canvas, props, { element: label, style, metrics, raster, com
   let left = 0;
   if (tab || link) {
     const sideExtra = parseFloat(style.getPropertyValue('--taxi-side-caption-extra')) || 0;
-    left = (props.tabInset === undefined ? Math.round((width - raster.advance) / 2) : props.tabInset + sideExtra) - borderLeft;
+    const leading = props.tabLeadingSpace ?? 0;
+    left = (props.tabInset === undefined ? Math.round((width - raster.advance - leading) / 2) : props.tabInset + sideExtra)
+      + leading - borderLeft;
   }
   else if (search) left = 2;
   else if (title || table || menuItem) left = parseFloat(style.paddingLeft);
@@ -95,7 +97,7 @@ export function NativeLabel(props) {
   const status = createCaptionRaster(props, {
     target: () => props.target?.() ?? placeholder.parentElement,
     mode: 'lcd',
-    dependencies: () => [props.placement, props.calibrated, props.mask, props.tabInset, props.fieldTitleRuns, JSON.stringify(props.segments)],
+    dependencies: () => [props.placement, props.calibrated, props.mask, props.tabInset, props.tabLeadingSpace, props.tabBottom, props.fieldTitleRuns, JSON.stringify(props.segments)],
     calibrated: () => !calibratedPlacements.includes(props.placement) || !!props.calibrated,
     resizeWith: label => props.placement === 'fieldTitle' ? label.closest('.taxi-form-frame') : undefined,
     advances: (text, options) => labelAdvances(props, text, options),

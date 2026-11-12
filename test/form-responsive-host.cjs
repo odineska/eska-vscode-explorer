@@ -206,6 +206,7 @@ async function checkCappedVerticalTrack(ui, document, view) {
   const changed = source.replace(group, '<Group>Vertical</Group><Height>10</Height><VerticalStretch>false</VerticalStretch>')
     .replace(field, field + '<MultiLine>true</MultiLine><AutoMaxHeight>false</AutoMaxHeight><MaxHeight>4</MaxHeight>');
   assert.ok(source.includes(group) && source.includes(field));
+  const maximum = process.platform === 'linux' ? 107 : 80;
   const viewport = "document.querySelector('.preview-scroll')";
   const originalStyle = await ui.evaluate(viewport + '.style.cssText');
   try {
@@ -224,8 +225,8 @@ async function checkCappedVerticalTrack(ui, document, view) {
           return { controlHeight: control.height, spare: row.bottom - control.bottom,
             nextGap: next.getBoundingClientRect().top - control.bottom };
         })()`);
-        return sample?.controlHeight === 80;
-      }, 'capped multiline input is allocated');
+        return sample?.controlHeight === maximum;
+      }, 'capped multiline input is allocated at ' + maximum + ' px');
       assert.ok(sample.spare <= 2 && sample.nextGap <= 10, JSON.stringify(sample));
     }
   } finally {
