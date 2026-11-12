@@ -88,9 +88,42 @@ export function fixedCaptionTracks(available, tracks, fitWidth = available, reta
 /** Allocate captions and value boxes within horizontal field tracks, excluding the group gap. */
 export function narrowCaptionTracks(available, tracks, fitWidth = available) {
   const fit = fitCaptionWidths(fitWidth, tracks);
+  if (fit) return allocateFittedTracks(tracks, fit, available - fitWidth);
+}
+
+// The Linux inline rows retain this proportional width at the limits measured for wrapped captions.
+const wrappedInlineWidthFactor = 1.04;
+
+/** Allocate the constrained caption and value tracks of a mixed inline row. */
+export function narrowInlineCaptionTracks(available, tracks) {
+  const fit = fitCaptionWidths(available, tracks);
   if (!fit) return;
-  const { captions, preferredValues, minimumValues } = fit;
-  const valueSpace = Math.max(minimumValues, fit.valueSpace + available - fitWidth);
+  const { captions, minimumValues, valueSpace } = fit;
+  const wrapped = tracks.map(({ caption }, index) => captions[index] < caption.preferred);
+  if (wrapped.filter(Boolean).length < 2) return allocateFittedTracks(tracks, fit);
+
+  const limits = tracks.flatMap(({ caption, value }, index) => {
+    const width = captions[index];
+    const captionLimit = wrapped[index]
+      ? Math.min(caption.preferred - 1, Math.round(width * wrappedInlineWidthFactor)) : width;
+    const valueLimit = wrapped[index]
+      ? Math.min(value.maximum, Math.round(value.preferred * wrappedInlineWidthFactor)) : value.preferred;
+    return [
+      { weight: width, limit: captionLimit - width },
+      { weight: value.preferred - value.minimum + caption.preferred - width, limit: valueLimit - value.minimum },
+    ];
+  });
+  const space = valueSpace - minimumValues;
+  const growth = roundTrackWidths(cappedTrackGrowth(space, limits), Math.floor);
+  const fitted = tracks.map((track, index) => ({
+    ...track, value: { ...track.value, preferred: track.value.minimum + growth[index * 2 + 1] },
+  }));
+  const titles = captions.map((width, index) => width + growth[index * 2]);
+  return growCaptionTracks(space - sum(growth), fitted, titles);
+}
+
+function allocateFittedTracks(tracks, { captions, preferredValues, minimumValues, valueSpace }, offset = 0) {
+  valueSpace = Math.max(minimumValues, valueSpace + offset);
   const spare = valueSpace - preferredValues;
   if (spare < 0) {
     const widths = cappedTrackGrowth(valueSpace - minimumValues, tracks.map(({caption, shrinkCaptionWidth = caption.compact, value}, index) => {
@@ -104,6 +137,10 @@ export function narrowCaptionTracks(available, tracks, fitWidth = available) {
     }));
   }
 
+  return growCaptionTracks(spare, tracks, captions);
+}
+
+function growCaptionTracks(spare, tracks, captions) {
   const widths = cappedTrackGrowth(spare, tracks.map(({caption, reserve, value}, index) => {
     const captionRoom = caption.preferred - captions[index], valueRoom = value.maximum - value.preferred;
     return { limit: captionRoom + valueRoom, weight: valueRoom > 0 ? captions[index] + reserve + value.preferred : captions[index] };

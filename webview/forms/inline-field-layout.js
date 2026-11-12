@@ -3,7 +3,7 @@ import { allocateLaneSizes, controlBounds, horizontalInputMaximum, ordinaryGroup
 import { borderBoxSize, boxInsets, pixels, updateStyle } from './layout-box.mjs';
 import { fieldCaptionProfile } from './font-metrics.mjs';
 import { allocateFieldCaption } from './field-caption-layout.js';
-import { narrowCaptionTracks } from './caption-track-model.mjs';
+import { narrowCaptionTracks, narrowInlineCaptionTracks } from './caption-track-model.mjs';
 
 const sum = (values, read) => values.reduce((total, value) => total + read(value), 0);
 const margins = element => {
@@ -257,7 +257,7 @@ export function alignInlineFieldRows(model, context) {
     for (const { branch, tracks, lanes, spacing, compactLanes, sideMinimum, alignGroups } of rows) {
       const available = Math.round(borderBoxSize(branch.items, scale).width) - spacing;
       const compact = compactLanes && available < sideMinimum;
-      const sizes = compact ? undefined : narrowCaptionTracks(available, tracks);
+      const sizes = compact ? undefined : narrowInlineCaptionTracks(available, tracks);
       const widths = sizes ? sizes.map(size => size.width) : allocateLaneSizes(available, compact ? compactLanes : lanes);
       let labelHeight = 0;
       for (const [index, track] of tracks.entries()) {

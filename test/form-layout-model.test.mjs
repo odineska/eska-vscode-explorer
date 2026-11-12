@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { displayedInPreview, stretches, sharesGroupLabels, stretchWeight, controlBounds, formAllocation, atPreferredAxis, groupPreferredSize, allocateLaneSizes, laneInputBounds, horizontalInputMaximum, pictureFieldStyle } from '../webview/forms/layout-model.mjs';
 import { textLabelMetrics } from '../webview/forms/model.mjs';
 import { allocatedSurfaceMetrics } from '../webview/forms/surface-allocation.mjs';
-import { fixedCaptionTracks, fixedTopPageTracks, narrowCaptionTracks, retainsFullPageTitle } from '../webview/forms/caption-track-model.mjs';
+import { fixedCaptionTracks, fixedTopPageTracks, narrowCaptionTracks, narrowInlineCaptionTracks, retainsFullPageTitle } from '../webview/forms/caption-track-model.mjs';
 import { narrowInputLaneWidths } from '../webview/forms/input-lane-model.mjs';
 import { fieldCaptionLines, fieldCaptionOccupiedWidth, fieldCaptionProfile } from '../webview/forms/font-metrics.mjs';
 import { isolatedInputCaptionWidth } from '../webview/forms/field-caption-layout.js';
@@ -279,6 +279,33 @@ test('narrow numeric rows fill the value boxes before restoring trailing caption
   assert.deepEqual(narrowCaptionTracks(260, tracks), [{width:145, caption:71}, {width:115, caption:40}]);
   assert.deepEqual(narrowCaptionTracks(320, tracks), [{width:155, caption:72}, {width:165, caption:81}]);
   assert.equal(narrowCaptionTracks(357, tracks), undefined);
+});
+
+test('wrapped inline captions reserve width within the limits of their values', () => {
+  const reference = { minimum: 62, preferred: 152, maximum: Infinity };
+  const fixed = { minimum: 152, preferred: 152, maximum: 152 };
+  const label = (text, value, weight = 400) => ({
+    caption: fieldCaptionProfile(text, { face: 'Arial', points: 10, weight }), reserve: 5, value,
+  });
+  const tracks = [
+    {
+      caption: { minimum: 0, compact: 0, preferred: 0 }, reserve: 0,
+      value: { minimum: 85, preferred: 511, maximum: 511 },
+    },
+    label('Корректируемый документ:', reference),
+    label('Ответственный:', reference),
+    label('Сумма документа:', fixed, 700),
+  ];
+  assert.deepEqual(narrowInlineCaptionTracks(1160, tracks), [
+    { width: 425, caption: 0 }, { width: 267, caption: 104 },
+    { width: 236, caption: 97 }, { width: 232, caption: 75 },
+  ]);
+  const fixedReference = tracks.map((track, index) => index === 1 ? { ...track, value: fixed } : track);
+  assert.deepEqual(narrowInlineCaptionTracks(1160, fixedReference), [
+    { width: 430, caption: 0 }, { width: 261, caption: 104 },
+    { width: 237, caption: 97 }, { width: 232, caption: 75 },
+  ]);
+  assert.deepEqual(narrowInlineCaptionTracks(1300, tracks), narrowCaptionTracks(1300, tracks));
 });
 
 test('a page with side tabs fits captions against the nominal rail and allocates the painted width', () => {
