@@ -83,6 +83,30 @@ selected language context stays alive while it has an active consumer; the
 show/hide inactive filter affects presentation independently.
 [Activity](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#активность-подпроектов).
 
+## Run, apply and debug
+
+Open **Project Runtime Settings** from the project tree to save independent local
+`test` and `prod` profiles. **Check saved profile** checks the installation and
+endpoint reachability. The project settings file belongs in the local Git ignore.
+
+The project settings context menu starts a normal test client or previews the
+changes for a test infobase. Apply requires confirmation for the displayed base
+and files. The first import and unsupported partial changes require a separate
+full-import preview.
+
+For HTTP debugging, build the optional Rust executable with
+`cargo build --release -p eska-debug` in the ESKA repository and install
+`OnecDebugAdapter` 0.4.1 separately. Use **Launch with Debugger** or **Attach
+Debugger** in the same menu. A VS Code launch configuration can use
+`"type": "eska-debug"`, `"request": "launch"` or `"attach"`, and
+`"profile": "test"` or `"prod"`. The tool paths can be set with
+`eska.explorer.debugExecutable` and `eska.explorer.debugAdapterExecutable`.
+Start the HTTP debug server configured in the profile before attaching or
+launching. For an existing client, choose its target after attaching. The
+**Select 1C Debug Target** command refreshes the list in an active session.
+Production prompts for a source decision after checking the
+configured Git remote. Evaluate can modify infobase data.
+
 ## Offline use and troubleshooting
 
 Installed compatible tools work without network access. Disable `checkForUpdates`,

@@ -43,6 +43,15 @@
   "languageFeatures": "Run Explorer’s own BSL language client for the selected ESKA application. Grammar remains available when disabled.",
   "restartLanguage": "Restart BSL Analyzer and Reanalyze",
   "configureProject": "Configure Project",
+  "runTest": "Run Test Infobase",
+  "applyTest": "Update Test Infobase",
+  "debugLaunch": "Launch 1C with Debugging",
+  "debugAttach": "Attach to 1C Debug Server",
+  "debuggerLabel": "ESKA 1C HTTP Debugger",
+  "debugProfile": "Project-local infobase profile",
+  "buildExecutable": "Path or command name for the separately installed eska-build.",
+  "debugExecutable": "Path or command name for the optional eska-debug tool.",
+  "debugAdapterExecutable": "Path or command name for the separately installed onec-debug-adapter.",
   "selectAnalysisContext": "Choose analysis application",
   "queryEditBsl": "Edit query separately",
   "queryApply": "Apply query to module",
@@ -59,5 +68,6 @@
   "hideDisabledProjects": "Hide disabled projects",
   "showDisabledProjects": "Show disabled projects",
   "previewForm": "Open form preview (beta)",
-  "openFormXml": "Open form XML"
+  "openFormXml": "Open form XML",
+  "attachDebugTarget": "Select 1C Debug Target"
 }

@@ -1,9 +1,10 @@
-import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 import * as vscode from "vscode";
 import { message, type MessageKey } from "./messages.js";
 import { isRecord } from "./protocol.js";
+import { runtimeJson } from "./runtime-tools.js";
+import { findTool } from "./tooling/inspect.js";
 
 const labels = {
   title: "runtimeTitle", test: "runtimeTest", prod: "runtimeProd", enabled: "runtimeEnabled",
@@ -11,7 +12,7 @@ const labels = {
   path: "runtimePath", host: "runtimeHost", name: "runtimeName", url: "runtimeUrl", admin: "runtimeAdmin",
   runner: "runtimeRunner", local: "runtimeLocal", distrobox: "runtimeDistrobox", container: "runtimeContainer",
   version: "runtimeVersion", ibcmd: "runtimeIbcmd", endpoint: "runtimeEndpoint", user: "runtimeUser",
-  secret: "runtimeSecret", save: "runtimeSave", saved: "runtimeSaved", reload: "runtimeReload",
+  secret: "runtimeSecret", save: "runtimeSave", saved: "runtimeSaved", reload: "runtimeReload", probe: "runtimeProbe",
 } satisfies Record<string, MessageKey>;
 
 const protections = new Map<string, MessageKey>([
@@ -48,11 +49,17 @@ export class ProjectSettings implements vscode.Disposable {
     let pending = false;
     const incoming = panel.webview.onDidReceiveMessage(async (request: unknown) => {
       if (!isRecord(request) || pending || abort.signal.aborted || !vscode.workspace.isTrusted) return;
-      if (request.type !== "load" && request.type !== "save") return;
+      if (request.type !== "load" && request.type !== "save" && request.type !== "probe") return;
       const saving = request.type === "save";
       if (saving && (!snapshot || !isRecord(request.settings) || protections.has(snapshot.git_protection))) return;
       pending = true;
       try {
+        if (request.type === "probe") {
+          const detail = request.profile === "test" || request.profile === "prod"
+            ? await probeProfile(root, executable, language, request.profile, abort.signal) : "runtimeFailed";
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "probe", detail: text(detail), labels: strings });
+          return;
+        }
         const result = await readSettings(executable, root, language, abort.signal,
           saving ? { revision: snapshot?.revision, settings: request.settings } : undefined).catch(() => undefined);
         if (abort.signal.aborted) return;
@@ -100,13 +107,25 @@ export class ProjectSettings implements vscode.Disposable {
 
 /** Only the explicitly requested JSON result is consumed. Stderr and subprocess exceptions may contain local paths. */
 function readSettings(executable: string, root: string, language: string, signal: AbortSignal, update: unknown): Promise<unknown> {
-  return new Promise(resolve => {
-    const child = execFile(executable, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US",
-      "--project-dir", root, "settings-local", update ? "save" : "show", "--format", "json"],
-    { signal, timeout: 10_000, maxBuffer: 256 * 1024, windowsHide: true }, (_error, stdout) => {
-      try { resolve(JSON.parse(stdout)); } catch { resolve(undefined); }
-    });
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(update === undefined ? undefined : JSON.stringify(update));
-  });
+  return runtimeJson(executable, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US",
+    "--project-dir", root, "settings-local", update ? "save" : "show", "--format", "json"],
+  { signal, timeout: 10_000, input: update });
+}
+
+async function probeProfile(root: string, executable: string, language: string,
+  profile: "test" | "prod", signal: AbortSignal): Promise<MessageKey> {
+  const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("buildExecutable", "eska-build");
+  const build = await findTool(configured, "eska-build", dirname(executable)).catch(() => undefined);
+  if (!build) return "runtimeBuildMissing";
+  const result = await runtimeJson(build, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US",
+    "--project-dir", root, "probe", "--profile", profile, "--format", "json"], { signal, timeout: 15_000 });
+  if (!isRecord(result) || result.kind !== "runtime_probe") return "runtimeFailed";
+  if (result.status === "ready") return "runtimeProbeReady";
+  switch (isRecord(result.error) ? result.error.code : undefined) {
+    case "missing_profile": return "runtimeMissingProfile";
+    case "platform_unavailable": return "runtimePlatformMissing";
+    case "infobase_unavailable": return "runtimeInfobaseMissing";
+    case "endpoint_unavailable": return "runtimeEndpointMissing";
+    default: return "runtimeFailed";
+  }
 }

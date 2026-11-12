@@ -36,6 +36,7 @@ import { basename } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
+import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
 type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
@@ -69,6 +70,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly queryDesigner: QueryDesigner;
   private readonly formPreview: FormPreviewService;
   private readonly projectSettings: ProjectSettings;
+  private readonly projectRuntime: ProjectRuntime;
   private readonly legacyNotices = new Set<string>();
   private readonly view: vscode.TreeView<Element>;
   private readonly treeReads = new Set<Promise<Element[]>>();
@@ -152,8 +154,18 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
     this.projectSettings = new ProjectSettings(context);
-    this.disposables.push(this.projectSettings, vscode.commands.registerCommand("eska.explorer.configureProject",
+    this.projectRuntime = new ProjectRuntime(root => this.runtimeProject(undefined, root));
+    this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
+    for (const [name, action] of [
+      ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
+      ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
+      ["debugLaunch", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "launch")],
+      ["debugAttach", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "attach")],
+    ] as const) this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${name}`, async (entry?: Element) => {
+      const project = await this.runtimeProject(entry);
+      if (project) await action(project);
+    }));
     for (const [name, action] of [
       ["connect", () => this.connect(true)],
       ["restart", () => this.connect(false)],
@@ -854,9 +866,17 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   }
 
   private async configureProject(entry?: Element): Promise<void> {
+    const project = await this.runtimeProject(entry);
+    if (project) this.projectSettings.show(project.root, project.executable);
+  }
+
+  private async runtimeProject(entry?: Element, root?: string): Promise<RuntimeProject | undefined> {
+    if (!this.tree) await this.connect(false);
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
-    let project = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
+    let project = root ? tree.projects.find(item => nativePath(item.info.rootPath) === root)
+      : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
+    if (root && !project) return undefined;
     if (!project) {
       const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info));
       if (projects.length === 1) project = projects[0];
@@ -868,7 +888,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       }
     }
     if (!project || state !== this.connection.state || !tree.projects.includes(project) || !projectEnabled(project.info)) return;
-    this.projectSettings.show(nativePath(project.info.rootPath), state.target.executable);
+    return { root: nativePath(project.info.rootPath), executable: state.target.executable };
   }
 
   /** Open a dedicated settings-style editor tab for this metadata object. */

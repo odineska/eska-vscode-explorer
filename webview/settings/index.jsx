@@ -10,7 +10,7 @@ function draft(profile) {
   return {
     enabled: !!profile, kind: profile?.infobase.kind ?? "file",
     path: profile?.infobase.path ?? "", host: profile?.infobase.host ?? "",
-    name: profile?.infobase.name ?? "", url: profile?.infobase.url ?? "", admin: profile?.infobase.admin_url ?? "",
+    name: profile?.infobase.name ?? "", url: profile?.infobase.url ?? "", admin: String(profile?.infobase.admin_pid ?? ""),
     runner: profile?.runner.kind ?? "local", version: profile?.runner.version ?? "",
     ibcmd: profile?.runner.ibcmd ?? "", container: profile?.runner.container ?? "",
     endpoint: profile?.debug?.url ?? "", user: profile?.authentication?.user ?? "", secret: profile?.authentication?.password_env ?? "",
@@ -21,7 +21,7 @@ function serialize(value) {
   if (!value.enabled) return null;
   const infobase = value.kind === "file" ? { kind: "file", path: value.path }
     : value.kind === "cluster" ? { kind: "cluster", host: value.host, name: value.name }
-    : { kind: "standalone", url: value.url, name: value.name, admin_url: value.admin || null };
+    : { kind: "standalone", url: value.url, name: value.name, admin_pid: value.admin ? (/^[0-9]+$/.test(value.admin) ? Number(value.admin) : value.admin) : null };
   const runner = { kind: value.runner, version: value.version || null, ibcmd: value.ibcmd || null };
   if (value.runner === "distrobox") runner.container = value.container;
   return { infobase, runner, debug: value.endpoint ? { url: value.endpoint } : null,
@@ -45,7 +45,7 @@ function App() {
       setLoaded(true);
       setWarning(data.warning ?? "");
       setNotice(data.saved ? data.labels.saved : "");
-    } else if (data.type === "error") setNotice(data.detail);
+    } else if (data.type === "error" || data.type === "probe") setNotice(data.detail);
     else return;
     setLabels(data.labels);
     setBusy(false);
@@ -55,7 +55,7 @@ function App() {
   const request = (type, settings) => {
     setBusy(true);
     setNotice("");
-    vscode.postMessage({ type, settings });
+    vscode.postMessage({ type, settings, profile: active() });
   };
   const input = field => <label>{labels()[field]}<input type="text" name={field} value={profile()[field]}
     onInput={event => edit(field, event.currentTarget.value)} /></label>;
@@ -92,6 +92,7 @@ function App() {
       <Toolbar label={labels().title}>
         <Show when={loaded()}><Button primary disabled={busy() || !!warning()} onClick={() => request("save",
           { test: serialize(drafts.test), prod: serialize(drafts.prod) })}>{labels().save}</Button></Show>
+        <Show when={loaded() && profile().enabled}><Button disabled={busy()} onClick={() => request("probe")}>{labels().probe}</Button></Show>
         <Button disabled={busy()} onClick={() => request("load")}>{labels().reload}</Button>
       </Toolbar>
     </Show>
