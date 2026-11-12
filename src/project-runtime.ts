@@ -136,16 +136,7 @@ export class ProjectRuntime implements vscode.Disposable {
     const plan = isRecord(result) && isRecord(result.plan) ? result.plan : undefined;
     if (plan?.mode === "unchanged") { void vscode.window.showInformationMessage(this.text("runtimeUnchanged")); return; }
     if (!plan || typeof plan.confirmation !== "string" || !isRecord(plan.changes)) { this.failure(result); return; }
-    const changes = plan.changes;
-    const paths = Object.entries(changes).map(([path, change]) =>
-      `${this.text(change === "added" ? "runtimeChangeAdded" : change === "removed" ? "runtimeChangeRemoved" : "runtimeChangeModified")}  ${path}`);
-    if (Array.isArray(plan.import_files)) {
-      for (const path of plan.import_files) {
-        if (typeof path === "string" && !Object.hasOwn(changes, path)) {
-          paths.push(`${this.text("runtimeApplyCompanion")}  ${path}`);
-        }
-      }
-    }
+    const paths = this.applyPlanPaths(plan.changes, plan.object_changes, plan.import_files);
     const accept = this.text("runtimeApplyConfirm");
     const title = this.text(initialize ? "runtimeFullPreview" : "runtimeDeltaPreview");
     const target = typeof plan.target === "string" && typeof plan.platform_version === "string"
@@ -171,6 +162,43 @@ export class ProjectRuntime implements vscode.Disposable {
     if (applied === null) return;
     if (isRecord(applied) && applied.status === "applied") void vscode.window.showInformationMessage(this.text("runtimeApplied"));
     else this.failure(applied);
+  }
+
+  private applyPlanPaths(changes: Record<string, unknown>, objects: unknown, files: unknown): string[] {
+    const paths: string[] = [];
+    const grouped = new Set<string>();
+    if (Array.isArray(objects)) {
+      for (const object of objects) {
+        if (!isRecord(object) || typeof object.name !== "string" || !Array.isArray(object.paths)) continue;
+        const kind = object.kind === "language" ? "runtimeObjectLanguage"
+          : object.kind === "common_form" ? "runtimeObjectCommonForm" : undefined;
+        const action = object.operation === "added" ? "runtimeChangeAdded"
+          : object.operation === "removed" ? "runtimeChangeRemoved"
+          : object.operation === "renamed" ? "runtimeChangeRenamed" : undefined;
+        if (!kind || !action || (action === "runtimeChangeRenamed" && typeof object.previous_name !== "string")) continue;
+        const name = action === "runtimeChangeRenamed" ? `${object.previous_name} → ${object.name}` : object.name;
+        paths.push(`${this.text(action)} ${this.text(kind)} ${name}`);
+        for (const path of object.paths) {
+          if (typeof path === "string" && Object.hasOwn(changes, path)) {
+            grouped.add(path);
+            paths.push(`  ${path}`);
+          }
+        }
+      }
+    }
+    for (const [path, change] of Object.entries(changes)) {
+      if (grouped.has(path)) continue;
+      const label = change === "added" ? "runtimeChangeAdded" : change === "removed" ? "runtimeChangeRemoved" : "runtimeChangeModified";
+      paths.push(`${this.text(label)}  ${path}`);
+    }
+    if (Array.isArray(files)) {
+      for (const path of files) {
+        if (typeof path === "string" && !Object.hasOwn(changes, path)) {
+          paths.push(`${this.text("runtimeApplyCompanion")}  ${path}`);
+        }
+      }
+    }
+    return paths;
   }
 
   private async resolveDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {

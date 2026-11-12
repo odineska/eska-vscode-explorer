@@ -13,12 +13,16 @@ exports.run = async function () {
     apply: "Применить к test",
     cancel: "Отмена",
     companion: "Сопутствующий файл",
+    rename: "Переименован Общая форма",
+    removed: "Удалён Общая форма",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     review: "Review Full Import",
     apply: "Apply to Test",
     cancel: "Cancel",
     companion: "Companion file",
+    rename: "Renamed Common form",
+    removed: "Removed Common form",
     conflict: "Both the saved sources and the test database generation changed",
   };
   const until = async (check, label) => {
@@ -69,17 +73,43 @@ exports.run = async function () {
     const module = path.join(root, "src", "Ext", "ManagedApplicationModule.bsl");
     const contents = await fs.readFile(module, "utf8");
     await fs.writeFile(module, contents.replace("A = 41", "A = 47"));
-    const catalog = native.scenario === "apply-catalog-debug";
-    const descriptorPath = catalog ? "Catalogs/ProbeOwner.xml" : "Languages/Русский.xml";
-    const descriptorFile = path.join(source, descriptorPath);
-    const descriptor = await fs.readFile(descriptorFile, "utf8");
-    const edited = descriptor.replace("<Comment/>", "<Comment>ESKA apply and debug</Comment>");
-    assert.notEqual(edited, descriptor);
-    await fs.writeFile(descriptorFile, edited);
-    const incremental = command();
-    const companion = catalog ? [labels.companion, "Catalogs/ProbeOwner/Forms/ProbeObject/Ext/Form.xml"] : [];
-    await click(labels.apply, descriptorPath, ...companion);
-    await incremental;
+    const structural = native.scenario === "apply-structural-debug";
+    if (structural) {
+      const main = path.join(source, "Configuration.xml");
+      const original = await fs.readFile(main, "utf8");
+      const entry = "<CommonForm>ProbeButtons</CommonForm>";
+      assert.ok(original.includes(entry));
+      await fs.writeFile(main, original.replace(entry, "<CommonForm>RenamedProbe</CommonForm>"));
+      const directory = path.join(source, "CommonForms");
+      const descriptor = await fs.readFile(path.join(directory, "ProbeButtons.xml"), "utf8");
+      await fs.writeFile(path.join(directory, "RenamedProbe.xml"), descriptor.replaceAll("ProbeButtons", "RenamedProbe"));
+      await fs.unlink(path.join(directory, "ProbeButtons.xml"));
+      await fs.rename(path.join(directory, "ProbeButtons"), path.join(directory, "RenamedProbe"));
+      const renamed = command();
+      await click(labels.apply, labels.rename, "ProbeButtons → RenamedProbe");
+      await renamed;
+      const afterRename = await snapshot();
+      assert.notEqual(afterRename, initial);
+      await fs.writeFile(main, original.replace(entry, ""));
+      await fs.unlink(path.join(directory, "RenamedProbe.xml"));
+      await fs.rm(path.join(directory, "RenamedProbe"), { recursive: true });
+      const removed = command();
+      await click(labels.apply, labels.removed, "RenamedProbe", labels.companion, "Languages/Русский.xml");
+      await removed;
+      assert.notEqual(await snapshot(), afterRename);
+    } else {
+      const catalog = native.scenario === "apply-catalog-debug";
+      const descriptorPath = catalog ? "Catalogs/ProbeOwner.xml" : "Languages/Русский.xml";
+      const descriptorFile = path.join(source, descriptorPath);
+      const descriptor = await fs.readFile(descriptorFile, "utf8");
+      const edited = descriptor.replace("<Comment/>", "<Comment>ESKA apply and debug</Comment>");
+      assert.notEqual(edited, descriptor);
+      await fs.writeFile(descriptorFile, edited);
+      const incremental = command();
+      const companion = catalog ? [labels.companion, "Catalogs/ProbeOwner/Forms/ProbeObject/Ext/Form.xml"] : [];
+      await click(labels.apply, descriptorPath, ...companion);
+      await incremental;
+    }
     const applied = await snapshot();
     assert.notEqual(applied, initial);
     await verifyUpdatedDebugSession(folder, module, until);
