@@ -98,7 +98,7 @@ button { cursor: default; }
   padding-block: 1px;
 }
 .taxi-field-row[data-wrapped-input-caption] > .taxi-field-control { display: grid; align-items: center; min-height: inherit; }
-.taxi-field-row[data-multiline] { padding-block: 1px; }
+.taxi-field-row[data-multiline] { padding-block: 1px var(--taxi-input-end-padding, 1px); }
 .taxi-field-row[data-numeric-label-title] { column-gap: 5px; align-items: var(--taxi-numeric-label-align, center); }
 .taxi-field-row[data-numeric-label-title] > .taxi-field-label { white-space: pre; }
 .taxi-field-control { grid-column: 2; min-width: 0; max-width: 100%; }
@@ -113,10 +113,12 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row {
   --taxi-input-top-gap: 3px;
   --taxi-input-top-padding: 1px;
+  /* The shared band reaches the control edge without the ordinary trailing pixel. */
+  --taxi-input-end-padding: max(0px, calc(var(--taxi-input-top-padding) - var(--taxi-inline-field-height-reserve, 0px)));
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=InputField] > .taxi-field-row:is([data-title-location=Top],[data-title-location=Bottom]) {
   row-gap: var(--taxi-input-top-gap);
-  padding-block: var(--taxi-input-top-padding);
+  padding-block: var(--taxi-input-top-padding) var(--taxi-input-end-padding);
 }
 .taxi-field-row[data-title-location=Bottom] .taxi-field-label { order: 1; }
 .taxi-field-row--check { grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
@@ -819,6 +821,10 @@ button { cursor: default; }
   width: var(--taxi-inline-track-width);
   min-width: 0;
   max-width: none;
+}
+.taxi-preview[data-form-layout=allocated] .taxi-items[data-native-inline-row] > .taxi-element {
+  --taxi-inline-group-offset: initial;
+  top: var(--taxi-inline-group-offset, auto);
 }
 .taxi-items[data-native-inline-row] > .taxi-element[data-kind=LabelField] > .taxi-field-row {
   column-gap: 5px;

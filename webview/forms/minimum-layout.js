@@ -87,7 +87,7 @@ export function minimumFormLayout(root, scale, { minimumCaptions, minimumInputs,
       const label = field.querySelector(':scope > .taxi-field-label'), control = field.querySelector(':scope > .taxi-field-control');
       const child = control?.firstElementChild, content = child ? marginBox(child) : { width: 0, height: 0 };
       const titleOffset = pixels(element.style.getPropertyValue('--taxi-input-title-offset'));
-      content.height += titleOffset;
+      content.height += titleOffset + pixels(element.style.getPropertyValue('--taxi-inline-field-height-reserve'));
       const title = label ? marginBox(label) : { width: 0, height: 0 }, location = field.dataset.titleLocation;
       if (label && location === 'Left') title.width = Math.max(title.width, throughCaptionWidth(element));
       const fullTitleWidth = title.width;

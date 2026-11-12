@@ -275,7 +275,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       }
     }
     numericRows?.allocateWidths(captions);
-    allocateInlineRows(captions, alignedAbove);
+    allocateInlineRows.allocateWidths(captions, alignedAbove);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve, () => {
       const requested = reference ? authoredWidth() + 4 : formAllocation(size(), preferred(), {}, state.ui.zoom).width;
@@ -316,6 +316,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       needsMinimum = true;
       schedule();
     }
+    if (allocateInlineRows.alignGroups()) { needsMinimum = true; schedule(); }
     const wrap = measureWrapping(root, conditionalGroups);
     setWrapped(previous => {
       if (previous.size === wrap.size && [...previous].every(key => wrap.has(key))) return previous;
