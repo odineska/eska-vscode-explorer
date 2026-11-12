@@ -558,24 +558,28 @@ async function runParity(folder, module, scenario, until) {
         assert.equal(nested.find(field => field.name === "Номер").value, "1");
       }
       assert.equal((await evaluate(first.frameId, "Счетчик", "hover")).result, "1");
-      let opaque;
-      try {
-        opaque = await evaluate(first.frameId, "СоздатьЗаписьJSON()", "repl");
-      } catch (error) {
-        assert.ok(String(error).length > 0);
+      const writer = await evaluate(first.frameId, "СоздатьЗаписьJSON()", "repl");
+      const reader = await evaluate(first.frameId, "СоздатьЧтениеJSON()", "repl");
+      assert.equal(writer.type, "ЗаписьJSON");
+      assert.equal(reader.type, "ЧтениеJSON");
+      assert.notEqual(writer.variablesReference, reader.variablesReference);
+      for (let repeat = 0; repeat < 3; repeat++) {
+        const fields = await expand(writer.variablesReference);
+        const parameters = fields.find(field => field.name === "Параметры");
+        assert.equal(parameters.type, "ПараметрыЗаписиJSON");
+        assert.ok((await expand(parameters.variablesReference)).some(field => field.name === "ПереносСтрок"));
+        assert.ok((await expand(reader.variablesReference)).some(field => field.name === "ТипТекущегоЗначения"));
       }
-      if (opaque) {
-        assert.ok(opaque.variablesReference > 0);
-        await expand(opaque.variablesReference);
-      }
-      assert.equal((await evaluate(first.frameId, "Счетчик", "hover")).result, "2");
+      assert.equal((await evaluate(first.frameId, "Счетчик", "hover")).result, "3");
       await session.customRequest("stepIn", { threadId: first.threadId });
-      await assert.rejects(expand(result.variablesReference));
+      for (const { variablesReference } of [result, writer, reader]) {
+        await assert.rejects(expand(variablesReference));
+      }
       const nested = await stop(["step", "breakpoint"], 9);
       const stack = await session.customRequest("stackTrace", { threadId: nested.threadId });
-      assert.equal((await evaluate(stack.stackFrames[1].id, "A + Счетчик", "hover")).result, "43");
+      assert.equal((await evaluate(stack.stackFrames[1].id, "A + Счетчик", "hover")).result, "44");
       return { snapshot: true, hover: true, caller_frame: true,
-        opaque_evaluation_once: true, opaque_snapshot_available: !!opaque };
+        opaque_evaluation_once: true, opaque_snapshot_available: true };
     }
     assert.equal(scenario, "breakpoints");
     assert.equal((await evaluate(first.frameId, "I", "repl")).result, "2");
