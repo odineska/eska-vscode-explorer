@@ -11,6 +11,7 @@ exports.run = async function () {
   const labels = vscode.env.language.startsWith("ru") ? {
     extension: "Расширение",
     fullExtension: "Заменить выбранное расширение в тестовой базе",
+    partial: "Применить перечисленные изменения Designer XML к тестовой базе?",
     review: "Просмотреть полный импорт",
     apply: "Применить к test",
     cancel: "Отмена",
@@ -21,6 +22,7 @@ exports.run = async function () {
   } : {
     extension: "Extension",
     fullExtension: "Replace the selected test extension",
+    partial: "Apply the listed Designer XML changes to the test infobase?",
     review: "Review Full Import",
     apply: "Apply to Test",
     cancel: "Cancel",
@@ -95,15 +97,20 @@ exports.run = async function () {
       const original = await fs.readFile(module, "utf8");
       assert.ok(original.includes("Значение = 111"));
       await fs.writeFile(module, original.replace("Значение = 111", "Значение = 333"));
+      const rolePath = "Roles/One_DefaultRole.xml";
+      const role = path.join(member, "src", rolePath);
+      const descriptor = await fs.readFile(role, "utf8");
+      assert.ok(descriptor.includes("<Comment/>"));
+      await fs.writeFile(role, descriptor.replace("<Comment/>", "<Comment>ESKA apply and debug</Comment>"));
       const incremental = command();
       await choose();
-      await click(labels.apply, selected, "Ext/ManagedApplicationModule.bsl");
+      await click(labels.apply, labels.partial, selected, "Ext/ManagedApplicationModule.bsl", rolePath);
       await incremental;
       assert.notEqual(await snapshot(), initial);
       await verifyUpdatedDebugSession(folder, module, until, { line: 4, expression: "Значение", expected: "333", projectDir: root });
       await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
         passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-        extension_apply: true, debug_after_apply: true, evaluate: "333",
+        extension_apply: true, role_xml: true, debug_after_apply: true, evaluate: "333",
       }));
       return;
     }
