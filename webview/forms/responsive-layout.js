@@ -250,7 +250,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       const resized = previous.outerWidth !== next.outerWidth || previous.outerHeight !== next.outerHeight;
       // Recheck fit against the resized area before scrollbars from the old arrangement settle.
       const recheckGroups = resized && conditionalGroups.length > 0;
-      const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0 || decorationsLayout.size > 0 || headingTitles.length > 0);
+      const recheckCaptions = (refresh || resized) && (minimumCaptions.size > 0 || minimumRows.size > 0
+        || decorationsLayout.size > 0 || headingTitles.length > 0 || allocateInlineRows.hasRows);
       if (recheckGroups || recheckCaptions) next.width = next.outerWidth;
       if (resized && previous.outerWidth !== undefined) setViewportResized(true);
       if (Object.keys(next).some(key => previous[key] !== next[key])) {
@@ -275,7 +276,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       }
     }
     numericRows?.allocateWidths(captions);
-    allocateInlineRows.allocateWidths(captions, alignedAbove);
+    const inlineHeightChanged = allocateInlineRows.allocateWidths(captions, alignedAbove);
     checkboxes.allocate(captions);
     const { above, heightChanged } = adaptiveTitles.allocate(captions, dividers?.resolve, () => {
       const requested = reference ? authoredWidth() + 4 : formAllocation(size(), preferred(), {}, state.ui.zoom).width;
@@ -310,7 +311,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     const previousAbove = aboveTitles();
     const moved = above.size !== previousAbove.size || [...above].some(key => !previousAbove.has(key));
     if (moved) setAboveTitles(above);
-    if (moved || heightChanged) { needsMinimum = true; schedule(); }
+    if (moved || heightChanged || inlineHeightChanged) { needsMinimum = true; schedule(); }
     if (captions.size !== previousCaptions.size || [...captions].some(([key, value]) => previousCaptions.get(key) !== value)) {
       setFieldCaptions(captions);
       needsMinimum = true;

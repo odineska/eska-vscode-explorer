@@ -83,8 +83,9 @@ function labelBand(referenceFields) {
 }
 
 function setLabelBand(items, height, fallback = '') {
-  updateStyle(items, '--taxi-inline-label-height', height ? `${height}px` : fallback);
-  updateStyle(items, '--taxi-inline-label-align', height ? 'start' : fallback);
+  const heightChanged = updateStyle(items, '--taxi-inline-label-height', height ? `${height}px` : fallback);
+  const alignmentChanged = updateStyle(items, '--taxi-inline-label-align', height ? 'start' : fallback);
+  return heightChanged || alignmentChanged;
 }
 
 function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
@@ -138,13 +139,15 @@ function alignFixedGroups(branch, verticalAlign, { alignment, scale }) {
 
   return {
     labelBands(captions, above) {
+      let changed = false;
       for (const { part, tracks } of sections) {
         const height = Math.max(0, ...tracks.map(track => {
           const caption = captions.get(track.key);
           return caption && !above.has(track.key) ? caption.split('\n').length * track.titleLineHeight : 0;
         }));
-        setLabelBand(part.items, height, 'initial');
+        if (setLabelBand(part.items, height, 'initial')) changed = true;
       }
+      return changed;
     },
     place() {
       const memo = control.getBoundingClientRect();
@@ -250,6 +253,7 @@ export function alignInlineFieldRows(model, context) {
   }
 
   function allocateWidths(captions, above) {
+    let heightChanged = false;
     for (const { branch, tracks, lanes, spacing, compactLanes, sideMinimum, alignGroups } of rows) {
       const available = Math.round(borderBoxSize(branch.items, scale).width) - spacing;
       const compact = compactLanes && available < sideMinimum;
@@ -266,12 +270,14 @@ export function alignInlineFieldRows(model, context) {
           labelHeight = Math.max(labelHeight, captions.get(track.key).split('\n').length * track.titleLineHeight);
         }
       }
-      setLabelBand(branch.items, labelHeight);
-      alignGroups?.labelBands(captions, above);
+      if (setLabelBand(branch.items, labelHeight)) heightChanged = true;
+      if (alignGroups?.labelBands(captions, above)) heightChanged = true;
       for (const child of branch.parts) place(child, widths);
     }
+    return heightChanged;
   }
   return {
+    hasRows: rows.length > 0,
     allocateWidths,
     alignGroups: () => {
       let changed = false;

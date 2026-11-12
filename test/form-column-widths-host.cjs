@@ -54,11 +54,16 @@ async function pose(ui, keys, expected) {
           const lines = field.dataset.kind === 'LabelField' ? label.textContent.split('\\n') : [label.textContent];
           captions[name]={accessible:label.getAttribute('aria-label'),lines:wrapped.length ? wrapped : lines};
         }
-        return {frame:[origin.width,origin.height],preferredWidth:parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),controls,captions,locations,groupBoxes,layout:root.closest('.taxi-preview').dataset.formLayout,viewport:{client:[document.querySelector('.preview-scroll').clientWidth,document.querySelector('.preview-scroll').clientHeight],style:document.querySelector('.preview-scroll').getAttribute('style')},errors:globalThis.__columnErrors??[]};
+        const body = root.querySelector('.taxi-form-scrollport');
+        const viewport = document.querySelector('.preview-scroll');
+        return {frame:[origin.width,origin.height],preferredWidth:parseFloat(root.style.getPropertyValue('--taxi-form-preferred-width')),
+          controls,captions,locations,groupBoxes,layout:root.closest('.taxi-preview').dataset.formLayout,
+          bodyScrollable:body.hasAttribute('data-scrollable'),
+          viewport:{client:[viewport.clientWidth,viewport.clientHeight],style:viewport.getAttribute('style')},errors:globalThis.__columnErrors??[]};
       })()`);
       actual.browserErrors=ui.scriptErrors();
       // The viewport can reach its target before the allocator updates the controls.
-      const signature = JSON.stringify([actual.controls, actual.groupBoxes]);
+      const signature = JSON.stringify([actual.controls, actual.groupBoxes, actual.bodyScrollable]);
       const settled = signature === previousControls;
       previousControls = signature;
       const tolerance = expected.tolerancePx ?? 0;
@@ -70,6 +75,7 @@ async function pose(ui, keys, expected) {
       return settled && actual.layout === 'allocated' && actual.browserErrors.length === 0
         && actual.frame.every((value,index) => expected.frame[index] === null || value === expected.frame[index])
         && (expected.preferredWidth === undefined || actual.preferredWidth === expected.preferredWidth)
+        && (expected.bodyScrollable === undefined || actual.bodyScrollable === expected.bodyScrollable)
         && Object.entries(expected.locations ?? {}).every(([name, location]) => actual.locations[name] === location)
         && Object.entries(expected.controlSizes ?? {}).every(([name, size]) =>
           actual.controls[name]?.slice(2).every((value,index) => Math.abs(value-size[index]) <= tolerance))
