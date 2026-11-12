@@ -382,11 +382,12 @@ async function verifyColumnSurplus(service, main, view, document) {
       dateBlock, dateBlockWidth: dateBlock?.[1], traceOffset: trace && dateBlock && trace[0] - dateBlock[0],
       dateFields, dateLocations: dateFields.map(field => field?.[0]), checkCaption, dateLabel, divider: !!divider,
       dividerRange: divider && ['min', 'now', 'max'].map(name => Number(divider.getAttribute('aria-value' + name))),
-      through, referenceCaption, referenceLabelFits };
+      through, referenceCaption, referenceLabelFits,
+      trailingLabels: [through[3], box(find(1083)?.querySelector('.taxi-label-field'))] };
   })()`);
   async function observe(surface, file, { width, viewportWidth = width, viewportHeight = 420,
     columns, inputs, dateBlock = null, dateBlockWidth, traceOffset, dateFields, dateLocations,
-    checkCaption, dateLabel, referenceRow, referenceCaption, divider, height, dateBlockHeight, courtTop }) {
+    checkCaption, dateLabel, referenceRow, referenceCaption, divider, height, dateBlockHeight, courtTop, trailingLabels }) {
     const revision = view.snapshot.revision;
     await allocateFormViewport(surface, [viewportWidth, viewportHeight]);
     const expected = { width, divider };
@@ -401,6 +402,7 @@ async function verifyColumnSurplus(service, main, view, document) {
     if (checkCaption) expected.checkCaption = checkCaption;
     if (dateLabel) expected.dateLabel = dateLabel;
     if (referenceRow) expected.through = referenceRow;
+    if (trailingLabels) expected.trailingLabels = trailingLabels;
     if (referenceCaption) {
       expected.referenceCaption = referenceCaption;
       if (referenceCaption[1] > 1) expected.referenceLabelFits = true;
@@ -417,6 +419,12 @@ async function verifyColumnSurplus(service, main, view, document) {
     return actual;
   }
 
+  function withFormWidth(source, width) {
+    const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
+    assert.notEqual(sized, source);
+    return sized;
+  }
+
   async function verifyDateStretch(surface, file, source) {
     const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-through-stretch-metrics.json'), 'utf8'));
     assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
@@ -426,9 +434,8 @@ async function verifyColumnSurplus(service, main, view, document) {
     });
     const sizes = [];
     for (const { width, auto, fixed } of cases) {
-      const sized = source.replace('  <AutoCommandBar name="FormCommandBar"', `  <Width>${width}</Width>\n$&`);
+      const sized = withFormWidth(source, width);
       const fixedSource = sized.replace('<UsualGroup name="Dates" id="40">', '$&<HorizontalStretch>false</HorizontalStretch>');
-      assert.notEqual(sized, source);
       assert.notEqual(fixedSource, sized);
       await editFormSource(document, view, sized);
       const automatic = await observe(surface, file, geometry(auto));
@@ -444,6 +451,32 @@ async function verifyColumnSurplus(service, main, view, document) {
       const restored = await observe(surface, file, { ...geometry(auto), dateBlockWidth: automatic.dateBlockWidth });
       assert.deepEqual(restored.through, automatic.through);
       sizes.push({ width: fixed.frame[0], automatic, packed });
+    }
+    await editFormSource(document, view, source);
+    return sizes;
+  }
+
+  async function verifyFixedTrailingLabels(surface, file, source) {
+    const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'through-label-stretch-metrics.json'), 'utf8'));
+    assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+    const painted = source.replace(/(<LabelField name="IncomingOrg" id="1083">.*?<BackColor>)web:LightGreen/su, '$1web:LightPink');
+    assert.notEqual(painted, source);
+    const sizes = [];
+    for (const sample of cases) {
+      const { width, fixedLabels, labelWidth, frame: [pixels, height], dateBlock: [x, , datesWidth, dateBlockHeight],
+        divider, labels } = sample;
+      const sized = withFormWidth(painted, width);
+      const xml = sized.replace(/<LabelField name="(OutgoingOrg|IncomingOrg)" id="\d+">/gu, (tag, name) => {
+        if (!fixedLabels.includes(name)) return tag;
+        return `${tag}<HorizontalStretch>false</HorizontalStretch>${labelWidth ? `<Width>${labelWidth}</Width>` : ''}`;
+      });
+      assert.notEqual(xml, sized);
+      await editFormSource(document, view, xml);
+      const actual = await observe(surface, file, { width: pixels, viewportHeight: height, height, divider, dateBlockHeight,
+        trailingLabels: labels.map(([left, , span]) => [left, span]) });
+      assert.ok(Math.abs(actual.dateBlock[0] - x) <= 1, 'fixed labels leave room for the native column boundary');
+      assert.ok(Math.abs(actual.dateBlockWidth - datesWidth) <= 2, 'the date block is allocated from the remaining width');
+      sizes.push({ name: sample.name, ...actual });
     }
     await editFormSource(document, view, source);
     return sizes;
@@ -548,7 +581,10 @@ async function verifyColumnSurplus(service, main, view, document) {
           await editFormSource(document, view, source);
           await observe(floating, file, cases[1]);
         }
-        if (through) result.fixedDateStretch = await verifyDateStretch(floating, file, source);
+        if (through) {
+          result.fixedDateStretch = await verifyDateStretch(floating, file, source);
+          result.fixedTrailingLabels = await verifyFixedTrailingLabels(floating, file, source);
+        }
         await observe(floating, file, wide);
         await floating.evaluate("globalThis.__boundedGroup = document.querySelector('[data-element$=\":current:10\"] > .taxi-group'); true");
         await editFormSource(document, view, source.replace('web:Lavender', 'web:LightYellow'));

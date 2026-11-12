@@ -72,7 +72,7 @@ function referencePictureLabel(lane, os) {
   const [field, picture, label] = lane.children;
   return lane.children.length === 3 && field.kind === 'field' && stretchReference(field, os)
     && picture.node.kind === 'PictureField' && !picture.size.growthWeight
-    && label.node.kind === 'LabelField' && label.size.growthWeight > 0;
+    && label.node.kind === 'LabelField';
 }
 
 function placementPlans(lanes, preferred) {
@@ -111,7 +111,7 @@ export function mixedColumnLayout(context) {
 
   function register(items, lanes, setCell, setLane) {
     sizeEntries(lanes.flatMap(lane => lane.children));
-    const adaptive = lanes.every(lane => referencePictureLabel(lane, os));
+    const adaptive = lanes.every(lane => referencePictureLabel(lane, os) && lane.children[2].size.growthWeight > 0);
     const title = adaptive && items.parentElement.querySelector(':scope > .taxi-group-title[data-native-heading-minimum]');
     const heading = title ? { items, preferred: Number(title.dataset.nativeTextWidth) } : undefined;
     const shared = lanes.filter(lane => !lane.node.presentation.united);
