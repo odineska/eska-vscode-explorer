@@ -1179,13 +1179,15 @@ button { cursor: default; }
 .taxi-items[data-fixed-date-row] > .taxi-element > .taxi-field-row[data-title-location=Top][data-wrapped-input-caption] > .taxi-field-label {
   line-height: var(--taxi-date-title-line-height);
 }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-label] > .taxi-field-row[data-title-location=Left] {
-  padding-block-start: var(--taxi-date-label-offset, 0px);
+/* Reserve the native label row edges in both size measurement and allocation. */
+.taxi-preview[data-form-layout] .taxi-element[data-fixed-date-label] > .taxi-field-row[data-title-location=Left] {
+  padding-block: calc(1px + var(--taxi-date-label-offset, 0px)) 1px;
 }
-.taxi-preview[data-form-layout=allocated] .taxi-element[data-fixed-date-label] > .taxi-field-row[data-title-location=Left] > .taxi-field-control {
+.taxi-preview[data-form-layout] .taxi-element[data-fixed-date-label] > .taxi-field-row[data-title-location=Left] > .taxi-field-control {
   align-self: start;
-  position: relative;
-  inset-block-start: 1px;
+}
+.taxi-preview[data-form-layout] .taxi-element[data-fixed-date-label] > .taxi-field-row[data-title-location=Top] {
+  padding-block-end: 1px;
 }
 .taxi-preview[data-form-layout=preferred] .taxi-element[data-fixed-date-block] {
   min-width: var(--taxi-fixed-date-width);

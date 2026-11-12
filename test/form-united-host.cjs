@@ -272,6 +272,58 @@ async function verifyDateBlock(main, view, document) {
   }
 }
 
+async function verifyDateLabelHeight(main, view, document) {
+  const directory = process.env.ESKA_FORM_FIXTURES;
+  const source = await fs.readFile(path.join(directory, 'DateLabelHeight.xml'), 'utf8');
+  const { sourceSha256, cases } = JSON.parse(await fs.readFile(path.join(directory, 'date-label-height-metrics.json'), 'utf8'));
+  assert.equal(createHash('sha256').update(source).digest('hex'), sourceSha256);
+  const original = document.getText();
+  const ui = await frame({ state: { title: main.panel.title } });
+  const measure = `(() => {
+    const root = document.querySelector('.taxi-form-frame');
+    if (!root?.closest('[data-form-layout=allocated]')) return null;
+    const find = id => root.querySelector('[data-element$=":current:' + id + '"]');
+    const group = find(5)?.querySelector('.taxi-group'), limit = find(54)?.querySelector('.taxi-label-field');
+    const tail = find(200)?.querySelector('.taxi-input');
+    if (!group || !limit || !tail) return null;
+    const frame = root.getBoundingClientRect(), value = limit.getBoundingClientRect(), last = tail.getBoundingClientRect();
+    return {
+      frame: [frame.width, frame.height],
+      preferredHeight: parseFloat(root.style.getPropertyValue('--taxi-form-preferred-height')),
+      groupHeight: group.classList.contains('taxi-group--painted') ? group.getBoundingClientRect().height : null,
+      titleLocation: limit.closest('.taxi-field-row').dataset.titleLocation,
+      limitValue: [value.y - frame.y, value.height],
+      tail: [last.x - frame.x, last.y - frame.y, last.width, last.height],
+    };
+  })()`;
+  const sizes = [];
+  try {
+    for (const sample of [...cases, cases[0]]) {
+      const resized = source.replace('<Width>62</Width>', '<Width>' + sample.width + '</Width>');
+      const xml = sample.painted ? resized : resized.replace('<BackColor>web:LightGoldenRodYellow</BackColor>', '');
+      await editFormSource(document, view, xml);
+      await until(() => ui.evaluate("!!document.querySelector('[data-element$=\":current:200\"] .taxi-input')"), 'field after the date block');
+      await allocateFormViewport(ui, sample.frame);
+      const expected = {
+        frame: sample.frame, preferredHeight: sample.frame[1], groupHeight: sample.groupHeight,
+        titleLocation: sample.titleLocation, limitValue: sample.limitValue, tail: sample.tail,
+      };
+      let actual;
+      await until(async () => {
+        actual = await ui.evaluate(measure);
+        return isDeepStrictEqual(actual, expected);
+      }, 'date label layout ' + sample.name).catch(error => {
+        throw new Error('Date label height ' + sample.name + ' ' + JSON.stringify({ expected, actual }), { cause: error });
+      });
+      sizes.push({ name: sample.name, ...actual });
+    }
+    return { kind: 'DateLabelHeight', sizes };
+  } finally {
+    ui.close();
+    await editFormSource(document, view, original);
+  }
+}
+
 async function verifyColumnSurplus(service, main, view, document) {
   const directory = process.env.ESKA_FORM_FIXTURES;
   const { fixtures } = JSON.parse(await fs.readFile(path.join(directory, 'column-surplus-metrics.json'), 'utf8'));
@@ -570,6 +622,7 @@ exports.run = async () => {
     if (input.kind === 'ColumnsTT' && process.platform === 'linux') {
       results.push(await verifyUnitedRowHeight(main, view, document, keys));
       results.push(await verifyDateBlock(main, view, document));
+      results.push(await verifyDateLabelHeight(main, view, document));
       results.push(await verifyColumnSurplus(service, main, view, document));
     }
     if (input.kind === 'ColumnsFF') {
