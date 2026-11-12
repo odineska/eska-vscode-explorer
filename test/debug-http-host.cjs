@@ -41,10 +41,12 @@ exports.run = async function () {
     }));
     return;
   }
-  if (native.scenario === "paging") {
-    await runPaging(folder, module, until);
+  if (native.scenario === "paging" || native.scenario === "enumerable") {
+    const enumerable = native.scenario === "enumerable";
+    await runPaging(folder, module, until, enumerable);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
-      passed: true, suite: "debug-http", vscode: vscode.version, collection_paging: true,
+      passed: true, suite: "debug-http", vscode: vscode.version,
+      ...(enumerable ? { enumerable_values: true } : { collection_paging: true }),
     }));
     return;
   }
@@ -180,10 +182,10 @@ async function runExtensions(folder, base, files, until) {
   }
 }
 
-async function runPaging(folder, module, until) {
+async function runPaging(folder, module, until, enumerable) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");
   const workbench = await connectWorkbench(until);
-  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(6, 0)));
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(enumerable ? 5 : 6, 0)));
   vscode.debug.addBreakpoints([breakpoint]);
   const requests = [];
   let session;
@@ -197,10 +199,13 @@ async function runPaging(folder, module, until) {
       };
     },
   });
-  const expandRow = async label => {
+  const expandRow = async (label, exact = false) => {
     const point = await until(() => workbench.evaluate(`(() => {
       const rows = [...document.querySelectorAll('.debug-variables .monaco-list-row')];
-      const twistie = rows.find(row => row.textContent.includes(${JSON.stringify(label)}))?.querySelector('.monaco-tl-twistie.collapsible');
+      const row = rows.find(row => ${exact
+        ? `row.textContent.startsWith(${JSON.stringify(label + ' =')})`
+        : `row.textContent.includes(${JSON.stringify(label)})`});
+      const twistie = row?.querySelector('.monaco-tl-twistie.collapsible');
       if (!twistie) return null;
       if (!twistie.classList.contains('collapsed')) return true;
       const rect = twistie.getBoundingClientRect(); return [rect.x + rect.width / 2, rect.y + rect.height / 2];
@@ -217,6 +222,13 @@ async function runPaging(folder, module, until) {
     await until(() => stopped, "client stopped with the large array in scope");
     await vscode.commands.executeCommand("workbench.debug.action.focusVariablesView");
     await expandRow(vscode.env.language.startsWith("ru") ? "Локальные переменные" : "Local variables");
+    if (enumerable) {
+      await expandRow("ФиксированныйРяд");
+      await expandRow('"второй"');
+      await expandRow("Значение", true);
+      await until(() => workbench.evaluate("[...document.querySelectorAll('.debug-variables .monaco-list-row')].some(row => row.textContent.includes('Вложенный') && row.textContent.includes('22'))"), "nested value in the dictionary");
+      return;
+    }
     await expandRow("Ряд");
     await expandRow("[500..599]");
     const page = await until(() => requests.find(request => request.filter === "indexed" && request.start === 500), "VS Code requested an indexed page");
