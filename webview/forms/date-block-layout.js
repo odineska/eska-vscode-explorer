@@ -51,12 +51,14 @@ function occupiedDateCaption(fields, budget) {
   return Math.max(...fields.map(field => fieldCaptionOccupiedWidth(field.caption, budget)));
 }
 
-function authoredCaptionWidths(space, initialSpace, authoredWidth, date, checkbox) {
+function authoredCaptionWidths(space, date, checkbox, { authoredWidth, surplus, mixed, insetGrowth }) {
+  const initialSpace = Math.max(date.minimum + checkbox.minimum, space - surplus + insetGrowth);
   const available = Math.min(initialSpace, date.preferred + checkbox.preferred);
   const [budget] = allocateLaneSizes(available, [date, checkbox], { fractional: true });
   const initial = Math.max(date.minimum, occupiedDateCaption(date.fields, budget));
-  // Grow from the width occupied at the authored size until the checkbox reaches its preferred width.
-  const growth = Math.round((space - initialSpace) * initial / authoredWidth);
+  // With the standalone title above, the shared side caption receives three fifths of the surplus.
+  const fraction = mixed ? .6 : initial / authoredWidth;
+  const growth = Math.round((space - initialSpace + insetGrowth) * fraction) - insetGrowth;
   const title = Math.min(date.preferred, Math.max(initial + growth, space - checkbox.preferred));
   return [title, Math.min(checkbox.preferred, space - title)];
 }
@@ -312,9 +314,15 @@ export function dateBlockLayout(model, context) {
       const minimumSpace = minimum + checkbox.caption.minimum;
       const room = Math.max(space, minimumSpace);
       const profile = { ...active, minimum };
-      const initialSpace = moveStandalone ? room : Math.max(minimumSpace, room - (contentWidth - placementWidth));
-      [title, sideCheck] = authoredWidth ? authoredCaptionWidths(room, initialSpace, authoredWidth, profile, checkbox.caption)
-        : captionWidths(room, profile, checkbox.caption, active === date && !through && !authoredTop ? fields : undefined);
+      if (authoredWidth) {
+        const mixed = moveStandalone && !sideUnavailable;
+        const insetGrowth = mixed ? inset - (inputCaptionInset - mixedInset) : 0;
+        [title, sideCheck] = authoredCaptionWidths(room, profile, checkbox.caption, {
+          authoredWidth, surplus: contentWidth - placementWidth, mixed, insetGrowth,
+        });
+      } else {
+        [title, sideCheck] = captionWidths(room, profile, checkbox.caption, active === date && !through && !authoredTop ? fields : undefined);
+      }
     }
     // A top caption can still share the track reserved by its side-captioned siblings.
     const sideReserve = leading.top && active ? sideTrack + title : 0;
