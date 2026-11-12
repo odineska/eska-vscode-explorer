@@ -12,11 +12,13 @@ exports.run = async function () {
     review: "Просмотреть полный импорт",
     apply: "Применить к test",
     cancel: "Отмена",
+    companion: "Сопутствующий файл",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     review: "Review Full Import",
     apply: "Apply to Test",
     cancel: "Cancel",
+    companion: "Companion file",
     conflict: "Both the saved sources and the test database generation changed",
   };
   const until = async (check, label) => {
@@ -32,7 +34,9 @@ exports.run = async function () {
   await vscode.commands.executeCommand("eska.explorer.restart");
   await vscode.workspace.getConfiguration("window").update("dialogStyle", "custom", vscode.ConfigurationTarget.Global);
   const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(root));
-  await vscode.workspace.getConfiguration("eska.explorer", folder.uri).update("buildExecutable", native.build, vscode.ConfigurationTarget.Workspace);
+  const config = vscode.workspace.getConfiguration("eska.explorer", folder.uri);
+  await config.update("buildExecutable", native.build, vscode.ConfigurationTarget.Workspace);
+  await config.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const state = path.join(root, ".eska");
   await fs.mkdir(state, { recursive: true });
   await fs.copyFile(native.settings, path.join(state, "settings_local.toml"));
@@ -41,9 +45,9 @@ exports.run = async function () {
   await fs.cp(native.source, source, { recursive: true });
 
   const workbench = await connectWorkbench(until);
-  const click = (label, expectedPath) => until(() => workbench.evaluate(`(() => {
+  const click = (label, ...expectedText) => until(() => workbench.evaluate(`(() => {
     const box = document.querySelector('.monaco-dialog-box');
-    if (!box || !box.textContent.includes(${JSON.stringify(expectedPath)})) return false;
+    if (!box || !${JSON.stringify(expectedText)}.every(text => box.textContent.includes(text))) return false;
     const button = [...box.querySelectorAll('button, .monaco-button')]
       .find(item => item.textContent.replaceAll('&', '').trim() === ${JSON.stringify(label)});
     if (!button) return false;
@@ -65,11 +69,20 @@ exports.run = async function () {
     const module = path.join(root, "src", "Ext", "ManagedApplicationModule.bsl");
     const contents = await fs.readFile(module, "utf8");
     await fs.writeFile(module, contents.replace("A = 41", "A = 47"));
+    const catalog = native.scenario === "apply-catalog-debug";
+    const descriptorPath = catalog ? "Catalogs/ProbeOwner.xml" : "Languages/Русский.xml";
+    const descriptorFile = path.join(source, descriptorPath);
+    const descriptor = await fs.readFile(descriptorFile, "utf8");
+    const edited = descriptor.replace("<Comment/>", "<Comment>ESKA apply and debug</Comment>");
+    assert.notEqual(edited, descriptor);
+    await fs.writeFile(descriptorFile, edited);
     const incremental = command();
-    await click(labels.apply, "Ext/ManagedApplicationModule.bsl");
+    const companion = catalog ? [labels.companion, "Catalogs/ProbeOwner/Forms/ProbeObject/Ext/Form.xml"] : [];
+    await click(labels.apply, descriptorPath, ...companion);
     await incremental;
     const applied = await snapshot();
     assert.notEqual(applied, initial);
+    await verifyUpdatedDebugSession(folder, module, until);
     const other = await fs.mkdtemp(path.join(state, "external-"));
     await fs.mkdir(path.join(other, ".eska"));
     await fs.copyFile(native.settings, path.join(other, ".eska", "settings_local.toml"));
@@ -91,6 +104,38 @@ exports.run = async function () {
     workbench.close();
   }
   await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
-    passed: true, suite: "runtime-apply", vscode: vscode.version, initialize: true, incremental: true, both_changed: true,
+    passed: true, suite: "runtime-apply", vscode: vscode.version, initialize: true, incremental: true, both_changed: true, xml_descriptor: true, debug_after_apply: true,
   }));
 };
+
+
+async function verifyUpdatedDebugSession(folder, module, until) {
+  const uri = vscode.Uri.file(module);
+  const point = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(2, 0)));
+  let session;
+  let threadId;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) {
+        if (message.event === "stopped") threadId = message.body.threadId;
+      } };
+    },
+  });
+  vscode.debug.addBreakpoints([point]);
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA debug after apply", type: "eska-debug", request: "launch", profile: "test",
+      projectDir: folder.uri.fsPath,
+    }), true);
+    await until(() => threadId, "updated configuration reached its breakpoint");
+    const { stackFrames: [frame] } = await session.customRequest("stackTrace", { threadId });
+    assert.equal(frame.source.path, uri.fsPath);
+    const result = await session.customRequest("evaluate", { frameId: frame.id, expression: "A" });
+    assert.equal(result.result, "47");
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point]);
+  }
+}

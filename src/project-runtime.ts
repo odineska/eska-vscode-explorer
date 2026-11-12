@@ -136,8 +136,16 @@ export class ProjectRuntime implements vscode.Disposable {
     const plan = isRecord(result) && isRecord(result.plan) ? result.plan : undefined;
     if (plan?.mode === "unchanged") { void vscode.window.showInformationMessage(this.text("runtimeUnchanged")); return; }
     if (!plan || typeof plan.confirmation !== "string" || !isRecord(plan.changes)) { this.failure(result); return; }
-    const paths = Object.entries(plan.changes).map(([path, change]) =>
+    const changes = plan.changes;
+    const paths = Object.entries(changes).map(([path, change]) =>
       `${this.text(change === "added" ? "runtimeChangeAdded" : change === "removed" ? "runtimeChangeRemoved" : "runtimeChangeModified")}  ${path}`);
+    if (Array.isArray(plan.import_files)) {
+      for (const path of plan.import_files) {
+        if (typeof path === "string" && !Object.hasOwn(changes, path)) {
+          paths.push(`${this.text("runtimeApplyCompanion")}  ${path}`);
+        }
+      }
+    }
     const accept = this.text("runtimeApplyConfirm");
     const title = this.text(initialize ? "runtimeFullPreview" : "runtimeDeltaPreview");
     const target = typeof plan.target === "string" && typeof plan.platform_version === "string"
