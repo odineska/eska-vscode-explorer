@@ -25,6 +25,13 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "assign") {
+    await runAssignment(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, set_value: true,
+    }));
+    return;
+  }
   if (native.scenario === "pause") {
     await runPause(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -152,6 +159,73 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runAssignment(folder, module, until) {
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(6, 0)));
+  vscode.debug.addBreakpoints([breakpoint]);
+  let session;
+  let stopped;
+  let assignment;
+  let reply;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "setVariable") assignment = message.arguments;
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stopped = message.body.threadId;
+          if (message.type === "response" && message.command === "setVariable") reply = message;
+        },
+      };
+    },
+  });
+  const variableRow = () => workbench.evaluate(`(() => {
+    const row = [...document.querySelectorAll('.debug-variables .monaco-list-row')].find(row => row.textContent.startsWith('A ='));
+    const rect = row?.getBoundingClientRect();
+    return rect ? [rect.x + rect.width / 2, rect.y + rect.height / 2, row.textContent] : null;
+  })()`);
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP Set Value", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const threadId = await until(() => stopped, "native breakpoint before Set Value");
+    await vscode.commands.executeCommand("workbench.debug.action.focusVariablesView");
+    const point = await until(async () => {
+      const row = await variableRow();
+      if (row) return row;
+      const expander = await workbench.evaluate(`(() => {
+        const twistie = document.querySelector('.debug-variables .monaco-list-row .monaco-tl-twistie.collapsed');
+        const rect = twistie?.getBoundingClientRect();
+        return rect ? [rect.x + rect.width / 2, rect.y + rect.height / 2] : null;
+      })()`);
+      if (expander) await workbench.click(...expander);
+    }, "local variable A is visible");
+    assert.match(point[2], /41$/);
+    await workbench.click(point[0], point[1]);
+    await vscode.commands.executeCommand("debug.setVariable");
+    await until(() => workbench.evaluate(`document.activeElement?.matches('.debug-variables input')`), "Set Value input focused");
+    await workbench.evaluate(`document.activeElement.select()`);
+    await workbench.submitInput("100 + 23");
+    await until(() => reply, "Set Value DAP response");
+    assert.equal(assignment.name, "A");
+    assert.equal(assignment.value, "100 + 23");
+    assert.equal(reply.success, true, JSON.stringify(reply));
+    assert.equal(reply.body.value, "123");
+    await until(async () => /123$/.test((await variableRow())?.[2] ?? ""), "native Variables view updated");
+    const stack = await session.customRequest("stackTrace", { threadId });
+    const value = await session.customRequest("evaluate", { frameId: stack.stackFrames[0].id, expression: "A" });
+    assert.equal(value.result, "123");
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint]);
+    workbench.close();
+  }
+}
 
 async function runPause(folder, module, until) {
   let session;

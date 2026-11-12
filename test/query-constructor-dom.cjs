@@ -44,6 +44,10 @@ exports.connectWorkbench = async function (until) {
   click: async (x, y) => {
     await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  }, submitInput: async text => {
+    await connection.request('Input.insertText', { text });
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   }, focus: async () => { await connection.request("Page.bringToFront"); await connection.request("Emulation.setFocusEmulationEnabled", { enabled: true }); }, viewport: async (width, height) => {
     await connection.request('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   }, evaluate: async expression => {
