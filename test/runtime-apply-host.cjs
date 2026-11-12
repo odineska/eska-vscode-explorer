@@ -26,6 +26,9 @@ exports.run = async function () {
     cancel: "Отмена",
     companion: "Сопутствующий файл",
     rename: "Переименован Общая форма",
+    roleAdded: "Добавлен Роль",
+    roleRenamed: "Переименован Роль",
+    roleRemoved: "Удалён Роль",
     removed: "Удалён Общая форма",
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
@@ -46,6 +49,9 @@ exports.run = async function () {
     cancel: "Cancel",
     companion: "Companion file",
     rename: "Renamed Common form",
+    roleAdded: "Added Role",
+    roleRenamed: "Renamed Role",
+    roleRemoved: "Removed Role",
     removed: "Removed Common form",
     conflict: "Both the saved sources and the test database generation changed",
   };
@@ -194,6 +200,37 @@ esac
       await click(labels.review, "");
       await click(labels.apply, labels.fullExtension, selected, "Configuration.xml");
       await initialize;
+
+      const source = path.join(member, "src");
+      const configurationPath = path.join(source, "Configuration.xml");
+      const configuration = await fs.readFile(configurationPath, "utf8");
+      const addedName = "One_ProbeRole";
+      const renamedName = "One_RenamedRole";
+      const defaultRolePath = "Roles/One_DefaultRole.xml";
+      const rolePathFor = name => `Roles/${name}.xml`;
+      const roleElement = name => `<Role>${name}</Role>`;
+      const defaultElement = roleElement("One_DefaultRole");
+      assert.ok(configuration.includes(defaultElement));
+      const defaultRole = await fs.readFile(path.join(source, defaultRolePath), "utf8");
+      const applyRole = async (group, companion) => {
+        const applying = command();
+        await choose();
+        await click(labels.apply, labels.partial, selected, group, "Configuration.xml", companion);
+        await applying;
+      };
+      const addedConfiguration = configuration.replace(defaultElement, defaultElement + roleElement(addedName));
+      const addedRole = defaultRole.replace(/(<Role uuid=")[0-9a-f-]+"/i, (_, prefix) => `${prefix}3ac47fa0-81b3-499e-8292-8c8af7d5dd24"`)
+        .replaceAll("One_DefaultRole", addedName);
+      await fs.writeFile(configurationPath, addedConfiguration);
+      await fs.writeFile(path.join(source, rolePathFor(addedName)), addedRole);
+      await applyRole(`${labels.roleAdded} ${addedName}`, rolePathFor(addedName));
+      await fs.writeFile(configurationPath, addedConfiguration.replace(roleElement(addedName), roleElement(renamedName)));
+      await fs.writeFile(path.join(source, rolePathFor(renamedName)), addedRole.replaceAll(addedName, renamedName));
+      await fs.unlink(path.join(source, rolePathFor(addedName)));
+      await applyRole(`${labels.roleRenamed} ${addedName} → ${renamedName}`, rolePathFor(renamedName));
+      await fs.writeFile(configurationPath, configuration);
+      await fs.unlink(path.join(source, rolePathFor(renamedName)));
+      await applyRole(`${labels.roleRemoved} ${renamedName}`, defaultRolePath);
       const initial = await snapshot();
 
       const module = path.join(member, "src", "Ext", "ManagedApplicationModule.bsl");
@@ -242,7 +279,7 @@ esac
       }
       await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
         passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
-        extension_apply: true, role_xml: true, debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
+        extension_apply: true, role_xml: true, structural_role: true, debug_after_apply: true, composite_cancelled: true, composite_stale: true, evaluate: "333",
       }));
       return;
     }
