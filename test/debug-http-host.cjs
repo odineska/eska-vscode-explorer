@@ -24,6 +24,15 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "extensions") {
+    const files = native.extensions.map(directory =>
+      path.join(path.dirname(root), path.basename(directory), "src", "Ext", "ManagedApplicationModule.bsl"));
+    await runExtensions(folder, module, files, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, configuration_and_extensions: true,
+    }));
+    return;
+  }
   if (native.scenario === "auto-types") {
     await runAutoAttach(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -109,6 +118,49 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runExtensions(folder, base, files, until) {
+  const breakpoint = (uri, line) => new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)));
+  const points = [breakpoint(base, 3), ...files.map(file => breakpoint(vscode.Uri.file(file), 4))];
+  const stops = [];
+  let session;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) { if (message.event === "stopped") stops.push(message.body.threadId); } };
+    },
+  });
+  vscode.debug.addBreakpoints(points);
+  const frame = async () => {
+    const threadId = await until(() => stops.shift(), "next application breakpoint");
+    const stack = await session.customRequest("stackTrace", { threadId });
+    return { threadId, top: stack.stackFrames[0] };
+  };
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP application", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const initial = await frame();
+    assert.equal(initial.top.source.path, base.fsPath);
+    assert.equal(initial.top.line, 3);
+    await session.customRequest("continue", { threadId: initial.threadId });
+    const values = new Map(files.map((file, index) => [file, ["111", "222"][index]]));
+    for (const _ of files) {
+      const { threadId, top } = await frame();
+      assert.equal(top.line, 4);
+      const expected = values.get(top.source.path);
+      assert.ok(expected, top.source.path);
+      assert.equal((await session.customRequest("evaluate", { frameId: top.id, expression: "Значение", context: "hover" })).result, expected);
+      values.delete(top.source.path);
+      await session.customRequest("continue", { threadId });
+    }
+    assert.equal(values.size, 0);
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints(points);
+  }
+}
 
 async function runPaging(folder, module, until) {
   const { connectWorkbench } = require("./query-constructor-dom.cjs");

@@ -40,6 +40,13 @@ try {
     const state = join(fixture.root, ".eska");
     await mkdir(state, { recursive: true });
     await cp(native.settings, join(state, "settings_local.toml"));
+    if (native.scenario === "extensions") {
+      const members = native.extensions.map(directory => basename(directory));
+      await Promise.all(native.extensions.map((directory, index) => cp(directory, join(root, members[index]), { recursive: true })));
+      await writeFile(join(fixture.root, "eska.toml"), "[project]\nname='base'\ntype='configuration'\n");
+      const extensions = members.map(name => "{ path = " + JSON.stringify(name) + " }").join(", ");
+      await writeFile(join(root, "eska.toml"), '[workspace.members.debug]\nconfiguration="project"\nextensions=[' + extensions + ']\n');
+    }
   }
   if (["query-layout-host.cjs", "query-compact-performance-host.cjs"].includes(basename(suite))) {
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);

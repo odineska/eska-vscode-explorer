@@ -106,6 +106,8 @@ Use **Select 1C Auto-Attach Types** to change which new targets join the
 active session automatically. To set the initial types for future sessions,
 enable **Customize automatic attachment** in the profile's Project Settings.
 An empty custom list allows manual selection only.
+In a workspace, breakpoints and stack navigation use the selected project's
+application from `eska.toml`, including its configuration and extensions.
 Production prompts for a source decision after checking the
 configured Git remote. Evaluate can modify infobase data.
 
