@@ -34,6 +34,7 @@ interface Session {
   observers: vscode.Disposable[]; alignment?: InlayAlignment;
 }
 const CONFLICTING_EXTENSION = "elishevkirill.bsl-analyzer-lsp";
+const INITIALIZE_TIMEOUT_MS = 20_000;
 const SHARED_READS = new Set(["textDocument/documentSymbol", "textDocument/inlayHint"]);
 
 /** Formatting is owned by eska-fmt; no analyzer formatter is registered, including dynamic and on-type routes. */
@@ -366,6 +367,7 @@ export class LanguageService implements vscode.Disposable {
     if (manual) { this.wanted = true; this.manualWanted = true; }
     this.refreshConflict(false);
     const revision = ++this.revision;
+    this.clearSessionFeedback();
     this.invalidateModel(); this.releaseConfiguration(); this.delayedDiagnostics.clear();
     clearTimeout(this.configurationTimer); this.configurationTimer = undefined; this.checkRequested = false;
     this.scope?.abort();
@@ -402,6 +404,7 @@ export class LanguageService implements vscode.Disposable {
   stop(detail?: string, retainLibraryObservation = false): Promise<void> {
     if (!retainLibraryObservation) this.clearLibraryObservation();
     ++this.revision; this.scope?.abort(); this.scope = undefined;
+    this.clearSessionFeedback();
     this.invalidateModel(); this.releaseConfiguration(); this.delayedDiagnostics.clear();
     clearTimeout(this.configurationTimer); this.configurationTimer = undefined; this.checkRequested = false;
     if (this.refreshConflict(false)) this.showConflictState();
@@ -549,7 +552,12 @@ export class LanguageService implements vscode.Disposable {
       this.protectSources(context.sources.filter(source => !state.session.projects.some(project => nativePath(project.rootPath) === source.root))
         .map(source => source.root));
       if (!this.current(revision, signal)) return;
-      await client.start();
+      const initialized = await cancellableChoice(client.start().then(() => true),
+        AbortSignal.any([signal, AbortSignal.timeout(INITIALIZE_TIMEOUT_MS)]));
+      if (!initialized) {
+        if (signal.aborted) return;
+        throw new ToolFailure("probe", "language-initialize-timeout");
+      }
       if (!this.current(revision, signal) || (observation && observation.version !== 0)) return;
       if (client.initializeResult?.serverInfo?.name !== "bsl-analyzer" || client.initializeResult.serverInfo.version !== info.version) throw new ToolFailure("incompatible", "lsp-server-info");
       await this.context.workspaceState.update(this.selectionKey(state), context.name ?? undefined);
@@ -670,18 +678,26 @@ export class LanguageService implements vscode.Disposable {
     this.queryLanguage?.changed();
   }
 
+  /** The invalidated session must lose its visible results before any asynchronous teardown. */
+  private clearSessionFeedback(): void {
+    this.session?.progress?.dispose();
+    this.session?.client?.diagnostics?.clear();
+  }
+
   /** Release resources in lease order even if the protocol peer ignores its normal shutdown request. */
   private async cleanup(): Promise<void> {
     const session = this.session;
     if (!session) return;
     session.alignment?.dispose();
-    await this.queryLanguage?.detach();
     session.configurationWatcher?.dispose();
-    session.progress?.dispose();
+    this.clearSessionFeedback();
     for (const observer of session.observers) observer.dispose();
-    await session.edits?.shutdown();
-    try { await session.client?.stop(4000); } catch { this.log("language_shutdown_failed", "warn"); }
-    await session.owner?.stop();
+    // A query request may still be awaiting the old analyzer. Reap the process
+    // concurrently so cleanup can drain projections even if the peer stops reading.
+    const shuttingDown = session.client?.stop(4000).catch(() => this.log("language_shutdown_failed", "warn"));
+    const detaching = Promise.allSettled([this.queryLanguage?.detach(), session.edits?.shutdown()]);
+    const [owner] = await Promise.allSettled([session.owner?.stop(), shuttingDown, detaching]);
+    if (owner.status === "rejected") throw owner.reason;
     await session.client?.dispose(1000).catch(() => this.log("language_client_dispose_failed", "warn"));
     if (this.connection.state === session.state) {
       await this.connection.analyzerRequest("analyzer/release", { leaseId: session.lease }).catch(error => { if (!(error instanceof ExplorerError && error.domain === "unknown_analyzer_lease")) this.log(`language_lease_release_failed ${String(error)}`, "warn"); });
@@ -743,6 +759,7 @@ export class LanguageService implements vscode.Disposable {
     if (this.refreshConflict()) { this.showConflictState(); return; }
     const library = libraryFailure(error);
     const detail = library ? this.text("languageLibraryFailed", library.name, library.configuration)
+      : code === "language-initialize-timeout" ? this.text("languageInitializeTimeout")
       : code === "migration_required" ? this.text("languageMigrationRequired") : code === "managed_conflict" ? this.text("languageManagedConflict") : this.text("languageFailed", code);
     this.tooling.analyzerState("error", detail);
     void vscode.window.showErrorMessage(detail);

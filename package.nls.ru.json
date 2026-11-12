@@ -41,7 +41,7 @@
   "recoverProjectInstallation": "Восстановить установку project-компонента",
   "recoverAnalyzerInstallation": "Восстановить установку Analyzer",
   "languageFeatures": "Запускать собственный BSL-клиент Explorer для выбранного приложения ESKA. При отключении базовая подсветка сохраняется.",
-  "restartLanguage": "Перезапустить языковой сервис BSL",
+  "restartLanguage": "Перезапустить анализатор BSL и проверить код заново",
   "selectAnalysisContext": "Выбрать приложение для анализа",
   "queryEditBsl": "Редактировать запрос отдельно",
   "queryApply": "Применить запрос к модулю",

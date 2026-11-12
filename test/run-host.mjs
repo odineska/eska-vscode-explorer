@@ -138,7 +138,7 @@ try {
 
   }
   // These scenarios exercise language lifecycle, not concurrent mutation of XML during workspace/open.
-  if (["language-host.cjs", "language-cancellation-host.cjs", "bundle-update-host.cjs", "inlay-alignment-host.cjs"].includes(basename(suite))) {
+  if (["language-host.cjs", "language-cancellation-host.cjs", "language-restart-host.cjs", "bundle-update-host.cjs", "inlay-alignment-host.cjs"].includes(basename(suite))) {
     const source = await import("./language-fixture.mjs");
     fixture.languageSource = basename(suite) === "inlay-alignment-host.cjs" ? await source.createInlaySource(fixture) : await source.createLanguageSource(fixture);
   }
