@@ -45,6 +45,7 @@
   "configureProject": "Configure Project",
   "runTest": "Run Test Infobase",
   "applyTest": "Update Test Infobase",
+  "removeExtensionTest": "Remove Extension from Test Infobase",
   "applyAndRunTest": "Update Test Infobase and Launch 1C",
   "applyAndDebugTest": "Update Test Infobase and Launch 1C with Debugging",
   "applyApplicationTest": "Update Application in Test",

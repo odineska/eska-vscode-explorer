@@ -97,6 +97,12 @@ workspace root and select the extension project. ESKA uses the main project's
 `test` profile. The confirmation identifies the extension by name and UUID.
 Changes to existing BSL files can be applied partially.
 
+To remove an installed extension, run **ESKA Explorer: Remove Extension from
+Test Infobase** from the Command Palette. Choose the extension project and
+review the test infobase, extension name and UUID. Confirm explicitly. Deletion
+can permanently remove data owned by the extension. An installed dependent
+from the selected workspace application blocks removal.
+
 The same menu offers **Update Test Infobase and Launch 1C** and **Update Test
 Infobase and Launch 1C with Debugging**. Confirm the update to launch against the
 reviewed test target. If it is already up to date, the client starts immediately.

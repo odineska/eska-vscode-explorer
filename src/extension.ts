@@ -168,6 +168,10 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       const project = await this.runtimeProject(entry);
       if (project) await action(project);
     }));
+    this.disposables.push(vscode.commands.registerCommand("eska.explorer.removeExtensionTest", async () => {
+      const project = await this.runtimeProject(undefined, undefined, undefined, "extension");
+      if (project) await this.projectRuntime.removeExtension(project);
+    }));
     for (const [command, after] of [
       ["applyApplicationTest", undefined],
       ["applyApplicationAndRunTest", "run"],
@@ -890,7 +894,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if (project) this.projectSettings.show(project.root, project.executable, project.externalProcessing);
   }
 
-  private async runtimeProject(entry?: Element, root?: string, folder?: string): Promise<RuntimeProject | undefined> {
+  private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {
     if (!this.tree) await this.connect(false);
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
@@ -898,7 +902,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
     if (root && !project) return undefined;
     if (!project) {
-      const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info)
+      const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info) && (!type || item.info.type === type)
         && (folder === undefined || folder === nativePath(item.info.rootPath)
           || relativeFile(folder, nativePath(item.info.rootPath)) !== undefined));
       if (projects.length === 1) project = projects[0];

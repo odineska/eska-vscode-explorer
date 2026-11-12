@@ -63,6 +63,7 @@ const errors = new Map<string, MessageKey>([
   ["extension_unavailable", "runtimeApplyExtensionUnavailable"],
   ["extension_not_installed", "runtimeApplyExtensionNotInstalled"],
   ["extension_identity_mismatch", "runtimeApplyExtensionIdentity"],
+  ["extension_has_dependent", "runtimeExtensionHasDependent"], ["remove_failed", "runtimeExtensionRemoveFailed"],
 ]);
 
 /** Native commands resolve only project identity. The platform tools own every operation and policy check. */
@@ -204,7 +205,7 @@ export class ProjectRuntime implements vscode.Disposable {
     const detail = target + paths.slice(0, 40).join("\n") + (paths.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(paths.length - 40)) : "");
     if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
     const confirmation = plan.confirmation;
-    const { result: applied, cancelled } = await this.executeApply(project, build, [
+    const { result: applied, cancelled } = await this.executeWrite(project, build, [
       "apply", ...(initialize ? ["--initialize"] : []), "--confirm", confirmation, "--format", "json",
     ]);
     if (cancelled) return;
@@ -221,6 +222,45 @@ export class ProjectRuntime implements vscode.Disposable {
     await this.continueAfterApply(after, confirmed);
   }
 
+  async removeExtension(project: RuntimeProject): Promise<void> {
+    const build = await this.tool(project, "build", "eska-build");
+    if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
+    if (!await this.saveSources([project.root])) return;
+    const args = ["extension", "remove", "--format", "json"];
+    const result = await this.invoke(project, build, args);
+    const plan = isRecord(result) && result.schema_version === 1 && result.kind === "extension_remove"
+      && result.status === "preview" && isRecord(result.plan) ? result.plan : undefined;
+    const extension = isRecord(plan?.extension) ? plan.extension : undefined;
+    if (!plan || typeof plan.confirmation !== "string" || !/^[0-9a-f]{64}$/.test(plan.confirmation)
+      || typeof plan.target !== "string" || typeof plan.platform_version !== "string"
+      || typeof extension?.name !== "string" || typeof extension.uuid !== "string"
+      || !(plan.extension_generation === null || typeof plan.extension_generation === "string")) {
+      this.failure(result);
+      return;
+    }
+    const recovery = plan.extension_generation === null;
+    const title = this.text(recovery ? "runtimeExtensionFinalize" : "runtimeExtensionRemoveData");
+    const accept = this.text(recovery ? "runtimeExtensionFinalizeConfirm" : "runtimeExtensionRemoveConfirm");
+    const detail = [
+      `${plan.target} (${plan.platform_version})`,
+      `${this.text("runtimeApplyExtension")} ${extension.name} (${extension.uuid})`,
+      ...(typeof plan.extension_generation === "string" ? [plan.extension_generation] : []),
+    ].join("\n");
+    if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
+    if (this.dirtySources([project.root]).length) {
+      void vscode.window.showErrorMessage(this.text("runtimeSourcesUnsaved"));
+      return;
+    }
+    const { result: removed, cancelled } = await this.executeWrite(project, build,
+      [...args, "--confirm", plan.confirmation, "--force"], "runtimeExtensionRemoving");
+    if (cancelled) return;
+    if (!isRecord(removed) || removed.kind !== "extension_remove" || removed.status !== "removed") {
+      this.failure(removed);
+      return;
+    }
+    void vscode.window.showInformationMessage(this.text("runtimeExtensionRemoved"));
+  }
+
   async applyApplication(project: RuntimeProject, after?: AfterApply, current?: string): Promise<void> {
     const application = await this.chooseApplication(project, current);
     if (!application || !vscode.workspace.isTrusted) return;
@@ -228,7 +268,7 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
     const args = ["apply", "--application", application, "--format", "json"];
     const preview = async () => {
-      const { result, cancelled } = await this.executeApply(project, build, args, "runtimeApplicationPlanning");
+      const { result, cancelled } = await this.executeWrite(project, build, args, "runtimeApplicationPlanning");
       return cancelled ? null : result;
     };
     let result = await preview();
@@ -280,7 +320,7 @@ export class ProjectRuntime implements vscode.Disposable {
       void vscode.window.showErrorMessage(this.text("runtimeStale"));
       return;
     }
-    const { result: applied, cancelled } = await this.executeApply(project, build, [...args, "--confirm", result.plan.confirmation]);
+    const { result: applied, cancelled } = await this.executeWrite(project, build, [...args, "--confirm", result.plan.confirmation]);
     const outcomes = isRecord(applied) && applied.kind === "application_apply" && Array.isArray(applied.outcomes) ? applied.outcomes : [];
     const complete = outcomes.length === parts.length && outcomes.every((outcome, index) => isRecord(outcome)
       && outcome.member === parts[index]?.member && (outcome.status === "applied" || outcome.status === "unchanged"));
@@ -368,7 +408,7 @@ export class ProjectRuntime implements vscode.Disposable {
     return true;
   }
 
-  private executeApply(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
+  private executeWrite(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
     return vscode.window.withProgress({ title: this.text(title),
       location: vscode.ProgressLocation.Notification, cancellable: true }, async (progress, cancel) => {
       const abort = new AbortController();
@@ -536,6 +576,11 @@ export class ProjectRuntime implements vscode.Disposable {
   private failureMessage(result: unknown): string {
     const error = isRecord(result) && isRecord(result.error) ? result.error : undefined;
     const key = typeof error?.code === "string" ? errors.get(error.code) : undefined;
+    if (key === "runtimeExtensionHasDependent") {
+      return typeof error?.dependent === "string" && error.dependent.length > 0
+        ? this.text(key, error.dependent)
+        : this.text("runtimeOperationFailed");
+    }
     if (key === "runtimeApplyExtensionNotInstalled") {
       return typeof error?.extension === "string" && error.extension.length > 0
         ? this.text(key, error.extension)

@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 const vscode = require("vscode");
 const { connectWorkbench } = require("./query-constructor-dom.cjs");
 
@@ -10,6 +10,8 @@ exports.run = async function () {
   const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
   const labels = vscode.env.language.startsWith("ru") ? {
     extension: "Расширение",
+    removal: "Удалить расширение",
+    removalWarning: "Данные расширения могут быть безвозвратно потеряны.",
     missingExtension: "Расширение Two отсутствует в тестовой базе.",
     application: "Обновить приложение debug в тестовой базе?",
     upToDate: "Без изменений",
@@ -40,6 +42,8 @@ exports.run = async function () {
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     extension: "Extension",
+    removal: "Remove Extension",
+    removalWarning: "Data owned by the extension may be lost permanently.",
     missingExtension: "Extension Two is not installed in the test infobase.",
     application: "Update the application debug in the test infobase?",
     upToDate: "Up to date",
@@ -229,6 +233,29 @@ esac
       await initialize;
 
       const source = path.join(member, "src");
+      if (process.env.ESKA_HOST_EXTENSION_REMOVE === "1") {
+        const removal = () => vscode.commands.executeCommand("eska.explorer.removeExtensionTest");
+        const baseline = await snapshot();
+        const cancellation = removal();
+        await choose();
+        await click(labels.cancel, labels.removalWarning, selected, "8.3.27.2342");
+        await cancellation;
+        assert.equal(await snapshot(), baseline);
+        const removing = removal();
+        await choose();
+        await click(labels.removal, labels.removalWarning, selected, "8.3.27.2342");
+        await removing;
+        const files = await fs.readdir(state);
+        assert.equal(files.some(name => name.startsWith("apply-") && /\.(?:json|pending)$/u.test(name)), false);
+        const inspect = spawnSync(native.build, ["--project-dir", member, "extension", "remove", "--format", "json"], { encoding: "utf8" });
+        assert.equal(inspect.status, 1, inspect.stderr);
+        assert.deepEqual(JSON.parse(inspect.stdout).error, { code: "extension_not_installed", extension: "One" });
+        await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+          passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+          extension_removal: true, cancel_preserved_baseline: true,
+        }));
+        return;
+      }
       if (borrowedPicture) {
         const descriptor = "CommonPictures/ProbeIcon.xml";
         const packagePath = "CommonPictures/ProbeIcon/Ext/Picture.xml";
