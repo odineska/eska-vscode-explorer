@@ -208,9 +208,10 @@ esac
       return;
     }
     if (native.scenario === "apply-extension-debug") {
-      const name = path.basename(native.extensions[0]);
+      const borrowedPicture = process.env.ESKA_HOST_BORROWED_PICTURE === "1";
+      const name = path.basename(native.extensions[borrowedPicture ? 1 : 0]);
       const member = path.join(path.dirname(root), name);
-      const selected = labels.extension + " One (";
+      const selected = labels.extension + (borrowedPicture ? " ASecond (" : " One (");
       const choose = async () => {
         const point = await until(() => workbench.evaluate(`(() => {
           const row = [...document.querySelectorAll('.quick-input-list .monaco-list-row')]
@@ -228,6 +229,42 @@ esac
       await initialize;
 
       const source = path.join(member, "src");
+      if (borrowedPicture) {
+        const descriptor = "CommonPictures/ProbeIcon.xml";
+        const packagePath = "CommonPictures/ProbeIcon/Ext/Picture.xml";
+        const svg = "CommonPictures/ProbeIcon/Ext/Picture/Picture.svg";
+        const original = await fs.readFile(path.join(source, descriptor), "utf8");
+        const originalPackage = await fs.readFile(path.join(source, packagePath));
+        const originalSvg = await fs.readFile(path.join(source, svg), "utf8");
+        const partial = async (...details) => {
+          const updating = command();
+          await choose();
+          await click(labels.apply, labels.partial, selected, ...details);
+          await updating;
+        };
+        assert.ok(originalSvg.includes("#2050EE"));
+        await fs.writeFile(path.join(source, svg), originalSvg.replace("#2050EE", "#A820E0"));
+        await partial(svg, `${labels.companion}  ${packagePath}`);
+        await fs.unlink(path.join(source, svg));
+        await fs.unlink(path.join(source, packagePath));
+        await partial(svg, packagePath, `${labels.companion}  ${descriptor}`);
+        const inherited = original.replace(/<InternalInfo>[\s\S]*?<\/InternalInfo>/u, "<InternalInfo/>");
+        assert.notEqual(inherited, original);
+        await fs.writeFile(path.join(source, descriptor), inherited);
+        await partial(descriptor);
+        await fs.writeFile(path.join(source, descriptor), original);
+        await fs.writeFile(path.join(source, packagePath), originalPackage);
+        await fs.writeFile(path.join(source, svg), originalSvg);
+        await partial(descriptor, packagePath, svg);
+
+        const final = JSON.parse(execFileSync(native.build, ["--project-dir", member, "apply", "--format", "json"]));
+        assert.equal(final.plan.mode, "unchanged");
+        await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+          passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+          borrowed_picture: ["replace", "clear", "inherit", "restore"],
+        }));
+        return;
+      }
       const configurationPath = path.join(source, "Configuration.xml");
       const configuration = await fs.readFile(configurationPath, "utf8");
       const addedName = "One_ProbeRole";
