@@ -40,6 +40,14 @@ try {
     const state = join(fixture.root, ".eska");
     await mkdir(state, { recursive: true });
     await cp(native.settings, join(state, "settings_local.toml"));
+    if (native.scenario === "epf-server" || native.scenario === "epf-server-reload") {
+      const base = join(root, "base");
+      await mkdir(base);
+      await cp(native.configuration, join(base, "src"), { recursive: true });
+      await writeFile(join(base, "eska.toml"), "[project]\nname='base'\ntype='configuration'\n");
+      await writeFile(join(root, "eska.toml"),
+        '[workspace.members.debug]\nconfiguration="base"\nexternal_objects=["project"]\n');
+    }
     if (native.scenario === "extensions") {
       const members = native.extensions.map(directory => basename(directory));
       await Promise.all(native.extensions.map((directory, index) => cp(directory, join(root, members[index]), { recursive: true })));

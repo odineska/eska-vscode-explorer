@@ -26,6 +26,16 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "epf-server" || native.scenario === "epf-server-reload") {
+    const external = vscode.Uri.file(path.join(source, "EskaEpfWire/Ext/ObjectModule.bsl"));
+    const caller = vscode.Uri.file(path.join(path.dirname(root), "base/src/CommonModules/EskaEpfLoader/Ext/Module.bsl"));
+    const value = await runServerProcessing(folder, caller, external, until, native.reload);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, epf_server_attach: true,
+      configuration_and_external_frames: true, evaluate: value, epf_reload: !!native.reload,
+    }));
+    return;
+  }
   if (["epf-test", "epf-prod", "epf-attach"].includes(native.scenario)) {
     const form = vscode.Uri.file(path.join(source, "EskaEpfWire/Forms/ProbeForm/Ext/Form/Module.bsl"));
     const production = native.scenario === "epf-prod";
@@ -628,5 +638,88 @@ async function runExternalProcessing(folder, module, until, { production, attach
     workbench?.close();
     tracker.dispose();
     vscode.debug.removeBreakpoints([point]);
+  }
+}
+
+async function runServerProcessing(folder, caller, external, until, reload) {
+  const point = new vscode.SourceBreakpoint(new vscode.Location(caller, new vscode.Position(2, 0)));
+  const externalPoint = new vscode.SourceBreakpoint(new vscode.Location(external, new vscode.Position(2, 0)));
+  const stops = [];
+  let session;
+  let failure;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) {
+        if (message.event === "stopped") stops.push(message.body);
+        if (message.type === "response" && message.success === false) failure = message.message;
+      } };
+    },
+  });
+  const stopped = () => until(() => {
+    assert.equal(failure, undefined);
+    return stops.shift();
+  }, "server EPF stopped");
+  const frames = async threadId => (await session.customRequest("stackTrace", { threadId })).stackFrames;
+  const step = async (command, threadId) => {
+    await session.customRequest(command, { threadId });
+    const event = await stopped();
+    assert.equal(event.threadId, threadId);
+    return frames(threadId);
+  };
+  vscode.debug.addBreakpoints([point]);
+  try {
+    const attach = async () => assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA server EPF", type: "eska-debug", request: "attach", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const evaluate = async frame => (await session.customRequest("evaluate", { frameId: frame.id, expression: "Результат" })).result;
+    await attach();
+    const { threadId, reason } = await stopped();
+    assert.equal(reason, "breakpoint");
+    assert.equal((await frames(threadId))[0].source.path, caller.fsPath);
+    const entered = await step("stepIn", threadId);
+    assert.equal(entered[0].source.path, external.fsPath);
+    assert.equal(entered[1].source.path, caller.fsPath);
+    const [inside] = await step("next", threadId);
+    assert.equal(inside.source.path, external.fsPath);
+    assert.equal(await evaluate(inside), "42");
+    vscode.debug.removeBreakpoints([point]);
+    await session.customRequest("setBreakpoints", { source: { path: caller.fsPath }, breakpoints: [] });
+    let [returned] = await step("stepOut", threadId);
+    assert.equal(returned.source.path, caller.fsPath);
+    if (returned.line === 3) [returned] = await step("next", threadId);
+    assert.equal(returned.line, 4);
+    assert.equal(await evaluate(returned), "42");
+    if (!reload) return "42";
+
+    vscode.debug.addBreakpoints([point]);
+    await session.customRequest("setBreakpoints", { source: { path: caller.fsPath }, breakpoints: [{ line: 3 }] });
+    await fs.writeFile(reload.marker, "");
+    await session.customRequest("continue", { threadId });
+    const reloaded = await stopped();
+    const [unknown, callerFrame] = await step("stepIn", reloaded.threadId);
+    assert.equal(unknown.source, undefined);
+    assert.equal(callerFrame.source.path, caller.fsPath);
+    const [replaced] = await step("next", reloaded.threadId);
+    assert.equal(await evaluate(replaced), "84");
+    vscode.debug.removeBreakpoints([point]);
+    await session.customRequest("continue", { threadId: reloaded.threadId });
+    await vscode.debug.stopDebugging(session);
+    await until(() => !vscode.debug.activeDebugSession, "old EPF debug session detached");
+
+    await fs.copyFile(reload.module, external.fsPath);
+    await fs.copyFile(reload.settings, path.join(folder.uri.fsPath, ".eska", "settings_local.toml"));
+    vscode.debug.addBreakpoints([externalPoint]);
+    await attach();
+    const rebound = await stopped();
+    const [current] = await frames(rebound.threadId);
+    assert.equal(current.source.path, external.fsPath);
+    assert.equal(current.line, 3);
+    assert.equal(await evaluate(current), "84");
+    return "84";
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point, externalPoint]);
   }
 }
