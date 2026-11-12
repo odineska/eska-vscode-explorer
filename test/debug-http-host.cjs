@@ -63,6 +63,14 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "multi-logpoint") {
+    await runMultiLogpoint(folder, module, until, native);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, multi_logpoint: true,
+      continued_other_thread: true, stale_values_rejected: true,
+    }));
+    return;
+  }
   if (native.scenario === "multi-step") {
     await runMultiStep(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -836,6 +844,65 @@ async function runMultiStep(folder, module, until) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints([point]);
+  }
+}
+
+async function runMultiLogpoint(folder, module, until, native) {
+  const location = line => new vscode.Location(module, new vscode.Position(line - 1, 0));
+  const points = [
+    new vscode.SourceBreakpoint(location(16)),
+    new vscode.SourceBreakpoint(location(11), true, undefined, undefined, "ESKA multi-target {Значение}"),
+  ];
+  const events = [];
+  let session;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) { if (message.type === "event") events.push(message); } };
+    },
+  });
+  vscode.debug.addBreakpoints(points);
+  const frame = async threadId => (await session.customRequest("stackTrace", { threadId })).stackFrames[0];
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP multi-logpoint", type: "eska-debug", request: "attach", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const configured = await session.customRequest("setBreakpoints", {
+      source: { path: module.fsPath },
+      breakpoints: [{ line: 16 }, { line: 11, logMessage: "ESKA multi-target {Значение}" }],
+    });
+    assert.ok(configured.breakpoints.every(point => point.verified));
+    const { targets } = await session.customRequest("eska/listDebugTargets");
+    const external = targets.find(target => target.kind === "ManagedClient");
+    if (external) await session.customRequest("eska/attachDebugTarget", { id: external.id });
+    const stop = await until(() => events.find(event => event.event === "stopped"), "external client stopped");
+    const { threadId } = stop.body;
+    const oldFrame = await frame(threadId);
+    assert.equal(oldFrame.line, 16);
+    const result = await session.customRequest("evaluate", {
+      frameId: oldFrame.id, expression: 'Новый Структура("Поле", Значение)',
+    });
+    const child = await session.customRequest("variables", { variablesReference: result.variablesReference });
+    assert.equal(child.variables[0].value, "41");
+    await fs.writeFile(path.resolve(native.source, "../..", "start-log-client"), "");
+    const output = await until(() => events.find(event => event.event === "output" &&
+      event.body.output.includes("ESKA multi-target 22")), "second client logged the value").catch(error => {
+      throw new Error(`${error.message}: ${JSON.stringify(events.filter(event => ["output", "thread", "stopped"].includes(event.event)))}`);
+    });
+    const resumed = await until(() => events.find(event => event.event === "continued" &&
+      event.body.threadId === threadId), "external client resumed");
+    assert.ok(resumed.seq > output.seq);
+    assert.equal(resumed.body.allThreadsContinued, false);
+    await assert.rejects(session.customRequest("scopes", { frameId: oldFrame.id }));
+    await assert.rejects(session.customRequest("variables", { variablesReference: result.variablesReference }));
+    await until(() => events.find(event => event.event === "stopped" &&
+      event.body.threadId === threadId && event.seq > resumed.seq), "external client stopped again");
+    assert.notEqual((await frame(threadId)).id, oldFrame.id);
+    assert.equal(events.filter(event => event.event === "continued" && event.body.threadId === threadId).length, 1);
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints(points);
   }
 }
 
