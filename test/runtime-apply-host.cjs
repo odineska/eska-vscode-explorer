@@ -10,6 +10,7 @@ exports.run = async function () {
   const native = JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE);
   const labels = vscode.env.language.startsWith("ru") ? {
     extension: "Расширение",
+    missingExtension: "Расширение Two отсутствует в тестовой базе.",
     application: "Обновить приложение debug в тестовой базе?",
     upToDate: "Без изменений",
     partialImport: "Частичный импорт",
@@ -39,6 +40,7 @@ exports.run = async function () {
     conflict: "изменились и сохранённые исходники, и поколение тестовой базы",
   } : {
     extension: "Extension",
+    missingExtension: "Extension Two is not installed in the test infobase.",
     application: "Update the application debug in the test infobase?",
     upToDate: "Up to date",
     partialImport: "Partial import",
@@ -131,6 +133,18 @@ exports.run = async function () {
           });
         })()`), text.join(", "));
       };
+      if (process.env.ESKA_HOST_EXPECT_ABSENT_EXTENSION === "1") {
+        const preview = execute(false);
+        await choose();
+        await preview;
+        await until(() => workbench.evaluate(`[...document.querySelectorAll('.notification-list-item')].some(
+          item => item.textContent.includes(${JSON.stringify(labels.missingExtension)}))`), "the absent extension is named in the notification");
+        await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+          passed: true, suite: "runtime-apply", vscode: vscode.version, locale: vscode.env.language,
+          absent_extension: "Two",
+        }));
+        return;
+      }
       const initialize = execute(false);
       await choose();
       await click(labels.review, "base", "ext-two", "ext-one");

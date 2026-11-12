@@ -61,6 +61,7 @@ const errors = new Map<string, MessageKey>([
   ["extension_descriptor_invalid", "runtimeApplyExtensionDescriptor"],
   ["extension_ambiguous", "runtimeApplyExtensionAmbiguous"],
   ["extension_unavailable", "runtimeApplyExtensionUnavailable"],
+  ["extension_not_installed", "runtimeApplyExtensionNotInstalled"],
   ["extension_identity_mismatch", "runtimeApplyExtensionIdentity"],
 ]);
 
@@ -292,7 +293,7 @@ export class ProjectRuntime implements vscode.Disposable {
         return key ? [`${outcome.member} — ${this.text(key)}`] : [];
       });
       if (!cancelled && !statuses.length) { this.failure(applied); return; }
-      const title = this.text(cancelled ? "runtimeApplicationCancelled" : this.failureKey(applied));
+      const title = cancelled ? this.text("runtimeApplicationCancelled") : this.failureMessage(applied);
       await vscode.window.showWarningMessage(title, { modal: true, detail: [...statuses, this.text("runtimeApplicationRetry")].join("\n") });
       return;
     }
@@ -532,13 +533,19 @@ export class ProjectRuntime implements vscode.Disposable {
     return findTool(settings.get<string>(`${key}Executable`, name), name, dirname(project.executable)).catch(() => undefined);
   }
 
-  private failureKey(result: unknown): MessageKey {
-    const code = isRecord(result) && isRecord(result.error) ? result.error.code : undefined;
-    return (typeof code === "string" ? errors.get(code) : undefined) ?? "runtimeOperationFailed";
+  private failureMessage(result: unknown): string {
+    const error = isRecord(result) && isRecord(result.error) ? result.error : undefined;
+    const key = typeof error?.code === "string" ? errors.get(error.code) : undefined;
+    if (key === "runtimeApplyExtensionNotInstalled") {
+      return typeof error?.extension === "string" && error.extension.length > 0
+        ? this.text(key, error.extension)
+        : this.text("runtimeApplyExtensionUnavailable");
+    }
+    return this.text(key ?? "runtimeOperationFailed");
   }
 
   private failure(result: unknown): void {
-    void vscode.window.showErrorMessage(this.text(this.failureKey(result)));
+    void vscode.window.showErrorMessage(this.failureMessage(result));
   }
 
   private text(key: MessageKey, ...values: string[]): string { return message(vscode.env.language, key, ...values); }
