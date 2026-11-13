@@ -57,6 +57,13 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "remote-attach") {
+    await runRemoteAttach(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, remote_attach: true, evaluate: "42",
+    }));
+    return;
+  }
   if (native.scenario === "transport-loss") {
     const result = await runTransportLoss(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -886,6 +893,61 @@ async function runParity(folder, module, scenario, until) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints(breakpoints);
+  }
+}
+
+async function runRemoteAttach(folder, module, until) {
+  const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(6, 0)));
+  const messages = [];
+  let session;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) { messages.push(message); } };
+    },
+  });
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  vscode.debug.addBreakpoints([breakpoint]);
+  try {
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP remote attach", type: "eska-debug", request: "attach", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const response = command => messages.find(message => message.type === "response" && message.command === command);
+    await until(() => response("eska/listDebugTargets")?.body?.targets.some(target => target.kind === "ManagedClient"),
+      "remote managed client listed");
+    await until(async () => {
+      if (response("eska/attachDebugTarget")?.success) return true;
+      await workbench.evaluate(`[...document.querySelectorAll(".quick-input-widget .monaco-list-row")]
+        .find(row => row.textContent.includes("ManagedClient"))?.click()`);
+      await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+      return false;
+    }, "remote managed client selected");
+    const stops = () => messages.filter(message => message.event === "stopped");
+    const first = await until(() => stops()[0], "remote breakpoint");
+    const { threadId } = first.body;
+    assert.equal(first.body.reason, "breakpoint");
+    const top = async () => (await session.customRequest("stackTrace", { threadId })).stackFrames[0];
+    const frame = await top();
+    assert.equal(frame.source.path, module.fsPath);
+    assert.equal(frame.line, 7);
+    const { scopes } = await session.customRequest("scopes", { frameId: frame.id });
+    const { variables } = await session.customRequest("variables", { variablesReference: scopes[0].variablesReference });
+    assert.ok(variables.some(value => value.name === "A" && value.value === "41"));
+    const result = await session.customRequest("evaluate", { frameId: frame.id, expression: "A + 1" });
+    assert.equal(result.result, "42");
+    await session.customRequest("next", { threadId });
+    await until(() => stops()[1], "remote step over");
+    assert.equal((await top()).line, 8);
+    const connected = session;
+    await vscode.debug.stopDebugging(connected);
+    await until(() => vscode.debug.activeDebugSession?.id !== connected.id, "remote session disconnected");
+    session = undefined;
+  } finally {
+    vscode.debug.removeBreakpoints([breakpoint]);
+    tracker.dispose();
+    workbench.close();
+    if (session) void vscode.debug.stopDebugging(session);
   }
 }
 
