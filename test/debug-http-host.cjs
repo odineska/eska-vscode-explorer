@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const net = require("node:net");
@@ -53,6 +54,13 @@ exports.run = async function () {
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
       passed: true, suite: "debug-http", vscode: vscode.version, epf_launch: !attach, epf_attach: attach,
       prod_git_confirmation: production, form_source: true, evaluate: value,
+    }));
+    return;
+  }
+  if (native.scenario === "prod-source-gate") {
+    const result = await runProdSourceGate(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, ...result,
     }));
     return;
   }
@@ -871,6 +879,141 @@ async function runParity(folder, module, scenario, until) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints(breakpoints);
+  }
+}
+
+async function createProdSourceGateRepo(root) {
+  const upstream = path.join(path.dirname(root), "prod-source-upstream");
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
+  const git = (cwd, ...args) => execFileSync("git", ["-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args], {
+    cwd, encoding: "utf8", timeout: 10_000, env: {
+      ...environment, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: path.join(path.dirname(root), "absent-config"),
+      GIT_AUTHOR_NAME: "Eska Test", GIT_AUTHOR_EMAIL: "eska@example.invalid",
+      GIT_COMMITTER_NAME: "Eska Test", GIT_COMMITTER_EMAIL: "eska@example.invalid",
+    },
+  }).trim();
+  const settings = await fs.readFile(path.join(root, ".eska", "settings_local.toml"), "utf8");
+  assert.match(settings, /^\[prod\.infobase\]/m);
+  assert.doesNotMatch(settings, /^\[test\./m);
+  await fs.appendFile(path.join(root, "eska.toml"),
+    "\n[vcs.workflow]\npreset='git-flow'\n[vcs.workflow.policy]\nmain_branch='deployed'\nremote='ship'\n");
+  await fs.writeFile(path.join(root, ".gitignore"), "/*\n!/src/\n!/eska.toml\n!/.gitignore\n!/deployed-revision.txt\n");
+  git(root, "init", "-q", "-b", "deployed");
+  git(root, "add", ".gitignore", "eska.toml", "src");
+  git(root, "commit", "-qm", "initial");
+  git(root, "clone", "-q", ".", upstream);
+  git(root, "remote", "add", "ship", upstream);
+  const revision = "deployed-revision.txt";
+  await fs.writeFile(path.join(upstream, revision), "2\n");
+  git(upstream, "add", revision);
+  git(upstream, "commit", "-qm", "advance deployment");
+  const original = git(root, "rev-parse", "HEAD");
+  const updated = git(upstream, "rev-parse", "HEAD");
+  return { original, updated, head: () => git(root, "rev-parse", "HEAD") };
+}
+
+async function runProdSourceGate(folder, module, until) {
+  const repo = await createProdSourceGateRepo(folder.uri.fsPath);
+  const russian = vscode.env.language.startsWith("ru");
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  await vscode.workspace.getConfiguration("window").update("dialogStyle", "custom", vscode.ConfigurationTarget.Global);
+  await vscode.workspace.getConfiguration("debug").update("saveBeforeStart", "none", vscode.ConfigurationTarget.Global);
+  const workbench = await connectWorkbench(until);
+  const launch = () => vscode.debug.startDebugging(folder, {
+    name: "ESKA prod source gate", type: "eska-debug", request: "launch", profile: "prod", projectDir: folder.uri.fsPath,
+  });
+  const update = russian ? "Обновить исходники и запустить" : "Update Sources and Start";
+  const confirm = russian ? "Обновить и запустить" : "Update and Start";
+  const cancel = russian ? "Отмена" : "Cancel";
+  const readDialog = text => until(() => workbench.evaluate(`(() => {
+    const box = document.querySelector(".monaco-dialog-box");
+    if (!box?.textContent.includes(${JSON.stringify(text)})) return false;
+    return { text: box.textContent, buttons: [...box.querySelectorAll("button, .monaco-button")]
+      .map(button => button.textContent.replaceAll("&", "").trim()) };
+  })()`), text);
+  const choose = label => until(() => workbench.evaluate(`(() => {
+    const button = [...document.querySelector(".monaco-dialog-box")?.querySelectorAll("button, .monaco-button") ?? []]
+      .find(item => item.textContent.replaceAll("&", "").trim() === ${JSON.stringify(label)});
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`), label);
+  const warning = russian ? "совпадают с конфигурацией prod" : "deployed production configuration";
+  const unsaved = russian ? "В редакторе есть несохранённые файлы." : "The editor has unsaved files.";
+  const fastForward = russian ? "Обновить deployed через fast-forward" : "Fast-forward deployed";
+  const point = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(2, 0)));
+  const stops = [];
+  let session;
+  let failure;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return { onDidSendMessage(message) {
+        if (message.event === "stopped") stops.push(message.body);
+        if (message.type === "response" && message.success === false) failure = message.message;
+      }, onError(error) { failure = String(error); } };
+    },
+  });
+  const stop = () => until(() => {
+    assert.equal(failure, undefined);
+    return stops.shift();
+  }, "production breakpoint or step");
+  vscode.debug.addBreakpoints([point]);
+  try {
+    const document = await vscode.workspace.openTextDocument(module);
+    const editor = await vscode.window.showTextDocument(document);
+    const original = document.getText();
+    assert.ok(await editor.edit(edit => edit.insert(new vscode.Position(document.lineCount, 0), "// unsaved\n")));
+    assert.equal(document.isDirty, true);
+    const dirty = launch();
+    const dirtyDialog = await readDialog(warning);
+    assert.ok(dirtyDialog.text.includes(unsaved), JSON.stringify(dirtyDialog));
+    assert.ok(!dirtyDialog.buttons.includes(update), JSON.stringify(dirtyDialog));
+    await choose(cancel);
+    assert.equal(await dirty, false);
+    assert.equal(session, undefined);
+    assert.equal(repo.head(), repo.original);
+    await vscode.commands.executeCommand("workbench.action.files.revert");
+    assert.equal(document.isDirty, false);
+    assert.equal(document.getText(), original);
+
+    const cancelled = launch();
+    const behind = await readDialog(warning);
+    assert.ok(behind.text.includes("deployed") && behind.text.includes("ship"), JSON.stringify(behind));
+    assert.ok(behind.buttons.includes(update), JSON.stringify(behind));
+    await choose(update);
+    await readDialog(fastForward);
+    await choose(cancel);
+    assert.equal(await cancelled, false);
+    assert.equal(session, undefined);
+    assert.equal(repo.head(), repo.original);
+
+    const accepted = launch();
+    await readDialog(warning);
+    await choose(update);
+    await readDialog(fastForward);
+    await choose(confirm);
+    assert.equal(await accepted, true);
+    const atBreakpoint = await stop();
+    assert.equal(atBreakpoint.reason, "breakpoint");
+    assert.equal(repo.head(), repo.updated);
+    const threadId = atBreakpoint.threadId;
+    const stack = () => session.customRequest("stackTrace", { threadId });
+    const top = (await stack()).stackFrames[0];
+    assert.equal(top.source.path, module.fsPath);
+    assert.equal(top.line, 3);
+    const evaluate = (frameId, expression) => session.customRequest("evaluate", { frameId, expression });
+    assert.equal((await evaluate(top.id, "A + 1")).result, "42");
+    await session.customRequest("stepIn", { threadId });
+    assert.equal((await stop()).reason, "step");
+    const caller = (await stack()).stackFrames[1];
+    assert.equal((await evaluate(caller.id, "A + 2")).result, "43");
+    return { prod_fast_forward: true, unsaved_update_hidden: true, cancelled_update: true, evaluate: ["42", "43"] };
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([point]);
+    workbench.close();
   }
 }
 
