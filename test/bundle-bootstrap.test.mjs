@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 
-const names = ["eska", "eska-project", "eska-check", "eska-build", "eska-vcs", "eska-fmt"];
+const names = ["eska", "eska-project", "eska-check", "eska-build", "eska-vcs", "eska-fmt", "eska-debug"];
 
 /** Exercise the real prefix/receipt checks and executable probes inside an isolated user home. */
 async function fixture(t) {
@@ -36,7 +36,7 @@ async function fixture(t) {
   return { root, release, execute, bootstrap: module.exports.bootstrapBundle, counts: () => ({ downloads, disposed }) };
 }
 
-test("fresh bootstrap verifies all six installed executables and releases installer resources", { skip: process.platform === "win32" }, async t => {
+test("fresh bootstrap verifies all seven installed executables and releases installer resources", { skip: process.platform === "win32" }, async t => {
   const f = await fixture(t);
   const info = await f.bootstrap(f.root, f.release, f.execute, () => {});
   assert.equal(info.path, join(f.root, "bin/eska-project"));
@@ -57,4 +57,11 @@ test("a partial or component-managed installation is never overwritten by bootst
   await assert.rejects(f.bootstrap(f.root, f.release, async () => assert.fail("installer started over existing files"), () => {}), { code: "unmanaged" });
   assert.equal(await readFile(path, "utf8"), "user-owned receipt");
   assert.deepEqual(f.counts(), { downloads: 0, disposed: 0 });
+});
+
+test("a successful bootstrap cannot omit the debugger", { skip: process.platform === "win32" }, async t => {
+  const f = await fixture(t);
+  await assert.rejects(f.bootstrap(f.root, f.release, async command => {
+    await f.execute(command); await rm(join(f.root, "bin/eska-debug"));
+  }, () => {}));
 });

@@ -12,12 +12,15 @@ class FormPayloadTests(unittest.TestCase):
         self.source = self.root / 'source'
         manifest = {'name': 'eska-explorer', 'publisher': '1c-tooling', 'version': '0.0.1',
                     'main': './out/extension.js',
-                    'contributes': {'commands': [{'command': 'eska.explorer.previewForm'}]}}
+                    'contributes': {'commands': [{'command': 'eska.explorer.previewForm'},
+                                                 {'command': 'eska.explorer.configureProject'}]}}
         self.files = {'package.json': json.dumps(manifest), 'package.nls.json': '{}', 'package.nls.ru.json': '{}',
                       'README.md': 'README', 'CHANGELOG.md': 'Changes', 'LICENSE': 'License',
                       'docs/setup.md': 'Connection instructions', 'docs/setup.ru.md': 'Подключение',
                       'resources/icons/support/LICENSE': 'Icon license', 'resources/icons/support/NOTICE.md': 'Icon notices',
                       'out/extension.js': 'extension runtime', 'out/query-designer.js': 'query runtime',
+                      'out/project-settings.js': 'settings runtime',
+                      'resources/settings/settings.css': 'settings styles',
                       'out/form-preview.js': 'form runtime', 'out/form-preview.css': 'form styles',
                       'out/form-fonts/LiberationSans-Regular-ABC.ttf': 'font bytes',
                       'out/form-fonts/font-raster-DEF.wasm': 'rasterizer bytes'}
@@ -61,11 +64,25 @@ class FormPayloadTests(unittest.TestCase):
 
     def test_declared_forms_require_complete_browser_output_metadata(self):
         self.package()
-        for name in self.outputs:
+        for name in self.outputs.keys() - {'out/project-settings.js'}:
             with self.subTest(output=name):
                 self.write_metadata({key: value for key, value in self.outputs.items() if key != name})
                 with self.assertRaisesRegex(AssertionError, 'Missing form'):
                     self.module.check(self.archive, self.source)
+
+    def test_project_settings_require_the_exact_bundle_and_styles(self):
+        for name in ['out/project-settings.js', 'resources/settings/settings.css']:
+            with self.subTest(asset=name, failure='missing'):
+                self.package(removed=name)
+                with self.assertRaisesRegex(AssertionError, 'missing archive files:.*' + name):
+                    self.module.check(self.archive, self.source)
+            with self.subTest(asset=name, failure='changed'):
+                self.package(changed={name: 'changed bytes'})
+                with self.assertRaisesRegex(AssertionError, name):
+                    self.module.check(self.archive, self.source)
+        self.package(extra={'resources/settings/unreferenced.css': 'unreferenced style'})
+        with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*unreferenced.css'):
+            self.module.check(self.archive, self.source)
 
     def test_metadata_cannot_escape_the_form_font_directory(self):
         self.write_metadata({**self.outputs, 'out/form-fonts/../extension.js': {}})

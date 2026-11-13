@@ -83,6 +83,68 @@ selected language context stays alive while it has an active consumer; the
 show/hide inactive filter affects presentation independently.
 [Activity](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#активность-подпроектов).
 
+## Run, apply and debug
+
+Open **Project Runtime Settings** from the project tree to save independent local
+`test` and `prod` profiles. **Check saved profile** checks the installation and
+endpoint reachability. The project settings file belongs in the local Git ignore.
+
+The project settings context menu starts a normal test client or previews the
+changes for a test infobase. Apply requires confirmation for the displayed base
+and files. The first import and unsupported partial changes require a separate
+full-import preview. To update an installed `InfoBase` extension, open the ESKA
+workspace root and select the extension project. ESKA uses the main project's
+`test` profile. The confirmation identifies the extension by name and UUID.
+Changes to existing BSL files can be applied partially.
+
+To install a Designer XML extension in the main project's test profile, run
+**ESKA Explorer: Install Extension in Test Infobase** from the Command Palette.
+The plan lists the target, extension UUID, files and installed dependencies.
+A matching name or UUID in the infobase blocks installation.
+
+To remove an installed extension, run **ESKA Explorer: Remove Extension from
+Test Infobase** from the Command Palette. Choose the extension project and
+review the test infobase, extension name and UUID. Confirm explicitly. Deletion
+can permanently remove data owned by the extension. An installed dependent
+from the selected workspace application blocks removal.
+
+The same menu offers **Update Test Infobase and Launch 1C** and **Update Test
+Infobase and Launch 1C with Debugging**. Confirm the update to launch against the
+reviewed test target. If it is already up to date, the client starts immediately.
+A cancelled or unsuccessful update stops the sequence. For an extension, the
+client uses the main configuration's test profile.
+
+The Explorer view menu also offers **Update Application in Test**, with optional
+ordinary launch or debugging. Select the workspace application. The preview shows
+the main configuration and installed extensions in dependency order. If a
+component fails, the result lists what was applied and what is still pending.
+Review a fresh plan to continue. An application update and launch opens the
+client only after all planned components have succeeded.
+
+For HTTP debugging, build the optional Rust executable with
+`cargo build --release -p eska-debug` in the ESKA repository. Use **Launch with Debugger** or **Attach
+Debugger** in the same menu. A VS Code launch configuration can use
+`"type": "eska-debug"`, `"request": "launch"` or `"attach"`, and
+`"profile": "test"` or `"prod"`. Set `eska.explorer.debugExecutable` to the path of the resulting executable.
+Start the configured external HTTP debug server before attaching or launching.
+
+For an ESKA external processing project, set **Built EPF file** in its local
+runtime profile. Keep the build manifest beside the artifact. For attach, set
+**Deployed EPF URL for attach** to the exact URL reported by the 1C debugger.
+[EPF deployment and source verification](https://github.com/odineska/eska/blob/main/docs/1c-http-debug.md#epf-в-проекте-explorer)
+For a file infobase, **Start a local debug server** lets ESKA start and stop
+its own server and show the address in Debug Console. The port is optional.
+For an existing client, choose its target after attaching. The
+**Select 1C Debug Target** command refreshes the list in an active session.
+Use **Select 1C Auto-Attach Types** to change which new targets join the
+active session automatically. To set the initial types for future sessions,
+enable **Customize automatic attachment** in the profile's Project Settings.
+An empty custom list allows manual selection only.
+In a workspace, breakpoints and stack navigation use the selected project's
+application from `eska.toml`, including its configuration and extensions.
+Production prompts for a source decision after checking the
+configured Git remote. Evaluate can modify infobase data.
+
 ## Offline use and troubleshooting
 
 Installed compatible tools work without network access. Disable `checkForUpdates`,

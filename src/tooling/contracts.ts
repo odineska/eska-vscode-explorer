@@ -1,7 +1,8 @@
 import { isRecord } from "../protocol.js";
 
-export type ToolKind = "project" | "analyzer" | "formatter";
-export const TOOL_NAMES = { project: "eska-project", analyzer: "bsl-analyzer-app", formatter: "eska-fmt" } as const;
+export type ToolKind = "project" | "analyzer" | "formatter" | "debugger";
+export const TOOL_NAMES = { project: "eska-project", analyzer: "bsl-analyzer-app", formatter: "eska-fmt", debugger: "eska-debug" } as const;
+export const COMPONENTS = ["eska", "eska-project", "eska-check", "eska-build", "eska-vcs", "eska-fmt", "eska-debug"] as const;
 export const PROJECT_CONFIG = "designer-xml-4";
 export const TARGETS = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl",
   "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"] as const;
@@ -17,7 +18,7 @@ export class ToolFailure extends Error {
   }
 }
 
-export type ComponentName = "eska-project" | "eska-fmt";
+export type ComponentName = "eska-project" | "eska-fmt" | "eska-debug";
 export interface ComponentContract {
   schema_version: 2;
   tool: ComponentName;
@@ -55,7 +56,7 @@ export function componentContract(value: unknown, tool: ComponentName, expectedT
     exactKeys(value.metadata_api, ["major", "minor"]);
     if (value.metadata_api.major !== 1 || !Number.isSafeInteger(value.metadata_api.minor) || (value.metadata_api.minor as number) < 12) throw new ToolFailure("incompatible", "metadata-api");
     metadata = { major: 1, minor: value.metadata_api.minor as number };
-  } else if (value.metadata_api !== null) throw new ToolFailure("incompatible", "formatter-metadata-api");
+  } else if (value.metadata_api !== null) throw new ToolFailure("incompatible", "component-metadata-api");
   return { schema_version: 2, tool, target: value.target as NativeTarget, version, config_schema: PROJECT_CONFIG, bridge_schema: 1, metadata_api: metadata };
 }
 

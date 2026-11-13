@@ -35,6 +35,8 @@ import { ProjectWatcher, watchManifests, watchDirectory } from "./watch.js";
 import { basename } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
+import { ProjectSettings } from "./project-settings.js";
+import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
 type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
@@ -67,6 +69,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly formatting: FormattingService;
   private readonly queryDesigner: QueryDesigner;
   private readonly formPreview: FormPreviewService;
+  private readonly projectSettings: ProjectSettings;
+  private readonly projectRuntime: ProjectRuntime;
   private readonly legacyNotices = new Set<string>();
   private readonly view: vscode.TreeView<Element>;
   private readonly treeReads = new Set<Promise<Element[]>>();
@@ -129,9 +133,11 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.tooling = new ToolingSetup(context, (text, level) => { if (!this.disposed) this.output[level ?? "info"](text); },
       () => this.renderProjectStatus(), async kind => {
         if (kind === "project") { await this.formatting.stop(); await this.disconnect(); }
-        else if (kind === "formatter") await this.formatting.stop(); else await this.language.stop();
+        else if (kind === "formatter") await this.formatting.stop();
+        else if (kind === "debugger") { if (this.projectRuntime.debugging) throw new ToolFailure("busy", "eska-debug"); }
+        else await this.language.stop();
       }, async kind => {
-        if (kind === "project") await this.connect(false); else if (kind === "formatter") await this.formatting.stop(); else await this.language.restart(false);
+        if (kind === "project") await this.connect(false); else if (kind === "formatter") await this.formatting.stop(); else if (kind === "analyzer") await this.language.restart(false);
       });
     this.disposables.push(this.tooling);
     this.language = new LanguageService(context, this.connection, this.tooling, this.output, (text, level) => this.output[level ?? "info"](text),
@@ -149,6 +155,46 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       () => this.connection.disconnect(), () => this.connect(false));
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
+    this.projectSettings = new ProjectSettings(context);
+    this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
+    void this.tooling.ensureDebugger(undefined, false).catch(() => {});
+    this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
+      (entry?: Element) => this.configureProject(entry)));
+    for (const [name, action] of [
+      ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
+      ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
+      ["applyAndRunTest", (project: RuntimeProject) => this.projectRuntime.apply(project, "run")],
+      ["applyAndDebugTest", (project: RuntimeProject) => this.projectRuntime.apply(project, "debug")],
+      ["debugLaunch", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "launch")],
+      ["debugAttach", (project: RuntimeProject) => this.projectRuntime.startDebug(project, "attach")],
+    ] as const) this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${name}`, async (entry?: Element) => {
+      const project = await this.runtimeProject(entry);
+      if (project) await action(project);
+    }));
+    for (const [name, operation] of [["installExtensionTest", "install"], ["removeExtensionTest", "remove"]] as const) {
+      this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${name}`, async () => {
+        const project = await this.runtimeProject(undefined, undefined, undefined, "extension");
+        if (project) await this.projectRuntime.changeExtension(project, operation);
+      }));
+    }
+    for (const [command, after] of [
+      ["applyApplicationTest", undefined],
+      ["applyApplicationAndRunTest", "run"],
+      ["applyApplicationAndDebugTest", "debug"],
+    ] as const) {
+      this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${command}`, async () => {
+        if (!this.tree) await this.connect(false);
+        const state = this.connection.state;
+        if (state.kind !== "ready" || state.target.backend !== "project" || !vscode.workspace.isTrusted
+          || !this.tree?.projects.some(item => item.info.scope.kind === "member")) {
+          void vscode.window.showErrorMessage(this.text("runtimeApplicationRequired"));
+          return;
+        }
+        await this.projectRuntime.applyApplication({
+          root: state.target.path, executable: state.target.executable, externalProcessing: false,
+        }, after, this.language.selectedApplication);
+      }));
+    }
     for (const [name, action] of [
       ["connect", () => this.connect(true)],
       ["restart", () => this.connect(false)],
@@ -159,10 +205,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       ["checkUpdates", () => this.backendKind() === "legacy" ? this.setup.check(true, "legacy") : this.tooling.check("project")],
       ["checkAnalyzerUpdates", () => this.tooling.check("analyzer")],
       ["checkFormatterUpdates", () => this.tooling.check("formatter")],
+      ["checkDebuggerUpdates", () => this.tooling.check("debugger")],
       ["prepareTools", () => this.tooling.prepare(vscode.workspace.getConfiguration("eska.explorer", this.selected?.uri).get<string>("executable", "eska-project"), new AbortController().signal).catch(error => this.tooling.report(error))],
       ["recoverProjectInstallation", () => this.tooling.recover("project")],
       ["recoverAnalyzerInstallation", () => this.tooling.recover("analyzer")],
       ["recoverFormatterInstallation", () => this.tooling.recover("formatter")],
+      ["recoverDebuggerInstallation", () => this.tooling.recover("debugger")],
       ["restartLanguage", () => this.language.restart()],
       ["selectAnalysisContext", () => this.language.selectContext()],
       ["refresh", () => this.refresh()],
@@ -398,7 +446,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         : this.expanded.get(entry.key)
           ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
       item.id = entry.key;
-      item.contextValue = "eskaFiles";
+      item.contextValue = entry.fileKind === "group" && entry.kind === "settings" ? "eskaProjectSettings" : "eskaFiles";
       if (entry.fileKind === "entry") {
         item.resourceUri = vscode.Uri.file(entry.path);
         item.tooltip = entry.path;
@@ -848,6 +896,34 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     } catch (error) { this.showError(error instanceof ExplorerError ? error : new ExplorerError("requestFailed")); }
   }
 
+  private async configureProject(entry?: Element): Promise<void> {
+    const project = await this.runtimeProject(entry);
+    if (project) this.projectSettings.show(project.root, project.executable, project.externalProcessing);
+  }
+
+  private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {
+    if (!this.tree) await this.connect(false);
+    const state = this.connection.state, tree = this.tree;
+    if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
+    let project = root ? tree.projects.find(item => nativePath(item.info.rootPath) === root)
+      : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
+    if (root && !project) return undefined;
+    if (!project) {
+      const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info) && (!type || item.info.type === type)
+        && (folder === undefined || folder === nativePath(item.info.rootPath)
+          || relativeFile(folder, nativePath(item.info.rootPath)) !== undefined));
+      if (projects.length === 1) project = projects[0];
+      else if (projects.length > 1) {
+        const selected = await vscode.window.showQuickPick(projects.map(item => ({
+          label: basename(nativePath(item.info.rootPath)), description: nativePath(item.info.rootPath), item,
+        })), { placeHolder: this.text("runtimeChooseProject") });
+        project = selected?.item;
+      }
+    }
+    if (!project || state !== this.connection.state || !tree.projects.includes(project) || !projectEnabled(project.info)) return;
+    return { root: nativePath(project.info.rootPath), executable: state.target.executable, externalProcessing: project.info.type === "processing" };
+  }
+
   /** Open a dedicated settings-style editor tab for this metadata object. */
   private async showProperties(entry: TreeEntry): Promise<void> {
     const tree = this.tree;
@@ -1017,6 +1093,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   private updateActivityContexts(): void {
     void vscode.commands.executeCommand("setContext", "eska.explorer.workspaceActivity", !!this.tree?.session.activity);
+    void vscode.commands.executeCommand("setContext", "eska.explorer.workspaceApplication",
+      this.tree?.projects.some(item => item.info.scope.kind === "member") ?? false);
     void vscode.commands.executeCommand("setContext", "eska.explorer.hideDisabled", !!this.tree?.session.activity?.hideDisabled);
   }
 

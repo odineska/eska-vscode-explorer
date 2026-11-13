@@ -21,12 +21,13 @@ exports.run = async function () {
     await until(() => explorer.connection.state.kind === "ready", "project connected");
     await until(() => !!explorer.tooling.states.analyzer.info, "Analyzer binary verified");
     await explorer.tooling.ensureFormatter(undefined, false);
+    await explorer.tooling.ensureDebugger(undefined, false);
     const project = explorer.status;
     assert.equal(project.text, `ESKA v${explorer.connection.state.version}`);
     assert.equal(project.command, "eska.explorer.updateTools");
     assert.equal("analyzerStatus" in explorer.tooling, false);
     assert.equal("formatterStatus" in explorer.tooling, false);
-    for (const kind of ["project", "formatter", "analyzer"]) {
+    for (const kind of ["project", "formatter", "debugger", "analyzer"]) {
       assert.ok(project.tooltip.includes(explorer.tooling.states[kind].info.path));
     }
     workbench = await connectWorkbench(until);
@@ -47,15 +48,15 @@ exports.run = async function () {
     assert.equal(await workbench.evaluate('[...document.querySelectorAll(".quick-input-widget")].some(node => node.offsetParent !== null)'), false);
     const footer = await workbench.evaluate(`[...document.querySelectorAll(".statusbar-item")].filter(node => /eska\\.explorer\\.(connection|analyzer|formatter)$/.test(node.id)).map(node => ({id:node.id,text:node.textContent.trim()}))`);
     assert.equal(footer.length, 1); assert.ok(footer[0].id.endsWith("eska.explorer.connection"));
-    const names = ["eska-project", "eska-fmt", "bsl-analyzer-app"];
+    const names = ["eska-project", "eska-fmt", "eska-debug", "bsl-analyzer-app"];
     const check = explorer.tooling.check;
     explorer.tooling.check = async (kind, manual = true) => { calls.push([kind, manual]); };
     try {
-      for (const [index, kind] of ["project", "formatter", "analyzer"].entries()) {
+      for (const [index, kind] of ["project", "formatter", "debugger", "analyzer"].entries()) {
         const job = vscode.commands.executeCommand("eska.explorer.components");
         await until(async () => await workbench.evaluate('document.querySelector(".quick-input-title")?.textContent === "ESKA"'), "component list opened");
         const rows = await workbench.evaluate('[...document.querySelectorAll(".quick-input-widget .quick-input-list .monaco-list-row")].map(node => node.textContent)');
-        assert.equal(rows.length, 3);
+        assert.equal(rows.length, names.length);
         names.forEach((name, at) => assert.ok(rows[at].includes(name), rows));
         if (process.env.ESKA_HOST_DOM_ARTIFACTS && index === 1) {
           await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, {recursive:true});

@@ -5,7 +5,7 @@ import { BASE_API_VERSION, ExplorerError, parseHandshake } from "../protocol.js"
 import { BackendProcess } from "../process.js";
 import { runProbe } from "../installation.js";
 import type { DiagnosticLog } from "../diagnostics.js";
-import { ToolFailure, analyzerContract, assertCurrent, componentContract, type ComponentContract, type ToolKind } from "./contracts.js";
+import { TOOL_NAMES, ToolFailure, analyzerContract, assertCurrent, componentContract, type ComponentContract, type ToolKind } from "./contracts.js";
 
 export interface ToolInfo { kind: ToolKind; path: string; version: string }
 
@@ -74,20 +74,28 @@ export async function inspectComponentContract(path: string, cwd: string, expect
   catch { throw new ToolFailure("incompatible", "project-json"); }
   const actual = componentContract(value, expected.tool, expected.target);
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new ToolFailure("incompatible", "project-package");
-  const info = expected.tool === "eska-project" ? await inspectProject(path, cwd, log, signal) : await inspectFormatter(path, cwd, signal);
+  const info = expected.tool === "eska-project" ? await inspectProject(path, cwd, log, signal) : await inspectNativeTool(expected.tool === "eska-fmt" ? "formatter" : "debugger", path, cwd, signal);
   assertCurrent(signal);
   if (info.version !== actual.version) throw new ToolFailure("incompatible", "project-version");
   return info;
 }
 
-/** Formatter discovery verifies the optional component directly, without starting an analyzer or metadata server. */
-export async function inspectFormatter(path: string, cwd: string, signal?: AbortSignal): Promise<ToolInfo> {
+/** Optional native tools share the package/version probe without starting a service or debug session. */
+export async function inspectNativeTool(kind: "formatter" | "debugger", path: string, cwd: string, signal?: AbortSignal): Promise<ToolInfo> {
   const result = await runProbe(path, ["__tool-contract"], cwd, 10_000, 65536, signal);
   assertCurrent(signal);
   let value: unknown;
-  try { value = JSON.parse(result.stdout); } catch { throw new ToolFailure("incompatible", "formatter-json"); }
-  const contract = componentContract(value, "eska-fmt");
-  const reported = (await runProbe(path, ["--version"], cwd, 10_000, 65536, signal)).stdout.trim().replace(/^eska-fmt /, "");
-  if (reported !== contract.version) throw new ToolFailure("incompatible", "formatter-version");
-  return { kind: "formatter", path, version: reported };
+  try { value = JSON.parse(result.stdout); } catch { throw new ToolFailure("incompatible", `${kind}-json`); }
+  const contract = componentContract(value, TOOL_NAMES[kind]);
+  const reported = (await runProbe(path, ["--version"], cwd, 10_000, 65536, signal)).stdout.trim();
+  if (reported !== `${TOOL_NAMES[kind]} ${contract.version}`) throw new ToolFailure("incompatible", `${kind}-version`);
+  return { kind, path, version: contract.version };
+}
+
+export function inspectFormatter(path: string, cwd: string, signal?: AbortSignal): Promise<ToolInfo> {
+  return inspectNativeTool("formatter", path, cwd, signal);
+}
+
+export function inspectDebugger(path: string, cwd: string, signal?: AbortSignal): Promise<ToolInfo> {
+  return inspectNativeTool("debugger", path, cwd, signal);
 }

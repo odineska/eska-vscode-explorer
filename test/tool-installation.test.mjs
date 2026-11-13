@@ -38,7 +38,7 @@ async function archive(root, binary, contract) {
   await writeFile(metadata, JSON.stringify(value)); await writeFile(license, notice);
   await run(python, ["-B", "-c", "import sys,zipfile\nwith zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_DEFLATED) as z:\n z.write(sys.argv[2],'package.json')\n z.write(sys.argv[3],'bin/'+sys.argv[5])\n z.write(sys.argv[4],'licenses/LICENSE')", output, metadata, binary, license, executable]);
   const data = await readFile(output), sha256 = createHash("sha256").update(data).digest("hex");
-  return { data, output, release: { kind: contract.tool === "eska-fmt" ? "formatter" : "project", version: value.version, target: value.target, asset: { name: "fixture.zip", url: "https://example.invalid/fixture.zip", size: data.length, sha256 } } };
+  return { data, output, release: { kind: contract.tool === "eska-fmt" ? "formatter" : contract.tool === "eska-debug" ? "debugger" : "project", version: value.version, target: value.target, asset: { name: "fixture.zip", url: "https://example.invalid/fixture.zip", size: data.length, sha256 } } };
 }
 
 test("strict JSON and portable paths reject ambiguous installation instructions", () => {
@@ -228,28 +228,29 @@ test("backend preparation installs native tools and exports verified paths for s
   for (const name of bootstrap) assert.deepEqual(await readFile(join(environment.ESKA_TEST_PYTHON_TOOLS, name)), await readFile(join(root, name)));
 });
 
-/** The real optional formatter archive uses the same producer/receipt boundary as the project component. */
-test("formatter archive installs alone, round-trips Python ownership and preserves its project sibling", {
-  skip: !process.env.ESKA_TEST_FMT_BINARY || !process.env.ESKA_TEST_BINARY, timeout: 120_000,
+/** Optional Rust binaries share archive verification and preserve adjacent component ownership. */
+for (const [kind, tool, variable] of [["formatter", "eska-fmt", "ESKA_TEST_FMT_BINARY"], ["debugger", "eska-debug", "ESKA_TEST_DEBUG_BINARY"]])
+test(`${kind} archive installs alone, round-trips Python ownership and preserves its project sibling`, {
+  skip: !process.env[variable] || !process.env.ESKA_TEST_BINARY, timeout: 120_000,
 }, async t => {
   const root = await fixture(t), prefix = join(root, "selected");
-  const formatter = process.env.ESKA_TEST_FMT_BINARY;
-  const contract = JSON.parse((await runProbe(formatter, ["__tool-contract"], root, 10_000, 65536)).stdout);
-  const packed = await archive(root, formatter, contract);
-  assert.equal(componentPackage(JSON.parse(await readFile(join(root,"package.json"),"utf8")), hostTarget(), "eska-fmt").tool,"eska-fmt");
+  const binary = process.env[variable];
+  const contract = JSON.parse((await runProbe(binary, ["__tool-contract"], root, 10_000, 65536)).stdout);
+  const packed = await archive(root, binary, contract);
+  assert.equal(componentPackage(JSON.parse(await readFile(join(root,"package.json"),"utf8")), hostTarget(), tool).tool,tool);
   const info = await installComponent(prefix, packed.data, packed.release, () => {});
-  assert.equal(info.kind, "formatter"); assert.equal(info.path, managedPath(prefix,"formatter"));
-  assert.equal(await managedVersion(prefix,"formatter"), contract.version);
+  assert.equal(info.kind, kind); assert.equal(info.path, managedPath(prefix,kind));
+  assert.equal(await managedVersion(prefix,kind), contract.version);
   assert.equal(await fileHash(join(prefix,"bin/eska-project")),null);
-  const receipt = JSON.parse(await readFile(join(prefix,"components/eska-fmt.json"),"utf8"));
-  const prior = await fileHash(info.path), receiptHash = await fileHash(join(prefix,"components/eska-fmt.json"));
+  const receipt = JSON.parse(await readFile(join(prefix,`components/${tool}.json`),"utf8"));
+  const prior = await fileHash(info.path), receiptHash = await fileHash(join(prefix,`components/${tool}.json`));
   const project = process.env.ESKA_TEST_BINARY, projectContract = JSON.parse((await runProbe(project,["__tool-contract"],root,10_000,65536)).stdout);
   const sibling = await archive(root,project,projectContract);
   await installComponent(prefix,sibling.data,sibling.release,()=>{});
-  assert.equal(await fileHash(info.path),prior); assert.equal(await fileHash(join(prefix,"components/eska-fmt.json")),receiptHash);
+  assert.equal(await fileHash(info.path),prior); assert.equal(await fileHash(join(prefix,`components/${tool}.json`)),receiptHash);
   await installComponent(prefix,packed.data,packed.release,()=>{});
-  assert.deepEqual(JSON.parse(await readFile(join(prefix,"components/eska-fmt.json"),"utf8")),receipt);
-  const inspected = await run(python,["-B",join(pythonTools,"components.py"),"status","--component","eska-fmt","--root",prefix,"--format","json"]);
+  assert.deepEqual(JSON.parse(await readFile(join(prefix,`components/${tool}.json`),"utf8")),receipt);
+  const inspected = await run(python,["-B",join(pythonTools,"components.py"),"status","--component",tool,"--root",prefix,"--format","json"]);
   assert.deepEqual(JSON.parse(inspected.stdout).contract,contract);
 });
 

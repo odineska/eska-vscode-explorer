@@ -5,16 +5,19 @@ import { readFile } from "node:fs/promises";
 /** Parse repository manifests independently from the extension runtime. */
 async function json(name) { return JSON.parse(await readFile(new URL(`../${name}`, import.meta.url), "utf8")); }
 
-test("contributions include owned BSL/SDBL syntax without debugger or foreign extension dependencies", async () => {
+test("contributions include owned BSL/SDBL syntax and the optional HTTP debugger", async () => {
   const manifest = await json("package.json");
   assert.equal(manifest.name, "eska-explorer");
   assert.equal(manifest.publisher, "1c-tooling");
   assert.deepEqual(manifest.extensionKind, ["workspace"]);
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
   assert.equal(manifest.capabilities.virtualWorkspaces.supported, false);
-  for (const key of ["debuggers", "breakpoints", "configurationDefaults"]) {
-    assert.equal(manifest.contributes[key], undefined);
-  }
+  assert.equal(manifest.contributes.configurationDefaults, undefined);
+  assert.deepEqual(manifest.contributes.breakpoints, [{ language: "bsl" }]);
+  const [debuggerEntry] = manifest.contributes.debuggers;
+  assert.equal(manifest.contributes.debuggers.length, 1);
+  assert.equal(debuggerEntry.type, "eska-debug");
+  assert.deepEqual(Object.keys(debuggerEntry.configurationAttributes).sort(), ["attach", "launch"]);
   assert.deepEqual(manifest.contributes.languages.map(language => language.id).sort(), ["bsl", "sdbl"]);
   for (const language of manifest.contributes.languages) {
     assert.deepEqual(language.extensions, [`.${language.id}`]);

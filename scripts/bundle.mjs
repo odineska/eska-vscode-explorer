@@ -28,13 +28,14 @@ const browserOptions = { ...bundleOptions, outdir: "out",
     });
   } }]
 };
-const [query, form] = await Promise.all([
+const [query, form, settings] = await Promise.all([
   build({ ...browserOptions, entryPoints: { "query-designer": "webview/query/index.jsx" } }),
   build({ ...browserOptions, entryPoints: { "form-preview": "webview/forms/index.jsx" } }),
+  build({ ...browserOptions, entryPoints: { "project-settings": "webview/settings/index.jsx" } }),
 ]);
 const browser = {
-  inputs: { ...query.metafile.inputs, ...form.metafile.inputs },
-  outputs: { ...query.metafile.outputs, ...form.metafile.outputs },
+  inputs: { ...query.metafile.inputs, ...form.metafile.inputs, ...settings.metafile.inputs },
+  outputs: { ...query.metafile.outputs, ...form.metafile.outputs, ...settings.metafile.outputs },
 };
 // Asset names include hashes; an incremental build must not package older font engines.
 const assets = new Set(Object.keys(browser.outputs).map(file => resolve(file)));

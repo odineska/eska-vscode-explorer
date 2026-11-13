@@ -5,12 +5,11 @@ import { bootstrapCommand, compareVersions, runProbe, type InstallCommand, type 
 import { isRecord, isWirePath } from "../protocol.js";
 import { nativePath } from "../source.js";
 import type { DiagnosticLog } from "../diagnostics.js";
-import { ToolFailure, assertCurrent, stableVersion } from "./contracts.js";
+import { COMPONENTS, ToolFailure, assertCurrent, stableVersion } from "./contracts.js";
 import { destination, fileHash, installationLock, readMetadata } from "./files.js";
 import { inspectProject, type ToolInfo } from "./inspect.js";
 import { pendingTransactions } from "./transaction.js";
 
-const COMPONENTS = ["eska", "eska-project", "eska-check", "eska-build", "eska-vcs", "eska-fmt"];
 export interface BundleUpdate { cli: string; project: string; version: string; available: string; identity: string }
 
 /** Bootstrap the complete global CLI only into an unoccupied prefix; the official installer owns user PATH. */
@@ -72,7 +71,7 @@ async function ownedBundle(root: string): Promise<{ cli: string; project: string
   if (receipt === undefined) return undefined;
   const pending = await pendingTransactions(root);
   if (pending.length) throw new ToolFailure("recovery", pending[0]);
-  const required = COMPONENTS.filter(name => name !== "eska-fmt").map(name => `${name}${suffix}`);
+  const required = COMPONENTS.filter(name => name !== "eska-fmt" && name !== "eska-debug").map(name => `${name}${suffix}`);
   const supported = COMPONENTS.map(name => `${name}${suffix}`);
   if (!isRecord(receipt) || !isRecord(receipt.source) || receipt.source.owner !== "1c-tooling"
     || receipt.source.name !== "eska" || receipt.source.app_name !== "eska" || receipt.source.release_type !== "github"
@@ -132,7 +131,7 @@ export async function installBundle(root: string, update: BundleUpdate,
     const suffix = process.platform === "win32" ? ".exe" : "";
     for (const component of COMPONENTS) {
       const name = `${component}${suffix}`;
-      if (!receipt.binaries.includes(name)) continue;
+      if (!receipt.binaries.includes(name)) throw new ToolFailure("probe", "bundle-component:" + component);
       const version = (await runProbe(join(root, "bin", name), ["--version"], homedir(), 10_000, 65536, signal)).stdout.trim();
       if (version !== `${component} ${update.available}`) throw new ToolFailure("probe", "bundle-version");
     }

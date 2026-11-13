@@ -41,9 +41,14 @@ exports.connectWorkbench = async function (until) {
     await fs.writeFile(file, Buffer.from(result.data, 'base64'));
   },
   /** Exercise the native pointer path instead of synthetic DOM event dispatch. */
+  movePointer: (x, y) => connection.request('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }),
   click: async (x, y) => {
     await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  }, submitInput: async text => {
+    await connection.request('Input.insertText', { text });
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
   }, focus: async () => { await connection.request("Page.bringToFront"); await connection.request("Emulation.setFocusEmulationEnabled", { enabled: true }); }, viewport: async (width, height) => {
     await connection.request('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   }, evaluate: async expression => {
@@ -53,7 +58,7 @@ exports.connectWorkbench = async function (until) {
 };
 
 /** A visible webview frame is located by its own DOM, rather than inferred from a tab title. */
-exports.connect = async function (until) {
+exports.connect = async function (until, selector = ".sections") {
   const port = Number(process.env.ESKA_HOST_DEBUG_PORT); assert.ok(port > 0);
   const connections = new Map(); let found;
   await until(async () => {
@@ -63,7 +68,7 @@ exports.connect = async function (until) {
       catch { /* A disposed webview can remain in the target list until Chromium removes it. */ }
     }
     for (const connection of connections.values()) for (const contextId of connection.contexts) {
-      const result = await connection.request('Runtime.evaluate', { contextId, expression: '!!document.getElementById("root")?.querySelector(".sections")', returnByValue: true }).catch(() => undefined);
+      const result = await connection.request('Runtime.evaluate', { contextId, expression: `!!document.getElementById("root")?.querySelector(${JSON.stringify(selector)})`, returnByValue: true }).catch(() => undefined);
       if (result?.result.value === true) { found = { connection, contextId }; return true; }
     }
     return false;

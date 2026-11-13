@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { compareVersions } from "../installation.js";
 import { isRecord } from "../protocol.js";
 import type { DiagnosticLog } from "../diagnostics.js";
-import { PROJECT_CONFIG, ToolFailure, assertCurrent, exactKeys, stableVersion, TOOL_NAMES, type NativeTarget, type ToolKind, type ComponentName } from "./contracts.js";
+import { COMPONENTS, PROJECT_CONFIG, ToolFailure, assertCurrent, exactKeys, stableVersion, TOOL_NAMES, type NativeTarget, type ToolKind, type ComponentName } from "./contracts.js";
 import { componentPackage, unpackComponent, type ComponentPackage } from "./archive.js";
 import { checksum, destination, fileHash, installationLock, readMetadata, recoverAbandonedClaim, writeJson } from "./files.js";
 import { inspectAnalyzer, inspectComponentContract, type ToolInfo } from "./inspect.js";
@@ -40,7 +40,7 @@ async function componentReceipt(root: string, target: NativeTarget, tool: Compon
 
 /** Reject incompatible neighbouring components while preserving their files and independent versions. */
 async function compatibleNeighbours(root: string, target: NativeTarget, selected: ComponentName): Promise<void> {
-  for (const tool of ["eska", "eska-project", "eska-check", "eska-build", "eska-vcs", "eska-fmt"]) {
+  for (const tool of COMPONENTS) {
     if (tool === selected) continue;
     const path = await destination(root, `components/${tool}.json`);
     if (!await lstat(path).catch(error => { if (error.code === "ENOENT") return undefined; throw error; })) continue;
@@ -90,7 +90,7 @@ function verified(release: ToolRelease, data: Buffer, kind: ToolKind): void {
   if (data.length !== release.asset.size || createHash("sha256").update(data).digest("hex") !== checksum(release.asset.sha256)) throw new ToolFailure("checksum");
 }
 
-/** Install one project/formatter archive without the monolith, Python, Cargo, Git or a platform runtime. */
+/** Install one native component archive without the monolith, Python, Cargo, Git or a platform runtime. */
 export async function installComponent(root: string, data: Buffer, release: ToolRelease, log: DiagnosticLog, signal?: AbortSignal): Promise<ToolInfo> {
   if (release.kind === "analyzer") throw new ToolFailure("incompatible", "component-kind");
   const kind = release.kind, tool = TOOL_NAMES[kind];

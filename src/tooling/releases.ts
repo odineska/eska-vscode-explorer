@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { isRecord } from "../protocol.js";
-import { ToolFailure, analyzerAsset, assertCurrent, nativeTarget, stableVersion, type NativeTarget, type ToolKind } from "./contracts.js";
+import { TOOL_NAMES, ToolFailure, analyzerAsset, assertCurrent, nativeTarget, stableVersion, type NativeTarget, type ToolKind } from "./contracts.js";
 import { checksum, strictJson } from "./files.js";
 import { MAX_ARCHIVE } from "./archive.js";
 
 export interface Asset { name: string; url: string; sha256: string; size: number }
 export interface ToolRelease { kind: ToolKind; version: string; target: NativeTarget; asset?: Asset; restriction?: string }
-const REPOSITORIES = { project: "odineska/eska", analyzer: "itrous/bsl-analyzer", formatter: "odineska/eska" } as const;
+const REPOSITORIES = { project: "odineska/eska", analyzer: "itrous/bsl-analyzer", formatter: "odineska/eska", debugger: "odineska/eska" } as const;
 let target: NativeTarget | undefined;
 
 /** Resolve the extension host's runtime rather than the desktop UI's platform in Remote workspaces. */
@@ -49,7 +49,7 @@ export function parseRelease(kind: ToolKind, target: NativeTarget, value: unknow
     || !Array.isArray(value.assets)) throw new ToolFailure("releaseUnavailable", "release");
   const version = stableVersion(value.tag_name.slice(1));
   const result: ToolRelease = { kind, version, target };
-  const name = kind === "analyzer" ? analyzerAsset(target) : `${kind === "project" ? "eska-project" : "eska-fmt"}-${version}-${target}.zip`;
+  const name = kind === "analyzer" ? analyzerAsset(target) : `${TOOL_NAMES[kind]}-${version}-${target}.zip`;
   const candidates = value.assets.filter(asset => isRecord(asset) && asset.name === name);
   if (candidates.length !== 1) return { ...result, restriction: `missing-asset:${name}` };
   const asset = candidates[0];
