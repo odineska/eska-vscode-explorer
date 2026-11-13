@@ -72,10 +72,15 @@ const errors = new Map<string, MessageKey>([
 export class ProjectRuntime implements vscode.Disposable {
   private readonly registrations: vscode.Disposable[];
   private readonly descriptors = new Map<string, vscode.DebugAdapterExecutable>();
+  private readonly debugSessions = new Set<string>();
+
+  get debugging(): boolean { return this.debugSessions.size > 0; }
 
   constructor(private readonly choose: (root?: string, folder?: string) => Promise<RuntimeProject | undefined>) {
     this.registrations = [
+      vscode.debug.onDidTerminateDebugSession(session => this.debugSessions.delete(session.id)),
       vscode.debug.onDidStartDebugSession(session => {
+        if (session.type === debugType) this.debugSessions.add(session.id);
         if (session.type === debugType && session.configuration.request === "attach") void this.attachTarget(session);
       }),
       vscode.commands.registerCommand("eska.explorer.attachDebugTarget", () => this.attachTarget(vscode.debug.activeDebugSession)),
@@ -615,6 +620,7 @@ export class ProjectRuntime implements vscode.Disposable {
 
   dispose(): void {
     this.descriptors.clear();
+    this.debugSessions.clear();
     for (const item of this.registrations) item.dispose();
   }
 }

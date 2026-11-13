@@ -6,14 +6,15 @@ import { runInNewContext } from 'node:vm';
 
 /** Only VS Code registration and executable discovery are stubbed; configurations use the real provider. */
 function fixture(t, choose, runtimeJson) {
-  let provider, factory;
+  let provider, factory, started, terminated;
   const disposable = { dispose() {} };
   const vscode = {
     ProgressLocation: { Notification: 15 },
     env: { language: 'ru' }, Uri: { file: fsPath => ({ fsPath }) },
     workspace: { isTrusted: true, textDocuments: [], getWorkspaceFolder: () => undefined, getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
     debug: {
-      onDidStartDebugSession: () => disposable,
+      onDidStartDebugSession: callback => { started = callback; return disposable; },
+      onDidTerminateDebugSession: callback => { terminated = callback; return disposable; },
       registerDebugConfigurationProvider(_type, value) { provider = value; return disposable; },
       registerDebugAdapterDescriptorFactory(_type, value) { factory = value; return disposable; },
     },
@@ -28,7 +29,7 @@ function fixture(t, choose, runtimeJson) {
         : name === './runtime-tools.js' && runtimeJson ? { runtimeJson } : require(name), module, module.exports);
   const runtime = new module.exports.ProjectRuntime(choose);
   t.after(() => runtime.dispose());
-  return { provider, factory, vscode, runtime };
+  return { provider, factory, vscode, runtime, started, terminated };
 }
 
 test('F5 resolves in its workspace folder and restart keeps the chosen project', async t => {
@@ -200,4 +201,15 @@ test('an application failure shows each outcome and a reviewed recovery launches
   assert.deepEqual(Array.from(descriptor.args.slice(-4)), ['--expected-infobase', launch.fingerprint, '--application', 'demo']);
   const restarted = await f.factory.createDebugAdapterDescriptor({ configuration: config });
   assert.deepEqual(Array.from(restarted.args), Array.from(descriptor.args));
+});
+
+/** Updates must account for every ESKA session, including one that is not currently focused. */
+test('debugger ownership tracks concurrent sessions without claiming foreign adapters', t => {
+  const f = fixture(t, async () => undefined);
+  f.started({ id: 'foreign', type: 'other', configuration: {} });
+  assert.equal(f.runtime.debugging, false);
+  for (const id of ['first', 'second']) f.started({ id, type: 'eska-debug', configuration: { request: 'launch' } });
+  f.terminated({ id: 'first' }); assert.equal(f.runtime.debugging, true);
+  f.terminated({ id: 'foreign' }); assert.equal(f.runtime.debugging, true);
+  f.terminated({ id: 'second' }); assert.equal(f.runtime.debugging, false);
 });

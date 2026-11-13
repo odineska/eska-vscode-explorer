@@ -133,9 +133,11 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.tooling = new ToolingSetup(context, (text, level) => { if (!this.disposed) this.output[level ?? "info"](text); },
       () => this.renderProjectStatus(), async kind => {
         if (kind === "project") { await this.formatting.stop(); await this.disconnect(); }
-        else if (kind === "formatter") await this.formatting.stop(); else await this.language.stop();
+        else if (kind === "formatter") await this.formatting.stop();
+        else if (kind === "debugger") { if (this.projectRuntime.debugging) throw new ToolFailure("busy", "eska-debug"); }
+        else await this.language.stop();
       }, async kind => {
-        if (kind === "project") await this.connect(false); else if (kind === "formatter") await this.formatting.stop(); else await this.language.restart(false);
+        if (kind === "project") await this.connect(false); else if (kind === "formatter") await this.formatting.stop(); else if (kind === "analyzer") await this.language.restart(false);
       });
     this.disposables.push(this.tooling);
     this.language = new LanguageService(context, this.connection, this.tooling, this.output, (text, level) => this.output[level ?? "info"](text),
@@ -155,6 +157,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
     this.projectSettings = new ProjectSettings(context);
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
+    void this.tooling.ensureDebugger(undefined, false).catch(() => {});
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
     for (const [name, action] of [
@@ -202,10 +205,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       ["checkUpdates", () => this.backendKind() === "legacy" ? this.setup.check(true, "legacy") : this.tooling.check("project")],
       ["checkAnalyzerUpdates", () => this.tooling.check("analyzer")],
       ["checkFormatterUpdates", () => this.tooling.check("formatter")],
+      ["checkDebuggerUpdates", () => this.tooling.check("debugger")],
       ["prepareTools", () => this.tooling.prepare(vscode.workspace.getConfiguration("eska.explorer", this.selected?.uri).get<string>("executable", "eska-project"), new AbortController().signal).catch(error => this.tooling.report(error))],
       ["recoverProjectInstallation", () => this.tooling.recover("project")],
       ["recoverAnalyzerInstallation", () => this.tooling.recover("analyzer")],
       ["recoverFormatterInstallation", () => this.tooling.recover("formatter")],
+      ["recoverDebuggerInstallation", () => this.tooling.recover("debugger")],
       ["restartLanguage", () => this.language.restart()],
       ["selectAnalysisContext", () => this.language.selectContext()],
       ["refresh", () => this.refresh()],

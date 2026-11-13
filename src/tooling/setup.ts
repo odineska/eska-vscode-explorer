@@ -7,7 +7,7 @@ import { message, type MessageKey } from "../messages.js";
 import type { ConnectionState } from "../connection.js";
 import type { DiagnosticLog } from "../diagnostics.js";
 import { TOOL_NAMES, ToolFailure, assertCurrent, type ToolKind } from "./contracts.js";
-import { findTool, inspectAnalyzer, inspectFormatter, type ToolInfo } from "./inspect.js";
+import { findTool, inspectAnalyzer, inspectDebugger, inspectFormatter, type ToolInfo } from "./inspect.js";
 import { installAnalyzer, installComponent, managedPath, managedVersion, recoverInstallation } from "./install.js";
 import { downloadAsset, latestToolRelease, type ToolRelease } from "./releases.js";
 import { cancellableChoice } from "./choice.js";
@@ -26,7 +26,7 @@ const DAY = 24 * 60 * 60 * 1000;
 /** Own independent setup/update state while project metadata and language lifecycles remain separate consumers. */
 export class ToolingSetup implements vscode.Disposable {
   readonly root = join(homedir(), ".eska");
-  readonly states: Record<ToolKind, ToolState> = { project: { phase: "disconnected" }, analyzer: { phase: "missing" }, formatter: { phase: "missing" } };
+  readonly states: Record<ToolKind, ToolState> = { project: { phase: "disconnected" }, analyzer: { phase: "missing" }, formatter: { phase: "missing" }, debugger: { phase: "missing" } };
   private readonly checking = new Set<ToolKind>();
   private readonly installing = new Set<ToolKind>();
   private readonly pending = new Set<Promise<unknown>>();
@@ -110,24 +110,34 @@ export class ToolingSetup implements vscode.Disposable {
   /** Formatter discovery has its own contract, installation and status; no analyzer is queried or started. */
   async ensureFormatter(signal = this.lifetime.signal, offer = true,
     configured = vscode.workspace.getConfiguration("eska.explorer").get<string>("formatterExecutable", TOOL_NAMES.formatter)): Promise<ToolInfo | undefined> {
+    return this.ensureNativeTool("formatter", configured, inspectFormatter, signal, offer);
+  }
+
+  async ensureDebugger(signal = this.lifetime.signal, offer = true): Promise<ToolInfo | undefined> {
+    const configured = vscode.workspace.getConfiguration("eska.explorer").get<string>("debugExecutable", TOOL_NAMES.debugger);
+    return this.ensureNativeTool("debugger", configured, inspectDebugger, signal, offer);
+  }
+
+  private async ensureNativeTool(kind: "formatter" | "debugger", configured: string,
+    inspect: (path: string, cwd: string, signal?: AbortSignal) => Promise<ToolInfo>, signal: AbortSignal, offer: boolean): Promise<ToolInfo | undefined> {
     signal = AbortSignal.any([signal, this.lifetime.signal]);
     if (!vscode.workspace.isTrusted || this.disposed) return undefined;
-    if (configured !== TOOL_NAMES.formatter && !isAbsolute(configured)) throw new ExplorerError("invalidExecutable");
-    const path = await this.track(findTool(configured, TOOL_NAMES.formatter, dirname(managedPath(this.root, "formatter"))));
+    if (kind === "formatter" && configured !== TOOL_NAMES[kind] && !isAbsolute(configured)) throw new ExplorerError("invalidExecutable");
+    const path = await this.track(findTool(configured, TOOL_NAMES[kind], dirname(managedPath(this.root, kind))));
     assertCurrent(signal);
     if (!path) {
-      this.states.formatter = { phase: "missing" }; this.render();
-      if (offer && configured === TOOL_NAMES.formatter) return this.offerInstall("formatter", signal);
+      this.states[kind] = { phase: "missing" }; this.render();
+      if (offer && configured === TOOL_NAMES[kind]) return this.offerInstall(kind, signal);
       if (offer) throw new ExplorerError("executableMissing");
       return undefined;
     }
     try {
-      const info = await this.track(inspectFormatter(path, homedir(), signal));
+      const info = await this.track(inspect(path, homedir(), signal));
       assertCurrent(signal);
-      this.states.formatter = { ...this.states.formatter, info, phase: "verified" }; this.render();
-      void this.background("formatter"); return info;
+      this.states[kind] = { ...this.states[kind], info, phase: "verified" }; this.render();
+      void this.background(kind); return info;
     } catch (error) {
-      if (!signal.aborted && !this.disposed) { this.states.formatter = { phase: "error" }; this.render(); }
+      if (!signal.aborted && !this.disposed) { this.states[kind] = { phase: "error" }; this.render(); }
       throw error;
     }
   }
@@ -137,12 +147,12 @@ export class ToolingSetup implements vscode.Disposable {
     if (!vscode.workspace.isTrusted || this.disposed) return;
     const project = await this.ensureProject(signal, configured);
     assertCurrent(signal);
-    if (project) { await this.ensureFormatter(signal); await this.ensureAnalyzer(signal); }
+    if (project) { await this.ensureFormatter(signal); await this.ensureDebugger(signal); await this.ensureAnalyzer(signal); }
   }
 
   /** Background timestamps and in-flight flags belong to each component on this workspace host. */
   async background(kind: ToolKind): Promise<void> {
-    const setting = kind === "project" ? "checkForUpdates" : kind === "analyzer" ? "checkForAnalyzerUpdates" : "checkForFormatterUpdates";
+    const setting = kind === "project" || kind === "debugger" ? "checkForUpdates" : kind === "analyzer" ? "checkForAnalyzerUpdates" : "checkForFormatterUpdates";
     if (this.disposed || this.updating || this.checking.has(kind) || this.installing.has(kind)
       || !vscode.workspace.getConfiguration("eska.explorer").get<boolean>(setting, true)) return;
     const key = `toolUpdateChecked.${kind}.${vscode.env.remoteName ?? "local"}.${process.platform}.${process.arch}`;
@@ -165,7 +175,7 @@ export class ToolingSetup implements vscode.Disposable {
       const load = async (): Promise<{ bootstrap: true } | { bundle: BundleUpdate } | { release: ToolRelease; installed: string | undefined }> => {
         const installed = await managedVersion(this.root, kind);
         assertCurrent(signal);
-        const bundle = kind === "project" && !installed ? await inspectBundle(this.root, signal) : undefined;
+        const bundle = kind !== "analyzer" && !installed ? await inspectBundle(this.root, signal) : undefined;
         if (bundle) return { bundle };
         if (kind === "project" && !installed && !state.info) return { bootstrap: true };
         return { release: await latestToolRelease(kind, undefined, signal), installed };
@@ -258,8 +268,13 @@ export class ToolingSetup implements vscode.Disposable {
             }
           } finally { delete this.states.project.activity; this.render(); }
         });
-        if (!completeBundle) await attempt(() => this.updateLatest("formatter", signal));
-        else await attempt(() => this.ensureFormatter(signal, false));
+        if (!completeBundle) {
+          await attempt(() => this.updateLatest("formatter", signal));
+          await attempt(() => this.updateLatest("debugger", signal));
+        } else {
+          await attempt(() => this.ensureFormatter(signal, false));
+          await attempt(() => this.ensureDebugger(signal, false));
+        }
         await attempt(() => this.updateLatest("analyzer", signal));
         if (!failed && !signal.aborted && !this.disposed) void vscode.window.showInformationMessage(this.text("toolUpdatesComplete"));
       } finally { subscription.dispose(); }
@@ -291,6 +306,7 @@ export class ToolingSetup implements vscode.Disposable {
     try {
       const info = await this.track(vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
         title: this.text("toolInstalling", "ESKA", update.available) }, async () => {
+        await this.stop("debugger");
         if (used && selected) { await this.stop("project"); reconnect = true; }
         return installBundle(this.root, update, (cli, args) => {
           this.log(JSON.stringify({ event: "bundle_update_start", executable: cli, args }));
@@ -306,9 +322,13 @@ export class ToolingSetup implements vscode.Disposable {
     }
   }
 
-  /** Project bootstrap installs the full CLI; Analyzer and formatter retain their separate installers. */
+  /** Preserve full-bundle ownership when adding a newly introduced native tool. */
   private async offerInstall(kind: ToolKind, signal: AbortSignal): Promise<ToolInfo | undefined> {
     if (kind === "project") return this.offerBundle(signal);
+    if (kind !== "analyzer" && await this.track(inspectBundle(this.root, signal))) {
+      await this.check("project");
+      return kind === "debugger" ? this.ensureDebugger(signal, false) : this.ensureFormatter(signal, false);
+    }
     const release = await this.track(latestToolRelease(kind, undefined, signal));
     assertCurrent(signal);
     if (release.restriction || !release.asset) {
@@ -322,7 +342,7 @@ export class ToolingSetup implements vscode.Disposable {
     return this.perform(release, signal, false);
   }
 
-  /** First-time project setup installs all six ESKA commands, while Analyzer remains independently selected. */
+  /** First-time project setup installs all ESKA commands, while Analyzer remains independently selected. */
   private async offerBundle(signal: AbortSignal, automatic = false): Promise<ToolInfo | undefined> {
     const release = await this.track(latestRelease(signal));
     assertCurrent(signal);
@@ -370,7 +390,7 @@ export class ToolingSetup implements vscode.Disposable {
           if (token.isCancellationRequested) cancelled.abort();
           const data = await downloadAsset(release.asset!, combined);
           assertCurrent(combined);
-          if (used && selected) { await this.stop(kind); stopped = true; }
+          if (kind === "debugger" || used && selected) { await this.stop(kind); stopped = true; }
           assertCurrent(combined);
           const info = kind !== "analyzer" ? await installComponent(this.root, data, release, this.log, combined)
             : await installAnalyzer(this.root, data, release, join(this.context.extensionPath, "resources", "analyzer-notices"), combined);
@@ -427,14 +447,14 @@ export class ToolingSetup implements vscode.Disposable {
 
   /** All component facts stay available under the single ESKA status item. */
   summary(): string {
-    return (["project", "formatter", "analyzer"] as const).map(kind => this.tooltip(kind)).join("\n\n")
+    return (["project", "formatter", "debugger", "analyzer"] as const).map(kind => this.tooltip(kind)).join("\n\n")
       + `\n\n${this.text("toolUpdateAll")}`;
   }
 
   /** Selecting a component exposes its existing actions without starting an update on menu open. */
   async showComponents(): Promise<void> {
     if (this.disposed) return;
-    const choices = (["project", "formatter", "analyzer"] as const).map(component => {
+    const choices = (["project", "formatter", "debugger", "analyzer"] as const).map(component => {
       const state = this.states[component];
       return { component, label: TOOL_NAMES[component],
         description: `${state.info ? `v${state.info.version} · ` : ""}${this.text(`toolPhase_${state.phase}`)}${state.activity ? ` · ${this.text(`toolPhase_${state.activity}`)}` : ""}`,
@@ -447,6 +467,7 @@ export class ToolingSetup implements vscode.Disposable {
     const commands = {
       project: ["checkUpdates", "recoverProjectInstallation"],
       formatter: ["checkFormatterUpdates", "recoverFormatterInstallation"],
+      debugger: ["checkDebuggerUpdates", "recoverDebuggerInstallation"],
       analyzer: ["checkAnalyzerUpdates", "recoverAnalyzerInstallation"],
     } as const;
     const [check, recover] = commands[selected.component];

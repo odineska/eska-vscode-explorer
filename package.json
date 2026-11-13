@@ -62,6 +62,16 @@
   "contributes": {
     "commands": [
       {
+        "command": "eska.explorer.checkDebuggerUpdates",
+        "title": "%checkDebuggerUpdates%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.recoverDebuggerInstallation",
+        "title": "%recoverDebuggerInstallation%",
+        "category": "ESKA"
+      },
+      {
         "command": "eska.explorer.connect",
         "title": "%connect%",
         "category": "ESKA Explorer",

@@ -1,10 +1,10 @@
 import { constants } from "node:fs";
 import { chmod, copyFile, link, lstat, mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { ToolFailure, assertCurrent, exactKeys, type NativeTarget } from "./contracts.js";
+import { ToolFailure, assertCurrent, exactKeys, type ComponentName, type NativeTarget } from "./contracts.js";
 import { checksum, destination, fileHash, readMetadata, relativePath, writeJson } from "./files.js";
 
-type JournalTool = "eska-project" | "eska-fmt" | "bsl-analyzer-app";
+type JournalTool = ComponentName | "bsl-analyzer-app";
 interface Entry { path: string; old: string | null; new: string | null; backup: string | null }
 interface Journal { schema_version: 1; tool: JournalTool; target: NativeTarget; phase: "prepared" | "committed" | "rolled-back"; entries: Entry[] }
 

@@ -29,7 +29,16 @@ const args = process.argv.slice(2), name = path.basename(__filename);
 if (args[0] === '--version') { console.log(name + ' ' + (config.componentVersions?.[name] ?? (name === 'eska-project' ? config.projectVersion ?? config.version : config.version))); }
 else if (name === 'eska' && args.includes('--check')) console.log(JSON.stringify({ schemaVersion: 1, status: config.version === config.available ? 'up-to-date' : 'update-available',
   installedVersion: config.version, availableVersion: config.available, executable: { value: __filename, encoding: 'utf-8' }, method: 'installer', ...config.check }));
-else if (name === 'eska' && args[0] === 'update') { config.version = args[2]; fs.writeFileSync(file, JSON.stringify(config)); }
+else if (name === 'eska' && args[0] === 'update') {
+  config.version = args[2]; fs.writeFileSync(file, JSON.stringify(config));
+  const receiptFile = path.join(__dirname, '..', 'eska-receipt.json'), receipt = JSON.parse(fs.readFileSync(receiptFile));
+  for (const component of ['eska-fmt', 'eska-debug']) {
+    if (component === config.omit) continue;
+    if (!receipt.binaries.includes(component)) receipt.binaries.push(component);
+    fs.copyFileSync(__filename, path.join(__dirname, component));
+  }
+  receipt.version = config.version; fs.writeFileSync(receiptFile, JSON.stringify(receipt));
+}
 else if (name === 'eska-project' && args[0] === 'serve') {
   let input = Buffer.alloc(0);
   process.stdin.on('data', chunk => {
@@ -120,4 +129,22 @@ test("bundle ownership includes the optional formatter and rejects a separately 
   f.receipt.binaries.pop(); await writeFile(f.receiptFile,JSON.stringify(f.receipt));
   await mkdir(join(f.root,"components")); await writeFile(join(f.root,"components/eska-fmt.json"),"independent receipt");
   await assert.rejects(inspectBundle(f.root),{code:"unmanaged"});
+});
+
+for (const complete of [false, true]) test(`updating a six-tool installation ${complete ? 'adds' : 'cannot omit'} the debugger`, { skip: process.platform === "win32" }, async t => {
+  const f = await fixture(t);
+  f.receipt.binaries.push("eska-fmt");
+  await writeFile(join(f.root, "bin/eska-fmt"), await readFile(f.cli), { mode: 0o755 });
+  await writeFile(f.receiptFile, JSON.stringify(f.receipt));
+  if (!complete) f.config.omit = "eska-debug";
+  await f.save();
+  const update = await inspectBundle(f.root);
+  const operation = installBundle(f.root, update, (cli, args) => runProbe(cli, args, f.root, 10000, 65536), () => {});
+  if (!complete) {
+    await assert.rejects(operation, { code: "probe", detail: "bundle-component:eska-debug" });
+  } else {
+    await operation;
+    assert.ok(JSON.parse(await readFile(f.receiptFile, "utf8")).binaries.includes("eska-debug"));
+    assert.equal((await runProbe(join(f.root, "bin/eska-debug"), ["--version"], f.root, 10000, 65536)).stdout.trim(), "eska-debug 0.16.0");
+  }
 });

@@ -76,5 +76,7 @@
   "previewForm": "Open form preview (beta)",
   "openFormXml": "Open form XML",
   "attachDebugTarget": "Select 1C Debug Target",
-  "selectAutoAttachTypes": "Select 1C Auto-Attach Types"
+  "selectAutoAttachTypes": "Select 1C Auto-Attach Types",
+  "checkDebuggerUpdates": "Check debugger updates",
+  "recoverDebuggerInstallation": "Recover debugger installation"
 }

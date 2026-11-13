@@ -250,7 +250,7 @@ for (const scenario of ["success", "failure", "custom", "declined", "current", "
     await setup.check("project");
     const attempted = !["current", "declined"].includes(scenario);
     assert.equal(installed, attempted ? 1 : 0);
-    assert.deepEqual(actions, scenario === "disconnected" ? [["restart", "project"]] : attempted && scenario !== "custom" ? [["stop", "project"], ["restart", "project"]] : []);
+    assert.deepEqual(actions, [...(attempted ? [["stop", "debugger"]] : []), ...(scenario === "disconnected" ? [["restart", "project"]] : attempted && scenario !== "custom" ? [["stop", "project"], ["restart", "project"]] : [])]);
     assert.equal(setup.states.project.info.path, selected);
     assert.equal(setup.states.project.info.version, ["success", "disconnected"].includes(scenario) ? "0.16.0" : "0.15.2");
     assert.equal(setup.states.project.activity, undefined);
@@ -280,11 +280,11 @@ test("formatter status, independent checks and discovery preserve other componen
 /** Opening ESKA is read-only; only an explicit component action invokes an existing command. */
 test("one component menu exposes all selected versions and routes every action without automatic update checks", async t => {
   const { setup, requests } = await fixture(t);
-  for (const component of ["project", "formatter", "analyzer"]) {
+  for (const component of ["project", "formatter", "debugger", "analyzer"]) {
     setup.states[component].info = { kind: component, version: "1.2.3", path: join(setup.root, component) };
     setup.states[component].available = "9.9.9";
   }
-  const routes = { project: ["checkUpdates", "recoverProjectInstallation"], formatter: ["checkFormatterUpdates", "recoverFormatterInstallation"], analyzer: ["checkAnalyzerUpdates", "recoverAnalyzerInstallation"] };
+  const routes = { project: ["checkUpdates", "recoverProjectInstallation"], formatter: ["checkFormatterUpdates", "recoverFormatterInstallation"], debugger: ["checkDebuggerUpdates", "recoverDebuggerInstallation"], analyzer: ["checkAnalyzerUpdates", "recoverAnalyzerInstallation"] };
   for (const [component, commands] of Object.entries(routes)) {
     for (const command of [...commands, "showLog"]) {
       ui.choices = [component, command];
@@ -292,7 +292,7 @@ test("one component menu exposes all selected versions and routes every action w
       assert.equal(ui.commands.at(-1), `eska.explorer.${command}`);
       const root = ui.picks.at(-2);
       assert.equal(root.options.title, "ESKA");
-      assert.deepEqual(Array.from(root.items, item => item.component), ["project", "formatter", "analyzer"]);
+      assert.deepEqual(Array.from(root.items, item => item.component), ["project", "formatter", "debugger", "analyzer"]);
       assert.ok(root.items.every(item => item.description.includes("v1.2.3") && !item.description.includes("9.9.9")));
       assert.equal(ui.picks.at(-1).options.title, `ESKA › ${root.items.find(item => item.component === component).label}`);
     }
@@ -317,11 +317,11 @@ test("one click updates project, formatter and Analyzer without component choice
   const first = setup.updateAll(), duplicate = setup.updateAll();
   assert.equal(first, duplicate);
   await first;
-  assert.deepEqual(requests, ["project", "formatter", "analyzer"]);
+  assert.deepEqual(requests, ["project", "formatter", "debugger", "analyzer"]);
   assert.deepEqual(installed, requests);
   assert.deepEqual(ui.picks, []);
   assert.ok(!ui.messages.some(text => text.includes("?") || text.includes("managed version")));
-  assert.deepEqual(actions, [["restart", "project"], ["restart", "formatter"], ["restart", "analyzer"]]);
+  assert.deepEqual(actions, [["restart", "project"], ["restart", "formatter"], ["stop", "debugger"], ["restart", "debugger"], ["restart", "analyzer"]]);
   assert.ok(Object.values(setup.states).every(state => !state.activity));
 });
 
@@ -334,15 +334,16 @@ test("one click updates the complete cargo-dist bundle and Analyzer without sepa
   replace(t, bundle, "inspectBundle", async () => update);
   replace(t, bundle, "installBundle", async () => { installed.push("bundle"); return { kind: "project", path: update.project, version: update.available }; });
   replace(t, setup, "ensureFormatter", async () => { installed.push("inspect-formatter"); return undefined; });
+  replace(t, setup, "ensureDebugger", async () => { installed.push("inspect-debugger"); return undefined; });
   replace(t, releases, "latestToolRelease", async kind => {
     assert.equal(kind, "analyzer"); return { kind, version: "0.4.1", target: releases.hostTarget(), asset: { name: kind } };
   });
   replace(t, releases, "downloadAsset", async () => Buffer.from("fixture"));
   replace(t, installation, "installAnalyzer", async root => { installed.push("analyzer"); return { kind: "analyzer", path: installation.managedPath(root, "analyzer"), version: "0.4.1" }; });
   await setup.updateAll();
-  assert.deepEqual(installed, ["bundle", "inspect-formatter", "analyzer"]);
+  assert.deepEqual(installed, ["bundle", "inspect-formatter", "inspect-debugger", "analyzer"]);
   assert.deepEqual(ui.picks, []);
-  assert.deepEqual(actions, [["stop", "project"], ["restart", "project"], ["restart", "analyzer"]]);
+  assert.deepEqual(actions, [["stop", "debugger"], ["stop", "project"], ["restart", "project"], ["restart", "analyzer"]]);
   assert.ok(!ui.messages.some(text => text.includes("?")));
 });
 
@@ -351,7 +352,7 @@ test("an independent Analyzer update still runs after project update failure", a
   replace(t, releases, "latestToolRelease", async kind => { requests.push(kind); if (kind === "project") throw new Error("network");
     return { kind, version: "0.4.0", target: releases.hostTarget() }; });
   await setup.updateAll();
-  assert.deepEqual(requests, ["project", "formatter", "analyzer"]);
+  assert.deepEqual(requests, ["project", "formatter", "debugger", "analyzer"]);
   assert.deepEqual(ui.picks, []);
   assert.ok(ui.messages.some(text => text.includes("failed")));
   assert.ok(!ui.messages.some(text => text.includes("are up to date")));
@@ -363,4 +364,21 @@ test("cancelling the shared update stops later components before their probes", 
   await setup.updateAll();
   assert.deepEqual(requests, []);
   assert.deepEqual(ui.picks, []);
+});
+
+for (const kind of ["formatter", "debugger"]) test(`${kind} checks keep full-bundle ownership`, async t => {
+  const { setup, actions } = await fixture(t);
+  const update = { cli: join(setup.root, "bin/eska"), project: installation.managedPath(setup.root, "project"),
+    version: "0.29.1", available: "0.30.0", identity: "six-tool-receipt" };
+  replace(t, installation, "managedVersion", async () => undefined);
+  replace(t, bundle, "inspectBundle", async () => update);
+  replace(t, releases, "latestToolRelease", async () => assert.fail("full bundle must not become a component installation"));
+  let installed = 0;
+  replace(t, bundle, "installBundle", async () => {
+    installed++; return { kind: "project", path: update.project, version: update.available };
+  });
+  ui.approved = true;
+  await setup.check(kind);
+  assert.equal(installed, 1);
+  assert.deepEqual(actions, [["stop", "debugger"], ["restart", "project"]]);
 });
