@@ -18,6 +18,40 @@
 продолжается; [функциональная приёмка Windows ru/en](docs/windows-forms-acceptance-2026-11-07.md) выполнена.
 Выполнение BSL и графическое редактирование не входят в просмотр.
 
+## Explorer в работе
+
+Четыре коротких скринкаста без звука — от настройки проводника до просмотра формы.
+Записано на Linux: VS Code 1.144, Explorer 0.1.19 и ESKA 0.30.0.
+Нажмите на GIF, чтобы открыть видео с управлением воспроизведением.
+
+### 1. Настроить проводник
+
+Перенесите ESKA: 1C Explorer наверх, сверните остальные группы и раскройте дерево проекта.
+
+[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11/explorer-setup.gif)](https://odineska.github.io/eska/docs/#demo-setup)
+
+### 2. Найти объект и открыть модуль
+
+Документ → реквизиты → табличная часть → модуль объекта BSL.
+
+[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11/explorer-tree.gif)](https://odineska.github.io/eska/docs/#demo-tree)
+
+### 3. Посмотреть свойства
+
+Откройте свойства документа, найдите настройки номера и перейдите к исходному XML.
+
+[![Посмотреть свойства — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11/explorer-properties.gif)](https://odineska.github.io/eska/docs/#demo-properties)
+
+### 4. Открыть форму
+
+Выберите поле на форме, раскройте данные и переключите страницы «Товары» и «Дополнительно».
+
+[![Открыть форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11/explorer-forms.gif)](https://odineska.github.io/eska/docs/#demo-forms)
+
+Для дерева, свойств и статического просмотра форм платформа 1С не нужна.
+**Текущий этап работы с формами — только просмотр; редактирование форм — в планах.**
+Просмотрщик не исполняет BSL и команды формы.
+
 ## Возможности
 
 - Ленивое дерево конфигураций, расширений, обработок и отчётов; поиск, переход
@@ -89,8 +123,9 @@ workspace требуют отдельной native-приёмки.
 
 Все настройки и команды перечислены в
 [полном руководстве](https://odineska.github.io/eska/docs/#settings).
-Редактирование форм, СКД, отладка и запуск приложения не заменяются Explorer;
-изменения свойств ограничены поддержанными существующими узлами Designer XML.
+Графическое редактирование форм и полный визуальный редактор СКД пока не реализованы.
+Запуск и HTTP-отладка доступны через `eska-debug`; изменения свойств ограничены
+поддержанными существующими узлами Designer XML.
 
 [Разработка и проверки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/development.md) · [Упаковка VSIX](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) ·
 [Публикация](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/publishing.md) · [Релизы](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/releases.md) ·
