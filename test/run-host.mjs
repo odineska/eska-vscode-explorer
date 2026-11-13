@@ -44,6 +44,13 @@ try {
     const source = join(fixture.root, "src");
     await rm(source, { recursive: true });
     await cp(native.source, source, { recursive: true });
+    if (native.scenario === "protected-breakpoint") {
+      const xml = await readFile(join(source, "Configuration.xml"), "utf8");
+      const uuid = /<Configuration uuid="([^"]+)"/.exec(xml)?.[1];
+      if (!uuid) throw new Error("Protected breakpoint fixture requires a configuration UUID.");
+      await writeFile(join(source, "Ext/ParentConfigurations.bin"),
+        `{6,0,1,${uuid},0,${uuid},"1","Vendor","Test",1,0,0,${uuid},${uuid},0,0,0,1,0,0,0,1,0,1,0,1,1,1,1}`);
+    }
     const state = join(fixture.root, ".eska");
     await mkdir(state, { recursive: true });
     await cp(native.settings, join(state, "settings_local.toml"));
