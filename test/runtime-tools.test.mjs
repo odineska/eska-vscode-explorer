@@ -23,3 +23,9 @@ test('malformed output and cancelled processes do not produce a successful opera
   abort.abort();
   assert.equal(await pending, undefined);
 });
+
+test('a success document printed before a crash or timeout cannot trigger run/debug', async () => {
+  const output = 'process.stdout.write(JSON.stringify({status:"applied"}))';
+  assert.equal(await runtimeJson(process.execPath, ['-e', output + ';process.exitCode=1'], { timeout: 10000 }), undefined);
+  assert.equal(await runtimeJson(process.execPath, ['-e', output + ';setInterval(()=>{},1000)'], { timeout: 300 }), undefined);
+});

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { isRecord } from "./protocol.js";
 
 /** Keep local addresses, paths and credentials out of extension logs. */
 export function runtimeJson(executable: string, args: string[], options: {
@@ -6,8 +7,14 @@ export function runtimeJson(executable: string, args: string[], options: {
 }): Promise<unknown> {
   return new Promise(resolve => {
     const child = execFile(executable, args, { signal: options.signal, timeout: options.timeout,
-      maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (_error, stdout) => {
-      try { resolve(JSON.parse(stdout)); } catch { resolve(undefined); }
+      maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+      if (options.signal?.aborted || error?.killed || error?.signal) { resolve(undefined); return; }
+      try {
+        const value: unknown = JSON.parse(stdout);
+        // Domain failures remain useful on nonzero exit; an interrupted/crashed command cannot report success.
+        resolve(!error || typeof error.code === "number" && isRecord(value) && isRecord(value.error)
+          && typeof value.error.code === "string" ? value : undefined);
+      } catch { resolve(undefined); }
     });
     if (options.onProgress && child.stderr) {
       let partial = "";
