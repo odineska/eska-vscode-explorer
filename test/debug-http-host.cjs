@@ -56,6 +56,14 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "exception-info") {
+    await runExceptionInfo(folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version,
+      native_exception_widget: true, exception_info_invalidated: true,
+    }));
+    return;
+  }
   if (native.scenario === "editor-controls") {
     await runEditorControls(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -279,6 +287,64 @@ async function exerciseDebugConsole(workbench, frameId, requests, responses, unt
   assert.equal(requests.filter(message => message.command === "evaluate"
     && message.arguments.expression === expression).length, 1);
   return result.variablesReference;
+}
+
+async function runExceptionInfo(folder, module, until) {
+  const { connectWorkbench } = require("./query-constructor-dom.cjs");
+  const workbench = await connectWorkbench(until);
+  const points = [3, 24].map(line => new vscode.SourceBreakpoint(
+    new vscode.Location(module, new vscode.Position(line - 1, 0))));
+  const stops = [];
+  const queries = new Map();
+  let session;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "exceptionInfo" && message.type === "request") queries.set(message.seq, message.arguments.threadId);
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stops.push(message.body);
+        },
+      };
+    },
+  });
+  vscode.debug.addBreakpoints(points);
+  try {
+    const document = await vscode.workspace.openTextDocument(module);
+    await vscode.window.showTextDocument(document);
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA HTTP exception details", type: "eska-debug", request: "launch",
+      profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    const first = await until(() => stops.shift(), "first breakpoint");
+    assert.equal(first.reason, "breakpoint");
+    await session.customRequest("setExceptionBreakpoints", {
+      filters: [], filterOptions: [{ filterId: "all", condition: "ESKA match" }],
+    });
+    await session.customRequest("continue", { threadId: first.threadId });
+    const exception = await until(() => stops.shift(), "filtered 1C exception");
+    assert.equal(exception.reason, "exception");
+    await until(() => [...queries.values()].includes(exception.threadId), "VS Code requested exceptionInfo");
+    await until(() => workbench.evaluate(`(() => {
+      const widget = [...document.querySelectorAll(".exception-widget")].find(element => element.offsetHeight > 0);
+      return widget?.textContent.includes("ESKA match");
+    })()`), "exception text in the native editor widget");
+    await session.customRequest("setExceptionBreakpoints", { filters: [] });
+    await session.customRequest("continue", { threadId: exception.threadId });
+    const next = await until(() => stops.shift(), "breakpoint after the exception");
+    assert.equal(next.reason, "breakpoint");
+    assert.equal(next.threadId, exception.threadId);
+    await assert.rejects(session.customRequest("exceptionInfo", { threadId: exception.threadId }));
+    await until(() => workbench.evaluate(`!Array.from(document.querySelectorAll(".exception-widget"))
+      .some(widget => widget.offsetHeight > 0)`), "exception widget dismissed after continue");
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    vscode.debug.removeBreakpoints(points);
+    tracker.dispose();
+    workbench.close();
+  }
 }
 
 async function runEditorControls(folder, module, until) {
