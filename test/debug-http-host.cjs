@@ -57,6 +57,13 @@ exports.run = async function () {
     }));
     return;
   }
+  if (native.scenario === "transport-loss") {
+    const result = await runTransportLoss(folder, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, ...result,
+    }));
+    return;
+  }
   if (native.scenario === "prod-source-gate") {
     const result = await runProdSourceGate(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
@@ -879,6 +886,92 @@ async function runParity(folder, module, scenario, until) {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
     vscode.debug.removeBreakpoints(breakpoints);
+  }
+}
+
+async function runTransportLoss(folder, until) {
+  const settingsPath = path.join(folder.uri.fsPath, ".eska", "settings_local.toml");
+  const settings = await fs.readFile(settingsPath, "utf8");
+  const endpoint = /^url = "http:\/\/127\.0\.0\.1:(\d+)"$/m.exec(settings);
+  assert.ok(endpoint, "the fixture must use an external loopback dbgs");
+  const sockets = new Set();
+  const relay = net.createServer(client => {
+    const upstream = net.createConnection(Number(endpoint[1]), "127.0.0.1");
+    for (const [socket, peer] of [[client, upstream], [upstream, client]]) {
+      sockets.add(socket);
+      socket.on("error", () => peer.destroy());
+      socket.on("close", () => {
+        sockets.delete(socket);
+        peer.destroy();
+      });
+    }
+    client.pipe(upstream).pipe(client);
+  });
+  await new Promise((resolve, reject) => {
+    relay.once("error", reject);
+    relay.listen(0, "127.0.0.1", resolve);
+  });
+  let closed;
+  const stopRelay = () => closed ??= new Promise(resolve => {
+    relay.close(resolve);
+    for (const socket of sockets) socket.destroy();
+  });
+  const sessions = new Map();
+  const ended = new Set();
+  const termination = vscode.debug.onDidTerminateDebugSession(session => ended.add(session.id));
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(session) {
+      const messages = [];
+      sessions.set(session.id, { session, messages });
+      return { onDidSendMessage(message) { messages.push(message); } };
+    },
+  });
+  const launch = () => vscode.debug.startDebugging(folder, {
+    name: "ESKA HTTP reconnect", type: "eska-debug", request: "attach", profile: "test", projectDir: folder.uri.fsPath,
+  });
+  let workbench;
+  try {
+    await fs.writeFile(settingsPath, settings.replace(endpoint[0], `url = "http://127.0.0.1:${relay.address().port}"`));
+    const { connectWorkbench } = require("./query-constructor-dom.cjs");
+    workbench = await connectWorkbench(until);
+    assert.equal(await launch(), true);
+    const first = [...sessions.values()][0];
+    assert.ok(first);
+    const response = command => first.messages.find(message => message.type === "response" && message.command === command);
+    await until(() => response("eska/listDebugTargets")?.body?.targets?.length, "external client listed");
+    await until(async () => {
+      if (response("eska/attachDebugTarget")?.success) return true;
+      await workbench.evaluate(`[...document.querySelectorAll(".quick-input-widget .monaco-list-row")]
+        .find(row => row.textContent.includes("ManagedClient"))?.click()`);
+      await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+      return false;
+    }, "selected external client attached");
+    const { threads } = await first.session.customRequest("threads");
+    assert.ok(threads.some(thread => thread.name.includes("ManagedClient")), JSON.stringify(threads));
+    void vscode.commands.executeCommand("workbench.debug.action.toggleRepl");
+    const started = performance.now();
+    await stopRelay();
+    await until(() => ended.has(first.session.id), "VS Code ended the disconnected session");
+    const events = first.messages.filter(message => message.type === "event");
+    const lost = vscode.env.language.startsWith("ru") ? "Потеряна связь с сервером отладки 1С"
+      : "The connection to the 1C debug server was lost";
+    const outputs = events.filter(message => message.event === "output" && message.body.category === "stderr");
+    assert.equal(outputs.filter(message => message.body.output.includes(lost)).length, 1);
+    assert.equal(events.filter(message => message.event === "terminated").length, 1);
+    await until(() => workbench.evaluate(`document.querySelector(".repl-tree")?.textContent.includes(${JSON.stringify(lost)})`),
+      "connection loss visible in Debug Console");
+
+    return { transport_loss: true, console_diagnostic: true, elapsed_ms: Math.round(performance.now() - started) };
+  } finally {
+    await stopRelay();
+    await fs.writeFile(settingsPath, settings);
+    void vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+    for (const { session } of sessions.values()) {
+      if (!ended.has(session.id)) void vscode.debug.stopDebugging(session);
+    }
+    tracker.dispose();
+    termination.dispose();
+    workbench?.close();
   }
 }
 
