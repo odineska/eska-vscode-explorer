@@ -27,6 +27,13 @@ exports.run = async function () {
   await configuration.update("debugExecutable", native.binary, vscode.ConfigurationTarget.Workspace);
   const source = path.join(root, "src");
   const module = vscode.Uri.file(path.join(source, "Ext", "ManagedApplicationModule.bsl"));
+  if (native.scenario === "protected-breakpoint") {
+    const result = await runProtectedBreakpoint(explorer, folder, module, until);
+    await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
+      passed: true, suite: "debug-http", vscode: vscode.version, ...result,
+    }));
+    return;
+  }
   if (native.scenario === "epf-server-opaque") {
     const external = vscode.Uri.file(path.join(source, "EskaEpfWire/Ext/ObjectModule.bsl"));
     await runServerOpaqueSnapshot(folder, external, until);
@@ -245,6 +252,75 @@ exports.run = async function () {
     passed: true, suite: "debug-http", vscode: vscode.version, breakpoint: true, caller_frame: true, attach: true,
   }));
 };
+
+async function runProtectedBreakpoint(explorer, folder, module, until) {
+  const uri = await explorer.support.resolveUri(module.fsPath);
+  assert.equal(uri.scheme, "eska-protected");
+  const document = await vscode.workspace.openTextDocument(uri);
+  const position = new vscode.Position(2, 0);
+  await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
+  await vscode.commands.executeCommand("editor.debug.action.toggleBreakpoint");
+  const breakpoint = await until(() => vscode.debug.breakpoints.find(point => point instanceof vscode.SourceBreakpoint
+    && point.location.uri.toString() === uri.toString() && point.location.range.start.line === position.line),
+  "VS Code added the breakpoint from the protected editor");
+  const nativeBreakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(3, 0)));
+  vscode.debug.addBreakpoints([nativeBreakpoint]);
+  const stops = [];
+  let session;
+  let verified = false;
+  const tracker = vscode.debug.registerDebugAdapterTrackerFactory("eska-debug", {
+    createDebugAdapterTracker(active) {
+      session = active;
+      const protectedRequests = new Set();
+      return {
+        onWillReceiveMessage(message) {
+          if (message.command === "setBreakpoints" && message.arguments.source.path === uri.toString()) {
+            protectedRequests.add(message.seq);
+          }
+        },
+        onDidSendMessage(message) {
+          if (message.event === "stopped") stops.push(message.body);
+          if (message.type === "response" && protectedRequests.has(message.request_seq)) {
+            verified ||= message.success && message.body.breakpoints.some(point => point.verified);
+          }
+        },
+      };
+    },
+  });
+  try {
+    assert.equal(document.getText(), await fs.readFile(module.fsPath, "utf8"));
+    assert.equal(await vscode.debug.startDebugging(folder, {
+      name: "ESKA protected source", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
+    }), true);
+    await until(() => verified, "the adapter verified the protected breakpoint");
+    const stop = await until(() => stops[0], "1C stopped on the protected breakpoint");
+    assert.equal(stop.reason, "breakpoint");
+    const stack = await session.customRequest("stackTrace", { threadId: stop.threadId });
+    assert.equal(stack.stackFrames[0].source.path, uri.toString());
+    assert.equal(stack.stackFrames[0].line, 3);
+    assert.equal((await session.customRequest("evaluate", {
+      frameId: stack.stackFrames[0].id, expression: "A + 1", context: "repl",
+    })).result, "42");
+    await session.customRequest("stepIn", { threadId: stop.threadId });
+    const step = await until(() => stops[1], "1C stepped into the function in the same module");
+    const nested = await session.customRequest("stackTrace", { threadId: step.threadId });
+    assert.equal(nested.stackFrames[0].source.path, uri.toString());
+    await until(() => vscode.window.activeTextEditor?.document.uri.toString() === uri.toString()
+      && vscode.window.activeTextEditor.selection.active.line === nested.stackFrames[0].line - 1,
+    "VS Code opened the stopped line in the protected editor");
+    await session.customRequest("continue", { threadId: step.threadId });
+    const nativeStop = await until(() => stops[2], "the native breakpoint survives the protected breakpoint list");
+    assert.equal(nativeStop.reason, "breakpoint");
+    const nativeStack = await session.customRequest("stackTrace", { threadId: nativeStop.threadId });
+    assert.equal(nativeStack.stackFrames[0].line, 4);
+    assert.equal(nativeStack.stackFrames[0].source.path, module.fsPath);
+    return { protected_breakpoint: true, protected_stack_and_step: true, native_breakpoint_preserved: true, evaluate: "42" };
+  } finally {
+    if (session) await vscode.debug.stopDebugging(session);
+    tracker.dispose();
+    vscode.debug.removeBreakpoints([breakpoint, nativeBreakpoint]);
+  }
+}
 
 async function exerciseDebugConsole(workbench, frameId, requests, responses, until) {
   const submit = async expression => {

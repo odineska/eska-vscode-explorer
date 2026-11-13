@@ -57,6 +57,50 @@ exports.run = async function () {
       text("Project Runtime Settings", "Локальные настройки запуска"));
     await chooseProd(first);
     await first.evaluate("document.querySelector('input[type=checkbox]').click()");
+    const layout = await first.evaluate(`(() => {
+      const fields = [...document.querySelectorAll(".settings-field > :is(input, select)")];
+      return {
+        headings: [...document.querySelectorAll(".settings-group h2")].map(title => title.textContent),
+        controls: fields.map(field => {
+          const { x, width, height } = field.getBoundingClientRect();
+          return [x, width, height];
+        }),
+        contentWidth: document.querySelector(".settings-fields").getBoundingClientRect().width,
+        viewportWidth: innerWidth,
+        overflow: document.documentElement.scrollWidth > innerWidth,
+      };
+    })()`);
+    assert.deepEqual(layout.headings, text(
+      ["Infobase", "Authentication", "Platform", "Debugging"],
+      ["Информационная база", "Аутентификация", "Платформа", "Отладка"],
+    ));
+    assert.ok(layout.controls.length >= 8);
+    const [firstControl] = layout.controls;
+    assert.ok(layout.controls.every(control => control.every((value, index) => Math.abs(value - firstControl[index]) < 1)));
+    assert.ok(layout.contentWidth >= Math.min(layout.viewportWidth * .85, 1100), "form uses the available editor width");
+    assert.equal(layout.overflow, false);
+    if (process.env.ESKA_HOST_DOM_ARTIFACTS) {
+      await fs.mkdir(process.env.ESKA_HOST_DOM_ARTIFACTS, { recursive: true });
+      await first.screenshot(path.join(process.env.ESKA_HOST_DOM_ARTIFACTS, `runtime-settings-${russian ? "ru" : "en"}.png`));
+    }
+    const viewport = await connectWorkbench(until);
+    try {
+      await vscode.commands.executeCommand("workbench.action.closeSidebar");
+      await vscode.commands.executeCommand("workbench.action.closeAuxiliaryBar");
+      await viewport.viewport(510, 730);
+      await until(() => first.evaluate("innerWidth <= 560"), "settings receive the narrower editor width");
+      const narrow = await first.evaluate(`(() => {
+        const field = document.querySelector(".settings-field");
+        const label = field.firstElementChild.getBoundingClientRect();
+        const control = field.lastElementChild.getBoundingClientRect();
+        return { stacked: control.top >= label.bottom && Math.abs(control.left - label.left) < 1,
+          viewportWidth: innerWidth, scrollWidth: document.documentElement.scrollWidth };
+      })()`);
+      assert.ok(narrow.stacked && narrow.scrollWidth <= narrow.viewportWidth, JSON.stringify(narrow));
+    } finally {
+      await viewport.viewport(1440, 900);
+      viewport.close();
+    }
     if (picker) {
       const workbench = await connectWorkbench(until);
       try {
@@ -132,6 +176,7 @@ exports.run = async function () {
   } finally { restored.close(); }
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
     passed: true, suite: "project-settings", vscode: vscode.version, prod_only: true,
-    shared_validation: true, settings_restored: true, auto_attach_settings: true, epf_settings: processing, registered_infobase: !!picker,
+    shared_validation: true, settings_restored: true, auto_attach_settings: true, epf_settings: processing,
+    registered_infobase: !!picker, grouped_aligned_controls: true, narrow_layout: true,
   }));
 };

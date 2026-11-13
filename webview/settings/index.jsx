@@ -41,6 +41,16 @@ function serialize(value) {
     authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
 }
 
+function SettingsGroup(props) {
+  return <section class="settings-group" aria-labelledby={props.id}>
+    <header class="group-heading">
+      <h2 id={props.id}>{props.title}</h2>
+      {props.action}
+    </header>
+    {props.children}
+  </section>;
+}
+
 function App() {
   const [labels, setLabels] = createSignal({});
   const [active, setActive] = createSignal("test");
@@ -77,61 +87,73 @@ function App() {
     setNotice("");
     vscode.postMessage({ type, settings, profile: active() });
   };
-  const input = field => <label>{labels()[field]}<input type="text" name={field} value={profile()[field]}
+  const input = field => <label class="settings-field"><span>{labels()[field]}</span><input type="text" name={field} value={profile()[field]}
     onInput={event => edit(field, event.currentTarget.value)} /></label>;
-  const select = (field, label, options) => <label>{labels()[label]}<select name={field} value={profile()[field]}
+  const select = (field, label, options) => <label class="settings-field"><span>{labels()[label]}</span><select name={field} value={profile()[field]}
     onChange={event => edit(field, event.currentTarget.value)}>
     <For each={options}>{option => <option value={option}>{labels()[option]}</option>}</For>
   </select></label>;
+  const toggle = field => <label class="settings-toggle"><input type="checkbox" name={field} checked={profile()[field]}
+    disabled={busy()} onChange={event => edit(field, event.currentTarget.checked)} />{labels()[field]}</label>;
 
   vscode.postMessage({ type: "load" });
-  return <article>
-    <Show when={labels().title}><h1>{labels().title}</h1></Show>
+  return <article class="settings-page">
+    <Show when={labels().title}>
+      <h1>{labels().title}</h1>
+      <div class="settings-bar">
+        <div class="settings-toolbar">
+          <Show when={loaded()}>
+            <Toolbar label={labels().profiles} class="profile-switch">
+              <For each={profiles}>{name => <Button quiet aria-pressed={active() === name} disabled={busy()}
+                onClick={() => setActive(name)}>{labels()[name]}</Button>}</For>
+            </Toolbar>
+          </Show>
+          <Toolbar label={labels().title} class="settings-actions">
+            <Show when={loaded()}><Button primary disabled={busy() || !!warning()} onClick={() => request("save",
+              { test: serialize(drafts.test), prod: serialize(drafts.prod) })}>{labels().save}</Button></Show>
+            <Show when={loaded() && profile().enabled}><Button disabled={busy()} onClick={() => request("probe")}>{labels().probe}</Button></Show>
+            <Button disabled={busy()} onClick={() => request("load")}>{labels().reload}</Button>
+          </Toolbar>
+        </div>
+        <p class="settings-notice" role="status">{notice() || warning()}</p>
+      </div>
+    </Show>
     <Show when={loaded()}>
-      <Toolbar label={labels().infobase}>
-        <For each={profiles}>{name => <Button quiet aria-pressed={active() === name} disabled={busy()}
-          onClick={() => setActive(name)}>{labels()[name]}</Button>}</For>
-      </Toolbar>
-      <label class="enable"><input type="checkbox" checked={profile().enabled} disabled={busy()}
-        onChange={event => edit("enabled", event.currentTarget.checked)} />{labels().enabled}</label>
+      {toggle("enabled")}
       <Show when={profile().enabled}>
-        <fieldset disabled={busy()}>
-          {select("kind", "infobase", ["file", "cluster", "standalone"])}
-          <Button disabled={busy()} onClick={() => request("pickInfobase")}>{labels().registeredInfobase}</Button>
-          <Show when={profile().kind === "file"}>{input("path")}</Show>
-          <Show when={profile().kind === "cluster"}>{input("host")}{input("name")}</Show>
-          <Show when={profile().kind === "standalone"}>{input("url")}{input("name")}
-            <Show when={active() === "test"}>{input("admin")}</Show>
-          </Show>
-          {select("runner", "runner", ["local", "distrobox"])}
-          <Show when={profile().runner === "distrobox"}>{input("container")}</Show>
-          {input("version")}{input("ibcmd")}
-          <Show when={profile().kind === "file"}>
-            <label class="enable"><input type="checkbox" name="managedDebug" checked={profile().managedDebug}
-              onChange={event => edit("managedDebug", event.currentTarget.checked)} />{labels().managedDebug}</label>
-          </Show>
-          <Show when={profile().kind === "file" && profile().managedDebug} fallback={input("endpoint")}>{input("debugPort")}</Show>
-          <Show when={profile().endpoint || profile().kind === "file" && profile().managedDebug}>
-            <label class="enable"><input type="checkbox" name="customAutoAttach" checked={profile().customAutoAttach}
-              onChange={event => edit("customAutoAttach", event.currentTarget.checked)} />{labels().customAutoAttach}</label>
-            <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>
-            <Show when={externalProcessing() || profile().epfArtifact || profile().epfDebugUrl}>
-              {input("epfArtifact")}{input("epfDebugUrl")}
+        <fieldset class="settings-fields" disabled={busy()} aria-label={labels()[active()]}>
+          <SettingsGroup id="database" title={labels().database} action={
+            <Button onClick={() => request("pickInfobase")}>{labels().registeredInfobase}</Button>
+          }>
+            {select("kind", "infobase", ["file", "cluster", "standalone"])}
+            <Show when={profile().kind === "file"}>{input("path")}</Show>
+            <Show when={profile().kind === "cluster"}>{input("host")}{input("name")}</Show>
+            <Show when={profile().kind === "standalone"}>{input("url")}{input("name")}
+              <Show when={active() === "test"}>{input("admin")}</Show>
             </Show>
-          </Show>
-          {input("user")}{input("secret")}
+          </SettingsGroup>
+          <SettingsGroup id="authentication" title={labels().authentication}>
+            {input("user")}{input("secret")}
+          </SettingsGroup>
+          <SettingsGroup id="platform" title={labels().platform}>
+            {select("runner", "runner", ["local", "distrobox"])}
+            <Show when={profile().runner === "distrobox"}>{input("container")}</Show>
+            {input("version")}{input("ibcmd")}
+          </SettingsGroup>
+          <SettingsGroup id="debugging" title={labels().debugging}>
+            <Show when={profile().kind === "file"}>{toggle("managedDebug")}</Show>
+            <Show when={profile().kind === "file" && profile().managedDebug} fallback={input("endpoint")}>{input("debugPort")}</Show>
+            <Show when={profile().endpoint || profile().kind === "file" && profile().managedDebug}>
+              {toggle("customAutoAttach")}
+              <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>
+              <Show when={externalProcessing() || profile().epfArtifact || profile().epfDebugUrl}>
+                {input("epfArtifact")}{input("epfDebugUrl")}
+              </Show>
+            </Show>
+          </SettingsGroup>
         </fieldset>
       </Show>
     </Show>
-    <Show when={labels().title}>
-      <Toolbar label={labels().title}>
-        <Show when={loaded()}><Button primary disabled={busy() || !!warning()} onClick={() => request("save",
-          { test: serialize(drafts.test), prod: serialize(drafts.prod) })}>{labels().save}</Button></Show>
-        <Show when={loaded() && profile().enabled}><Button disabled={busy()} onClick={() => request("probe")}>{labels().probe}</Button></Show>
-        <Button disabled={busy()} onClick={() => request("load")}>{labels().reload}</Button>
-      </Toolbar>
-    </Show>
-    <p role="status">{notice() || warning()}</p>
   </article>;
 }
 

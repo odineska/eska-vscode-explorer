@@ -1,5 +1,12 @@
 # Просмотр управляемых форм (beta)
 
+**Текущий этап — только просмотр. Редактирование форм — в планах.**
+
+[![Открыть форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11/explorer-forms.gif)](https://odineska.github.io/eska/docs/#demo-forms)
+
+На записи: открытие формы из дерева, выбор поля, раскрытие данных и переключение
+страниц. Explorer 0.1.19, ESKA 0.30.0, Linux; скринкаст без звука.
+
 Просмотр доступен для функционального тестирования на Linux и Windows.
 [Приёмка Windows ru/en](windows-forms-acceptance-2026-11-07.md) включает установленный
 VSIX, отдельные окна и 97 форм после roundtrip платформы. Команда и строка

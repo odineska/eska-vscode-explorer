@@ -8,6 +8,8 @@ import { findTool } from "./tooling/inspect.js";
 
 const labels = {
   title: "runtimeTitle", registeredInfobase: "runtimeRegisteredInfobase", test: "runtimeTest", prod: "runtimeProd", enabled: "runtimeEnabled",
+  profiles: "runtimeProfiles", database: "runtimeDatabase", authentication: "runtimeAuthentication",
+  platform: "runtimePlatform", debugging: "runtimeDebugging",
   infobase: "runtimeInfobase", file: "runtimeFile", cluster: "runtimeCluster", standalone: "runtimeStandalone",
   path: "runtimePath", host: "runtimeHost", name: "runtimeName", url: "runtimeUrl", admin: "runtimeAdmin",
   runner: "runtimeRunner", local: "runtimeLocal", distrobox: "runtimeDistrobox", container: "runtimeContainer",

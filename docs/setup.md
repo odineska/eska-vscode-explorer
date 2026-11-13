@@ -1,5 +1,9 @@
 # Connect a project to ESKA Explorer
 
+After opening the folder containing `eska.toml`, drag **ESKA: 1C Explorer** to
+the top of the Explorer sidebar and collapse the other sections. Then expand
+the metadata tree. [Silent setup screencast (Russian UI)](https://odineska.github.io/eska/docs/#demo-setup).
+
 ## Install components
 
 Install the VSIX through **Extensions → Install from VSIX…**. Its extension ID is
