@@ -58,6 +58,9 @@ export class SupportController implements vscode.FileDecorationProvider {
   private readonly documentSubscription: vscode.Disposable;
   private readonly editorSubscription: vscode.Disposable;
   private readonly protecting = new Set<vscode.TextEditor>();
+  private readonly pendingReadonly = new Set<string>();
+  private rulesWritten: Promise<void> = Promise.resolve();
+  private publishedRules: string[] | undefined;
   loading = false;
   failed = false;
   private clearRestrictions = false;
@@ -134,6 +137,9 @@ export class SupportController implements vscode.FileDecorationProvider {
       this.changed.fire(undefined);
     }
     this.repaint();
+    if (this.targeted && this.enabled) {
+      for (const editor of vscode.window.visibleTextEditors) void this.protectEditor(editor);
+    }
     clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.serial = this.serial.then(() => this.refresh(epoch)).catch(error => {
@@ -206,14 +212,18 @@ export class SupportController implements vscode.FileDecorationProvider {
 
   /** Every open checks current dependency bytes; an unavailable result stays readable but immutable. */
   async resolveUri(path: string): Promise<vscode.Uri> {
-    if (!this.targeted || !this.enabled || !this.locate(path)) return this.openUri(path);
-    const epoch = this.epoch;
-    let checked = false;
-    this.serial = this.serial.then(async () => { await this.queryFiles([path], epoch); checked = true; }).catch(error => this.log(`support_file_failed ${String(error)}`));
-    await this.serial;
-    const policy = this.fileIndex.get(vscode.Uri.file(path).toString())?.file;
-    return !checked || epoch !== this.epoch || !policy || policy.readOnly || policy.unknown
-      ? ProtectedSources.protectedUri(vscode.Uri.file(path)) : vscode.Uri.file(path);
+    const source = vscode.Uri.file(path);
+    for (let attempt = 0; attempt < 3 && !this.stopped; attempt++) {
+      if (!this.targeted || !this.enabled || !this.locate(path)) return this.openUri(path);
+      const epoch = this.epoch;
+      const checked = this.serial.then(() => this.queryFiles([path], epoch));
+      this.serial = checked.catch(error => this.log(`support_file_failed ${String(error)}`));
+      if (!await checked.then(() => true, () => false)) break;
+      if (epoch !== this.epoch) continue;
+      const policy = this.fileIndex.get(source.toString())?.file;
+      return policy && !policy.readOnly ? source : ProtectedSources.protectedUri(source);
+    }
+    return ProtectedSources.protectedUri(source);
   }
 
   /** Authorize the entire language edit against fresh backend policy, then expose a synchronous freshness check. */
@@ -272,23 +282,37 @@ export class SupportController implements vscode.FileDecorationProvider {
 
   /** Native file opens use the same immutable provider; dirty buffers are never discarded or replaced. */
   private async protectEditor(editor: vscode.TextEditor): Promise<void> {
-    if (!this.targeted || !this.enabled || this.stopped || editor.document.uri.scheme !== 'file'
-      || (!this.locate(editor.document.uri.fsPath) && !this.fileIndex.get(editor.document.uri.toString())?.file.readOnly)
-      || this.protecting.has(editor)) return;
+    const source = editor.document.uri;
+    if (!this.targeted || !this.enabled || this.stopped || source.scheme !== 'file' || this.protecting.has(editor)) return;
+    const project = this.locate(source.fsPath)?.project;
+    const cached = this.fileIndex.get(source.toString());
+    if (!project && !cached?.file.readOnly) return;
     this.protecting.add(editor);
+    const current = cached?.snapshot;
+    const epoch = this.epoch;
     try {
-      const uri = await this.resolveUri(editor.document.uri.fsPath);
-      if (this.stopped || !this.enabled || uri.scheme === 'file' || editor.document.isDirty
+      if (project && (!current || this.snapshots.get(project) !== current
+        || current.generation !== project.info.generation || current.eventSequence !== project.info.eventSequence)) {
+        this.pendingReadonly.add(source.fsPath);
+        await this.apply(undefined, epoch);
+      }
+      const uri = await this.resolveUri(source.fsPath);
+      if (epoch !== this.epoch || this.stopped || !this.enabled || uri.scheme === 'file' || nativeDirty(editor.document)
         || !vscode.window.visibleTextEditors.includes(editor)) return;
       const document = await vscode.workspace.openTextDocument(uri);
-      if (editor.document.isDirty || !vscode.window.visibleTextEditors.includes(editor)) return;
+      if (epoch !== this.epoch || nativeDirty(editor.document) || !vscode.window.visibleTextEditors.includes(editor)) return;
       const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab =>
         tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === editor.document.uri.toString() && !tab.isDirty);
       await vscode.window.showTextDocument(document, { ...(editor.viewColumn === undefined ? {} : { viewColumn: editor.viewColumn }),
         preserveFocus: vscode.window.activeTextEditor !== editor, preview: true, selection: editor.selection });
       for (const tab of tabs) if (!tab.isDirty) await vscode.window.tabGroups.close(tab, true);
     } catch (error) { this.log(`support_editor_failed ${String(error)}`); }
-    finally { this.protecting.delete(editor); }
+    finally {
+      this.protecting.delete(editor);
+      if (epoch !== this.epoch && vscode.window.visibleTextEditors.includes(editor)) {
+        void this.protectEditor(editor);
+      }
+    }
   }
 
   /** Resolve source membership through native path boundaries, including additional workspace folders. */
@@ -369,6 +393,7 @@ export class SupportController implements vscode.FileDecorationProvider {
     // publishing that absence repeatedly would enqueue the same directory after every repaint.
     for (const path of directories) this.knownDirectories.add(path);
     const active = new Set([this.tree, ...this.additional].flatMap(tree => tree?.projects ?? []));
+    const checkedPaths: string[] = [];
     const snapshots = new Map([...this.snapshots].filter(([project]) => active.has(project)).map(([project, snapshot]) =>
       [project, { ...snapshot, files: snapshot.files.filter(file => !directories.has(file.path)) }]));
     for (const tree of [this.tree, ...this.additional]) if (tree) for (const project of tree.projects) {
@@ -392,13 +417,21 @@ export class SupportController implements vscode.FileDecorationProvider {
           const path = join(nativePath(project.info.sourcePath), nativePath(item.path));
           snapshot.files = snapshot.files.filter(file => file.path !== path);
           snapshot.files.push({ path, objects: item.objects, readOnly: item.readOnly || item.unknown, mixed: item.mixed, unknown: item.unknown });
+          checkedPaths.push(path);
         }
         snapshot.diagnostics = response.diagnostics.map(String);
         snapshot.generation = project.info.generation; snapshot.eventSequence = project.info.eventSequence;
       }
       snapshots.set(project, snapshot);
     }
-    await this.publish(snapshots, epoch, true, this.ownedRules());
+    const baselineRules = this.ownedRules();
+    for (const path of checkedPaths) this.pendingReadonly.delete(path);
+    for (const path of this.pendingReadonly) {
+      if (!this.locate(path) && !this.pendingFolders.includes(vscode.workspace.getWorkspaceFolder(vscode.Uri.file(path))?.uri.fsPath ?? '')) {
+        this.pendingReadonly.delete(path);
+      }
+    }
+    await this.publish(snapshots, epoch, true, baselineRules);
   }
 
   /** Validate a complete batch before publishing it or writing settings. */
@@ -406,13 +439,17 @@ export class SupportController implements vscode.FileDecorationProvider {
     const tree = this.tree;
     if (epoch !== this.epoch) return;
     if (!this.enabled || !tree || !this.available) {
-      if (!this.enabled || this.clearRestrictions) { await this.apply([], epoch); this.fileIndex.clear(); }
+      if (!this.enabled || this.clearRestrictions) {
+        this.pendingReadonly.clear();
+        await this.apply([], epoch); this.fileIndex.clear();
+      }
       this.changed.fire(undefined); this.repaint();
       return;
     }
     if (this.targeted) {
       const paths = [...this.fileIndex.values()].map(value => value.file.path);
-      paths.push(...vscode.workspace.textDocuments.filter(document => document.uri.scheme === 'file').map(document => document.uri.fsPath));
+      paths.push(...this.pendingReadonly, ...vscode.workspace.textDocuments
+        .filter(document => document.uri.scheme === 'file').map(document => document.uri.fsPath));
       paths.push(...this.requestedFiles);
       this.requestedFiles.clear();
       await this.queryFiles(paths, epoch);
@@ -551,10 +588,24 @@ export class SupportController implements vscode.FileDecorationProvider {
     }
   }
 
+  /** Pending native editors are guarded even while a different permission request is still running. */
+  private apply(patterns?: string[], epoch?: number): Promise<void> {
+    const write = this.rulesWritten.then(() => {
+      if (epoch !== undefined && epoch !== this.epoch) return;
+      if (patterns !== undefined) this.publishedRules = patterns;
+      const desired = this.enabled && !this.stopped
+        ? [...new Set([...(this.publishedRules ?? this.ownedRules()),
+          ...[...this.pendingReadonly].map(readonlyPattern)])]
+        : [];
+      return this.writeRules(desired, epoch);
+    });
+    this.rulesWritten = write.catch(() => {});
+    return write;
+  }
+
   /** Keep exact absolute patterns in one workspace scope, including multi-folder workspaces. */
-  private async apply(patterns: string[], epoch?: number): Promise<void> {
+  private async writeRules(desired: string[], epoch?: number): Promise<void> {
     const previous = this.ownedRules();
-    const desired = patterns;
     let current = this.readRules();
     let merged = reconcileRules(current, previous, desired);
     // Save a recovery journal before writing configuration, then reread after the await.
