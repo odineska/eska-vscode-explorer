@@ -263,6 +263,8 @@ async function runProtectedBreakpoint(explorer, folder, module, until) {
   const breakpoint = await until(() => vscode.debug.breakpoints.find(point => point instanceof vscode.SourceBreakpoint
     && point.location.uri.toString() === uri.toString() && point.location.range.start.line === position.line),
   "VS Code added the breakpoint from the protected editor");
+  const nativeBreakpoint = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(3, 0)));
+  vscode.debug.addBreakpoints([nativeBreakpoint]);
   const stops = [];
   let session;
   let verified = false;
@@ -306,11 +308,17 @@ async function runProtectedBreakpoint(explorer, folder, module, until) {
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === uri.toString()
       && vscode.window.activeTextEditor.selection.active.line === nested.stackFrames[0].line - 1,
     "VS Code opened the stopped line in the protected editor");
-    return { protected_breakpoint: true, protected_stack_and_step: true, evaluate: "42" };
+    await session.customRequest("continue", { threadId: step.threadId });
+    const nativeStop = await until(() => stops[2], "the native breakpoint survives the protected breakpoint list");
+    assert.equal(nativeStop.reason, "breakpoint");
+    const nativeStack = await session.customRequest("stackTrace", { threadId: nativeStop.threadId });
+    assert.equal(nativeStack.stackFrames[0].line, 4);
+    assert.equal(nativeStack.stackFrames[0].source.path, module.fsPath);
+    return { protected_breakpoint: true, protected_stack_and_step: true, native_breakpoint_preserved: true, evaluate: "42" };
   } finally {
     if (session) await vscode.debug.stopDebugging(session);
     tracker.dispose();
-    vscode.debug.removeBreakpoints([breakpoint]);
+    vscode.debug.removeBreakpoints([breakpoint, nativeBreakpoint]);
   }
 }
 
