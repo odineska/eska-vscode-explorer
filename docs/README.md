@@ -1,5 +1,7 @@
 # Документация ESKA Explorer
 
+[Запуск и HTTP-отладка 1С: настройка, точки останова и выражения](https://github.com/odineska/eska/blob/main/docs/run-debug.md).
+
 [Полное руководство](https://odineska.github.io/eska/docs/) описывает текущие
 пользовательские возможности ESKA и Explorer. В нём есть
 [практический маршрут от EPF до обработки аудита пользователей БСП](https://odineska.github.io/eska/docs/#practice),
