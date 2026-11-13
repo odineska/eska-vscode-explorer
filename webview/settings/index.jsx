@@ -1,158 +1,233 @@
-import { createSignal, For, Show } from "solid-js";
-import { createStore } from "solid-js/store";
+import { For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { render } from "solid-js/web";
-import { Button, Toolbar } from "../ui/controls.jsx";
+import { Button } from "../ui/controls.jsx";
+import { settingsController } from "./controller.js";
+import { profileContext, profiles, usesManagedDebug } from "./profile.mjs";
 
-const vscode = acquireVsCodeApi();
-const profiles = ["test", "prod"];
+const api = acquireVsCodeApi();
+const { labels, project, externalProcessing } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
 
-function draft(profile) {
-  return {
-    enabled: !!profile, kind: profile?.infobase.kind ?? "file",
-    path: profile?.infobase.path ?? "", host: profile?.infobase.host ?? "",
-    name: profile?.infobase.name ?? "", url: profile?.infobase.url ?? "", admin: String(profile?.infobase.admin_pid ?? ""),
-    runner: profile?.runner.kind ?? "local", version: profile?.runner.version ?? "",
-    ibcmd: profile?.runner.ibcmd ?? "", container: profile?.runner.container ?? "",
-    endpoint: profile?.debug?.url ?? "", user: profile?.authentication?.user ?? "", secret: profile?.authentication?.password_env ?? "",
-    managedDebug: profile?.debug?.managed === true, debugPort: String(profile?.debug?.port ?? ""),
-    epfArtifact: profile?.debug?.external_processing?.artifact ?? "",
-    epfDebugUrl: profile?.debug?.external_processing?.debug_url ?? "",
-    customAutoAttach: Array.isArray(profile?.debug?.auto_attach_types),
-    autoAttach: profile?.debug?.auto_attach_types?.join(", ") ?? "",
-  };
+function Icon(props) {
+  return <span class="settings-icon" data-icon={props.name} aria-hidden="true"/>;
 }
 
-function serialize(value) {
-  if (!value.enabled) return null;
-  const infobase = value.kind === "file" ? { kind: "file", path: value.path }
-    : value.kind === "cluster" ? { kind: "cluster", host: value.host, name: value.name }
-    : { kind: "standalone", url: value.url, name: value.name, admin_pid: value.admin ? (/^[0-9]+$/.test(value.admin) ? Number(value.admin) : value.admin) : null };
-  const runner = { kind: value.runner, version: value.version || null, ibcmd: value.ibcmd || null };
-  if (value.runner === "distrobox") runner.container = value.container;
-  const managed = value.kind === "file" && value.managedDebug;
-  const debug = managed ? { managed: true } : value.endpoint ? { url: value.endpoint } : null;
-  if (managed && value.debugPort) debug.port = /^\d+$/.test(value.debugPort) ? Number(value.debugPort) : value.debugPort;
-  if (debug && (value.epfArtifact || value.epfDebugUrl)) {
-    debug.external_processing = { artifact: value.epfArtifact };
-    if (value.epfDebugUrl) debug.external_processing.debug_url = value.epfDebugUrl;
-  }
-  if (debug && value.customAutoAttach) debug.auto_attach_types = value.autoAttach.split(",").map(kind => kind.trim()).filter(Boolean);
-  return { infobase, runner, debug,
-    authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
+function Profiles(props) {
+  const model = props.model;
+  return <nav class="settings-profiles" aria-label={labels.profiles}>
+    <For each={profiles}>{name => <Button quiet class="settings-profile" data-profile={name}
+      aria-pressed={model.active() === name}
+      aria-label={[labels[name], name, model.dirty(name) && labels.dirty].filter(Boolean).join(", ")}
+      onClick={() => model.select(name)}>
+      <Icon name={name === "test" ? "data-processor" : "storage"}/>
+      <span>{labels[name]}</span><code class="settings-badge" data-profile={name}>{name}</code>
+      <span class="settings-dirty-dot" classList={{ "is-dirty": model.dirty(name) }} title={model.dirty(name) ? labels.dirty : undefined} aria-hidden="true"/>
+    </Button>}</For>
+  </nav>;
 }
 
-function SettingsGroup(props) {
+function Section(props) {
   return <section class="settings-group" aria-labelledby={props.id}>
     <header class="group-heading">
-      <h2 id={props.id}>{props.title}</h2>
+      <h2 id={props.id}><Icon name={props.icon}/>{props.title}</h2>
       {props.action}
     </header>
-    {props.children}
+    <div class="settings-controls">{props.children}</div>
   </section>;
 }
 
-function App() {
-  const [labels, setLabels] = createSignal({});
-  const [active, setActive] = createSignal("test");
-  const [busy, setBusy] = createSignal(true);
-  const [notice, setNotice] = createSignal("");
-  const [warning, setWarning] = createSignal("");
-  const [loaded, setLoaded] = createSignal(false);
-  const [externalProcessing, setExternalProcessing] = createSignal(false);
-  const [drafts, setDrafts] = createStore({ test: draft(), prod: draft() });
-  const profile = () => drafts[active()];
-  const edit = (field, value) => { setDrafts(active(), field, value); setNotice(""); };
+function TextField(props) {
+  const field = props.name;
+  const id = "settings-" + field;
+  const error = () => props.model.fieldError(field, labels);
+  const description = () => [props.hint && id + "-hint", error() && id + "-error"].filter(Boolean).join(" ") || undefined;
+  return <div class="settings-field">
+    <label class="settings-label" for={id}>{labels[field]}</label>
+    <input id={id} name={field} classList={{ "eska-code": field !== "user" }}
+      type={props.url ? "url" : "text"} inputmode={props.numeric ? "numeric" : undefined}
+      autocomplete="off" spellcheck="false"
+      aria-describedby={description()} aria-invalid={error() ? "true" : undefined}
+      value={props.model.current().draft[field]}
+      onInput={event => props.model.edit(field, event.currentTarget.value)}
+      onBlur={() => props.model.visit(field)}/>
+    <Show when={props.hint}><span class="settings-hint" id={id + "-hint"}>{props.hint}</span></Show>
+    <Show when={error()}><span class="settings-field-error" id={id + "-error"}>{error()}</span></Show>
+  </div>;
+}
 
-  window.addEventListener("message", ({ data }) => {
-    if (data.type === "settings") {
-      for (const name of profiles) setDrafts(name, draft(data.settings[name]));
-      setLoaded(true);
-      setExternalProcessing(data.externalProcessing);
-      setWarning(data.warning ?? "");
-      setNotice(data.saved ? data.labels.saved : "");
-    } else if (data.type === "infobase") {
-      const base = data.infobase;
-      if (base) setDrafts(active(), { kind: base.kind, path: base.path ?? "", host: base.host ?? "",
-        name: base.name ?? "", url: "", admin: "" });
-      setNotice(data.detail);
-    } else if (data.type === "error" || data.type === "probe") setNotice(data.detail);
-    else return;
-    setLabels(data.labels);
-    setBusy(false);
-    document.getElementById("root").setAttribute("aria-busy", "false");
-  });
+function SelectField(props) {
+  const id = "settings-" + props.name;
+  return <div class="settings-field">
+    <label class="settings-label" for={id}>{props.label}</label>
+    <select id={id} name={props.name} value={props.model.current().draft[props.name]}
+      onChange={event => props.model.edit(props.name, event.currentTarget.value)}>
+      <For each={props.options}>{option => <option value={option}>{labels[option]}</option>}</For>
+    </select>
+  </div>;
+}
 
-  const request = (type, settings) => {
-    setBusy(true);
-    setNotice("");
-    vscode.postMessage({ type, settings, profile: active() });
-  };
-  const input = field => <label class="settings-field"><span>{labels()[field]}</span><input type="text" name={field} value={profile()[field]}
-    onInput={event => edit(field, event.currentTarget.value)} /></label>;
-  const select = (field, label, options) => <label class="settings-field"><span>{labels()[label]}</span><select name={field} value={profile()[field]}
-    onChange={event => edit(field, event.currentTarget.value)}>
-    <For each={options}>{option => <option value={option}>{labels()[option]}</option>}</For>
-  </select></label>;
-  const toggle = field => <label class="settings-toggle"><input type="checkbox" name={field} checked={profile()[field]}
-    disabled={busy()} onChange={event => edit(field, event.currentTarget.checked)} />{labels()[field]}</label>;
+function Toggle(props) {
+  const id = "settings-" + props.name;
+  return <label class="settings-toggle" for={id}>
+    <input id={id} type="checkbox" name={props.name} checked={props.model.current().draft[props.name]}
+      onChange={event => props.model.edit(props.name, event.currentTarget.checked)}/>
+    <span>{labels[props.name]}</span>
+  </label>;
+}
 
-  vscode.postMessage({ type: "load" });
-  return <article class="settings-page">
-    <Show when={labels().title}>
-      <h1>{labels().title}</h1>
-      <div class="settings-bar">
-        <div class="settings-toolbar">
-          <Show when={loaded()}>
-            <Toolbar label={labels().profiles} class="profile-switch">
-              <For each={profiles}>{name => <Button quiet aria-pressed={active() === name} disabled={busy()}
-                onClick={() => setActive(name)}>{labels()[name]}</Button>}</For>
-            </Toolbar>
-          </Show>
-          <Toolbar label={labels().title} class="settings-actions">
-            <Show when={loaded()}><Button primary disabled={busy() || !!warning()} onClick={() => request("save",
-              { test: serialize(drafts.test), prod: serialize(drafts.prod) })}>{labels().save}</Button></Show>
-            <Show when={loaded() && profile().enabled}><Button disabled={busy()} onClick={() => request("probe")}>{labels().probe}</Button></Show>
-            <Button disabled={busy()} onClick={() => request("load")}>{labels().reload}</Button>
-          </Toolbar>
-        </div>
-        <p class="settings-notice" role="status">{notice() || warning()}</p>
+function Fields(props) {
+  const model = props.model;
+  const profile = () => model.current().draft;
+  const managed = () => usesManagedDebug(profile());
+  const text = (name, options) => <TextField model={model} name={name} {...options}/>;
+  const select = (name, label, options) => <SelectField model={model} name={name} label={label} options={options}/>;
+  const toggle = name => <Toggle model={model} name={name}/>;
+  return <fieldset class="settings-fields" disabled={!profile().enabled} aria-label={labels[model.active()]}>
+    <div class="settings-columns">
+      <div class="settings-column">
+        <Section id="database" icon="storage" title={labels.database} action={
+          <Button quiet class="settings-import" disabled={!!model.picker()} title={labels.registeredInfobaseHint} onClick={model.pickInfobase}>
+            <Icon name="attributes"/>{labels.registeredInfobase}
+          </Button>
+        }>
+          {select("kind", labels.infobase, ["file", "cluster", "standalone"])}
+          <Switch>
+            <Match when={profile().kind === "file"}>{text("path")}</Match>
+            <Match when={profile().kind === "cluster"}>
+              <div class="settings-pair">{text("host", { hint: labels.hostHint })}{text("name")}</div>
+            </Match>
+            <Match when={profile().kind === "standalone"}>
+              {text("url", { url: true })}
+              <div class="settings-pair">
+                {text("name")}
+                {text("admin", { numeric: true })}
+              </div>
+            </Match>
+          </Switch>
+        </Section>
+        <Section id="authentication" icon="role" title={labels.authentication}>
+          {text("user")}{text("secret", { hint: labels.secretHint })}
+        </Section>
       </div>
-    </Show>
-    <Show when={loaded()}>
-      {toggle("enabled")}
-      <Show when={profile().enabled}>
-        <fieldset class="settings-fields" disabled={busy()} aria-label={labels()[active()]}>
-          <SettingsGroup id="database" title={labels().database} action={
-            <Button onClick={() => request("pickInfobase")}>{labels().registeredInfobase}</Button>
-          }>
-            {select("kind", "infobase", ["file", "cluster", "standalone"])}
-            <Show when={profile().kind === "file"}>{input("path")}</Show>
-            <Show when={profile().kind === "cluster"}>{input("host")}{input("name")}</Show>
-            <Show when={profile().kind === "standalone"}>{input("url")}{input("name")}
-              <Show when={active() === "test"}>{input("admin")}</Show>
+      <div class="settings-column">
+        <Section id="platform" icon="configuration" title={labels.platform}>
+          <div class="settings-pair">
+            {select("runner", labels.runner, ["local", "distrobox"])}{text("version")}
+          </div>
+          <Show when={profile().runner === "distrobox"}>{text("container")}</Show>
+          {text("ibcmd", { hint: labels.ibcmdHint })}
+        </Section>
+        <Section id="debugging" icon="service" title={labels.debugging}>
+          <Show when={profile().kind === "file"}>{toggle("managedDebug")}</Show>
+          <Show when={managed()} fallback={text("endpoint", { url: true, hint: labels.endpointHint })}>
+            {text("debugPort", { numeric: true })}
+          </Show>
+          <Show when={managed() || profile().endpoint}>
+            {toggle("customAutoAttach")}
+            <Show when={profile().customAutoAttach}>{text("autoAttach")}</Show>
+            <Show when={externalProcessing || profile().epfArtifact || profile().epfDebugUrl}>
+              {text("epfArtifact")}{text("epfDebugUrl")}
             </Show>
-          </SettingsGroup>
-          <SettingsGroup id="authentication" title={labels().authentication}>
-            {input("user")}{input("secret")}
-          </SettingsGroup>
-          <SettingsGroup id="platform" title={labels().platform}>
-            {select("runner", "runner", ["local", "distrobox"])}
-            <Show when={profile().runner === "distrobox"}>{input("container")}</Show>
-            {input("version")}{input("ibcmd")}
-          </SettingsGroup>
-          <SettingsGroup id="debugging" title={labels().debugging}>
-            <Show when={profile().kind === "file"}>{toggle("managedDebug")}</Show>
-            <Show when={profile().kind === "file" && profile().managedDebug} fallback={input("endpoint")}>{input("debugPort")}</Show>
-            <Show when={profile().endpoint || profile().kind === "file" && profile().managedDebug}>
-              {toggle("customAutoAttach")}
-              <Show when={profile().customAutoAttach}>{input("autoAttach")}</Show>
-              <Show when={externalProcessing() || profile().epfArtifact || profile().epfDebugUrl}>
-                {input("epfArtifact")}{input("epfDebugUrl")}
-              </Show>
-            </Show>
-          </SettingsGroup>
-        </fieldset>
+          </Show>
+        </Section>
+      </div>
+    </div>
+  </fieldset>;
+}
+
+function Diagnostics(props) {
+  const model = props.model;
+  const result = model.result;
+  return <section class="settings-diagnostics" aria-label={labels.probe}>
+    <div class="settings-check-row">
+      <Button disabled={!model.current().draft.enabled || result()?.status === "pending"}
+        onClick={() => props.focusError(model.probe())}>
+        <Icon name="check"/>{labels.probe}
+      </Button>
+      <span class="settings-hint">{labels.probeHint}</span>
+    </div>
+    <div class="settings-result-live" role="status" aria-atomic="true">
+      <Show when={result()?.status === "pending"}><span class="settings-visually-hidden">{labels.probing}</span></Show>
+      <Show when={result()?.status !== "pending" && result()}>{checked => <div class="settings-result" data-result={checked().status}>
+        <Show when={checked().status === "success" || checked().status === "failure"}>
+          <strong>{checked().status === "success" ? labels.probeSuccess : labels.probeFailure}</strong>
+        </Show>
+        <span>{checked().status === "stale" ? labels.probeStale : checked().detail}</span>
+      </div>}</Show>
+    </div>
+  </section>;
+}
+
+function Actions(props) {
+  const model = props.model;
+  const notice = () => model.current().notice;
+  const dirty = () => model.dirty(model.active());
+  return <footer class="settings-footer">
+    <p class="settings-save-status" role="status" data-status={notice()?.kind === "error" ? "error" : dirty() ? "dirty" : "idle"}>
+      <Switch fallback={dirty() ? labels.dirty : labels.unchanged}>
+        <Match when={model.saving()}>{labels.saving}</Match>
+        <Match when={notice()?.kind === "error"}>{notice().detail}</Match>
+        <Match when={notice()?.kind === "reloaded" && !dirty()}>{labels.reloaded}</Match>
+        <Match when={notice()?.kind === "saved" && !dirty()}><Icon name="check"/>{labels.saved}</Match>
+      </Switch>
+    </p>
+    <div class="settings-actions">
+      <Button quiet disabled={!dirty() || !!model.write()} onClick={model.discard}>{labels.discard}</Button>
+      <Button primary type="submit" aria-keyshortcuts="Control+S Meta+S" disabled={!model.canSave()}>{labels.save}</Button>
+    </div>
+  </footer>;
+}
+
+function App() {
+  const model = settingsController(api);
+  let form;
+  const receive = event => model.receive(event.data);
+  onMount(() => {
+    window.addEventListener("message", receive);
+    model.load();
+  });
+  onCleanup(() => window.removeEventListener("message", receive));
+
+  function focusError(field) {
+    if (field) form.elements.namedItem(field)?.focus();
+  }
+  function save(event) {
+    event.preventDefault();
+    focusError(model.save());
+  }
+
+  function keyboardSave(event) {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") save(event);
+  }
+
+  return <article class="settings-page" aria-busy={model.write()?.type === "load"} onKeyDown={keyboardSave}>
+    <header class="settings-heading">
+      <div>
+        <h1>{labels.title}</h1>
+        <p>{labels.projectCaption} <code>{project}</code></p>
+      </div>
+      <Button quiet disabled={!!model.write()} onClick={model.load}>{labels.reload}</Button>
+    </header>
+    <Show when={model.write()?.type === "load"}><p class="settings-load" role="status">{labels.loading}</p></Show>
+    <Show when={model.loadError()}><p class="settings-warning settings-error" role="alert">{model.loadError()}</p></Show>
+    <Show when={model.loaded()}>
+      <Profiles model={model}/>
+      <div class="settings-profile-bar">
+        <Toggle model={model} name="enabled"/>
+        <span class="settings-context">
+          {model.current().draft.enabled ? profileContext(model.current().draft) : labels.disabledProfile}
+        </span>
+      </div>
+      <Show when={model.active() === "prod"}><p class="settings-prod-note">
+        <Icon name="storage"/><span>{labels.prodNotice}</span><code>prod</code>
+      </p></Show>
+      <Show when={model.warning() || model.requiresReload() || model.current().diskChanged}>
+        <p class="settings-warning" role="alert">{model.warning() || (model.requiresReload() ? labels.changed : labels.diskChanged)}</p>
       </Show>
+      <form ref={form} noValidate onSubmit={save}>
+        <Fields model={model}/>
+        <Diagnostics model={model} focusError={focusError}/>
+        <Actions model={model}/>
+      </form>
     </Show>
   </article>;
 }
