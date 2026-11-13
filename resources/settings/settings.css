@@ -1,12 +1,90 @@
-body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
-article { max-width: 42rem; margin: 1.75rem auto; padding: 0 1rem; }
-h1 { font-size: 1.35rem; font-weight: 600; }
-fieldset { border: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .85rem; padding: 1rem 0; }
-label { display: grid; gap: .35rem; }
-label.enable { display: flex; align-items: center; gap: .45rem; margin: .85rem 0; }
-input:not([type="checkbox"]), select {
-  min-width: 0; padding: .4rem .5rem; font: inherit; color: var(--vscode-input-foreground);
-  background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent);
+.settings-page {
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: 32px clamp(20px, 4vw, 56px) 64px;
 }
-input:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
-button[aria-pressed="true"] { border-color: var(--vscode-focusBorder); }
+
+.settings-page h1 {
+  margin: 0 0 16px;
+  font-size: 1.65em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.settings-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-settings-headerBorder, var(--eska-border));
+}
+
+.settings-toolbar, .group-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.settings-toolbar { padding-block: 12px; }
+.settings-toolbar .eska-toolbar { flex-wrap: wrap; gap: 6px; }
+.settings-actions { margin-inline-start: auto; }
+.profile-switch button[aria-pressed="true"] {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.settings-notice { margin: 0 0 12px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
+.settings-notice:empty { display: none; }
+
+.settings-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.settings-group {
+  display: grid;
+  gap: 12px;
+  padding: 18px 0 20px;
+  border-bottom: 1px solid var(--vscode-settings-headerBorder, var(--eska-border));
+}
+
+.group-heading h2 {
+  font-size: 1.12em;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-field {
+  display: grid;
+  grid-template-columns: minmax(0, 28%) minmax(0, 1fr);
+  gap: 6px 20px;
+  align-items: center;
+}
+
+.settings-field > span { overflow-wrap: anywhere; }
+.settings-field > :is(input, select) {
+  width: 100%;
+  height: max(30px, var(--eska-control-height));
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: var(--eska-control-height);
+}
+
+.settings-page > .settings-toggle {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--vscode-settings-headerBorder, var(--eska-border));
+}
+
+@media (max-width: 560px) {
+  .settings-page { padding: 20px 16px 40px; }
+  .settings-field { grid-template-columns: minmax(0, 1fr); }
+  .settings-actions { margin-inline-start: 0; }
+}
