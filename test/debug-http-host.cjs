@@ -58,7 +58,7 @@ exports.run = async function () {
     return;
   }
   if (native.scenario === "transport-loss") {
-    const result = await runTransportLoss(folder, until);
+    const result = await runTransportLoss(folder, module, until);
     await fs.writeFile(path.join(root, "host-result.json"), JSON.stringify({
       passed: true, suite: "debug-http", vscode: vscode.version, ...result,
     }));
@@ -889,24 +889,49 @@ async function runParity(folder, module, scenario, until) {
   }
 }
 
-async function runTransportLoss(folder, until) {
+async function runTransportLoss(folder, module, until) {
   const settingsPath = path.join(folder.uri.fsPath, ".eska", "settings_local.toml");
   const settings = await fs.readFile(settingsPath, "utf8");
   const endpoint = /^url = "http:\/\/127\.0\.0\.1:(\d+)"$/m.exec(settings);
   assert.ok(endpoint, "the fixture must use an external loopback dbgs");
   const sockets = new Set();
+  let interrupted = false;
   const relay = net.createServer(client => {
-    const upstream = net.createConnection(Number(endpoint[1]), "127.0.0.1");
-    for (const [socket, peer] of [[client, upstream], [upstream, client]]) {
-      sockets.add(socket);
-      socket.on("error", () => peer.destroy());
-      socket.on("close", () => {
-        sockets.delete(socket);
-        peer.destroy();
-      });
+    sockets.add(client);
+    client.on("error", () => client.destroy());
+    client.on("close", () => sockets.delete(client));
+    if (!interrupted) {
+      forward(client);
+      return;
     }
-    client.pipe(upstream).pipe(client);
+    // Restore the link for the retiring adapter's cleanup request. The
+    // platform handles its own registration and the test never clears it.
+    let prefix = "";
+    const read = chunk => {
+      prefix += chunk.toString("latin1");
+      if (!prefix.includes("\r\n") && prefix.length < 1024) return;
+      client.off("data", read);
+      if (!prefix.startsWith("POST /e1crdbg/rdbg?cmd=detachDebugUI ")) {
+        client.destroy();
+        return;
+      }
+      interrupted = false;
+      forward(client, Buffer.from(prefix, "latin1"));
+    };
+    client.on("data", read);
   });
+  function forward(client, prefix) {
+    const upstream = net.createConnection(Number(endpoint[1]), "127.0.0.1");
+    sockets.add(upstream);
+    upstream.on("error", () => client.destroy());
+    upstream.on("close", () => {
+      sockets.delete(upstream);
+      client.destroy();
+    });
+    client.once("close", () => upstream.destroy());
+    if (prefix) upstream.write(prefix);
+    client.pipe(upstream).pipe(client);
+  }
   await new Promise((resolve, reject) => {
     relay.once("error", reject);
     relay.listen(0, "127.0.0.1", resolve);
@@ -937,20 +962,26 @@ async function runTransportLoss(folder, until) {
     assert.equal(await launch(), true);
     const first = [...sessions.values()][0];
     assert.ok(first);
-    const response = command => first.messages.find(message => message.type === "response" && message.command === command);
-    await until(() => response("eska/listDebugTargets")?.body?.targets?.length, "external client listed");
-    await until(async () => {
-      if (response("eska/attachDebugTarget")?.success) return true;
-      await workbench.evaluate(`[...document.querySelectorAll(".quick-input-widget .monaco-list-row")]
-        .find(row => row.textContent.includes("ManagedClient"))?.click()`);
-      await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
-      return false;
-    }, "selected external client attached");
-    const { threads } = await first.session.customRequest("threads");
-    assert.ok(threads.some(thread => thread.name.includes("ManagedClient")), JSON.stringify(threads));
+    const selectClient = async active => {
+      const response = command => active.messages.find(message => message.type === "response" && message.command === command);
+      const target = await until(() => response("eska/listDebugTargets")?.body?.targets?.find(item => item.kind === "ManagedClient"),
+        "external client listed");
+      await until(async () => {
+        if (response("eska/attachDebugTarget")?.success) return true;
+        await workbench.evaluate(`[...document.querySelectorAll(".quick-input-widget .monaco-list-row")]
+          .find(row => row.textContent.includes("ManagedClient"))?.click()`);
+        await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+        return false;
+      }, "selected external client attached");
+      const { threads } = await active.session.customRequest("threads");
+      assert.ok(threads.some(thread => thread.name.includes("ManagedClient")), JSON.stringify(threads));
+      return target.id;
+    };
+    const target = await selectClient(first);
     void vscode.commands.executeCommand("workbench.debug.action.toggleRepl");
     const started = performance.now();
-    await stopRelay();
+    interrupted = true;
+    for (const socket of sockets) socket.destroy();
     await until(() => ended.has(first.session.id), "VS Code ended the disconnected session");
     const events = first.messages.filter(message => message.type === "event");
     const lost = vscode.env.language.startsWith("ru") ? "Потеряна связь с сервером отладки 1С"
@@ -961,7 +992,28 @@ async function runTransportLoss(folder, until) {
     await until(() => workbench.evaluate(`document.querySelector(".repl-tree")?.textContent.includes(${JSON.stringify(lost)})`),
       "connection loss visible in Debug Console");
 
-    return { transport_loss: true, console_diagnostic: true, elapsed_ms: Math.round(performance.now() - started) };
+    const elapsedMs = Math.round(performance.now() - started);
+    await until(() => !interrupted, "network restored during adapter cleanup");
+    const point = new vscode.SourceBreakpoint(new vscode.Location(module, new vscode.Position(6, 0)));
+    vscode.debug.addBreakpoints([point]);
+    try {
+      assert.equal(await launch(), true);
+      const second = await until(() => [...sessions.values()][1], "new IDE session");
+      assert.notEqual(second.session.id, first.session.id);
+      assert.equal(await selectClient(second), target);
+      const stopped = await until(() => second.messages.find(message => message.event === "stopped"), "breakpoint in reattached client");
+      assert.equal(stopped.body.reason, "breakpoint");
+      const { stackFrames } = await second.session.customRequest("stackTrace", { threadId: stopped.body.threadId });
+      assert.equal(stackFrames[0].line, 7);
+      assert.equal(stackFrames[0].source.path, module.fsPath);
+      const result = await second.session.customRequest("evaluate", { frameId: stackFrames[0].id, expression: "A + 1" });
+      assert.equal(result.result, "42");
+      await vscode.debug.stopDebugging(second.session);
+      await until(() => ended.has(second.session.id), "reattached IDE session disconnected");
+    } finally {
+      vscode.debug.removeBreakpoints([point]);
+    }
+    return { transport_loss: true, console_diagnostic: true, reattached: true, evaluate: "42", elapsed_ms: elapsedMs };
   } finally {
     await stopRelay();
     await fs.writeFile(settingsPath, settings);
