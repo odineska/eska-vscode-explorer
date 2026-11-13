@@ -41,7 +41,7 @@ Bun. `scripts/bundle.mjs` собирает production JS и runtime зависи
 `out/THIRD-PARTY-NOTICES.txt` содержит лицензии всех модулей bundle; отсутствие
 лицензии останавливает сборку. Upstream license/NOTICE анализатора включены
 в `resources/analyzer-notices/` с source/hash provenance. `.vscodeignore` разрешает
-только три JS-бандла (`extension`, `query-designer`, `form-preview`), их runtime
+четыре JS-бандла (`extension`, `query-designer`, `form-preview`, `project-settings`), их runtime
 ресурсы, BSL/SDBL-грамматики и language configuration, NLS, README/CHANGELOG,
 LICENSE, SVG и PNG-иконку магазина. Отдельные модули, скомпилированные `tsc`,
 уже входят в `extension.js` и повторно не поставляются.
@@ -53,6 +53,8 @@ LICENSE, SVG и PNG-иконку магазина. Отдельные модул
 В пакет не входят node_modules, TS, тесты, карты исходников, стенды и Git-файлы.
 `check-vsix.py` проверяет identity, ZIP CRC, полный список и байты ресурсов.
 Для просмотра форм CSS, шрифты TTF и WASM берутся из метаданных browser-сборки.
+Для панели локальных профилей проверяются `out/project-settings.js` и
+`resources/settings/settings.css`.
 Проверка требует полный комплект и совпадение байтов; старые шрифты, не объявленные
 в текущей сборке, и случайно включённые исходники останавливают упаковку.
 

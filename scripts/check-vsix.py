@@ -10,6 +10,12 @@ import zipfile
 
 MIB = 1024 * 1024
 SIZE_LIMITS = {'archive': 5 * MIB, 'installed': 10 * MIB, 'javascript': 7 * MIB // 2}
+SETTINGS_BUNDLE = 'out/project-settings.js'
+
+
+def contributes_command(manifest, command):
+    return any(entry.get('command') == command
+               for entry in manifest.get('contributes', {}).get('commands', []))
 
 
 def check_sizes(archive, entries):
@@ -28,10 +34,11 @@ def check_sizes(archive, entries):
 
 def form_runtime_assets(root, manifest):
     """Require every emitted form asset without accepting stale or unreferenced font files."""
-    commands = manifest.get('contributes', {}).get('commands', [])
-    if not any(command.get('command') == 'eska.explorer.previewForm' for command in commands):
+    if not contributes_command(manifest, 'eska.explorer.previewForm'):
         return []
     outputs = set(json.loads((root / 'out/query-designer-meta.json').read_text(encoding='utf-8'))['outputs'])
+    if contributes_command(manifest, 'eska.explorer.configureProject'):
+        outputs.discard(SETTINGS_BUNDLE)
     entrypoints = {'out/query-designer.js', 'out/form-preview.js'}
     required = entrypoints | {'out/form-preview.css'}
     assert required <= outputs, 'Missing form browser output metadata'
@@ -64,6 +71,8 @@ def check(archive, source=None):
             required.append(manifest['icon'])
         required += [path.relative_to(root).as_posix() for pattern in ['out/THIRD-PARTY-NOTICES.txt', 'resources/analyzer-notices/*', 'resources/language/*', 'resources/icons/**/*.svg', 'resources/properties/*.css', 'resources/properties/*.js', 'resources/properties/*.mjs', 'resources/rename/*.css', 'resources/rename/*.js', 'resources/shared/*.css', 'resources/query/*.css'] for path in root.glob(pattern)]
         required += form_runtime_assets(root, manifest)
+        if contributes_command(manifest, 'eska.explorer.configureProject'):
+            required += [SETTINGS_BUNDLE, 'resources/settings/settings.css']
         # vsce publishes a LICENSE without an extension as LICENSE.txt.
         packaged = {name: 'extension/' + ('LICENSE.txt' if name == 'LICENSE' else name) for name in required}
         expected = set(packaged.values()) | {'extension.vsixmanifest', '[Content_Types].xml'}
