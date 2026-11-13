@@ -7,7 +7,7 @@ import { runtimeJson } from "./runtime-tools.js";
 import { findTool } from "./tooling/inspect.js";
 
 const labels = {
-  title: "runtimeTitle", test: "runtimeTest", prod: "runtimeProd", enabled: "runtimeEnabled",
+  title: "runtimeTitle", registeredInfobase: "runtimeRegisteredInfobase", test: "runtimeTest", prod: "runtimeProd", enabled: "runtimeEnabled",
   infobase: "runtimeInfobase", file: "runtimeFile", cluster: "runtimeCluster", standalone: "runtimeStandalone",
   path: "runtimePath", host: "runtimeHost", name: "runtimeName", url: "runtimeUrl", admin: "runtimeAdmin",
   runner: "runtimeRunner", local: "runtimeLocal", distrobox: "runtimeDistrobox", container: "runtimeContainer",
@@ -52,11 +52,17 @@ export class ProjectSettings implements vscode.Disposable {
     let pending = false;
     const incoming = panel.webview.onDidReceiveMessage(async (request: unknown) => {
       if (!isRecord(request) || pending || abort.signal.aborted || !vscode.workspace.isTrusted) return;
-      if (request.type !== "load" && request.type !== "save" && request.type !== "probe") return;
+      if (request.type !== "load" && request.type !== "save" && request.type !== "probe" && request.type !== "pickInfobase") return;
       const saving = request.type === "save";
       if (saving && (!snapshot || !isRecord(request.settings) || protections.has(snapshot.git_protection))) return;
       pending = true;
       try {
+        if (request.type === "pickInfobase") {
+          const infobase = await pickInfobase(root, executable, language, abort.signal);
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "infobase", infobase,
+            detail: infobase === null ? text("runtimeRegisteredInfobasesUnavailable") : "", labels: strings });
+          return;
+        }
         if (request.type === "probe") {
           const detail = request.profile === "test" || request.profile === "prod"
             ? await probeProfile(root, executable, language, request.profile, abort.signal) : "runtimeFailed";
@@ -131,4 +137,29 @@ async function probeProfile(root: string, executable: string, language: string,
     case "endpoint_unavailable": return "runtimeEndpointMissing";
     default: return "runtimeFailed";
   }
+}
+
+async function pickInfobase(root: string, executable: string, language: string, signal: AbortSignal) {
+  const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("debugExecutable", "eska-debug");
+  const binary = await findTool(configured, "eska-debug", dirname(executable)).catch(() => undefined);
+  if (!binary || signal.aborted) return null;
+  const result = await runtimeJson(binary, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US", "infobases"],
+    { signal, timeout: 10_000 });
+  if (signal.aborted || !isRecord(result) || result.schema_version !== 1 || result.kind !== "registered-infobases"
+    || !Array.isArray(result.entries)) return null;
+  const choices = result.entries.flatMap<{ label: string; infobase: Record<string, string> }>(entry => {
+    if (!isRecord(entry) || typeof entry.name !== "string" || !isRecord(entry.infobase)) return [];
+    const base = entry.infobase;
+    if (base.kind === "file" && typeof base.path === "string") {
+      return [{ label: entry.name, infobase: { kind: "file", path: base.path } }];
+    }
+    if (base.kind === "cluster" && typeof base.host === "string" && typeof base.name === "string") {
+      return [{ label: entry.name, infobase: { kind: "cluster", host: base.host, name: base.name } }];
+    }
+    return [];
+  });
+  if (!choices.length) return null;
+  return (await vscode.window.showQuickPick(choices, {
+    placeHolder: message(language, "runtimeRegisteredInfobase"),
+  }))?.infobase;
 }

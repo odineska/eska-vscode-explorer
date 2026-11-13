@@ -60,6 +60,11 @@ function App() {
       setExternalProcessing(data.externalProcessing);
       setWarning(data.warning ?? "");
       setNotice(data.saved ? data.labels.saved : "");
+    } else if (data.type === "infobase") {
+      const base = data.infobase;
+      if (base) setDrafts(active(), { kind: base.kind, path: base.path ?? "", host: base.host ?? "",
+        name: base.name ?? "", url: "", admin: "" });
+      setNotice(data.detail);
     } else if (data.type === "error" || data.type === "probe") setNotice(data.detail);
     else return;
     setLabels(data.labels);
@@ -92,6 +97,7 @@ function App() {
       <Show when={profile().enabled}>
         <fieldset disabled={busy()}>
           {select("kind", "infobase", ["file", "cluster", "standalone"])}
+          <Button disabled={busy()} onClick={() => request("pickInfobase")}>{labels().registeredInfobase}</Button>
           <Show when={profile().kind === "file"}>{input("path")}</Show>
           <Show when={profile().kind === "cluster"}>{input("host")}{input("name")}</Show>
           <Show when={profile().kind === "standalone"}>{input("url")}{input("name")}
