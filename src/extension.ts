@@ -32,7 +32,7 @@ import { isXmlQueryOwner } from "./query/owner.js";
 import { queryBranches, queryLabel, queryLeaf, type QueryEntry } from "./query/tree.js";
 import { WorkspaceFiles, fileName, type WorkspaceEntry } from "./workspace-files.js";
 import { ProjectWatcher, watchManifests, watchDirectory } from "./watch.js";
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
@@ -905,12 +905,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if (!this.tree) await this.connect(false);
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
-    let project = root ? tree.projects.find(item => nativePath(item.info.rootPath) === root)
+    let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "")
       : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
     if (root && !project) return undefined;
     if (!project) {
       const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info) && (!type || item.info.type === type)
-        && (folder === undefined || folder === nativePath(item.info.rootPath)
+        && (folder === undefined || relative(folder, nativePath(item.info.rootPath)) === ""
           || relativeFile(folder, nativePath(item.info.rootPath)) !== undefined));
       if (projects.length === 1) project = projects[0];
       else if (projects.length > 1) {

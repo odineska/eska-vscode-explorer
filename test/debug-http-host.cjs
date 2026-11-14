@@ -256,7 +256,10 @@ exports.run = async function () {
 async function runProtectedBreakpoint(explorer, folder, module, until) {
   const uri = await explorer.support.resolveUri(module.fsPath);
   assert.equal(uri.scheme, "eska-protected");
-  const document = await vscode.workspace.openTextDocument(uri);
+  const nativeDocument = await vscode.workspace.openTextDocument(module);
+  await vscode.workspace.openTextDocument(uri);
+  const document = await until(() => vscode.workspace.textDocuments.find(item => item.uri.toString() === uri.toString()
+    && item.languageId === nativeDocument.languageId), "protected editor inherited the BSL language");
   const position = new vscode.Position(2, 0);
   await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
   await vscode.commands.executeCommand("editor.debug.action.toggleBreakpoint");
@@ -288,7 +291,7 @@ async function runProtectedBreakpoint(explorer, folder, module, until) {
     },
   });
   try {
-    assert.equal(document.getText(), await fs.readFile(module.fsPath, "utf8"));
+    assert.equal(document.getText(), nativeDocument.getText());
     assert.equal(await vscode.debug.startDebugging(folder, {
       name: "ESKA protected source", type: "eska-debug", request: "launch", profile: "test", projectDir: folder.uri.fsPath,
     }), true);
@@ -313,7 +316,7 @@ async function runProtectedBreakpoint(explorer, folder, module, until) {
     assert.equal(nativeStop.reason, "breakpoint");
     const nativeStack = await session.customRequest("stackTrace", { threadId: nativeStop.threadId });
     assert.equal(nativeStack.stackFrames[0].line, 4);
-    assert.equal(nativeStack.stackFrames[0].source.path, module.fsPath);
+    assert.equal(path.relative(nativeStack.stackFrames[0].source.path, module.fsPath), "");
     return { protected_breakpoint: true, protected_stack_and_step: true, native_breakpoint_preserved: true, evaluate: "42" };
   } finally {
     if (session) await vscode.debug.stopDebugging(session);
