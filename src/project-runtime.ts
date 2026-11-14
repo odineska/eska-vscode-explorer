@@ -1,3 +1,4 @@
+import { ApplyReview } from "./apply-review.js";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute } from "node:path";
 import * as vscode from "vscode";
@@ -70,6 +71,7 @@ const errors = new Map<string, MessageKey>([
 
 /** Native commands resolve only project identity. The platform tools own every operation and policy check. */
 export class ProjectRuntime implements vscode.Disposable {
+  private readonly reviews = new ApplyReview(vscode);
   private readonly registrations: vscode.Disposable[];
   private readonly descriptors = new Map<string, vscode.DebugAdapterExecutable>();
   private readonly debugSessions = new Set<string>();
@@ -183,10 +185,10 @@ export class ProjectRuntime implements vscode.Disposable {
         ? inspection?.status === "both_changed" ? "runtimeSourcesAndDatabaseChanged" : "runtimeBaselineChanged"
         : error === "incomplete_apply" ? "runtimeIncomplete" : "runtimeNeedsFull";
       const plan = isRecord(result) && isRecord(result.plan) ? result.plan : undefined;
-      const references = this.pictureReferenceLines(plan?.picture_references);
-      const detail = references.slice(0, 40).join("\n")
-        + (references.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(references.length - 40)) : "");
-      if (await vscode.window.showWarningMessage(this.text(reason), { modal: true, detail }, review) !== review) return;
+      const references = this.pictureReferenceLines(plan?.picture_references, isRecord(result) ? result.display : undefined);
+      const changes = isRecord(result) && isRecord(result.review) ? result.review.changes : plan?.changes;
+      const detail = [...references, ...(isRecord(changes) ? this.applyPlanPaths(changes, plan?.object_changes, plan?.import_files, isRecord(result) ? result.display : undefined) : [])].join("\n");
+      if (!await this.reviews.show(this.text(reason), detail, review, this.text("propertyCancel"))) return;
       initialize = true;
       prepared = await this.executeWithProgress(project, build, ["apply", "--initialize", "--format", "json"], "runtimeApplyPlanning");
       if (prepared.cancelled) return;
@@ -204,7 +206,7 @@ export class ProjectRuntime implements vscode.Disposable {
       return;
     }
     if (!plan || typeof plan.confirmation !== "string" || !isRecord(plan.changes)) { this.failure(result); return; }
-    const paths = this.applyPlanPaths(plan.changes, plan.object_changes, plan.import_files);
+    const paths = this.applyPlanPaths(plan.changes, plan.object_changes, plan.import_files, isRecord(result) ? result.display : undefined);
     const accept = this.text(after === "debug" ? "runtimeApplyThenDebug" : after === "run" ? "runtimeApplyThenRun" : "runtimeApplyConfirm");
     const location = typeof plan.target === "string" && typeof plan.platform_version === "string"
       ? `${plan.target} (${plan.platform_version})` : "";
@@ -213,8 +215,12 @@ export class ProjectRuntime implements vscode.Disposable {
     const title = this.text(initialize ? extension ? "runtimeFullExtensionPreview" : "runtimeFullPreview" : "runtimeDeltaPreview");
     const heading = [location, extension].filter(Boolean).join("\n");
     const target = heading ? `${heading}\n\n` : "";
-    const detail = target + paths.slice(0, 40).join("\n") + (paths.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(paths.length - 40)) : "");
-    if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
+    const detail = target + paths.join("\n");
+    if (!await this.reviews.show(title, detail, accept, this.text("propertyCancel"))) return;
+    if (!vscode.workspace.isTrusted) return;
+    if (this.dirtySources([project.root]).length) {
+      void vscode.window.showErrorMessage(this.text("runtimeStale")); return;
+    }
     const confirmation = plan.confirmation;
     const { result: applied, cancelled } = await this.executeWithProgress(project, build, [
       "apply", ...(initialize ? ["--initialize"] : []), "--confirm", confirmation, "--format", "json",
@@ -310,17 +316,16 @@ export class ProjectRuntime implements vscode.Disposable {
       parts = applicationParts(result, application);
       if (!parts) { this.failure(result); return; }
     }
-    let detail = this.applicationDetail(parts);
+    let detail = this.applicationDetail(parts, isRecord(result) ? result.display : undefined);
     if (parts.some(part => !part.plan || part.plan.mode === "unsupported")) {
       const review = this.text("runtimeReviewFull");
-      if (await vscode.window.showWarningMessage(this.text("runtimeApplicationNeedsFull", application),
-        { modal: true, detail }, review) !== review) return;
+      if (!await this.reviews.show(this.text("runtimeApplicationNeedsFull", application), detail, review, this.text("propertyCancel"))) return;
       args.push("--initialize");
       result = await preview();
       if (result === null) return;
       parts = applicationParts(result, application);
       if (!parts) { this.failure(result); return; }
-      detail = this.applicationDetail(parts);
+      detail = this.applicationDetail(parts, isRecord(result) ? result.display : undefined);
     }
     if (!isRecord(result) || !isRecord(result.plan)) return;
     const launch = after ? applyLaunch(result.plan) : undefined;
@@ -339,8 +344,7 @@ export class ProjectRuntime implements vscode.Disposable {
     }
     if (typeof result.plan.confirmation !== "string") { this.failure(result); return; }
     const accept = this.text(after === "debug" ? "runtimeApplyThenDebug" : after === "run" ? "runtimeApplyThenRun" : "runtimeApplyConfirm");
-    if (await vscode.window.showWarningMessage(this.text("runtimeApplicationPreview", application),
-      { modal: true, detail }, accept) !== accept) return;
+    if (!await this.reviews.show(this.text("runtimeApplicationPreview", application), detail, accept, this.text("propertyCancel"))) return;
     if (!vscode.workspace.isTrusted) return;
     if (this.dirtySources(parts.map(part => part.root)).length) {
       void vscode.window.showErrorMessage(this.text("runtimeStale"));
@@ -391,12 +395,10 @@ export class ProjectRuntime implements vscode.Disposable {
     return entered?.trim() || undefined;
   }
 
-  private applicationDetail(parts: ApplicationPart[]): string {
+  private applicationDetail(parts: ApplicationPart[], display: unknown): string {
     const target = parts.find(part => part.plan)?.plan;
     const lines = target && typeof target.target === "string" && typeof target.platform_version === "string"
       ? [`${target.target} (${target.platform_version})`, ""] : [];
-    let remaining = 40;
-    let omitted = 0;
     for (const part of parts) {
       const mode = part.plan?.mode;
       const status = mode === "unchanged" ? "runtimeComponentUnchanged" : mode === "incremental" ? "runtimeComponentPartial"
@@ -409,14 +411,11 @@ export class ProjectRuntime implements vscode.Disposable {
         ? Object.keys(inspection.dependency_generations) : [];
       if (dependencies.length) lines.push(`  ${this.text("runtimeComponentDependencies", dependencies.join(", "))}`);
       const changes = part.plan?.changes ?? part.review?.changes;
-      const paths = isRecord(changes) ? this.applyPlanPaths(changes, part.plan?.object_changes, part.plan?.import_files) : [];
-      const files = this.pictureReferenceLines(part.plan?.picture_references).concat(paths);
-      lines.push(...files.slice(0, remaining).map(path => `  ${path}`));
-      const shown = Math.min(remaining, files.length);
-      remaining -= shown;
-      omitted += files.length - shown;
+      const captions = isRecord(display) ? display[part.member] : undefined;
+      const paths = isRecord(changes) ? this.applyPlanPaths(changes, part.plan?.object_changes, part.plan?.import_files, captions) : [];
+      const files = this.pictureReferenceLines(part.plan?.picture_references, captions).concat(paths);
+      for (const path of files) lines.push(`  ${path}`);
     }
-    if (omitted) lines.push(this.text("runtimeAdditionalFiles", String(omitted)));
     return lines.join("\n");
   }
 
@@ -463,12 +462,12 @@ export class ProjectRuntime implements vscode.Disposable {
     else await this.run(project, launch.fingerprint);
   }
 
-  private pictureReferenceLines(paths: unknown): string[] {
+  private pictureReferenceLines(paths: unknown, display?: unknown): string[] {
     return Array.isArray(paths) ? paths.flatMap(path => typeof path === "string"
-      ? [this.text("runtimeApplyPictureReference", path)] : []) : [];
+      ? [this.text("runtimeApplyPictureReference", this.changeCaption(path, display))] : []) : [];
   }
 
-  private applyPlanPaths(changes: Record<string, unknown>, objects: unknown, files: unknown): string[] {
+  private applyPlanPaths(changes: Record<string, unknown>, objects: unknown, files: unknown, display?: unknown): string[] {
     const paths: string[] = [];
     const grouped = new Set<string>();
     if (Array.isArray(objects)) {
@@ -488,24 +487,44 @@ export class ProjectRuntime implements vscode.Disposable {
         for (const path of object.paths) {
           if (typeof path === "string" && Object.hasOwn(changes, path)) {
             grouped.add(path);
-            paths.push(`  ${path}`);
+            paths.push(`  ${this.changeCaption(path, display)}`);
           }
         }
       }
     }
+    const sections = new Map<string, string[]>();
     for (const [path, change] of Object.entries(changes)) {
       if (grouped.has(path)) continue;
       const label = change === "added" ? "runtimeChangeAdded" : change === "removed" ? "runtimeChangeRemoved" : "runtimeChangeModified";
-      paths.push(`${this.text(label)}  ${path}`);
+      const group = this.changeDisplay(path, display)?.group;
+      const title = typeof group === "string" ? group : "";
+      const lines = sections.get(title) ?? [];
+      lines.push(`${this.text(label)}  ${this.changeCaption(path, display)}`);
+      sections.set(title, lines);
+    }
+    for (const [title, lines] of sections) {
+      if (title) paths.push(`${title} (${lines.length}):`);
+      for (const line of lines) paths.push(title ? `  ${line}` : line);
     }
     if (Array.isArray(files)) {
       for (const path of files) {
         if (typeof path === "string" && !Object.hasOwn(changes, path)) {
-          paths.push(`${this.text("runtimeApplyCompanion")}  ${path}`);
+          paths.push(`${this.text("runtimeApplyCompanion")}  ${this.changeCaption(path, display)}`);
         }
       }
     }
     return paths;
+  }
+
+  private changeCaption(path: string, display: unknown): string {
+    const caption = this.changeDisplay(path, display);
+    return typeof caption?.label === "string" ? caption.label : path;
+  }
+
+  private changeDisplay(path: string, display: unknown): Record<string, unknown> | undefined {
+    const translations = isRecord(display) ? display[path] : undefined;
+    const caption = isRecord(translations) ? translations[vscode.env.language.startsWith("ru") ? "ru-RU" : "en-US"] : undefined;
+    return isRecord(caption) ? caption : undefined;
   }
 
   private async resolveDebug(config: vscode.DebugConfiguration, folder?: string): Promise<vscode.DebugConfiguration | undefined> {
@@ -623,6 +642,7 @@ export class ProjectRuntime implements vscode.Disposable {
   private text(key: MessageKey, ...values: string[]): string { return message(vscode.env.language, key, ...values); }
 
   dispose(): void {
+    this.reviews.dispose();
     this.descriptors.clear();
     this.debugSessions.clear();
     for (const item of this.registrations) item.dispose();
