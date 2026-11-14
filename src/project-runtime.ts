@@ -170,7 +170,9 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
     if (!await this.saveSources([project.root])) return;
     let initialize = false;
-    let result = await this.invoke(project, build, ["apply", "--format", "json"]);
+    let prepared = await this.executeWithProgress(project, build, ["apply", "--format", "json"], "runtimeApplyPlanning");
+    if (prepared.cancelled) return;
+    let result = prepared.result;
     const error = isRecord(result) && isRecord(result.error) ? result.error.code : undefined;
     if (error === "baseline_required" || error === "baseline_changed" || error === "incomplete_apply"
       || isRecord(result) && isRecord(result.plan) && result.plan.mode === "unsupported") {
@@ -186,7 +188,9 @@ export class ProjectRuntime implements vscode.Disposable {
         + (references.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(references.length - 40)) : "");
       if (await vscode.window.showWarningMessage(this.text(reason), { modal: true, detail }, review) !== review) return;
       initialize = true;
-      result = await this.invoke(project, build, ["apply", "--initialize", "--format", "json"]);
+      prepared = await this.executeWithProgress(project, build, ["apply", "--initialize", "--format", "json"], "runtimeApplyPlanning");
+      if (prepared.cancelled) return;
+      result = prepared.result;
     }
     const plan = isRecord(result) && result.status === "preview" && isRecord(result.plan) ? result.plan : undefined;
     const launch = after ? applyLaunch(plan) : undefined;
@@ -212,7 +216,7 @@ export class ProjectRuntime implements vscode.Disposable {
     const detail = target + paths.slice(0, 40).join("\n") + (paths.length > 40 ? "\n" + this.text("runtimeAdditionalFiles", String(paths.length - 40)) : "");
     if (await vscode.window.showWarningMessage(title, { modal: true, detail }, accept) !== accept) return;
     const confirmation = plan.confirmation;
-    const { result: applied, cancelled } = await this.executeWrite(project, build, [
+    const { result: applied, cancelled } = await this.executeWithProgress(project, build, [
       "apply", ...(initialize ? ["--initialize"] : []), "--confirm", confirmation, "--format", "json",
     ]);
     if (cancelled) return;
@@ -272,7 +276,7 @@ export class ProjectRuntime implements vscode.Disposable {
       void vscode.window.showErrorMessage(this.text("runtimeSourcesUnsaved"));
       return;
     }
-    const { result: confirmed, cancelled } = await this.executeWrite(project, build,
+    const { result: confirmed, cancelled } = await this.executeWithProgress(project, build,
       [...args, "--confirm", plan.confirmation, ...(installing ? [] : ["--force"])],
       installing ? "runtimeExtensionInstalling" : "runtimeExtensionRemoving");
     if (cancelled) return;
@@ -290,7 +294,7 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
     const args = ["apply", "--application", application, "--format", "json"];
     const preview = async () => {
-      const { result, cancelled } = await this.executeWrite(project, build, args, "runtimeApplicationPlanning");
+      const { result, cancelled } = await this.executeWithProgress(project, build, args, "runtimeApplicationPlanning");
       return cancelled ? null : result;
     };
     let result = await preview();
@@ -342,7 +346,7 @@ export class ProjectRuntime implements vscode.Disposable {
       void vscode.window.showErrorMessage(this.text("runtimeStale"));
       return;
     }
-    const { result: applied, cancelled } = await this.executeWrite(project, build, [...args, "--confirm", result.plan.confirmation]);
+    const { result: applied, cancelled } = await this.executeWithProgress(project, build, [...args, "--confirm", result.plan.confirmation]);
     const outcomes = isRecord(applied) && applied.kind === "application_apply" && Array.isArray(applied.outcomes) ? applied.outcomes : [];
     const complete = outcomes.length === parts.length && outcomes.every((outcome, index) => isRecord(outcome)
       && outcome.member === parts[index]?.member && (outcome.status === "applied" || outcome.status === "unchanged"));
@@ -430,7 +434,7 @@ export class ProjectRuntime implements vscode.Disposable {
     return true;
   }
 
-  private executeWrite(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
+  private executeWithProgress(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
     return vscode.window.withProgress({ title: this.text(title),
       location: vscode.ProgressLocation.Notification, cancellable: true }, async (progress, cancel) => {
       const abort = new AbortController();

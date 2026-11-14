@@ -19,7 +19,11 @@ function fixture(t, choose, runtimeJson) {
       registerDebugAdapterDescriptorFactory(_type, value) { factory = value; return disposable; },
     },
     commands: { registerCommand: () => disposable },
-    window: { showErrorMessage() { assert.fail('unexpected error'); } },
+    window: { showErrorMessage() { assert.fail('unexpected error'); },
+      withProgress: async (_options, run) => run({ report() {} }, {
+        isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
+      }),
+    },
     DebugAdapterExecutable: class { constructor(command, args, options) { Object.assign(this, { command, args, options }); } },
   };
   const module = { exports: {} }, require = createRequire(new URL('../out/project-runtime.js', import.meta.url));
@@ -104,8 +108,8 @@ test('apply and launch uses the Rust-selected test project and requires successf
   const errors = [];
   f.vscode.window.showErrorMessage = async error => { errors.push(error); };
   f.vscode.window.showWarningMessage = async (_title, _options, action) => confirmation ? action : undefined;
-  f.vscode.window.withProgress = async (_options, run) => run({ report() {} }, {
-    isCancellationRequested: cancelled, onCancellationRequested: () => ({ dispose() {} }),
+  f.vscode.window.withProgress = async (options, run) => run({ report() {} }, {
+    isCancellationRequested: cancelled && options.title === 'Обновление тестовой базы', onCancellationRequested: () => ({ dispose() {} }),
   });
   f.vscode.debug.startDebugging = async (_folder, config) => { starts.push(config); return true; };
 
@@ -212,4 +216,34 @@ test('debugger ownership tracks concurrent sessions without claiming foreign ada
   f.terminated({ id: 'first' }); assert.equal(f.runtime.debugging, true);
   f.terminated({ id: 'foreign' }); assert.equal(f.runtime.debugging, true);
   f.terminated({ id: 'second' }); assert.equal(f.runtime.debugging, false);
+});
+
+test('initial database comparison has cancellable progress and no short timeout', async t => {
+  const project = { root: '/workspace/project', executable: '/tools/eska-project' };
+  let cancel, cancelled = false, notices = 0, calls = 0, disposed = 0;
+  const f = fixture(t, async () => project, async (_binary, args, options) => {
+    calls++;
+    assert.equal(options.timeout, 0);
+    assert.ok(!args.includes('--confirm'));
+    assert.equal(options.signal.aborted, false);
+    if (cancelled) cancel();
+    assert.equal(options.signal.aborted, cancelled);
+    return { status: 'preview', plan: { mode: 'unchanged' } };
+  });
+  f.vscode.window.withProgress = async (options, run) => {
+    assert.equal(options.title, 'Сравнение исходников с тестовой базой');
+    assert.equal(options.cancellable, true);
+    return run({ report() {} }, { isCancellationRequested: false,
+      onCancellationRequested(callback) { cancel = callback; return { dispose() { disposed++; } }; },
+    });
+  };
+  f.vscode.window.showInformationMessage = () => { notices++; };
+  f.vscode.window.showWarningMessage = () => assert.fail('unchanged sources must not prompt for import');
+  await f.runtime.apply(project);
+  assert.equal(notices, 1);
+  cancelled = true;
+  await f.runtime.apply(project);
+  assert.equal(notices, 1);
+  assert.equal(calls, 2);
+  assert.equal(disposed, 2);
 });
