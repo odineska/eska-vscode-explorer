@@ -610,7 +610,9 @@ export class ProjectRuntime implements vscode.Disposable {
   }
 
   private invoke(project: RuntimeProject, binary: string, args: string[], timeout = 30_000, signal?: AbortSignal, onProgress?: (event: unknown) => void): Promise<unknown> {
-    return runtimeJson(binary, this.arguments(project.root, args), { timeout, signal, onProgress }).catch(() => undefined);
+    // Complete plans include both locale captions and companion paths for large configurations.
+    const maxOutputBytes = args[0] === "apply" ? 128 * 1024 * 1024 : undefined;
+    return runtimeJson(binary, this.arguments(project.root, args), { timeout, signal, onProgress, maxOutputBytes }).catch(() => undefined);
   }
 
   private async tool(project: RuntimeProject, key: string, name: string): Promise<string | undefined> {
