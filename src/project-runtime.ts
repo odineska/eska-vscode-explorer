@@ -201,6 +201,7 @@ export class ProjectRuntime implements vscode.Disposable {
       return;
     }
     if (plan?.mode === "unchanged") {
+      if (!this.sourcesStillCurrent([project.root])) return;
       if (after && launch) await this.continueAfterApply(after, launch);
       else void vscode.window.showInformationMessage(this.text("runtimeUnchanged"));
       return;
@@ -217,10 +218,7 @@ export class ProjectRuntime implements vscode.Disposable {
     const target = heading ? `${heading}\n\n` : "";
     const detail = target + paths.join("\n");
     if (!await this.reviews.show(title, detail, accept, this.text("runtimeApplyCancel"))) return;
-    if (!vscode.workspace.isTrusted) return;
-    if (this.dirtySources([project.root]).length) {
-      void vscode.window.showErrorMessage(this.text("runtimeStale")); return;
-    }
+    if (!this.sourcesStillCurrent([project.root])) return;
     const confirmation = plan.confirmation;
     const { result: applied, cancelled } = await this.executeWithProgress(project, build, [
       "apply", ...(initialize ? ["--initialize"] : []), "--confirm", confirmation, "--format", "json",
@@ -334,10 +332,7 @@ export class ProjectRuntime implements vscode.Disposable {
       return;
     }
     if (parts.every(part => part.plan?.mode === "unchanged")) {
-      if (this.dirtySources(parts.map(part => part.root)).length) {
-        void vscode.window.showErrorMessage(this.text("runtimeStale"));
-        return;
-      }
+      if (!this.sourcesStillCurrent(parts.map(part => part.root))) return;
       if (after && launch) await this.continueAfterApply(after, launch, application);
       else void vscode.window.showInformationMessage(this.text("runtimeUnchanged"));
       return;
@@ -345,11 +340,7 @@ export class ProjectRuntime implements vscode.Disposable {
     if (typeof result.plan.confirmation !== "string") { this.failure(result); return; }
     const accept = this.text(after === "debug" ? "runtimeApplyThenDebug" : after === "run" ? "runtimeApplyThenRun" : "runtimeApplyConfirm");
     if (!await this.reviews.show(this.text("runtimeApplicationPreview", application), detail, accept, this.text("runtimeApplyCancel"))) return;
-    if (!vscode.workspace.isTrusted) return;
-    if (this.dirtySources(parts.map(part => part.root)).length) {
-      void vscode.window.showErrorMessage(this.text("runtimeStale"));
-      return;
-    }
+    if (!this.sourcesStillCurrent(parts.map(part => part.root))) return;
     const { result: applied, cancelled } = await this.executeWithProgress(project, build, [...args, "--confirm", result.plan.confirmation]);
     const outcomes = isRecord(applied) && applied.kind === "application_apply" && Array.isArray(applied.outcomes) ? applied.outcomes : [];
     const complete = outcomes.length === parts.length && outcomes.every((outcome, index) => isRecord(outcome)
@@ -422,6 +413,13 @@ export class ProjectRuntime implements vscode.Disposable {
   private dirtySources(roots: readonly string[]): vscode.TextDocument[] {
     return vscode.workspace.textDocuments.filter(document => document.isDirty && document.uri.scheme === "file"
       && roots.some(root => relativeFile(root, document.uri.fsPath) !== undefined));
+  }
+
+  private sourcesStillCurrent(roots: readonly string[]): boolean {
+    if (!vscode.workspace.isTrusted) return false;
+    if (!this.dirtySources(roots).length) return true;
+    void vscode.window.showErrorMessage(this.text("runtimeStale"));
+    return false;
   }
 
   private async saveSources(roots: readonly string[]): Promise<boolean> {

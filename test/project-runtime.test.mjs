@@ -290,3 +290,27 @@ test('a very large application review does not exhaust the JavaScript argument s
   assert.ok(detail.includes('file-139999'));
   assert.equal(detail.split('\n').length, 140001);
 });
+
+test('an unchanged preview cannot launch after sources become dirty or trust is revoked', async t => {
+  const project = { root: '/workspace/project', executable: '/tools/eska-project' };
+  const requests = [], errors = [];
+  let invalidate;
+  const f = fixture(t, async () => project, async (_binary, args) => {
+    requests.push(Array.from(args));
+    invalidate();
+    return { status: 'preview', plan: { mode: 'unchanged', launch: { project_dir: project.root, fingerprint: 'a'.repeat(64) } } };
+  });
+  f.vscode.window.showErrorMessage = error => errors.push(error);
+  f.vscode.window.showInformationMessage = () => assert.fail('stale sources must not be reported as unchanged');
+  for (const after of [undefined, 'run', 'debug']) {
+    f.vscode.workspace.textDocuments = [];
+    invalidate = () => { f.vscode.workspace.textDocuments = [{ isDirty: true, uri: { scheme: 'file', fsPath: project.root + '/src/Module.bsl' } }]; };
+    await f.runtime.apply(project, after);
+  }
+  f.vscode.workspace.textDocuments = [];
+  invalidate = () => { f.vscode.workspace.isTrusted = false; };
+  await f.runtime.apply(project, 'run');
+  assert.equal(errors.length, 3);
+  assert.equal(requests.length, 4);
+  assert.ok(requests.every(args => args.includes('apply') && !args.includes('--confirm')));
+});
