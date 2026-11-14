@@ -188,7 +188,7 @@ export class ProjectRuntime implements vscode.Disposable {
       const references = this.pictureReferenceLines(plan?.picture_references, isRecord(result) ? result.display : undefined);
       const changes = isRecord(result) && isRecord(result.review) ? result.review.changes : plan?.changes;
       const detail = [...references, ...(isRecord(changes) ? this.applyPlanPaths(changes, plan?.object_changes, plan?.import_files, isRecord(result) ? result.display : undefined) : [])].join("\n");
-      if (!await this.reviews.show(this.text(reason), detail, review, this.text("propertyCancel"))) return;
+      if (!await this.reviews.show(this.text(reason), detail, review, this.text("runtimeApplyCancel"))) return;
       initialize = true;
       prepared = await this.executeWithProgress(project, build, ["apply", "--initialize", "--format", "json"], "runtimeApplyPlanning");
       if (prepared.cancelled) return;
@@ -216,7 +216,7 @@ export class ProjectRuntime implements vscode.Disposable {
     const heading = [location, extension].filter(Boolean).join("\n");
     const target = heading ? `${heading}\n\n` : "";
     const detail = target + paths.join("\n");
-    if (!await this.reviews.show(title, detail, accept, this.text("propertyCancel"))) return;
+    if (!await this.reviews.show(title, detail, accept, this.text("runtimeApplyCancel"))) return;
     if (!vscode.workspace.isTrusted) return;
     if (this.dirtySources([project.root]).length) {
       void vscode.window.showErrorMessage(this.text("runtimeStale")); return;
@@ -319,7 +319,7 @@ export class ProjectRuntime implements vscode.Disposable {
     let detail = this.applicationDetail(parts, isRecord(result) ? result.display : undefined);
     if (parts.some(part => !part.plan || part.plan.mode === "unsupported")) {
       const review = this.text("runtimeReviewFull");
-      if (!await this.reviews.show(this.text("runtimeApplicationNeedsFull", application), detail, review, this.text("propertyCancel"))) return;
+      if (!await this.reviews.show(this.text("runtimeApplicationNeedsFull", application), detail, review, this.text("runtimeApplyCancel"))) return;
       args.push("--initialize");
       result = await preview();
       if (result === null) return;
@@ -344,7 +344,7 @@ export class ProjectRuntime implements vscode.Disposable {
     }
     if (typeof result.plan.confirmation !== "string") { this.failure(result); return; }
     const accept = this.text(after === "debug" ? "runtimeApplyThenDebug" : after === "run" ? "runtimeApplyThenRun" : "runtimeApplyConfirm");
-    if (!await this.reviews.show(this.text("runtimeApplicationPreview", application), detail, accept, this.text("propertyCancel"))) return;
+    if (!await this.reviews.show(this.text("runtimeApplicationPreview", application), detail, accept, this.text("runtimeApplyCancel"))) return;
     if (!vscode.workspace.isTrusted) return;
     if (this.dirtySources(parts.map(part => part.root)).length) {
       void vscode.window.showErrorMessage(this.text("runtimeStale"));

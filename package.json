@@ -485,36 +485,6 @@
       ],
       "view/item/context": [
         {
-          "command": "eska.explorer.runTest",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@1"
-        },
-        {
-          "command": "eska.explorer.applyTest",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@2"
-        },
-        {
-          "command": "eska.explorer.debugLaunch",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@3"
-        },
-        {
-          "command": "eska.explorer.debugAttach",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@4"
-        },
-        {
-          "command": "eska.explorer.applyAndRunTest",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@5"
-        },
-        {
-          "command": "eska.explorer.applyAndDebugTest",
-          "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
-          "group": "runtime@6"
-        },
-        {
           "command": "eska.explorer.configureProject",
           "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
           "group": "navigation"
@@ -531,7 +501,7 @@
         },
         {
           "command": "eska.explorer.refreshNode",
-          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaProjectSettings || viewItem == eskaMetadataGroup || viewItem == eskaMetadata || viewItem == eskaCommonModule || viewItem == eskaModuleObject || viewItem == eskaForm || viewItem =~ /^eskaRoot(Sorted)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?$/)",
+          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaMetadataGroup || viewItem == eskaMetadata || viewItem == eskaCommonModule || viewItem == eskaModuleObject || viewItem == eskaForm || viewItem =~ /^eskaRoot(Sorted)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?$/)",
           "group": "inline@3"
         },
         {

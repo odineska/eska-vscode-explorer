@@ -37,9 +37,10 @@ import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
+import { runtimeGroup, runtimeCommands, runtimeLabel, type RuntimeEntry } from "./runtime-tree.js";
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
-type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
+type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup | RuntimeEntry;
 
 let active: Explorer | undefined;
 
@@ -366,6 +367,10 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
           if (!this.projectGroups?.contains(entry)) return [];
           return Promise.all(entry.projects.map(project => this.projectRoot(tree, project, entry)));
         }
+        if (entry && "runtimeKind" in entry) {
+          return entry.runtimeKind === "group" && tree.projects.includes(entry.project) && projectEnabled(entry.project.info)
+            && vscode.workspace.isTrusted ? runtimeCommands(entry) : [];
+        }
         if (entry && "queryKind" in entry) return entry.queryKind === "branch" ? [queryLeaf(entry)] : [];
         if (entry && "fileKind" in entry) {
           const children = await this.files?.children(entry) ?? [];
@@ -389,7 +394,13 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         else for (const row of this.projectGroups?.roots ?? tree.projects) {
           children.push("projectGroup" in row ? row : await this.projectRoot(tree, row));
         }
-        if (!entry || !entry.node.parent) children.push(...await this.files?.groups(entry?.project) ?? []);
+        if (!entry || !entry.node.parent) {
+          const project = entry?.project ?? tree.projects.find(project => project.info.scope.kind === "standalone");
+          const state = this.connection.state;
+          if (project && projectEnabled(project.info) && vscode.workspace.isTrusted && state.kind === "ready"
+            && state.target.backend === "project" && (!entry || project.info.scope.kind === "member")) children.push(runtimeGroup(project));
+          children.push(...await this.files?.groups(entry?.project) ?? []);
+        }
         return tree === this.tree ? children : [];
       } catch (error) {
         if (tree !== this.tree) return [];
@@ -424,6 +435,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Native TreeItems inherit zoom, keyboard navigation, themes and accessible text from VS Code. */
   getTreeItem(entry: Element): vscode.TreeItem {
+    if ("runtimeKind" in entry) {
+      const label = runtimeLabel(entry, this.treeLanguage);
+      const item = new vscode.TreeItem(label, entry.runtimeKind === "command" ? vscode.TreeItemCollapsibleState.None
+        : this.expanded.get(entry.key) === false ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
+      item.id = entry.key;
+      item.contextValue = entry.runtimeKind === "group" ? "eskaRuntimeGroup" : "eskaRuntimeCommand";
+      item.iconPath = new vscode.ThemeIcon(entry.runtimeKind === "group" ? "debug-alt" : entry.icon);
+      if (entry.runtimeKind === "command") item.command = { command: entry.command, title: label, arguments: [entry] };
+      return item;
+    }
     if ("projectGroup" in entry) {
       const keys = { extension: "projectExtensions", report: "projectReports", processing: "projectProcessors" } as const;
       const item = new vscode.TreeItem(message(this.treeLanguage, keys[entry.projectGroup]), this.expanded.get(entry.key)
@@ -539,6 +560,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Native reveal uses backend-provided ancestry already present in the lazy tree. */
   getParent(entry: Element): Element | undefined {
+    if ("runtimeKind" in entry) return entry.runtimeKind === "command" ? entry.parent
+      : entry.project.info.scope.kind === "member" ? entry.project.root : undefined;
     if ("projectGroup" in entry) return undefined;
     if ("queryKind" in entry) return entry.queryKind === "query" ? entry.parent : entry.owner;
     if ("fileKind" in entry) {
@@ -906,6 +929,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
     let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "")
+      : entry && "runtimeKind" in entry ? entry.project
       : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
     if (root && !project) return undefined;
     if (!project) {
