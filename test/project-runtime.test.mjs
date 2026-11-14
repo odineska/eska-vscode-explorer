@@ -19,13 +19,17 @@ function fixture(t, choose, runtimeJson) {
       registerDebugAdapterDescriptorFactory(_type, value) { factory = value; return disposable; },
     },
     commands: { registerCommand: () => disposable },
-    window: { showErrorMessage() { assert.fail('unexpected error'); } },
+    window: { showErrorMessage() { assert.fail('unexpected error'); },
+      withProgress: async (_options, run) => run({ report() {} }, {
+        isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }),
+      }),
+    },
     DebugAdapterExecutable: class { constructor(command, args, options) { Object.assign(this, { command, args, options }); } },
   };
   const module = { exports: {} }, require = createRequire(new URL('../out/project-runtime.js', import.meta.url));
   runInNewContext('(function(require,module,exports){' + readFileSync(new URL('../out/project-runtime.js', import.meta.url), 'utf8') + '\n})',
     { AbortController, setTimeout: () => ({ unref() {} }) })(name =>
-      name === 'vscode' ? vscode : name === './tooling/inspect.js' ? { findTool: async () => '/tools/eska-debug' }
+      name === 'vscode' ? vscode : name === './apply-review.js' ? { ApplyReview: class { async show(title, detail, accept) { return await vscode.window.showWarningMessage(title, { detail }, accept) === accept; } dispose() {} } } : name === './tooling/inspect.js' ? { findTool: async () => '/tools/eska-debug' }
         : name === './runtime-tools.js' && runtimeJson ? { runtimeJson } : require(name), module, module.exports);
   const runtime = new module.exports.ProjectRuntime(choose);
   t.after(() => runtime.dispose());
@@ -104,8 +108,8 @@ test('apply and launch uses the Rust-selected test project and requires successf
   const errors = [];
   f.vscode.window.showErrorMessage = async error => { errors.push(error); };
   f.vscode.window.showWarningMessage = async (_title, _options, action) => confirmation ? action : undefined;
-  f.vscode.window.withProgress = async (_options, run) => run({ report() {} }, {
-    isCancellationRequested: cancelled, onCancellationRequested: () => ({ dispose() {} }),
+  f.vscode.window.withProgress = async (options, run) => run({ report() {} }, {
+    isCancellationRequested: cancelled && options.title === 'Обновление тестовой базы', onCancellationRequested: () => ({ dispose() {} }),
   });
   f.vscode.debug.startDebugging = async (_folder, config) => { starts.push(config); return true; };
 
@@ -212,4 +216,101 @@ test('debugger ownership tracks concurrent sessions without claiming foreign ada
   f.terminated({ id: 'first' }); assert.equal(f.runtime.debugging, true);
   f.terminated({ id: 'foreign' }); assert.equal(f.runtime.debugging, true);
   f.terminated({ id: 'second' }); assert.equal(f.runtime.debugging, false);
+});
+
+test('initial database comparison has cancellable progress and no short timeout', async t => {
+  const project = { root: '/workspace/project', executable: '/tools/eska-project' };
+  let cancel, cancelled = false, notices = 0, calls = 0, disposed = 0;
+  const f = fixture(t, async () => project, async (_binary, args, options) => {
+    calls++;
+    assert.equal(options.timeout, 0);
+    assert.ok(!args.includes('--confirm'));
+    assert.equal(options.signal.aborted, false);
+    if (cancelled) cancel();
+    assert.equal(options.signal.aborted, cancelled);
+    return { status: 'preview', plan: { mode: 'unchanged' } };
+  });
+  f.vscode.window.withProgress = async (options, run) => {
+    assert.equal(options.title, 'Сравнение исходников с тестовой базой');
+    assert.equal(options.cancellable, true);
+    return run({ report() {} }, { isCancellationRequested: false,
+      onCancellationRequested(callback) { cancel = callback; return { dispose() { disposed++; } }; },
+    });
+  };
+  f.vscode.window.showInformationMessage = () => { notices++; };
+  f.vscode.window.showWarningMessage = () => assert.fail('unchanged sources must not prompt for import');
+  await f.runtime.apply(project);
+  assert.equal(notices, 1);
+  cancelled = true;
+  await f.runtime.apply(project);
+  assert.equal(notices, 1);
+  assert.equal(calls, 2);
+  assert.equal(disposed, 2);
+});
+
+test('large apply reviews keep all translated objects and refuse edits made while reviewing', async t => {
+  const project = { root: '/workspace/project', executable: '/tools/eska-project' };
+  const changes = {}, display = {};
+  for (let index = 0; index < 500; index++) {
+    const path = `Catalogs/Товар${index}/Ext/ManagerModule.bsl`;
+    changes[path] = 'modified';
+    display[path] = { 'ru-RU': { label: `Справочник.Товар${index}.МодульМенеджера`, group: 'Справочник' },
+      'en-US': { label: `Catalog.Товар${index}.ManagerModule`, group: 'Catalog' } };
+  }
+  const requests = [], errors = [];
+  const f = fixture(t, async () => project, async (_binary, args) => {
+    requests.push(Array.from(args));
+    return { status: 'preview', plan: { mode: 'incremental', confirmation: 'token', changes }, display };
+  });
+  f.vscode.window.showErrorMessage = value => errors.push(value);
+  for (const locale of ['ru', 'en']) {
+    f.vscode.env.language = locale;
+    f.vscode.workspace.textDocuments = [];
+    f.vscode.window.showWarningMessage = async (_title, { detail }, accept) => {
+      assert.ok(detail.includes(locale === 'ru' ? 'Справочник.Товар499.МодульМенеджера' : 'Catalog.Товар499.ManagerModule'));
+      assert.ok(!detail.includes('Catalogs/'));
+      f.vscode.workspace.textDocuments = [{ isDirty: true, uri: { scheme: 'file', fsPath: '/workspace/project/src/Module.bsl' } }];
+      return accept;
+    };
+    await f.runtime.apply(project);
+  }
+  assert.equal(requests.length, 2);
+  assert.equal(requests.some(args => args.includes('--confirm')), false);
+  assert.equal(errors.length, 2);
+  const detail = f.runtime.applicationDetail([{ member: 'base', plan: { changes, mode: 'incremental' } },
+    { member: 'extension', plan: { changes, mode: 'incremental' } }], { base: display, extension: display });
+  assert.equal(detail.split('Catalog.Товар499.ManagerModule').length - 1, 2);
+  assert.ok(f.runtime.pictureReferenceLines(['Catalogs/Товар499/Ext/ManagerModule.bsl'], display)[0].includes('Catalog.Товар499.ManagerModule'));
+});
+
+test('a very large application review does not exhaust the JavaScript argument stack', t => {
+  const f = fixture(t, async () => undefined);
+  const changes = Object.fromEntries(Array.from({ length: 140000 }, (_, index) => [`file-${index}`, 'modified']));
+  const detail = f.runtime.applicationDetail([{ member: 'base', plan: { changes, mode: 'incremental' } }]);
+  assert.ok(detail.includes('file-139999'));
+  assert.equal(detail.split('\n').length, 140001);
+});
+
+test('an unchanged preview cannot launch after sources become dirty or trust is revoked', async t => {
+  const project = { root: '/workspace/project', executable: '/tools/eska-project' };
+  const requests = [], errors = [];
+  let invalidate;
+  const f = fixture(t, async () => project, async (_binary, args) => {
+    requests.push(Array.from(args));
+    invalidate();
+    return { status: 'preview', plan: { mode: 'unchanged', launch: { project_dir: project.root, fingerprint: 'a'.repeat(64) } } };
+  });
+  f.vscode.window.showErrorMessage = error => errors.push(error);
+  f.vscode.window.showInformationMessage = () => assert.fail('stale sources must not be reported as unchanged');
+  for (const after of [undefined, 'run', 'debug']) {
+    f.vscode.workspace.textDocuments = [];
+    invalidate = () => { f.vscode.workspace.textDocuments = [{ isDirty: true, uri: { scheme: 'file', fsPath: project.root + '/src/Module.bsl' } }]; };
+    await f.runtime.apply(project, after);
+  }
+  f.vscode.workspace.textDocuments = [];
+  invalidate = () => { f.vscode.workspace.isTrusted = false; };
+  await f.runtime.apply(project, 'run');
+  assert.equal(errors.length, 3);
+  assert.equal(requests.length, 4);
+  assert.ok(requests.every(args => args.includes('apply') && !args.includes('--confirm')));
 });

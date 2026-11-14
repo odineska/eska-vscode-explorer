@@ -42,9 +42,9 @@ exports.connectWorkbench = async function (until) {
   },
   /** Exercise the native pointer path instead of synthetic DOM event dispatch. */
   movePointer: (x, y) => connection.request('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }),
-  click: async (x, y) => {
-    await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-    await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  click: async (x, y, button = 'left') => {
+    await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
+    await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
   },
   key: async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
     const input = { key, code, windowsVirtualKeyCode, modifiers };

@@ -4,10 +4,11 @@ import { isRecord } from "./protocol.js";
 /** Keep local addresses, paths and credentials out of extension logs. */
 export function runtimeJson(executable: string, args: string[], options: {
   timeout: number; signal?: AbortSignal | undefined; input?: unknown; onProgress?: ((event: unknown) => void) | undefined;
+  maxOutputBytes?: number | undefined;
 }): Promise<unknown> {
   return new Promise(resolve => {
     const child = execFile(executable, args, { signal: options.signal, timeout: options.timeout,
-      maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+      maxBuffer: options.maxOutputBytes ?? 32 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
       if (options.signal?.aborted || error?.killed || error?.signal) { resolve(undefined); return; }
       try {
         const value: unknown = JSON.parse(stdout);
