@@ -89,9 +89,15 @@ show/hide inactive filter affects presentation independently.
 
 ## Run, apply and debug
 
-Open **Project Runtime Settings** from the project tree to save independent local
-`test` and `prod` profiles. **Check saved profile** checks the installation and
-endpoint reachability. The project settings file belongs in the local Git ignore.
+Open **Run and Debug** from the project tree. Switching between `test` and
+`prod` keeps separate drafts until the settings tab is closed. **Save Profile**
+and **Discard Changes** affect only the open profile. Clearing **Configure this
+profile** removes its local declaration when you save.
+
+**Check Settings** uses the current draft with an `eska-build` that supports
+`probe --stdin`. It checks the platform, the file infobase or configured TCP
+endpoints without opening a 1C session. The project settings file belongs in
+the local Git ignore.
 
 The project settings context menu starts a normal test client or previews the
 changes for a test infobase. Apply requires confirmation for the displayed base

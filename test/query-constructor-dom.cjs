@@ -45,7 +45,13 @@ exports.connectWorkbench = async function (until) {
   click: async (x, y) => {
     await connection.request('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await connection.request('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-  }, submitInput: async text => {
+  },
+  key: async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
+    const input = { key, code, windowsVirtualKeyCode, modifiers };
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', ...input });
+    await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', ...input });
+  },
+  submitInput: async text => {
     await connection.request('Input.insertText', { text });
     await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
