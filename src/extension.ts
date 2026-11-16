@@ -1,3 +1,6 @@
+import { MetadataCreation } from "./metadata-creation.js";
+import { configuredReadOnly } from "./editor-policy.js";
+import { revealHit } from "./search.js";
 import { FormPreviewService } from "./form-preview/service.js";
 import { FormattingService } from "./formatting/service.js";
 import { QueryDesigner } from "./query/designer.js";
@@ -97,6 +100,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly expanded = new Map<string, boolean>();
   private readonly forms = new FormSources();
   private readonly propertiesTabs: PropertyTabs;
+  private readonly metadataCreation = new MetadataCreation(vscode, configuredReadOnly);
   private readonly queries: QueryTabs;
   private readonly recovering = new Set<ProjectTree>();
   private treeLanguage = this.resolveTreeLanguage();
@@ -127,7 +131,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.sorting = new ProjectSorting(context.workspaceState);
     this.propertiesTabs = new PropertyTabs(context, () => this.treeLanguage, () => this.tree,
       (entry, choice) => this.open(entry, "xml", choice));
-    this.disposables.push(this.propertiesTabs);
+    this.disposables.push(this.propertiesTabs, this.metadataCreation);
     this.connection = new Connection(String(context.extension.packageJSON.version),
       (state) => this.update(state), (text, level) => this.output[level ?? "info"](text));
     this.disposables.push(this.connection.onSourceChange(() => this.protectedSources.refresh()));
@@ -233,6 +237,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.refreshNode", (entry: Element) => this.refresh(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openSource", (entry: TreeEntry) => this.open(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openXml", (entry: TreeEntry) => this.open(entry, "xml")));
+    this.disposables.push(vscode.commands.registerCommand("eska.explorer.createMetadata", (entry?: Element) => this.createMetadata(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.properties", (entry: TreeEntry) => this.showProperties(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openFormSource", (entry: FormSource) =>
       entry.target === "form" ? this.openForm(entry.owner) : this.open(entry.owner, entry.target)));
@@ -533,6 +538,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       : node.id.kind === "collection" ? "eskaMetadataGroup"
         : commonModule ? "eskaCommonModule" : directModuleRole(entry) ? "eskaModuleObject" : isForm(entry) ? "eskaForm" : "eskaMetadata";
     if (!node.parent && this.sorting.order(entry.project) === "alphabetical") item.contextValue += "Sorted";
+    if (node.creationKinds?.length && this.connection.state.kind === "ready" && this.connection.state.metadataCreation) item.contextValue += "Creatable";
     item.accessibilityInformation = { label: support ? `${label}. ${this.support.explanation(entry)}` : label };
     item.iconPath = node.state === "error" ? new vscode.ThemeIcon("warning") : this.metadataIcon(entry);
     if (!node.parent) item.description = entry.project.info.scope.kind === "member"
@@ -581,6 +587,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       relativeFile(scope.path, source.fsPath) !== undefined);
     void vscode.commands.executeCommand("setContext", "eska.explorer.activeProject", activeProject);
     void vscode.commands.executeCommand("setContext", "eska.explorer.connected", !!this.tree);
+    void vscode.commands.executeCommand("setContext", "eska.explorer.metadataCreation",
+      this.connection.state.kind === "ready" && this.connection.state.metadataCreation === true);
   }
 
   /** Reveal the active source without replacing the document or changing unsaved text. */
@@ -948,6 +956,26 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     return { root: nativePath(project.info.rootPath), executable: state.target.executable, externalProcessing: project.info.type === "processing" };
   }
 
+  /** Creation shares the live metadata process and backend-defined owner/type schema. */
+  private async createMetadata(selected?: Element): Promise<void> {
+    const tree = this.tree, state = this.connection.state, entry = selected ?? this.view.selection[0];
+    if (!tree || state.kind !== "ready" || !state.metadataCreation || !vscode.workspace.isTrusted) return;
+    if (!entry || !("node" in entry) || !entry.node.creationKinds?.length || !tree.projects.includes(entry.project)) {
+      void vscode.window.showInformationMessage(this.text("creationSelectOwner")); return;
+    }
+    const objectId = await this.metadataCreation.run(tree, entry, () => this.tree, this.treeLanguage);
+    if (!objectId || this.tree !== tree || this.disposed) return;
+    try {
+      const created = await revealHit(tree, entry.project, { objectId, node: { kind: "object", objectId } });
+      if (created && this.tree === tree && !this.disposed) {
+        await this.expandRootForReveal(tree, entry.project);
+        await this.revealInView(tree, created, { select: true, focus: true });
+      }
+    } catch (error) {
+      this.output.warn(JSON.stringify({ event: "creation_reveal_failed", code: error instanceof ExplorerError ? error.code : "requestFailed" }));
+    }
+  }
+
   /** Open a dedicated settings-style editor tab for this metadata object. */
   private async showProperties(entry: TreeEntry): Promise<void> {
     const tree = this.tree;
@@ -1175,6 +1203,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   /** Process logs never become the view's labels or user-facing error text. */
   private update(state: ConnectionState): void {
     if (this.disposed) return;
+    this.metadataCreation.stale();
     this.queries.stale();
     this.formPreview.changed(undefined);
     this.supportContextsPending = this.supportContexts.stop(); this.supportContextsKey = undefined;

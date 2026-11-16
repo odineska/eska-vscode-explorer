@@ -761,3 +761,27 @@ native-правым отступом 3 px и baseline от внутренней 
 states-host ждёт готовность raster и проверяет dirty Blue → Red → Blue
 без замены input или записи файлов. Проверка bitmap отделена от остающегося
 расхождения горизонтального размещения отдельных старых форм.
+
+## Создание метаданных
+
+`test/metadata-creation.test.mjs` проверяет согласование API 1.48, схему и
+побайтовый preview, отсутствие повторной записи, отмену и несохранённый XML.
+С `ESKA_TEST_BINARY` выполняются настоящие RPC discovery → preview → create
+→ reveal для обеих локалей.
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node --test test/metadata-creation.test.mjs
+
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node test/run-host.mjs test/metadata-creation-host.cjs
+```
+
+Native suite использует настоящий extension host и backend; ответы мастеру
+подаются через test facade. Проверяются реквизит, табличная часть и вложенный
+реквизит, native diff, автоматический reveal, RU/EN, BOM и смешанные окончания
+строк, отмена и сохранность несохранённого XML во время review. Runner создаёт
+собственные проект и профиль в playground. `VSCODE_EXECUTABLE` при необходимости
+указывает на установленный VS Code/VSCodium.

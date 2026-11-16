@@ -78,5 +78,6 @@
   "attachDebugTarget": "Выбрать предмет отладки 1С",
   "selectAutoAttachTypes": "Выбрать типы автоподключения 1С",
   "checkDebuggerUpdates": "Проверить обновления отладчика",
-  "recoverDebuggerInstallation": "Восстановить установку отладчика"
+  "recoverDebuggerInstallation": "Восстановить установку отладчика",
+  "createMetadata": "Добавить реквизит или табличную часть…"
 }

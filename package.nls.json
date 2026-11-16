@@ -78,5 +78,6 @@
   "attachDebugTarget": "Select 1C Debug Target",
   "selectAutoAttachTypes": "Select 1C Auto-Attach Types",
   "checkDebuggerUpdates": "Check debugger updates",
-  "recoverDebuggerInstallation": "Recover debugger installation"
+  "recoverDebuggerInstallation": "Recover debugger installation",
+  "createMetadata": "Add Attribute or Tabular Section…"
 }
