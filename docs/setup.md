@@ -193,7 +193,7 @@ files and references for confirmation. These operations require Metadata API 1.4
 Metadata API 1.50 adds missing modules for their owner. A document can have one
 object module and one manager module. Roles determine paths and filenames;
 existing BSL or binary modules cannot be replaced. A new module opens in the editor.
-Metadata API 1.51 enables editing form elements and conditional appearance from
+Metadata API 1.53 enables editing form elements and conditional appearance from
 the main form tab. The same changes are available through CLI `metadata form-edit`.
 Apply infobase updates separately.
 [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).

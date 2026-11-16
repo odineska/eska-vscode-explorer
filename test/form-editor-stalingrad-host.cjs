@@ -4,88 +4,83 @@ const path = require('node:path');
 const vscode = require('vscode');
 const { frame, until } = require('./webview-host.cjs');
 
-const transactions = 'DataProcessors/РаботаСТранзакциями/Forms/ФормаСписка/Ext/Form.xml';
-const loan = 'Documents/ВыдачаЗайма/Forms/ФормаДокумента/Ext/Form.xml';
-const config = 'http://v8.1c.ru/8.1/data/enterprise/current-config';
+const cases = [
+  { form: 'DataProcessors/РаботаСТранзакциями/Forms/ФормаСписка/Ext/Form.xml', key: 'Title' },
+  { form: 'Documents/ВыдачаЗайма/Forms/ФормаДокумента/Ext/Form.xml', target: 'ГруппаДанные', key: 'United' },
+];
+const dom = (ui, fn, ...args) => ui.evaluate('(' + fn.toString() + ')(...' + JSON.stringify(args) + ')');
 
-const evaluate = (ui, body, ...args) => ui.evaluate('(' + body.toString() + ')(...' + JSON.stringify(args) + ')');
-const click = (ui, selector) => evaluate(ui, selector => {
-  const item = document.querySelector(selector);
-  if (!item || item.disabled) return false;
-  item.click();
+async function edit(ui, key) {
+  return dom(ui, key => {
+    const control = document.querySelector('[data-edit-property="' + key + '"] input');
+    if (!control) return false;
+    control.focus();
+    if (control.type === 'checkbox') {
+      control.checked = !control.checked;
+      control.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      control.value = 'Проверка черновика';
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return true;
+  }, key);
+}
+
+const action = id => '[data-edit-action="' + id + '"]';
+const click = (ui, selector) => dom(ui, selector => {
+  const button = document.querySelector(selector);
+  if (!button || button.disabled) return false;
+  button.click();
   return true;
 }, selector);
-const button = (ui, label, scope = 'dialog') => evaluate(ui, (text, selector) => {
-  const item = [...document.querySelectorAll(selector + ' button')].find(button => button.textContent.trim() === text && !button.disabled);
-  if (!item) return false;
-  item.click();
+const button = (ui, label, scope = 'dialog') => dom(ui, (label, scope) => {
+  const button = [...document.querySelectorAll(scope + ' button')].find(item => item.textContent.trim() === label && !item.disabled);
+  if (!button) return false;
+  button.click();
   return true;
 }, label, scope);
-const input = (ui, selector, value, eventName = 'input') => evaluate(ui, (selector, value, eventName) => {
-  const item = document.querySelector(selector);
-  if (!item) return false;
-  item.value = value;
-  if (item.value !== value) return false;
-  item.dispatchEvent(new Event(eventName, { bubbles: true }));
+const input = (ui, selector, value, eventName = 'input') => dom(ui, (selector, value, type) => {
+  const control = document.querySelector(selector);
+  if (!control) return false;
+  control.value = value;
+  if (control.value !== value) return false;
+  control.dispatchEvent(new Event(type, { bubbles: true }));
   return true;
 }, selector, value, eventName);
 
-async function review(ui) {
-  await until(() => button(ui, 'Проверить изменения'), 'review');
+async function applyDialog(ui, view) {
+  await until(() => click(ui, 'dialog button[type=submit][form=form-edit-draft]'), 'accept compound change');
   await until(async () => {
-    const state = await ui.evaluate("({review:!!document.querySelector('.form-edit-review'),error:document.querySelector('dialog [role=alert] p')?.textContent})");
-    assert.ok(!state.error, state.error);
-    return state.review;
-  }, 'preview XML');
+    const failure = await dom(ui, () => document.querySelector('dialog [role=alert] p')?.textContent);
+    assert.ok(!failure, failure);
+    return view.editor.overlay?.text && dom(ui, () => !document.querySelector('dialog[open]'));
+  }, 'compound change enters the draft');
 }
 
-async function save(ui) {
-  await until(() => button(ui, 'Сохранить форму'), 'save');
-  await until(() => ui.evaluate("!document.querySelector('dialog[open]') && !!document.querySelector('[data-edit-action=appearance]')"), 'viewer updated');
+async function editHistory(ui, name, read, expected) {
+  await until(() => click(ui, action(name)), name + ' available');
+  await until(async () => await read() === expected, name + ' keeps exact XML bytes');
 }
 
-async function replay(ui, direction, read, expected) {
-  await until(() => click(ui, '[data-form-history=' + direction + ']'), direction + ' available');
-  await until(async () => await read() === expected, direction + ' restores exact bytes');
-  await until(() => ui.evaluate("!!document.querySelector('.form-shell[aria-busy=false] [data-edit-action=appearance]')"), 'viewer follows history');
+async function saveDraft(ui, view, read, original) {
+  const changed = view.editor.overlay?.text;
+  assert.ok(changed && changed !== original);
+  assert.equal(await read(), original);
+  await editHistory(ui, 'save', read, changed);
+  return changed;
 }
 
-async function geometry(ui, mode) {
-  return await untilSample(async () => {
-    const dimensions = await ui.evaluate("(() => {" +
-      "const shell=document.querySelector('.form-shell'),inspector=document.querySelector('.form-inspectors'),view=document.querySelector('.preview-scroll'),dialog=document.querySelector('dialog[open]');" +
-      "return {width:shell.clientWidth,height:shell.clientHeight,mode:inspector.dataset.inspectorLayout,viewWidth:view.clientWidth,inspectorHeight:inspector.clientHeight," +
-      "dialogFits:!dialog||dialog.getBoundingClientRect().width<=window.innerWidth&&dialog.getBoundingClientRect().height<=window.innerHeight};})()");
-    return dimensions?.mode === mode && dimensions.viewWidth > 0 && dimensions.dialogFits ? dimensions : null;
-  }, 'form fits ' + mode);
-}
-
-async function untilSample(read, note) {
-  let sample;
-  await until(async () => { sample = await read(); return !!sample; }, note);
-  return sample;
-}
-
-async function resize(ui, width, height, mode) {
-  const owner = await ui.nativeWindow();
-  await ui.resizeWindow(owner.targetId, { width, height });
-  await ui.screenshot('resize.png', true);
-  return geometry(ui, mode);
-}
-
-async function editTransactions(ui, read) {
-  const original = await read();
-  const wide = await resize(ui, 1120, 840, 'columns');
-  await until(() => click(ui, '[data-edit-action=appearance]'), 'appearance button');
-  await until(() => input(ui, 'dialog [data-form-edit-scope]', '1', 'change'), 'select transaction list');
-  assert.equal(await ui.evaluate("document.querySelector('[data-form-edit-scope]').selectedOptions[0].textContent"), 'Транзакции');
+async function editTransactions(ui, view, read, original) {
+  await until(() => click(ui, action('formMenu')), 'form menu available');
+  await until(() => click(ui, action('appearance')), 'open conditional appearance');
+  await until(() => input(ui, 'dialog [data-form-edit-scope]', '1', 'change'), 'choose transaction list');
+  assert.equal(await dom(ui, () => document.querySelector('[data-form-edit-scope]').selectedOptions[0].textContent), 'Транзакции');
   assert.ok(await button(ui, 'Добавить правило'));
   assert.ok(await input(ui, 'dialog .form-edit-settings select', 'background', 'change'));
   assert.ok(await button(ui, 'Добавить', '.form-edit-settings'));
   assert.ok(await input(ui, '[data-format=background] input[type=text]', '#DDEECC'));
-  const narrow = await resize(ui, 450, 650, 'compactStacked');
-  assert.ok(narrow.width < wide.width);
-  assert.equal(await ui.evaluate("document.querySelector('[data-format=background] input[type=text]').value"), '#DDEECC');
+  await dom(ui, () => { document.getElementById('root').style.width = '480px'; });
+  assert.equal(await dom(ui, () => document.querySelector('[data-format=background] input[type=text]').value), '#DDEECC');
   assert.ok(await button(ui, 'Условия', '.form-edit-tabs'));
   assert.ok(await button(ui, 'Добавить условие'));
   assert.ok(await input(ui, 'dialog .form-edit-compare input[list]', 'НомерЗаказа'));
@@ -94,78 +89,62 @@ async function editTransactions(ui, read) {
     assert.ok(await button(ui, 'Добавить значение'));
     assert.ok(await input(ui, '.form-edit-list-value:nth-child(' + (index + 1) + ') input', value));
   }
-  await review(ui);
-  assert.equal(await read(), original);
-  await save(ui);
-  const saved = await read();
-  assert.match(saved, /<dcsset:comparisonType>NotInList<\/dcsset:comparisonType>[^]*?>ESKA-A<\/dcsset:right>[^]*?>ESKA-B<\/dcsset:right>/);
-  await replay(ui, 'undo', read, original);
-  await replay(ui, 'redo', read, saved);
-  await replay(ui, 'undo', read, original);
-  return { wide, narrow, rules: 'dynamic list, two values, exact undo and redo' };
+  await dom(ui, () => { document.getElementById('root').style.width = ''; });
+  await applyDialog(ui, view);
+  assert.match(view.editor.overlay.text, /<dcsset:comparisonType>NotInList<\/dcsset:comparisonType>[^]*?>ESKA-A<\/dcsset:right>[^]*?>ESKA-B<\/dcsset:right>/);
+  const saved = await saveDraft(ui, view, read, original);
+  await editHistory(ui, 'undo', read, original);
+  await editHistory(ui, 'redo', read, saved);
+  await editHistory(ui, 'undo', read, original);
+  return 'conditional appearance for a dynamic list, two typed values, exact save and history';
 }
 
-async function editLoan(ui, read) {
-  const original = await read();
-  const wide = await resize(ui, 1120, 850, 'columns');
-  await until(() => click(ui, '[data-edit-action=addDefinition]'), 'new data attribute');
+async function editLoan(ui, view, read, original) {
+  const config = 'http://v8.1c.ru/8.1/data/enterprise/current-config';
+  await until(() => click(ui, action('addDefinition')), 'open data attribute editor');
   await until(() => input(ui, 'dialog input[required]', 'EskaAcceptanceType'), 'attribute name');
   assert.ok(await input(ui, 'dialog .form-type-editor input[type=search]', 'ВыдачаЗайма'));
   assert.ok(await input(ui, 'dialog .form-type-editor select[aria-label]', JSON.stringify([config, 'DocumentRef.ВыдачаЗайма']), 'change'));
   assert.ok(await input(ui, 'dialog .form-type-editor select[aria-label]', JSON.stringify(['http://www.w3.org/2001/XMLSchema', 'decimal']), 'change'));
   assert.ok(await input(ui, 'dialog [data-type-qualifier=Digits]', '18'));
   assert.ok(await input(ui, 'dialog [data-type-qualifier=FractionDigits]', '3'));
-  const compact = await resize(ui, 620, 730, 'compact');
-  assert.equal(await ui.evaluate("document.querySelector('[data-type-qualifier=FractionDigits]').value"), '3');
-  await review(ui); await save(ui);
-  assert.match(await read(), /name="EskaAcceptanceType"[^]*?DocumentRef\.ВыдачаЗайма[^]*?FractionDigits>3/);
-  await replay(ui, 'undo', read, original);
-  await resize(ui, 1120, 850, 'columns');
-  await until(() => evaluate(ui, () => {
-    const tree = [...document.querySelectorAll('[data-form-tree-node]')];
-    const where = name => tree.find(row => row.querySelector('.form-truncate')?.textContent.trim() === name);
-    const from = where('Номер'), to = where('Дата');
-    if (!from?.draggable || !to) return false;
-    const dataTransfer = new DataTransfer();
-    from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
-    const rectangle = to.getBoundingClientRect();
-    const event = { bubbles: true, cancelable: true, dataTransfer, clientY: rectangle.bottom - 1 };
-    to.dispatchEvent(new DragEvent('dragover', event));
-    if (to.dataset.formDrop !== 'after') return false;
-    to.dispatchEvent(new DragEvent('drop', event));
-    return true;
-  }), 'tree drag targets ready and accepted');
-  await until(() => ui.evaluate("!!document.querySelector('.form-edit-review')"), 'drag preview in real form');
-  await save(ui);
-  const moved = await read();
-  assert.ok(moved.indexOf('<InputField name="Дата"') < moved.indexOf('<InputField name="Номер"'));
-  await replay(ui, 'undo', read, original);
-  await until(() => evaluate(ui, () => {
-    const rows = [...document.querySelectorAll('[data-form-tree-node]')];
-    const key = name => rows.find(row => row.querySelector('.form-truncate')?.textContent.trim() === name)?.dataset.formTreeNode;
-    const element = name => document.querySelector('[data-element="' + CSS.escape(key(name)) + '"]');
-    const from = element('Номер'), to = element('Дата');
-    if (!from || !to) return false;
-    from.click();
-    if (!from.draggable) return false;
-    const dataTransfer = new DataTransfer();
-    const rect = to.getBoundingClientRect();
-    const options = { bubbles: true, cancelable: true, dataTransfer, clientX: rect.right - 1, clientY: rect.bottom - 1 };
-    from.dispatchEvent(new DragEvent('dragstart', options));
-    to.dispatchEvent(new DragEvent('dragover', options));
-    if (!to.dataset.formDrop?.startsWith('after')) return false;
-    to.dispatchEvent(new DragEvent('drop', options));
-    return true;
-  }), 'canvas drag targets ready and accepted');
-  await until(async () => {
-    const result = await ui.evaluate("({review:!!document.querySelector('.form-edit-review'),error:document.querySelector('dialog [role=alert] p')?.textContent})");
-    assert.ok(!result.error, result.error);
-    return result.review;
-  }, 'canvas drag preview');
-  await save(ui);
-  assert.equal(await read(), moved);
-  await replay(ui, 'undo', read, original);
-  return { wide, compact, edits: 'composite metadata reference, matching tree and canvas drag, exact undo' };
+  await dom(ui, () => { document.getElementById('root').style.width = '620px'; });
+  assert.equal(await dom(ui, () => document.querySelector('[data-type-qualifier=FractionDigits]').value), '3');
+  await dom(ui, () => { document.getElementById('root').style.width = ''; });
+  await applyDialog(ui, view);
+  assert.match(view.editor.overlay.text, /name="EskaAcceptanceType"[^]*?DocumentRef\.ВыдачаЗайма[^]*?FractionDigits>3/);
+  await saveDraft(ui, view, read, original);
+  await editHistory(ui, 'undo', read, original);
+
+  let previous;
+  for (const canvas of [false, true]) {
+    await until(() => dom(ui, canvas => {
+      const rows = [...document.querySelectorAll('[data-form-tree-node]')];
+      function find(name) {
+        const row = rows.find(row => row.querySelector(':scope > .form-truncate')?.textContent.trim() === name);
+        return canvas && row ? document.querySelector('[data-element="' + CSS.escape(row.dataset.formTreeNode) + '"]') : row;
+      }
+      const from = find('Номер'), to = find('Дата');
+      if (!from || !to) return false;
+      if (canvas) from.click();
+      if (!from.draggable) return false;
+      const transfer = new DataTransfer(), rect = to.getBoundingClientRect();
+      const options = { bubbles: true, cancelable: true, dataTransfer: transfer, clientX: rect.right - 1, clientY: rect.bottom - 1 };
+      from.dispatchEvent(new DragEvent('dragstart', options));
+      to.dispatchEvent(new DragEvent('dragover', options));
+      const after = to.dataset.formDrop?.startsWith('after');
+      if (after) to.dispatchEvent(new DragEvent('drop', options));
+      from.dispatchEvent(new DragEvent('dragend', options));
+      return after;
+    }, canvas), 'move a loan field from ' + (canvas ? 'preview' : 'tree'));
+    await until(() => !!view.editor.overlay, 'loan layout change enters the draft');
+    const moved = await saveDraft(ui, view, read, original);
+    assert.ok(moved.indexOf('<InputField name="Дата"') < moved.indexOf('<InputField name="Номер"'));
+    if (previous) assert.equal(moved, previous);
+    previous = moved;
+    await editHistory(ui, 'undo', read, original);
+  }
+  return 'composite reference type and matching drag from tree and preview';
 }
 
 exports.run = async () => {
@@ -179,24 +158,71 @@ exports.run = async () => {
   await vscode.commands.executeCommand('workbench.action.closeSidebar');
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   const results = [];
-  for (const [relative, run] of [[transactions, editTransactions], [loan, editLoan]]) {
-    const file = path.join(root, 'src', relative);
+  for (const test of cases) {
+    const file = path.join(root, 'src', test.form);
     const read = () => fs.readFile(file, 'utf8');
     const original = await read();
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
     await vscode.window.showTextDocument(document, { preview: false });
     await vscode.commands.executeCommand('eska.explorer.previewForm');
-    const view = await untilSample(() => [...explorer.formPreview.views.values()].find(view => view.path === file && view.phase === 'ready'), 'complex form ready');
-    const window = view.frames.get('main').panel;
-    const ui = await frame({ state: { title: window.title } });
+    let view;
+    await until(() => {
+      view = [...explorer.formPreview.views.values()].find(item => item.path === file);
+      return !!view?.editor?.schema?.writable;
+    }, 'editable complex form');
+    const main = view.frames.get('main').panel;
+    const ui = await frame({ state: { title: main.title } });
+    let floating;
     try {
-      results.push(await run(ui, read));
+      if (test.target) {
+        await until(() => dom(ui, name => {
+          const row = [...document.querySelectorAll('[data-form-tree-node]')]
+            .find(row => row.querySelector(':scope > .form-truncate')?.textContent === name);
+          if (!row) return false;
+          row.click();
+          return true;
+        }, test.target), 'select complex nested group');
+      }
+      const start = Date.now();
+      await until(() => edit(ui, test.key), 'inline property control');
+      await until(() => view.editor?.overlay?.text && view.snapshot?.dependencies.some(item => item.version?.startsWith('eska-form-')), 'renderer consumed draft overlay');
+      const updateMs = Date.now() - start;
       assert.equal(await read(), original);
+      const widths = [];
+      for (const width of [1080, 660, 960]) {
+        await dom(ui, width => { document.getElementById('root').style.width = width + 'px'; }, width);
+        await until(() => dom(ui, width => document.querySelector('.form-shell').clientWidth === width, width), 'resized complex form');
+        widths.push(await dom(ui, () => {
+          const inspector = document.querySelector('.form-inspectors');
+          return { width: inspector.clientWidth, height: inspector.clientHeight, layout: inspector.dataset.inspectorLayout,
+            preview: document.querySelector('.preview-scroll').clientWidth };
+        }));
+      }
+      await dom(ui, () => { document.getElementById('root').style.width = ''; });
+      assert.ok(widths.every(value => value.layout === 'columns' && value.width > 0 && value.preview > 0));
+      if (test.target) {
+        await ui.screenshot('stalingrad-attached-ru.png');
+        await dom(ui, () => document.querySelector('[data-edit-action=detachPreview]').click());
+        await until(() => view.frames.get('preview')?.ready, 'detached complex preview');
+        floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
+        await floating.nativeWindow({ detached: true });
+        main.reveal(undefined, false);
+        await until(() => dom(ui, () => document.querySelector('.form-inspectors').dataset.inspectorLayout === 'detached'), 'layout changed after actual detach');
+        await ui.screenshot('stalingrad-detached-ru.png');
+        await dom(floating, () => document.querySelector('[data-edit-action=dockPreview]').click());
+        await until(() => !view.frames.has('preview'), 'dock complex preview');
+      }
+      await dom(ui, () => document.querySelector('[data-edit-action=undo]').click());
+      await until(() => !view.editor?.overlay && !view.snapshot?.dependencies.some(item => item.version?.startsWith('eska-form-')), 'complex form undo');
+      assert.equal(await read(), original);
+      const edits = await (test.target ? editLoan : editTransactions)(ui, view, read, original);
+      results.push({ form: test.form, updateMs, widths, edits });
     } finally {
+      floating?.close();
       ui.close();
-      window.dispose();
+      main.dispose();
       if (await read() !== original) await fs.writeFile(file, original);
     }
   }
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'stalingrad-form-editor', results }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, locale: vscode.env.language, results }));
 };

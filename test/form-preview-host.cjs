@@ -16,15 +16,17 @@ async function shellResize(ui, service, view) {
   service.receive=function(...args){ messages.push(args[2]?.type); return receive.apply(this,args); };
   await ui.evaluate(`globalThis.__shellResize={style:document.querySelector('#root').style.cssText,
     nodes:[...document.querySelectorAll('.taxi-form-frame,.taxi-element')],
-    preferred:document.querySelector('.form-inspectors').getBoundingClientRect().height};true`);
+    preferred:${view.inspectorState?.ui.upper ?? 230}};true`);
   try {
     for(const [width,height] of [[420,360],[420,180],[980,500]]) {
       await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
       await until(async()=>await ui.evaluate(`(() => {
         const shell=document.querySelector('.form-shell'), inspector=document.querySelector('.form-inspectors');
         const h=selector=>document.querySelector(selector).getBoundingClientRect().height;
-        const available=Math.max(84,shell.clientHeight-h('.form-toolbar')-h('.form-status')-5-96);
-        return Math.abs(inspector.getBoundingClientRect().height-Math.max(84,Math.min(__shellResize.preferred,available)))<1;
+        const available=Math.max(84,shell.clientHeight-h('.form-toolbar')-h('.form-status')-5-125);
+        const tracks=getComputedStyle(inspector).gridTemplateColumns.split(' ').map(parseFloat);
+        return Math.abs(inspector.getBoundingClientRect().height-Math.max(84,Math.min(__shellResize.preferred,available)))<1
+          && Math.abs(tracks.reduce((sum,width)=>sum+width,0)-Math.max(shell.clientWidth,483))<1;
       })()`),'inspector follows the CSS allocation');
       const sample=await ui.evaluate(`(() => {
         const rect=selector=>document.querySelector(selector).getBoundingClientRect(), shell=document.querySelector('.form-shell'), inspector=document.querySelector('.form-inspectors');
@@ -33,20 +35,24 @@ async function shellResize(ui, service, view) {
           tracks:getComputedStyle(inspector).gridTemplateColumns.split(' ').map(parseFloat),mode:inspector.dataset.inspectorLayout,
           shellScrollable:shell.scrollHeight>shell.clientHeight,inspectorScrollable:inspector.scrollWidth>inspector.clientWidth,
           sameNodes:__shellResize.nodes.every(node=>node.isConnected),
-          controls:[...document.querySelectorAll('.form-toolbar button,.form-zoom')].every(node=>rect('.form-toolbar').bottom>=node.getBoundingClientRect().bottom)};
+          controls:[...document.querySelectorAll('.form-toolbar button,.form-preview-toolbar .form-zoom')].every(node=>rect(node.closest('.form-toolbar,.form-preview-toolbar').classList.contains('form-toolbar')?'.form-toolbar':'.form-preview-toolbar').bottom>=node.getBoundingClientRect().bottom)};
       })()`);
       assert.equal(sample.width,width); assert.equal(sample.height,height); assert.ok(sample.preview>=96);
-      assert.equal(sample.mode,width<475?'compactStacked':'columns');
-      assert.equal(sample.tracks.length,width<475?1:5);
-      assert.ok(sample.tracks.reduce((sum,width)=>sum+width,0)<=sample.contentWidth+1);
+      assert.equal(sample.mode,'columns');
+      assert.equal(sample.tracks.length,5);
+      assert.ok(Math.abs(sample.tracks.reduce((sum,width)=>sum+width,0)-Math.max(sample.contentWidth,483)) < 1);
       assert.equal(sample.sameNodes,true); assert.equal(sample.controls,true);
-      assert.equal(sample.inspectorScrollable,false);
+      assert.equal(sample.inspectorScrollable,width<483);
       if(height===180)assert.equal(sample.shellScrollable,true);
       samples.push(sample); await ui.screenshot(`form-shell-${width}-${height}-${vscode.env.language}.png`);
     }
   } finally {
     await ui.evaluate(`document.querySelector('#root').style.cssText=__shellResize.style;true`);
-    await until(async()=>await ui.evaluate(`Math.abs(document.querySelector('.form-inspectors').getBoundingClientRect().height-__shellResize.preferred)<1`),'original inspector size restored');
+    await until(async()=>await ui.evaluate(`(() => {
+      const h=selector=>document.querySelector(selector).getBoundingClientRect().height;
+      const available=document.querySelector('.form-shell').clientHeight-h('.form-toolbar')-h('.form-status')-5-125;
+      return Math.abs(h('.form-inspectors')-Math.max(84,Math.min(__shellResize.preferred,available)))<1;
+    })()`),'original allocation restored');
     service.receive=receive;
   }
   assert.equal(view.snapshot,snapshot); assert.equal(view.client.current.formSessionId,session); assert.equal(service.views.size,views);

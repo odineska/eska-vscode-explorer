@@ -21,6 +21,16 @@ export function targetKey(target) {
   return target ? target.kind + ':' + (target.id ?? target.name ?? '') : '';
 }
 
+export function formEditIndex(schema) {
+  return new Map(schema?.nodes.map(node => [targetKey(node.target), node]));
+}
+
+export function formCatalogue(schema, node) {
+  if (!node) return [];
+  const kinds = ['attribute', 'parameter', 'command'].includes(node.target.kind) ? schema.definitionKinds : schema.elementKinds;
+  return kinds.find(item => item.kind === node.kind)?.catalog ?? [];
+}
+
 export function property(name, value, qualifiers = [], namespace = FORM_NS) {
   return { key: { name, namespace }, qualifiers, value };
 }

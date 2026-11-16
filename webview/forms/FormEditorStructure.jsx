@@ -63,7 +63,7 @@ export function FormStructureEditor(props) {
   return <Show when={allowed} fallback={<p>{s.editNoOptions}</p>}>
     <form id="form-edit-draft" class="form-edit-form" onSubmit={submit}>
       <Show when={intent === 'remove'} fallback={<>
-        <label>{s.editParent}<select value={targetKey(parent()?.target)} onChange={event => {
+        <label>{s.editParent}<select disabled={props.placement?.fixed} value={targetKey(parent()?.target)} onChange={event => {
           setParent(index.get(event.currentTarget.value)); setKind(''); setBefore('');
         }}><For each={parents}>{candidate => <option value={targetKey(candidate.target)} selected={candidate === parent()}>
           {pathLabel(candidate, index, s)}
@@ -77,7 +77,7 @@ export function FormStructureEditor(props) {
         <Show when={isAdd || isCopy}>
           <label>{s.editName}<input type="text" required value={name()} onInput={event => setName(event.currentTarget.value)}/></label>
         </Show>
-        <label>{s.editPosition}<select value={before()} onChange={event => setBefore(event.currentTarget.value)}>
+        <label>{s.editPosition}<select disabled={props.placement?.fixed} value={before()} onChange={event => setBefore(event.currentTarget.value)}>
           <option value="">{s.editAtEnd}</option>
           <For each={siblings()}>{item => <option value={item.target.id} selected={String(item.target.id) === before()}>{item.name}</option>}</For>
         </select></label>

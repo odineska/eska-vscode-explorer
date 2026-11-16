@@ -1,5 +1,6 @@
 import { For, Show, Switch, Match } from 'solid-js';
 import { PropertyScalar, PropertyValue, ReadonlyFlag } from './PropertyValue.jsx';
+import { InspectorIconButton } from './InspectorIcon.jsx';
 
 function caption(value, state) {
   return value?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'];
@@ -35,6 +36,7 @@ function Row(props) {
     if (value().kind === 'qualifier') return { kind: 'attribute', attribute: value().key };
   };
   const locate = () => { const selection = target(); if (selection) props.locate(selection); };
+  const control = () => props.field(row().id);
   return <tr classList={{ 'form-event': value().kind === 'declaredEvent' }} data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
     data-property-name={value().kind === 'declaredEvent' ? 'Event' : xmlKey()?.name} data-property-namespace={xmlKey() ? xmlKey().namespace ?? '' : undefined}
     tabindex={target() ? '0' : undefined}
@@ -43,7 +45,7 @@ function Row(props) {
     onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(); }}
     onKeyDown={event => { if (target() && event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(); } }}>
     <th>{label()}</th><td classList={{ 'form-property-default': value().kind === 'absent' }}>
-      <Switch>
+      <Show when={control()} fallback={<Switch>
         <Match when={handler()}><button class="form-handler" type="button" title={state.strings.handler} onClick={() => props.openHandler(handler().index)}>{handler().handler.name}</button></Match>
         <Match when={eventText() !== undefined}>{eventText()}</Match>
         <Match when={field()}><PropertyValue field={field()} state={state} valueCaption={caption(value().caption, state)} scalarType={value().scalarType}/></Match>
@@ -55,23 +57,26 @@ function Row(props) {
           <PropertyScalar raw={value().text} scalarType={value().scalarType} label={label()} caption={caption(value().caption, state)}/>
         </Match>
         <Match when={true}>{caption(value().caption, state) ?? value().value ?? state.strings.form}</Match>
-      </Switch>
+      </Switch>}>
+        {field => <>{props.control(field())}<Show when={handler()}>
+          <InspectorIconButton icon="xml" label={state.strings.handler} onClick={() => props.openHandler(handler().index)}/>
+        </Show></>}
+      </Show>
     </td>
   </tr>;
 }
 
 export function PropertyPalette(props) {
-  const rows = category => props.palette.rows.filter(row => row.category === category);
+  const rows = category => props.palette.rows.filter(row => row.category === category && row.available !== false);
   const render = row => <Row row={row} node={props.node} state={props.state} locate={props.locate}
-    handlers={props.handlers} openHandler={props.openHandler}/>;
+    field={props.field} control={props.control} handlers={props.handlers} openHandler={props.openHandler}/>;
+  const group = (label, entries) => <table class="form-properties"><tbody>
+    <tr class="form-property-category"><th colspan="2">{label()}</th></tr><For each={entries()}>{render}</For>
+  </tbody></table>;
   return <>
-    <For each={props.palette.categories}>{category => <>
-      <tr class="form-property-category"><th colspan="2">{caption(category.caption, props.state)}</th></tr>
-      <For each={rows(category.id)}>{render}</For>
-    </>}</For>
-    <Show when={rows(null).length}>
-      <tr class="form-property-category"><th colspan="2">{props.state.strings.paletteXml}</th></tr>
-      <For each={rows(null)}>{render}</For>
-    </Show>
+    <For each={props.palette.categories}>{category => <Show when={rows(category.id).length}>
+      {group(() => caption(category.caption, props.state), () => rows(category.id))}
+    </Show>}</For>
+    <Show when={rows(null).length}>{group(() => props.state.strings.paletteXml, () => rows(null))}</Show>
   </>;
 }

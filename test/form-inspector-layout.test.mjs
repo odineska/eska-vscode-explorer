@@ -15,28 +15,22 @@ test('a normal window preserves the existing inspector geometry and preferences'
 
 test('short windows reserve preview space and account for wrapped toolbar/status height', () => {
   const compact = inspectorLayout(size(420, 320, 59, 36), ui);
-  assert.equal(compact.height, 124);
-  assert.equal(320 - compact.height - 59 - 36 - 5, 96);
+  assert.equal(compact.height, 95);
+  assert.equal(320 - compact.height - 59 - 36 - 5, 125);
   const tiny = inspectorLayout(size(420, 180, 59, 36), ui);
   assert.equal(tiny.height, 84); assert.equal(tiny.maximumHeight, 84);
-  assert.ok(tiny.height + 59 + 36 + 5 + 96 > 180, 'an impossible fit uses shell scrolling');
+  assert.ok(tiny.height + 59 + 36 + 5 + 125 > 180, 'an impossible fit uses shell scrolling');
 });
 
-test('available webview width selects compact or stacked tracks without horizontal overflow', () => {
-  for (const width of [180, 320, 428, 474]) {
-    const compact = inspectorLayout(size(width, 500), ui);
-    assert.equal(compact.mode, 'compactStacked');
-    assert.equal(compact.tracks, 'minmax(0, 1fr)');
+test('docked mode always has three columns and scrolls horizontally at extreme widths', () => {
+  for (const width of [180, 320, 428, 483, 500, 650, 739, 740]) {
+    const layout = inspectorLayout(size(width, 500), ui);
+    const tracks = layout.tracks.split(' ').map(parseFloat);
+    assert.equal(layout.mode, 'columns');
+    assert.equal(tracks.length, 5);
+    assert.equal(tracks.reduce((sum, value) => sum + value, 0), Math.max(width, 483));
+    assert.ok(layout.right >= layout.rightMinimum && layout.right <= layout.rightMaximum);
   }
-  for (const width of [475, 500, 650, 739]) {
-    const compact = inspectorLayout(size(width, 500), ui);
-    const tracks = compact.tracks.split(' ').map(parseFloat);
-    assert.equal(compact.mode, 'compact');
-    assert.equal(tracks.length, 3);
-    assert.equal(tracks.reduce((sum, value) => sum + value, 0), width);
-    assert.ok(compact.right >= compact.rightMinimum && compact.right <= compact.rightMaximum);
-  }
-  assert.equal(inspectorLayout(size(740, 500), ui).mode, 'columns');
 });
 
 test('shrink, grow and return do not overwrite locally saved dimensions', () => {
@@ -62,19 +56,24 @@ test('detached inspectors fill the space after actual toolbar and status without
   for (const [width, height, toolbar, status] of [[1000,700,34,23],[420,360,59,36],[420,180,90,50]]) {
     const result = inspectorLayout(size(width,height,toolbar,status), ui, true);
     assert.equal(result.height, Math.max(84,height-toolbar-status));
-    assert.equal(result.mode, 'columns');
+    assert.equal(result.mode, 'detached');
     const tracks = result.tracks.split(' ').map(parseFloat);
-    assert.equal(tracks.length, 5);
-    assert.equal(tracks.reduce((sum, value) => sum + value, 0), Math.max(width, 504));
+    assert.equal(tracks.length, 3);
+    assert.equal(tracks.reduce((sum, value) => sum + value, 0), Math.max(width, 303));
     assert.deepEqual(ui, { upper:230,left:40,right:65 });
   }
 });
 
 test('dock restores the saved split and clamps it only for the current available height', () => {
-  const normal=inspectorLayout(size(1000,700),ui);
+  const settings = { ...ui, detachedLeft: 55, detachedUpper: 300 };
+  const normal = inspectorLayout(size(1000, 700), settings);
+  const detached = inspectorLayout(size(1000, 700), settings, true);
+  assert.equal(detached.treeHeight, 300);
+  assert.equal(detached.left, 55);
+  assert.equal(normal.left, 40);
   inspectorLayout(size(1000,700),ui,true);
   inspectorLayout(size(420,320,59,36),ui,true);
-  assert.equal(inspectorLayout(size(420,320,59,36),ui).height,124);
-  assert.deepEqual(inspectorLayout(size(1000,700),ui),normal);
+  assert.equal(inspectorLayout(size(420,320,59,36),ui).height,95);
+  assert.deepEqual(inspectorLayout(size(1000,700),settings),normal);
   assert.deepEqual(ui, { upper:230,left:40,right:65 });
 });

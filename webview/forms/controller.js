@@ -8,55 +8,92 @@ import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
   const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, referenceData: false,
-    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, formHistory: false,
+    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, editSchema: null, draftStatus: null, propertySearch: false, propertyMatches: null,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
   const [edit, setEdit] = createSignal(null);
-  const [editResult, setEditResult] = createSignal(null);
-  const [editStatus, setEditStatus] = createSignal('');
-  let editorId = 0;
-  let historyId = 0;
-  const noHistory = { undo: false, redo: false };
-  const [history, setHistory] = createSignal(noHistory);
+  const [fieldPending, setFieldPending] = createSignal(0);
+  const [changing, setChanging] = createSignal(0);
   const [replaying, setReplaying] = createSignal(false);
-  function historyRequest(action) {
-    post({ type: 'formEditHistory', id: ++historyId, action });
+  const [propertyReveal, revealProperty] = createSignal('', { equals: false });
+  const [dataReveal, setDataReveal] = createSignal('', { equals: false });
+  const [actionNotice, setActionNotice] = createSignal('');
+  const pending = new Map(), fields = new Map();
+  let draftId = 0;
+  let fieldId = 0;
+  const fieldPrefix = Date.now().toString(36) + '-';
+  const editStatus = () => state.draftStatus?.saving ? 'editSaving'
+    : actionNotice() || state.draftStatus?.notice || (dirty() ? 'editUnsaved' : '');
+  const history = () => state.draftStatus ?? { undo: false, redo: false };
+  const dirty = () => state.draftStatus?.dirty || fieldPending() + changing() > 0;
+  const writable = () => state.authoring && !state.draftStatus?.conflict && !state.draftStatus?.saving;
+  function draftAction(action, payload) {
+    const id = ++draftId;
+    setActionNotice('');
+    return new Promise(resolve => {
+      pending.set(id, resolve);
+      post({ type: 'formDraft', action, id, ...payload });
+    });
   }
-  function refreshFormHistory() {
-    setHistory(noHistory);
-    if (state.authoring && state.formHistory && !replaying()) historyRequest('state');
+  function flushField(key) {
+    const entry = fields.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    fields.delete(key);
+    setFieldPending(fields.size);
+    entry.run();
   }
-  function replayForm(action) {
-    if (!state.authoring || !state.formHistory || edit() || replaying() || !history()[action]) return false;
+  function discardField(key) {
+    clearTimeout(fields.get(key)?.timer);
+    fields.delete(key);
+    setFieldPending(fields.size);
+  }
+  function scheduleField(key, run, delay) {
+    discardField(key);
+    fields.set(key, { run, timer: setTimeout(() => flushField(key), delay) });
+    setFieldPending(fields.size);
+  }
+  function flushFields() { for (const key of fields.keys()) flushField(key); }
+  function change(operations, merge, action = 'change') {
+    setChanging(count => count + 1);
+    return draftAction(action, { operations, merge }).finally(() => setChanging(count => count - 1));
+  }
+  function save() {
+    if (!dirty() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
+    flushFields();
+    void draftAction('save');
+  }
+  async function replayForm(action) {
+    if (edit() || replaying() || !history()[action] && !fieldPending()) return;
+    flushFields();
     setReplaying(true);
-    setHistory(noHistory);
-    setEditStatus('');
-    historyRequest(action);
-    return true;
+    try { await draftAction(action); }
+    finally { setReplaying(false); }
   }
   function historyKey(event) {
-    if (!event.ctrlKey && !event.metaKey || event.altKey || event.isComposing
-      || event.target?.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
+    if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.isComposing) return;
+    if (event.code === 'KeyS' && dirty()) {
+      event.preventDefault();
+      save();
+      return;
+    }
+    if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
     const action = event.code === 'KeyZ' ? (event.shiftKey ? 'redo' : 'undo')
       : event.code === 'KeyY' ? 'redo' : undefined;
-    if (action && replayForm(action)) event.preventDefault();
+    if (action && (history()[action] || fieldPending())) { event.preventDefault(); void replayForm(action); }
   }
   function openEditor(intent, target, section, placement) {
-    if (!state.authoring || edit() || replaying()) return;
-    const id = ++editorId;
-    setEditStatus('');
-    setEditResult(null);
-    setEdit({ id, intent, target, section, placement });
-    const includeTypes = intent === 'addDefinition' || intent === 'properties' && ['attribute', 'parameter'].includes(target?.kind);
-    post({ type: 'formEdit', action: 'open', id, includeTypes });
+    if (!writable() || edit() || replaying()) return;
+    flushFields();
+    setEdit({ intent, target, section, placement });
   }
-  function editAction(action, payload = {}) {
-    const draft = edit();
-    if (draft) post({ type: 'formEdit', action, id: draft.id, ...payload });
-  }
-  function closeEditor() {
-    editAction('close');
-    setEdit(null);
-    setEditResult(null);
+  const closeEditor = () => setEdit(null);
+  function revealData(row) {
+    batch(() => {
+      set('ui', 'tab', row.section);
+      set('ui', 'inspectedData', row.id);
+      setDataReveal(row.id);
+      persist(true);
+    });
   }
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
   const [previewReveal, setPreviewReveal] = createSignal('', { equals: false });
@@ -108,27 +145,25 @@ export function controller(api) {
     if (!value || typeof value !== 'object') return;
 
     batch(() => {
-      if (value.type === 'formEditHistoryResult' && value.id === historyId) {
-        if (value.message) setEditStatus(value.message);
-        setReplaying(false);
-        setHistory({ undo: value.undo === true, redo: value.redo === true });
-        return;
-      }
-      if (value.type === 'formEditResult' && edit()?.id === value.id) {
-        setEditResult(value);
-        if (value.phase === 'saved') {
-          setEdit(null);
-          setEditStatus('editSaved');
-          if (value.target?.name) {
-            const section = { attribute: 'attributes', command: 'commands', parameter: 'parameters' }[value.target.kind];
-            if (section) {
-              set('ui', 'tab', section);
-              set('ui', 'compactPane', 'data');
-              set('ui', 'inspectedData', `${section}:${value.target.name}`);
-              persist(true);
-            }
+      if (value.type === 'formDraftResult') {
+        const resolve = pending.get(value.id);
+        pending.delete(value.id);
+        if (!resolve) return;
+        if (value.message) setActionNotice(value.message);
+        if (value.target?.name) {
+          const section = { attribute: 'attributes', command: 'commands', parameter: 'parameters' }[value.target.kind];
+          if (section) {
+            set('ui', 'tab', section);
+            set('ui', 'inspectedData', section + ':' + value.target.name);
+            persist(true);
           }
         }
+        resolve(value);
+        return;
+      }
+      if (value.type === 'propertyMatches') {
+        if (value.revision === state.revision && value.formSessionId === state.formSessionId && value.query === state.ui.search)
+          set('propertyMatches', value);
         return;
       }
       if (value.type === 'previewNavigation') {
@@ -139,6 +174,7 @@ export function controller(api) {
       if (value.type === 'selection') {
         if (value.identity) {
           selectIdentity(value.identity, value.external === true);
+          if (value.external) revealInInspector(value.identity);
           persist();
         }
         return;
@@ -157,11 +193,13 @@ export function controller(api) {
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
       if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'formHistory', 'notice', 'restore', 'title']) {
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
+      if (value.editSchema !== undefined) set('editSchema', reconcile(value.editSchema, { key: 'id', merge: true }));
       if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));
       const revision = value.revision ?? null, formSessionId = value.formSessionId ?? null;
+      const hadModel = !!state.model;
       // Palette and status messages advance the delivery sequence without invalidating native paint.
       if (value.model && (!state.model || revision === null || formSessionId === null
         || revision !== state.revision || formSessionId !== state.formSessionId)) {
@@ -171,13 +209,30 @@ export function controller(api) {
         set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true }));
         if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root));
       }
-      if (value.selection) selectIdentity(value.selection);
+      if (value.selection) {
+        const changed = key({ identity: value.selection }) !== state.selected;
+        selectIdentity(value.selection);
+        if (changed && value.model && hadModel && !inspector) revealInInspector(value.selection);
+      }
       persist();
     });
   }
   window.addEventListener('message', receive);
-  const select = node => {
-    batch(() => selectIdentity(node.identity, true));
+  function revealInInspector(identity) {
+    if (state.role !== 'main') return;
+    const path = formElementPath(state.model?.root, key({ identity }));
+    if (!path.length) return;
+    const folded = { ...state.ui.folded };
+    for (const ancestor of path.slice(0, -1)) delete folded[ancestor.key];
+    set('ui', 'folded', folded);
+    set('ui', 'treeTab', 'elements');
+    set('ui', 'inspectedData', '');
+  }
+  const select = (node, reveal = false) => {
+    batch(() => {
+      selectIdentity(node.identity, true);
+      if (reveal) revealInInspector(node.identity);
+    });
     post({ type: 'select', identity: node.identity });
     persist();
   };
@@ -196,5 +251,14 @@ export function controller(api) {
     persist(!shared);
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });
-  return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editResult, editAction, closeEditor, editStatus, history, replaying, refreshFormHistory, replayForm, historyKey, dispose: () => { window.removeEventListener('message', receive); cancelAnimationFrame(persistFrame); } };
+  return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editStatus, closeEditor,
+    history, replaying, replayForm, historyKey, draftAction, change, save, dirty, writable, propertyReveal, revealProperty, dataReveal, revealData,
+    fieldPending, scheduleField, flushField, discardField, nextFieldId: () => fieldPrefix + ++fieldId,
+    dispose: () => {
+      window.removeEventListener('message', receive);
+      cancelAnimationFrame(persistFrame);
+      for (const key of fields.keys()) discardField(key);
+      for (const resolve of pending.values()) resolve({ message: 'editUnavailable' });
+      pending.clear();
+    } };
 }

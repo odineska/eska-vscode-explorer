@@ -12,6 +12,17 @@ const glyphs = {
   xml: 'M5 4L2 8l3 4m6-8 3 4-3 4M9 3L7 13',
   copy: 'M6 5h8v9H6zM11 2H2v9',
   clear: 'M4 4l8 8M4 12l8-8',
+  up: 'M4 10l4-4 4 4',
+  undo: 'M6 3L2 7l4 4M2 7h8a4 4 0 0 1 4 4v2',
+  redo: 'M10 3l4 4-4 4M14 7H6a4 4 0 0 0-4 4v2',
+  save: 'M3 2h8l3 3v9H2V2h1zm2 0v4h6V2M5 14v-4h6v4',
+  pip: 'M5 11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2M8 8h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z',
+  more: 'M3 8h.5m4.25 0h.5m4.25 0h.5',
+  format: 'M3 3h10M3 7h7M3 11h4m2 2 5-5M11 13l3-1',
+  reset: 'M3 6a5.5 5.5 0 1 1 0 5M3 2v4h4',
+  add: 'M3 8h10M8 3v10',
+  move: 'M2 8h12m-9-3L2 8l3 3m6-6 3 3-3 3',
+  remove: 'M3 4h10M6 4V2h4v2M4 4l1 10h6l1-10M7 7v4M9 7v4',
 };
 
 const icons = {
@@ -43,7 +54,9 @@ export function InspectorIcon(props) {
 }
 
 export function InspectorIconButton(props) {
-  return <button type="button" class="form-icon-button" title={props.label} aria-label={props.label} disabled={props.disabled} onClick={props.onClick}>
+  return <button type="button" class="form-icon-button" title={props.label} aria-label={props.label} disabled={props.disabled}
+    data-edit-action={props.action} aria-haspopup={props.hasPopup} aria-expanded={props.expanded}
+    onClick={props.onClick} onDblClick={event => event.stopPropagation()}>
     <InspectorIcon name={props.icon}/>
   </button>;
 }

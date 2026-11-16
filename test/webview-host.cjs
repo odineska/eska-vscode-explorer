@@ -115,7 +115,7 @@ async function frame(tab) {
         if(!owner||owner.targetId===workbenchTarget.id)continue;
       }
       try {
-        const result = await send('Runtime.evaluate', { contextId: candidate.id, expression: `document.getElementById('title')?.textContent === ${JSON.stringify(tab.state.title)}`, returnByValue: true }, candidate.sessionId, 500);
+        const result = await send('Runtime.evaluate', { contextId: candidate.id, expression: `(document.querySelector('.form-shell')?.dataset.formTitle ?? document.getElementById('title')?.textContent) === ${JSON.stringify(tab.state.title)}`, returnByValue: true }, candidate.sessionId, 500);
         if (result.result?.value) { context = candidate; return true; }
       } catch {}
     }
@@ -125,7 +125,7 @@ async function frame(tab) {
       const roles=[];
       for(const candidate of contexts.slice(-12)) {
         try {
-          const result=await send('Runtime.evaluate',{contextId:candidate.id,expression:`({role:document.querySelector('.form-shell')?.dataset.viewRole,titleMatches:document.getElementById('title')?.textContent===${JSON.stringify(tab.state.title)},visible:document.visibilityState})`,returnByValue:true},candidate.sessionId,500);
+          const result=await send('Runtime.evaluate',{contextId:candidate.id,expression:`({role:document.querySelector('.form-shell')?.dataset.viewRole,titleMatches:(document.querySelector('.form-shell')?.dataset.formTitle ?? document.getElementById('title')?.textContent)===${JSON.stringify(tab.state.title)},visible:document.visibilityState})`,returnByValue:true},candidate.sessionId,500);
           roles.push({id:candidate.id,frameId:candidate.frameId,value:result.result?.value});
         } catch {}
       }

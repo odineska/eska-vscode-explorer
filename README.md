@@ -17,7 +17,7 @@
 [Возможности и ограничения beta](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/form-preview.md). Визуальная приёмка
 продолжается; [функциональная приёмка Windows ru/en](docs/windows-forms-acceptance-2026-11-07.md) выполнена.
 Просмотр показывает статическое состояние формы. Интерактивное редактирование
-доступно с Metadata API 1.51.
+доступно с Metadata API 1.53.
 
 ## Запуск и отладка 1С
 

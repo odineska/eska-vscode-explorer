@@ -169,7 +169,7 @@ export function ConditionalAppearanceEditor(props) {
     { attribute: null, appearance: props.schema.conditionalAppearance },
     ...(props.schema.dynamicListAppearance ?? []),
   ].filter(scope => scope.appearance);
-  const [draft, setDraft] = createStore({ scopes: scopes.map(scope => structuredClone(scope.appearance.rules)) });
+  const [draft, setDraft] = createStore({ scopes: scopes.map(scope => structuredClone(unwrap(scope.appearance.rules))) });
   const modified = new Set();
   const [active, setActive] = createSignal(0);
   const [selected, select] = createSignal(0);

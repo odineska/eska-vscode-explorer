@@ -1,6 +1,8 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { PropertyPalette } from './PropertyPalette.jsx';
 import { PropertyValue } from './PropertyValue.jsx';
+import { FormPropertyChoices, InlineFormProperty, canEditFormProperty, declaredFormProperty, editCategories, formPropertyLabel } from './FormEditorFields.jsx';
+import { formCatalogue, formEditIndex, targetKey } from './editor-model.mjs';
 import { DataTypeLabel } from './InspectorLists.jsx';
 import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { FORM_NS, key } from './model.mjs';
@@ -40,6 +42,7 @@ function DeclaredProperties(props) {
   };
   return <For each={['propertyMain', 'propertyLayout', 'propertyBehavior', 'propertyData', 'events', 'propertyAdditional']}>{group =>
     <Show when={groups().get(group)?.length}>
+      <table class="form-properties"><tbody>
       <tr class="form-declared-category"><th colspan="2">{state.strings[group]}</th></tr>
       <For each={groups().get(group)}>{field => <tr tabIndex={props.locate ? 0 : undefined}
         data-property-name={field.key.name} data-property-namespace={field.key.namespace ?? ''} data-palette-source="declared"
@@ -51,6 +54,7 @@ function DeclaredProperties(props) {
         <th>{field.caption?.[state.locale.startsWith('ru') ? 'ru-RU' : 'en-US'] ?? field.key.name}</th>
         <td><PropertyValue field={field} state={state}/></td>
       </tr>}</For>
+      </tbody></table>
     </Show>
   }</For>;
 }
@@ -142,19 +146,65 @@ export function PropertyInspector(props) {
     const row = data();
     return row?.definition?.properties.filter(field => field !== row.typeField) ?? [];
   });
+  const schema = () => state.editSchema;
+  const editIndex = createMemo(() => formEditIndex(schema()));
+  const editNode = createMemo(() => editIndex().get(targetKey(props.editTarget)));
+  const locale = () => state.locale.startsWith('ru') ? 'ru-RU' : 'en-US';
+  const catalog = createMemo(() => formCatalogue(schema(), editNode()));
+  const fields = createMemo(() => {
+    const edit = editNode();
+    return new Map(state.authoring && edit ? catalog()
+      .filter(field => canEditFormProperty(edit, field, declaredFormProperty(edit, field)))
+      .map(field => [field.id, field]) : []);
+  });
+  const dataPaths = createMemo(() => [...props.index.byData.values()].filter(row => row.section === 'attributes').map(row => row.path));
+  const editField = id => fields().get(id.replace(/^platform:/, ''));
+  const preferences = () => ({ node: editNode(), schema: schema(), locale: locale(), strings: state.strings });
+  const control = field => <InlineFormProperty controller={c} field={field} schema={schema()} node={editNode()}
+    typeLabel={type()?.label} locale={locale()} model={state.model} strings={state.strings}/>;
+  const sidebarForm = () => <Show when={fields().size}>
+    <For each={editCategories}>{category => {
+      const items = () => catalog().filter(field => field.category === category && fields().has(field.id));
+      return <Show when={items().length}><table class="form-properties"><tbody>
+        <tr class="form-property-category"><th colspan="2">{state.strings['edit.category.' + category]}</th></tr>
+        <For each={items()}>{field => <tr><th>{formPropertyLabel(field, preferences())}</th><td>{control(field)}</td></tr>}</For>
+      </tbody></table></Show>;
+    }}</For>
+  </Show>;
+  let scroll;
+  createEffect(() => {
+    const id = c.propertyReveal();
+    // Retry after the selected node's asynchronous palette is published.
+    const resolvedPalette = palette();
+    fields();
+    if (!id || !scroll || state.authoring && !data() && !resolvedPalette) return;
+    let current = true;
+    queueMicrotask(() => {
+      if (!current) return;
+      const escaped = CSS.escape(id);
+      const row = scroll.querySelector('[data-edit-field="' + escaped + '"], [data-palette-id="platform:' + escaped
+        + '"], [data-property-name="' + escaped + '"]');
+      if (!row) return;
+      const edit = row.matches('[data-edit-field]') ? row : row.querySelector('[data-edit-field]');
+      const field = edit?.querySelector('input, select, summary') ?? row;
+      field.scrollIntoView({ block: 'nearest' });
+      if (!field.hasAttribute('tabindex') && field === row) field.tabIndex = -1;
+      field.focus({ preventScroll: true });
+      c.revealProperty('');
+    });
+    onCleanup(() => { current = false; });
+  });
   const canShow = () => !data() && node().presentation.displayed !== false;
   const canLocate = () => state.phase === 'ready' && (!data() || props.canLocateData(data()));
 
   return <section class="form-pane form-pane--properties" aria-label={state.strings.properties}>
     <header class="form-pane-heading"><h2>{state.strings.properties}</h2></header>
-    <div class="form-table-scroll form-property-scroll">
+    <div ref={scroll} class="form-table-scroll form-property-scroll">
       <div class="form-property-context">
         <div class="form-context-kind"><InspectorIcon name={data() ? dataGlyph(data(), props.index) : nodeGlyph(node().kind)}/>{kind()}</div>
         <h3 title={data()?.name ?? props.selected?.label}>{data()?.label ?? props.selected?.label ?? state.strings.form}</h3>
         <Show when={path()}><div class="form-context-path" title={path()}>{data()?.displayPath ?? path()}</div></Show>
         <div class="form-property-actions">
-          <Show when={state.authoring && props.editTarget}><button type="button" data-edit-action="properties"
-            onClick={() => c.openEditor('properties', props.editTarget)}>{state.strings.editProperties}</button></Show>
           <Show when={canShow()}><button type="button" onClick={() => props.showOnForm(node())}><InspectorIcon name="preview"/>{state.strings.showOnForm}</button></Show>
           <Show when={canLocate()}><button type="button" onClick={() => data() ? props.locateData(data()) : locate({ kind: 'element' })}><InspectorIcon name="xml"/>{state.strings.source}</button></Show>
           <Show when={!data() && !related() && node().presentation.binding}><button type="button" onClick={() => locate({ kind: 'binding' })}>{state.strings.binding}</button></Show>
@@ -182,21 +232,26 @@ export function PropertyInspector(props) {
           <button type="button" class="form-link" onClick={() => setUsageLimit(limit => limit + 40)}>{state.strings.moreUses}</button>
         </Show>
       </section></Show>
-      <table class="form-properties"><tbody>
-        <Show when={data()} fallback={<Show when={palette()?.rows} fallback={
-          <DeclaredProperties fields={node().properties} state={state} locate={locate}/>
-        }>
+      <Show when={data()?.id ?? node().key} keyed>{() =>
+      <div classList={{ 'form-property-groups': true, 'form-property-groups--wide': props.detached }}>
+        <Show when={!data() && palette()?.rows} fallback={<>
+          <Show when={data() || palette() || !state.authoring}>{sidebarForm()}</Show>
+          <DeclaredProperties fields={(data() ? contextFields() : node().properties).filter(field => !fields().has(field.key.name))}
+            state={state} locate={data() ? undefined : locate}/>
+        </>}>
           <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}
-            handlers={paletteHandlers()} openHandler={openHandler}/>
-        </Show>}>
-          <DeclaredProperties fields={contextFields()} state={state}/>
+            field={editField} control={control} handlers={paletteHandlers()} openHandler={openHandler}/>
         </Show>
-        <Show when={extraHandlers().length}><tr class="form-declared-category"><th colspan="2">{state.strings.events}</th></tr></Show>
-        <For each={extraHandlers()}>{entry =>
-          <tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button" title={state.strings.handler}
-            onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
-        }</For>
-      </tbody></table>
+        <Show when={extraHandlers().length}><table class="form-properties"><tbody>
+          <tr class="form-declared-category"><th colspan="2">{state.strings.events}</th></tr>
+          <For each={extraHandlers()}>{entry =>
+            <tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button"
+              onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
+          }</For>
+        </tbody></table></Show>
+      </div>
+      }</Show>
+      <Show when={state.authoring && schema()}><FormPropertyChoices schema={schema()} paths={dataPaths()}/></Show>
     </div>
   </section>;
 }

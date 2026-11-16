@@ -15,28 +15,19 @@ type RecordValue = Record<string, unknown>;
 type AssignedTarget = { kind: "element"; id: number } | { kind: "attribute" | "command" | "parameter"; name: string };
 type Context = { tree: MetadataTree; entry: TreeEntry; path: string; snapshot: FormSnapshot; origin: string };
 type Request = { form: string; snapshot: string; operations: RecordValue[] };
-type Patch = { before: string; after: string }[];
-type Plan = { prepared: RecordValue; inputs: string[]; target?: AssignedTarget };
-interface Draft {
-  context: Context;
-  id: number;
-  form: string;
-  snapshot: string;
-  busy: boolean;
-  committing: boolean;
-  writable: boolean;
-  plan?: Plan;
-}
+type Step = { operations: RecordValue[]; merge?: string };
+type Base = { context: Context; form: string; snapshot: string; schema: RecordValue };
+type Plan = { prepared: RecordValue; inputs: string[]; text: string; schema: RecordValue; targets: (AssignedTarget | undefined)[] };
+type Recovery = { snapshot: string; steps: Step[] };
 
+const limit = 1_000_000; // Below the metadata RPC limit, including the project envelope.
 const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+
 function diskSnapshot(context: Context): string | undefined {
   const dependency = context.snapshot.dependencies.find(item => item.id === context.origin && item.role === "form");
   return dependency?.version === null && hash(dependency.snapshot) ? dependency.snapshot : undefined;
 }
-
-const limit = 1_000_000; // Below the metadata RPC request limit, including the context envelope.
-const excerptLimit = 16_000;
 
 function target(value: unknown): AssignedTarget | undefined {
   if (!isRecord(value)) return;
@@ -46,118 +37,197 @@ function target(value: unknown): AssignedTarget | undefined {
 }
 
 function operations(value: unknown): RecordValue[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 1024 || !value.every(isRecord)
+  if (!Array.isArray(value) || value.length > 1024 || !value.every(isRecord)
     || value.some(item => item.kind === "remove" && item.force === true)
     || Buffer.byteLength(JSON.stringify(value)) > limit) throw new ExplorerError("protocolInvalid");
   return value;
 }
 
-function showPatch(bytes: Buffer, changes: unknown, expected: string): Patch {
+function recovery(value: unknown): Recovery | undefined {
+  if (!isRecord(value) || !hash(value.snapshot) || !Array.isArray(value.steps) || value.steps.length > 1024) return;
+  const steps: Step[] = [];
+  for (const step of value.steps) {
+    if (!isRecord(step) || !Array.isArray(step.operations) || !step.operations.length) return;
+    steps.push({ operations: step.operations });
+  }
+  try { operations(steps.flatMap(step => step.operations)); } catch { return; }
+  if (steps.length) return { snapshot: value.snapshot, steps };
+}
+
+function patchedText(bytes: Buffer, changes: unknown, expected: string): string {
   if (!Array.isArray(changes) || changes.length > 1024) throw new ExplorerError("protocolInvalid");
-  const result: Patch = [], parts: Buffer[] = [];
+  const parts: Buffer[] = [];
   let previous = 0;
-  const decode = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   for (const change of changes) {
     if (!isRecord(change) || !isRecord(change.range) || typeof change.replacement !== "string") throw new ExplorerError("protocolInvalid");
     const { start, end } = change.range;
     if (typeof start !== "number" || !Number.isSafeInteger(start) || start < previous ||
       typeof end !== "number" || !Number.isSafeInteger(end) || end < start || end > bytes.length) throw new ExplorerError("protocolInvalid");
-    const contextStart = start > 0 ? bytes.lastIndexOf(10, start - 1) + 1 : 0;
-    const newline = bytes.indexOf(10, end);
-    const contextEnd = newline === -1 ? bytes.length : newline;
-    const before = decode.decode(bytes.subarray(contextStart, contextEnd));
-    const after = decode.decode(bytes.subarray(contextStart, start)) + change.replacement + decode.decode(bytes.subarray(end, contextEnd));
-    result.push({ before: shorten(before), after: shorten(after) });
     parts.push(bytes.subarray(previous, start), Buffer.from(change.replacement, "utf8"));
     previous = end;
   }
   parts.push(bytes.subarray(previous));
-  if (digest(Buffer.concat(parts)) !== expected) throw new ExplorerError("protocolInvalid");
-  return result;
+  const output = Buffer.concat(parts);
+  if (digest(output) !== expected) throw new ExplorerError("protocolInvalid");
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(output);
 }
 
-function shorten(text: string): string {
-  return text.length > excerptLimit ? text.slice(0, excerptLimit / 2) + "\n⋯\n" + text.slice(-excerptLimit / 2) : text;
+function schemaValues(value: unknown): value is RecordValue {
+  return isRecord(value) && Array.isArray(value.nodes) && Array.isArray(value.dynamicListAppearance)
+    && (value.conditionalAppearance === null || isRecord(value.conditionalAppearance));
 }
 
-/** The webview owns drafts. The host owns the checked plan and submits it once on Save. */
+/** One checked draft per form. Every panel receives an overlay of these exact bytes. */
 export class FormEditor {
-  private draft: Draft | undefined;
-  private serial = 0;
-  private replaying = false;
+  private base: Base | undefined;
+  private plan: Plan | undefined;
+  private steps: Step[] = [];
+  private cursor = 0;
+  private recovery: Recovery | undefined;
+  private history = { undo: false, redo: false };
+  private closed = false;
+  private conflict = false;
+  private saving = false;
+  private notice = "";
+  private lastUnavailable = "";
+  private revision = 0;
+  private pending = Promise.resolve();
 
   constructor(private readonly current: () => Context | undefined,
     private readonly uri: (path: string) => Promise<vscode.Uri>,
-    private readonly post: (value: RecordValue) => void,
-    private readonly applied: (selected?: AssignedTarget) => void) {}
-
-  dispose(): void { this.draft = undefined; }
-
-  async receive(value: RecordValue): Promise<void> {
-    const id = value.id;
-    if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return;
-    if (value.action === "open") {
-      if (id <= this.serial || this.draft?.committing || this.replaying) return;
-      this.serial = id;
-      const context = this.current();
-      if (!context || context.entry.node.id.kind !== "object") {
-        this.reply(id, "error", { message: "editUnavailable" });
-        return;
-      }
-      this.draft = { id, context, form: context.entry.node.id.objectId, snapshot: "", busy: false, committing: false, writable: false };
-    }
-    const draft = this.draft;
-    if (!draft || id !== draft.id) return;
-    if (value.action === "close") {
-      if (!draft.committing) this.draft = undefined;
-      return;
-    }
-    if (draft.busy) return;
-    draft.busy = true;
-    try {
-      switch (value.action) {
-        case "open": await this.open(draft, value.includeTypes === true); break;
-        case "preview": await this.preview(draft, operations(value.operations)); break;
-        case "back": delete draft.plan; break;
-        case "save": await this.save(draft); break;
-      }
-    } catch (error) {
-      if (this.draft === draft) {
-        const committing = draft.committing;
-        delete draft.plan;
-        draft.committing = false;
-        if (committing) draft.writable = false;
-        this.reply(id, "error", { message: this.error(error, committing), fatal: committing,
-          ...(error instanceof ExplorerError && error.domain === "form_references"
-            ? { references: this.references(error.details) } : {}) });
-        if (committing) this.applied();
-      }
-    } finally {
-      draft.busy = false;
-    }
+    private readonly changed: (render: boolean, selected?: AssignedTarget) => void,
+    stored: unknown,
+    private readonly persist: (value: Recovery | undefined) => Thenable<void>) {
+    this.recovery = recovery(stored);
   }
 
-  private reply(id: number, phase: string, detail: RecordValue = {}): void {
-    this.post({ type: "formEditResult", id, phase, ...detail });
+  dispose(): void { this.closed = true; }
+  get dirty(): boolean { return !!this.plan && this.plan.prepared.expectedOutputSnapshot !== this.base?.snapshot || !!this.recovery; }
+  get overlay(): { text: string; version: string } | undefined {
+    if (this.plan && this.dirty) return { text: this.plan.text, version: "eska-form-" + this.revision };
+  }
+  get schema(): RecordValue | undefined { return this.plan?.schema ?? this.base?.schema; }
+  get status(): RecordValue {
+    return {
+      dirty: this.dirty, saving: this.saving, conflict: this.conflict, notice: this.notice || this.lastUnavailable,
+      undo: !this.saving && !this.conflict && (this.steps.length ? this.cursor > 0 : this.history.undo),
+      redo: !this.saving && !this.conflict && (this.steps.length ? this.cursor < this.steps.length : this.history.redo),
+    };
+  }
+
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const next = this.pending.then(async () => { if (!this.closed) await task(); });
+    this.pending = next.catch(() => {});
+    return next;
+  }
+
+  synchronize(): Promise<void> {
+    return this.enqueue(async () => {
+      const context = this.current();
+      if (this.plan) {
+        // Check external changes even while the last valid draft remains visible.
+        try { if (this.base) await this.checkBase(this.base, this.plan.inputs); }
+        catch (error) { this.fail(error, true); }
+        return;
+      }
+      const snapshot = context && diskSnapshot(context);
+      if (!context || !snapshot || context.entry.node.id.kind !== "object") {
+        if (this.base || this.lastUnavailable !== "editDirty") {
+          this.base = undefined;
+          this.history = { undo: false, redo: false };
+          this.lastUnavailable = "editDirty";
+          this.changed(false);
+        }
+        return;
+      }
+      if (this.base?.snapshot === snapshot && this.base.context.tree === context.tree
+        && this.base.context.entry.project === context.entry.project) return;
+      if (this.steps.length) this.reset();
+      const form = context.entry.node.id.objectId;
+      try {
+        await this.checkSourceBuffers(context, [context.path]);
+        const [value, history] = await Promise.all([
+          context.tree.request(context.entry.project, "metadata/formEditSchema", { form, includeTypes: true }),
+          context.tree.request(context.entry.project, "metadata/formEditHistory", { form, snapshot }),
+        ]);
+        this.checkContext(context);
+        if (!schemaValues(value) || value.schemaVersion !== 1 || value.form !== form || value.snapshot !== snapshot || !isWirePath(value.path)
+          || !Array.isArray(value.elementKinds) || !Array.isArray(value.definitionKinds)
+          || !isRecord(value.propertyCaptions) || !isRecord(value.choiceCaptions) || typeof value.writable !== "boolean")
+          throw new ExplorerError("protocolInvalid");
+        const source = await existingSource(context.entry.project.info.sourcePath, value.path);
+        this.checkContext(context);
+        const current = this.current();
+        if (relative(context.path, source) !== "" || !current || diskSnapshot(current) !== snapshot)
+          throw new ExplorerError("sourceChanged");
+        const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } = value;
+        const schema = { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable };
+        this.base = { context, form, snapshot, schema };
+        this.history = { undo: history.undo === true, redo: history.redo === true };
+        this.lastUnavailable = writable ? "" : "editLocked";
+        if (this.recovery) {
+          if (this.recovery.snapshot !== snapshot) throw new ExplorerError("sourceChanged");
+          const steps = this.recovery.steps;
+          this.plan = await this.prepare(this.base, steps);
+          this.steps = steps;
+          this.cursor = steps.length;
+          this.revision++;
+          this.recovery = undefined;
+          this.changed(true);
+        } else this.changed(false);
+      } catch (error) {
+        this.lastUnavailable = this.message(error);
+        if (this.recovery) this.conflict = true;
+        this.changed(false);
+      }
+    });
+  }
+
+  receive(value: RecordValue, respond: (value: RecordValue) => void): Promise<void> {
+    const { id, action } = value;
+    if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return Promise.resolve();
+    return this.enqueue(async () => {
+      let selected: AssignedTarget | undefined;
+      try {
+        if (action === "discard") {
+          await this.persist(undefined);
+          this.reset();
+          this.notice = "";
+          this.base = undefined;
+          this.changed(true);
+        } else if (action === "save") await this.save();
+        else if (action === "undo" || action === "redo") await this.replay(action);
+        else if (action === "change" || action === "placeAttribute") {
+          const items = operations(value.operations);
+          if (action === "placeAttribute") this.allocateName(items);
+          if (items.length) selected = await this.change(items, value.merge);
+        } else return;
+        respond({ type: "formDraftResult", id, ...(selected ? { target: selected } : {}) });
+      } catch (error) {
+        this.fail(error, false);
+        const references = error instanceof ExplorerError && Array.isArray(error.details?.paths)
+          ? error.details.paths.filter(path => typeof path === "string").slice(0, 20) : [];
+        respond({ type: "formDraftResult", id, message: this.message(error), references });
+      }
+    });
+  }
+
+  private reset(): void {
+    this.steps = [];
+    this.cursor = 0;
+    this.plan = undefined;
+    this.recovery = undefined;
+    this.conflict = false;
+    this.history = { undo: false, redo: false };
+    this.lastUnavailable = "";
   }
 
   private checkContext(context: Context): void {
     const current = this.current();
-    if (!current || current.tree !== context.tree || current.entry.project !== context.entry.project
+    if (this.closed || !current || current.tree !== context.tree || current.entry.project !== context.entry.project
       || current.entry.node.id.kind !== "object" || context.entry.node.id.kind !== "object"
       || current.entry.node.id.objectId !== context.entry.node.id.objectId || current.origin !== context.origin
       || formSourceKey(current.path) !== formSourceKey(context.path)) throw new ExplorerError("sourceChanged");
-  }
-
-  private check(draft: Draft): void {
-    if (this.draft !== draft) throw new ExplorerError("sourceChanged");
-    this.checkContext(draft.context);
-  }
-
-  private async checkBuffers(draft: Draft, paths: string[]): Promise<void> {
-    this.check(draft);
-    await this.checkSourceBuffers(draft.context, paths);
-    this.check(draft);
   }
 
   private async checkSourceBuffers(context: Context, paths: string[]): Promise<void> {
@@ -172,122 +242,143 @@ export class FormEditor {
     }
   }
 
-  private async open(draft: Draft, includeTypes: boolean): Promise<void> {
-    const { tree, entry, path } = draft.context;
-    await this.checkBuffers(draft, [path]);
-    const schema = await tree.request(entry.project, "metadata/formEditSchema", { form: draft.form, ...(includeTypes ? { includeTypes } : {}) });
-    this.check(draft);
-    if (schema.schemaVersion !== 1 || schema.form !== draft.form || !hash(schema.snapshot) || !isWirePath(schema.path)
-      || !Array.isArray(schema.nodes) || !Array.isArray(schema.elementKinds) || !Array.isArray(schema.definitionKinds)
-      || !isRecord(schema.propertyCaptions) || !isRecord(schema.choiceCaptions) || typeof schema.writable !== "boolean")
-      throw new ExplorerError("protocolInvalid");
-    const source = await existingSource(entry.project.info.sourcePath, schema.path);
-    if (relative(path, source) !== "" || diskSnapshot(draft.context) !== schema.snapshot)
-      throw new ExplorerError("sourceChanged");
-    this.check(draft);
-    draft.snapshot = schema.snapshot;
-    draft.writable = schema.writable;
-    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } = schema;
-    this.reply(draft.id, "ready", { schema: { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } });
+  private async checkBase(base: Base, inputs: string[] = []): Promise<Buffer> {
+    const { context, snapshot } = base;
+    await this.checkSourceBuffers(context, [context.path, ...inputs]);
+    const bytes = await readFile(context.path);
+    this.checkContext(context);
+    if (digest(bytes) !== snapshot) throw new ExplorerError("sourceChanged");
+    return bytes;
   }
 
-  private async preview(draft: Draft, operations: RecordValue[]): Promise<void> {
-    delete draft.plan;
-    if (!draft.writable) throw new ExplorerError("requestFailed", "property_read_only");
-    const { tree, entry, path } = draft.context;
-    await this.checkBuffers(draft, [path]);
-    const request: Request = { form: draft.form, snapshot: draft.snapshot, operations };
-    const preview = await tree.request(entry.project, "metadata/previewFormEdit", { request });
-    this.check(draft);
+  private writable(): Base {
+    if (this.conflict) throw new ExplorerError("sourceChanged");
+    if (!this.base?.schema.writable) throw new ExplorerError("requestFailed", "property_read_only");
+    return this.base;
+  }
+
+  private allocateName(items: RecordValue[]): void {
+    const [operation] = items;
+    const element = operation?.element;
+    if (items.length !== 1 || operation?.kind !== "addElement" || !isRecord(element) || typeof element.name !== "string")
+      throw new ExplorerError("protocolInvalid");
+    const nodes = this.schema?.nodes;
+    if (!Array.isArray(nodes)) throw new ExplorerError("sourceChanged");
+    const names = new Set(nodes.flatMap(node => isRecord(node) && isRecord(node.target)
+      && node.target.kind === "element" && typeof node.name === "string" ? [node.name.toLowerCase()] : []));
+    const base = element.name;
+    let name = base;
+    for (let suffix = 1; names.has(name.toLowerCase()); suffix++) name = base + suffix;
+    items[0] = { ...operation, element: { ...element, name } };
+  }
+
+  private async prepare(base: Base, steps: Step[]): Promise<Plan> {
+    const { tree, entry, path } = base.context;
+    await this.checkBase(base);
+    const request: Request = { form: base.form, snapshot: base.snapshot, operations: operations(steps.flatMap(step => step.operations)) };
+    const preview = await tree.request(entry.project, "metadata/previewFormEdit", { request, includeDraft: true });
     const prepared = preview.prepared;
-    if (preview.schemaVersion !== 1 || preview.form !== draft.form || preview.valid !== true || preview.operation !== "form-edit"
+    if (preview.schemaVersion !== 1 || preview.form !== base.form || preview.valid !== true || preview.operation !== "form-edit"
       || typeof preview.changed !== "boolean" || !isWirePath(preview.source) || !isRecord(prepared)
       || !isDeepStrictEqual(request, prepared.request) || !hash(prepared.sourceSnapshot) || !hash(prepared.expectedOutputSnapshot)
-      || !Array.isArray(preview.inputs) || !preview.inputs.every(isWirePath) || !Array.isArray(preview.assignedIds))
+      || !Array.isArray(preview.inputs) || !preview.inputs.every(isWirePath) || !Array.isArray(preview.assignedIds) || !schemaValues(preview.draft))
       throw new ExplorerError("protocolInvalid");
     const source = plannedSource(entry.project.info.sourcePath, preview.source);
     if (relative(path, source) !== "") throw new ExplorerError("protocolInvalid");
     const inputs = preview.inputs.map(input => plannedSource(entry.project.info.sourcePath, input));
-    await this.checkBuffers(draft, [path, ...inputs]);
-    const bytes = await readFile(path);
-    this.check(draft);
-    if (digest(bytes) !== draft.snapshot) throw new ExplorerError("sourceChanged");
-    const changes = showPatch(bytes, preview.changes, prepared.expectedOutputSnapshot);
-    const assigned = preview.assignedIds[0];
-    const selected = isRecord(assigned) ? target(assigned.target) : undefined;
-    if (preview.changed) draft.plan = { prepared, inputs, ...(selected ? { target: selected } : {}) };
-    this.reply(draft.id, "preview", { changes, changed: preview.changed });
+    const bytes = await this.checkBase(base, inputs);
+    const text = patchedText(bytes, preview.changes, prepared.expectedOutputSnapshot);
+    const targets = preview.assignedIds.map(value => isRecord(value) ? target(value.target) : undefined);
+    return { prepared, inputs, text, schema: { ...base.schema, ...preview.draft }, targets };
   }
 
-  private async save(draft: Draft): Promise<void> {
-    if (!draft.writable || !draft.plan) throw new ExplorerError("sourceChanged");
-    const { prepared, inputs, target } = draft.plan;
-    delete draft.plan;
-    const { tree, entry, path } = draft.context;
-    await this.checkBuffers(draft, [path, ...inputs]);
-    // The Rust server verifies the sources again under the publication lock.
-    draft.committing = true;
-    const result = await tree.request(entry.project, "metadata/applyFormEdit", { prepared });
-    if (result.schemaVersion !== 1 || result.form !== draft.form || result.changed !== true || result.snapshot !== prepared.expectedOutputSnapshot)
-      throw new ExplorerError("protocolInvalid");
-    if (this.draft === draft) {
-      this.draft = undefined;
-      this.reply(draft.id, "saved", target ? { target } : {});
-      this.applied(target);
-    }
+  private async install(base: Base, steps: Step[], cursor: number, plan: Plan | undefined, selected?: AssignedTarget): Promise<void> {
+    const dirty = !!plan && plan.prepared.expectedOutputSnapshot !== base.snapshot;
+    await this.persist(dirty ? { snapshot: base.snapshot, steps: steps.slice(0, cursor).map(({ operations }) => ({ operations })) } : undefined);
+    if (this.closed) return; // The persisted draft will be loaded in the next panel.
+    this.steps = steps;
+    this.cursor = cursor;
+    this.plan = plan;
+    this.recovery = undefined;
+    this.notice = "";
+    this.revision++;
+    this.changed(true, selected);
   }
 
-  async receiveHistory(value: RecordValue): Promise<void> {
-    const { id, action } = value;
-    if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0
-      || action !== "state" && action !== "undo" && action !== "redo") return;
-    const respond = (result: RecordValue): void => this.post({ type: "formEditHistoryResult", id, ...result });
-    const context = this.current();
-    const snapshot = context && diskSnapshot(context);
-    if (!context || context.entry.node.id.kind !== "object" || !snapshot) {
-      respond(action === "state" ? { undo: false, redo: false } : { message: "editConflict" });
-      return;
-    }
-    const { tree, entry, path } = context;
-    const form = context.entry.node.id.objectId;
-    if (action === "state") {
-      try {
-        const result = await tree.request(entry.project, "metadata/formEditHistory", { form, snapshot });
-        this.checkContext(context);
-        if (typeof result.undo !== "boolean" || typeof result.redo !== "boolean") throw new ExplorerError("protocolInvalid");
-        respond({ undo: result.undo, redo: result.redo });
-      } catch {
-        respond({ undo: false, redo: false });
-      }
-      return;
-    }
-    if (this.draft || this.replaying) {
-      respond({ message: "editLocked" });
-      return;
-    }
-    this.replaying = true;
-    let submitted = false;
+  private async change(items: RecordValue[], key: unknown): Promise<AssignedTarget | undefined> {
+    const base = this.writable();
+    const merge = typeof key === "string" && key.length <= 512 ? key : undefined;
+    const steps = this.steps.slice(0, this.cursor);
+    if (merge && steps.at(-1)?.merge === merge) steps.pop();
+    steps.push({ operations: items, ...(merge ? { merge } : {}) });
+    const plan = await this.prepare(base, steps);
+    if (plan.prepared.expectedOutputSnapshot === (this.plan?.prepared.expectedOutputSnapshot ?? base.snapshot)) return;
+    const count = items.length;
+    // IDs returned by the planner follow the order of the operations which allocate them.
+    const allocates = items.filter(item => item.kind === "addElement" || item.kind === "copyElement" || item.kind === "addDefinition").length;
+    const selected = allocates ? plan.targets.at(-allocates) : count === 1 && items[0]?.kind === "moveElement" ? target(items[0].target) : undefined;
+    await this.install(base, steps, steps.length, plan, selected);
+    return selected;
+  }
+
+  private async save(): Promise<void> {
+    const base = this.writable(), plan = this.plan;
+    if (!plan || !this.dirty) return;
+    const { tree, entry } = base.context;
+    await this.checkBase(base, plan.inputs);
+    let end = 0;
+    const steps = this.steps.slice(0, this.cursor).map(step => (end += step.operations.length));
+    this.saving = true;
+    this.notice = "";
+    this.changed(false);
     try {
-      await this.checkSourceBuffers(context, [path, join(dirname(path), "Form", "Module.bsl")]);
-      submitted = true;
-      const result = await tree.request(entry.project, "metadata/replayFormEdit", { form, snapshot, undo: action === "undo" });
-      if (result.schemaVersion !== 1 || result.form !== form || result.changed !== true || !hash(result.snapshot))
+      const result = await tree.request(entry.project, "metadata/applyFormEdit", { prepared: plan.prepared, steps });
+      if (result.schemaVersion !== 1 || result.form !== base.form || result.changed !== true || result.snapshot !== plan.prepared.expectedOutputSnapshot)
         throw new ExplorerError("protocolInvalid");
-      respond({ message: action === "undo" ? "editUndone" : "editRedone" });
-      this.applied();
+      this.reset();
+      this.base = undefined;
+      this.notice = "editSaved";
+      await this.persist(undefined);
     } catch (error) {
-      respond({ message: this.error(error, submitted) });
-      if (submitted) this.applied();
+      this.notice = this.message(error, true);
+      this.conflict = true;
+      throw error;
     } finally {
-      this.replaying = false;
+      this.saving = false;
+      this.changed(true);
     }
   }
 
-  private references(details: RecordValue | undefined): string[] {
-    return Array.isArray(details?.paths) ? details.paths.filter((path): path is string => typeof path === "string").slice(0, 20) : [];
+  private async replay(action: "undo" | "redo"): Promise<void> {
+    const base = this.writable();
+    if (this.steps.length) {
+      const cursor = this.cursor + (action === "undo" ? -1 : 1);
+      if (cursor < 0 || cursor > this.steps.length) return;
+      const plan = cursor ? await this.prepare(base, this.steps.slice(0, cursor)) : undefined;
+      await this.install(base, this.steps, cursor, plan);
+      return;
+    }
+    if (!this.history[action]) return;
+    const { tree, entry, path } = base.context;
+    await this.checkBase(base, [join(dirname(path), "Form", "Module.bsl")]);
+    const result = await tree.request(entry.project, "metadata/replayFormEdit", { form: base.form, snapshot: base.snapshot, undo: action === "undo" });
+    if (result.schemaVersion !== 1 || result.form !== base.form || result.changed !== true || !hash(result.snapshot))
+      throw new ExplorerError("protocolInvalid");
+    this.base = undefined;
+    this.history = { undo: false, redo: false };
+    this.notice = action === "undo" ? "editUndone" : "editRedone";
+    this.changed(true);
   }
 
-  private error(error: unknown, committing: boolean): string {
+  private fail(error: unknown, checkOnly: boolean): void {
+    const message = this.message(error);
+    if (this.dirty && (message === "editConflict" || message === "editDirty" || message === "editLocked")) this.conflict = true;
+    if (checkOnly && this.notice === message) return;
+    this.notice = message;
+    this.changed(false);
+  }
+
+  private message(error: unknown, committing = false): string {
     if (error instanceof ExplorerError) {
       switch (error.domain) {
         case "creation_dirty_source": return "editDirty";
@@ -297,8 +388,9 @@ export class FormEditor {
         case "form_references": return "editReferences";
         case "form_invalid_xml": return "editInvalidXml";
         case "form_invalid":
-          return error.details?.field === "form" ? "editUnavailable"
-            : error.details?.field === "conditionalAppearance" ? "editInvalidRule" : "editInvalid";
+          if (error.details?.reason === "used_standard_commands") return "editCommandInUse";
+          if (error.details?.field === "form") return "editUnavailable";
+          return error.details?.field === "conditionalAppearance" ? "editInvalidRule" : "editInvalid";
         case "property_conflict": case "stale_generation": return "editConflict";
         case "form_committed_refresh_required": return "editSavedRefresh";
       }

@@ -10,8 +10,8 @@ const measure=`(() => {
   return {shell:shell.clientHeight,toolbar:height(document.querySelector('.form-toolbar')),status:height(document.querySelector('.form-status')),height:height(area),
     splitters:document.querySelectorAll('.form-shell > .form-splitter').length,preview:document.querySelectorAll('.preview-scroll').length,placeholder:document.querySelectorAll('.form-detached-placeholder').length,
     sameOwners:!globalThis.__detachedOwners||__detachedOwners.every(node=>node.isConnected),owners:globalThis.__detachedOwners?.map(node=>({tag:node.tagName,classes:node.className,connected:node.isConnected})),recordOpen:!!document.querySelector('.form-property-record[open]'),
-    selected:document.querySelector('.form-tree-row.selected')?.id,zoom:document.querySelector('.form-zoom select').value,
-    reveal:document.querySelectorAll('.form-toolbar > button')[2]?.textContent,errors:globalThis.__detachedErrors??[]};
+    selected:document.querySelector('.form-tree-row.selected')?.id,zoom:document.querySelector('.form-zoom select')?.value,
+    errors:globalThis.__detachedErrors??[]};
 })()`;
 const navigation=`({page:document.querySelector('.taxi-tabs [aria-selected=true]')?.textContent,collapsed:document.querySelector('.taxi-group-title button')?.getAttribute('aria-expanded')==='false'})`;
 exports.run=async()=>{
@@ -46,7 +46,7 @@ exports.run=async()=>{
   assert.equal(baseline.height,240);assert.equal(baseline.zoom,'125');assert.equal(nav.page,'Other');assert.equal(nav.collapsed,true);
   const mainTarget=await ui.nativeWindow(),originalWindow=await ui.windowBounds(mainTarget.targetId);
   async function detach(){
-    await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+    await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
     await until(()=>view.frames.get('preview')?.ready,'floating preview ready');
     const preview=view.frames.get('preview'),floating=await frame({detached:true,state:{title:preview.panel.title}});
     await until(()=>floating.evaluate("!!document.querySelector('.taxi-form-frame')"),'floating form rendered');
@@ -55,14 +55,24 @@ exports.run=async()=>{
     return {preview,floating,target};
   }
   const first=await detach();
+  main.panel.reveal(undefined, false);
+  await ui.focusWorkbench();
   await ui.screenshot('detached-space-filled-'+vscode.env.language+'.png');
   const model=view.snapshot,received=[],receive=service.receive;
   service.receive=async function(v,f,value){received.push(value.type);return receive.call(this,v,f,value);};
   try {
     for(const [width,height] of [[420,360],[1000,700],[420,180]]) {
       await ui.evaluate(`Object.assign(document.querySelector('#root').style,{width:'${width}px',height:'${height}px'});true`);
-      await until(async()=>{const value=await ui.evaluate(measure);return Math.abs(value.height-Math.max(84,value.shell-value.toolbar-value.status))<1;},'detached size settled');
-      const value=await ui.evaluate(measure);assert.equal(value.placeholder,0);assert.equal(value.preview,0);assert.equal(value.splitters,0);assert.equal(value.sameOwners,true,JSON.stringify(value.owners));assert.equal(value.recordOpen,true);assert.equal(value.selected,baseline.selected);assert.equal(value.zoom,'125');assert.deepEqual(value.errors,[]);assert.equal(value.reveal,service.strings().revealPreview);results.push({label:`css-${width}-${height}`,...value});
+      let measurement;
+      try {
+        await until(async()=>{
+          measurement=await ui.evaluate(measure);
+          return Math.abs(measurement.height-Math.max(84,measurement.shell-measurement.toolbar-measurement.status))<1;
+        },`detached ${width}×${height} size settled`);
+      } catch (error) {
+        throw new Error(`${error.message} ${JSON.stringify(measurement)}`,{cause:error});
+      }
+      const value=await ui.evaluate(measure);assert.equal(value.placeholder,0);assert.equal(value.preview,0);assert.equal(value.splitters,0);assert.equal(value.sameOwners,true,JSON.stringify(value.owners));assert.equal(value.recordOpen,true);assert.equal(value.selected,baseline.selected);assert.deepEqual(value.errors,[]);results.push({label:`css-${width}-${height}`,...value});
     }
   } finally {service.receive=receive;}
   assert.deepEqual(received,[],'resize sends no action');assert.equal(view.snapshot,model);assert.equal(view.client.current.formSessionId,session);
@@ -82,14 +92,22 @@ exports.run=async()=>{
   }
   await replace('Other page','Live detached');
   await until(()=>first.floating.evaluate("document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.textContent==='Live detached'"),'dirty XML reaches floating preview while main is filled');
-  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");await until(()=>first.preview.panel.active,'toolbar reveals floating preview');
+  let revealed=false;
+  service.receive=function(v,f,value){
+    if(v===view&&f===main&&value.type==='revealPreview')revealed=true;
+    return receive.call(this,v,f,value);
+  };
+  try {
+    await ui.evaluate("document.querySelector('[data-edit-action=formMenu]').click();document.querySelector('[data-edit-action=revealPreview]').click()");
+    await until(()=>revealed&&first.preview.panel.visible,'toolbar reveals existing floating preview');
+  } finally {service.receive=receive;}
   assert.equal((await first.floating.nativeWindow({detached:true})).targetId,first.target.targetId);assert.equal(view.frames.size,2);
   await ui.evaluate("Object.assign(document.querySelector('#root').style,{width:'420px',height:'320px'});true");
-  await first.floating.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await first.floating.evaluate("document.querySelector('[data-edit-action=dockPreview]').click()");
   await until(()=>!view.frames.has('preview'),'dock closes preview');first.floating.close();
   await until(()=>ui.evaluate("!!document.querySelector('.preview-scroll')&&!!document.querySelector('.form-shell > .form-splitter')"),'dock restores preview and separator');
-  await until(async()=>{const value=await ui.evaluate(measure);return value.height===Math.max(84,Math.min(240,value.shell-value.toolbar-value.status-5-96));},'dock allocation follows the wrapped toolbar after layout settles');
-  const docked=await ui.evaluate(measure);assert.equal(docked.height,Math.max(84,Math.min(240,docked.shell-docked.toolbar-docked.status-5-96)));assert.equal(docked.sameOwners,true);assert.equal(docked.recordOpen,true);assert.equal(docked.zoom,'125');assert.deepEqual(await ui.evaluate(navigation),nav);results.push({label:'dock-small',...docked});
+  await until(async()=>{const value=await ui.evaluate(measure);return value.height===Math.max(84,Math.min(240,value.shell-value.toolbar-value.status-5-125));},'dock allocation follows the wrapped toolbar after layout settles');
+  const docked=await ui.evaluate(measure);assert.equal(docked.height,Math.max(84,Math.min(240,docked.shell-docked.toolbar-docked.status-5-125)));assert.equal(docked.sameOwners,true);assert.equal(docked.recordOpen,true);assert.equal(docked.zoom,'125');assert.deepEqual(await ui.evaluate(navigation),nav);results.push({label:'dock-small',...docked});
   await ui.evaluate("document.querySelector('#root').style.cssText='';true");await until(async()=>(await ui.evaluate(measure)).height===240,'original saved split returns after growing');
   const second=await detach();await second.floating.captureTarget(second.target.targetId,'detached-before-native-close-'+vscode.env.language+'.png');
   await vscode.commands.executeCommand('workbench.action.closeWindow');

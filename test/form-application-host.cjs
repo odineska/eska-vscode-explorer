@@ -58,8 +58,8 @@ async function inspectApplication(ui, view) {
   for (const node of nodes) {
     if (!node.name || node.kind==='AutoCommandBar'&&!node.children.length) continue;
     await ui.evaluate(`(()=>{const input=document.querySelector('.form-inspector-search input');input.value=${JSON.stringify(node.name)};input.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
-    const selector=`[...document.querySelectorAll('.form-tree-row')].find(row=>row.querySelector('.form-truncate')?.textContent===${JSON.stringify(node.name)})`;
-    await until(()=>ui.evaluate(`!!(${selector})`),'application tree selection '+node.name);
+    const selector = `[...document.querySelectorAll('#form-search-results [data-result-key]:not([data-result-property])')].find(row=>row.dataset.resultKey===${JSON.stringify([node.identity.source,node.identity.part,node.identity.key.value].join(':'))})`;
+    await until(()=>ui.evaluate(`!!(${selector})`),'search result for '+node.name);
     await ui.evaluate(`(${selector}).click();true`);
     await until(()=>isDeepStrictEqual(view.palette?.identity,node.identity),'application palette '+node.name);
     assert.ok(view.palette.rows?.length,'catalog for '+node.kind+' '+node.name);

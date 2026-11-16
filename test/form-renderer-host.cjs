@@ -276,7 +276,7 @@ async function checkCheckboxModes(ui, service, view, document, sourceRoot) {
   await change(configurationXml,configuration);
   assert.deepEqual(await fs.readFile(configuration.uri.fsPath),configurationDisk);
   const mainWindow = await ui.nativeWindow();
-  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
   await until(() => view.frames.get('preview')?.ready,'detached checkbox preview ready');
   const preview = view.frames.get('preview');
   const floating = await frame({detached:true,fixedFormArea:true,state:{title:preview.panel.title}});
@@ -440,7 +440,7 @@ async function checkRadioChoices(ui, service, view, document) {
   await change(editOptions('<RadioButtonType>RadioButtons</RadioButtonType><ColumnsCount>3</ColumnsCount>', labels));
   await until(async () => (await ui.evaluate(measure))?.mode==='buttons','radio buttons restored before detaching');
   const workbench = await ui.nativeWindow();
-  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
   await until(() => view.frames.get('preview')?.ready, 'detached radio preview ready');
   const detached = view.frames.get('preview');
   const floating = await frame({ detached: true, fixedFormArea: true, state: { title: detached.panel.title } });
@@ -467,7 +467,7 @@ async function checkRadioChoices(ui, service, view, document) {
     return result?.settled && result.mode==='segments' && (process.platform!=='linux' || result.raster);
   }, 'docked radio geometry settled');
   assert.deepEqual(await ui.evaluate(measure), segments);
-  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
   await until(() => view.frames.get('preview')?.ready, 'radio raster detached again');
   const finalFrame = view.frames.get('preview');
   const finalUi = await frame({ detached:true,fixedFormArea:true,state:{title:finalFrame.panel.title} });

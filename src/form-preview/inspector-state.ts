@@ -3,14 +3,14 @@ import { isIdentity, type ElementIdentity } from "./protocol.js";
 
 export interface InspectorUi {
   upper: number;
+  detachedUpper: number;
+  detachedLeft: number;
   left: number;
   right: number;
-  compactRight: number;
   dataWidth: number;
   zoom: number;
   tab: "attributes" | "commands" | "parameters";
   treeTab: "elements" | "commandInterface";
-  compactPane: "elements" | "data";
   search: string;
   inspectedData: string;
   folded: Record<string, boolean>;
@@ -19,8 +19,8 @@ export interface InspectorUi {
 export interface InspectorState { ui: InspectorUi; selection?: ElementIdentity }
 
 export function defaultInspectorUi(): InspectorUi {
-  return { upper: 230, left: 30, right: 66, compactRight: 56, dataWidth: 48, zoom: 100, tab: "attributes",
-    treeTab: "elements", compactPane: "elements", search: "", inspectedData: "", folded: {}, dataFolded: {} };
+  return { upper: 230, detachedUpper: 230, detachedLeft: 45, left: 30, right: 66, dataWidth: 48, zoom: 100, tab: "attributes",
+    treeTab: "elements", search: "", inspectedData: "", folded: {}, dataFolded: {} };
 }
 
 function folds(value: unknown, data: boolean): Record<string, boolean> {
@@ -40,15 +40,14 @@ function folds(value: unknown, data: boolean): Record<string, boolean> {
 export function parseInspectorState(value: unknown): InspectorState | undefined {
   if (!isRecord(value) || !isRecord(value.ui)) return undefined;
   const input = value.ui, ui = defaultInspectorUi();
-  for (const key of ["left", "right", "compactRight", "dataWidth", "upper"] as const) {
+  for (const key of ["left", "right", "dataWidth", "upper", "detachedLeft", "detachedUpper"] as const) {
     const number = input[key];
-    const maximum = key === "upper" ? 8192 : 100;
+    const maximum = key === "upper" || key === "detachedUpper" ? 8192 : 100;
     if (typeof number === "number" && Number.isFinite(number) && number >= 0 && number <= maximum) ui[key] = number;
   }
   if (typeof input.zoom === "number" && [50, 75, 100, 125, 150, 200].includes(input.zoom)) ui.zoom = input.zoom;
   if (input.tab === "commands" || input.tab === "parameters") ui.tab = input.tab;
   if (input.treeTab === "commandInterface") ui.treeTab = input.treeTab;
-  if (input.compactPane === "data") ui.compactPane = input.compactPane;
   if (typeof input.search === "string") ui.search = input.search.slice(0, 512);
   if (typeof input.inspectedData === "string" && /^(attributes|commands|parameters):/.test(input.inspectedData)
     && input.inspectedData.length <= 2048) ui.inspectedData = input.inspectedData;

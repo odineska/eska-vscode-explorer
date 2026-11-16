@@ -44,7 +44,7 @@ exports.run = async () => {
       await main.evaluate(`document.querySelector(${JSON.stringify(pagesRow)} + ' .form-tree-expander').click()`);
       await main.evaluate("document.querySelector('.form-pane--data [role=tab]:last-child').click()");
       await main.evaluate(search('Name'));
-      await main.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+      await main.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
       stage = 'initial-preview';
       const preview = await frame({detached:true,state:{title:previewTitle}});
       await until(async () => await preview.evaluate("!!document.querySelector('.taxi-input')"), 'detached form DOM');
@@ -73,7 +73,6 @@ exports.run = async () => {
       stage = 'restored-model';
       await until(async () => await preview.evaluate(`document.querySelector('.taxi-page[aria-hidden=false] .taxi-label')?.getAttribute('aria-label')===${JSON.stringify(checkpoint.caption)}`), 'restored form uses unsaved XML');
       await until(async () => await main.evaluate(`(() => {const shell=document.querySelector('.form-shell'),inspectors=document.querySelector('.form-inspectors');return !document.querySelector('.preview-scroll,.form-detached-placeholder,.form-shell > .form-splitter')&&Math.abs(inspectors.getBoundingClientRect().height-Math.max(84,shell.clientHeight-document.querySelector('.form-toolbar').getBoundingClientRect().height-document.querySelector('.form-status').getBoundingClientRect().height))<1})()`),'restored detached inspectors fill the main window');
-      assert.equal(await main.evaluate("document.querySelector('.form-zoom select').value"), '125');
       assert.equal(await preview.evaluate("document.querySelector('.form-zoom select').value"), '150');
       assert.equal(await main.evaluate("document.querySelector('.form-tree-row.selected').id"), checkpoint.selection, 'shared selection survives serialization');
       assert.equal(await main.evaluate("document.querySelector('.form-inspector-search input').value"), 'Name');
@@ -93,7 +92,7 @@ exports.run = async () => {
       await fs.writeFile(marker, JSON.stringify({...checkpoint,pid:process.pid,text:document.getText(),caption}));
       await main.screenshot(`form-restored-${vscode.env.language}.png`);
       if (process.env.ESKA_HOST_RUN === '1') {
-        await preview.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+        await preview.evaluate("document.querySelector('[data-edit-action=dockPreview]').click()");
         await until(async () => await main.evaluate("!!document.querySelector('.preview-scroll')&&document.querySelector('.form-inspectors').style.height==='240px'"),'saved split restored after reload and restart');
         assert.equal(await main.evaluate("document.querySelector('.form-zoom select').value"),'125');
       }

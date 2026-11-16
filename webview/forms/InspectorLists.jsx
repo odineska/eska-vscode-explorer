@@ -3,6 +3,8 @@ import { automaticCommands, text } from './model.mjs';
 import { canExpandData, dataRowExpanded, dataRows, definitionSections, treeRows } from './inspector-model.mjs';
 import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
 import { Splitter } from './Splitter.jsx';
+import { dataTarget, elementTarget } from './editor-model.mjs';
+import { formAddPlacement, formSiblingMove } from './form-drag.mjs';
 
 const treeHeight = 24, dataHeight = 24;
 const noRows = [];
@@ -16,9 +18,18 @@ function virtualRows(rows, rowHeight, initialHeight, headerHeight = 0) {
   const start = createMemo(() => Math.max(0, Math.min(rows().length - limit(), Math.floor(scroll() / rowHeight) - 8)));
   const visible = createMemo(() => rows().slice(start(), start() + limit()));
   onMount(() => {
-    const observer = new ResizeObserver(([entry]) => setHeight(entry.contentRect.height));
+    let scheduled;
+    const observer = new ResizeObserver(() => {
+      scheduled ??= setTimeout(() => {
+        scheduled = undefined;
+        setHeight(area.clientHeight);
+      }, 0);
+    });
     observer.observe(area);
-    onCleanup(() => observer.disconnect());
+    onCleanup(() => {
+      observer.disconnect();
+      if (scheduled !== undefined) clearTimeout(scheduled);
+    });
   });
   function reveal(index) {
     if (index < 0 || !area) return;
@@ -70,10 +81,45 @@ export function StructurePane(props) {
   };
   const all = collapse => c.ui('folded', collapse ? Object.fromEntries([...props.index.nodes.values()].filter(row => row.children.length).map(row => [row.key, true])) : {});
   const locate = row => c.post({ type: 'locate', target: { kind: 'element', identity: row.node.identity } });
+  const addition = row => formAddPlacement(props.index.nodes, state.model.root, state.formLayout, row);
+  const movement = (row, delta) => formSiblingMove(props.index.nodes, state.model.root, state.formLayout, row, delta);
+  const move = (row, delta) => {
+    const placement = movement(row, delta);
+    if (placement) void c.change([{ kind: 'moveElement', ...placement }]);
+  };
+  function contextMenu(row, anchor, point) {
+    const target = elementTarget(row.node, state.model.root);
+    if (!target) return;
+    c.select(row.node);
+    const s = state.strings;
+    const place = addition(row), movable = c.drag.movable(row.key);
+    const actions = [];
+    if (c.writable() && place) actions.push({
+      id: 'addElement', label: place.inside ? s.editAddInside : s.editAdd, icon: 'add',
+      run: () => c.openEditor('addElement', target, undefined, place),
+    });
+    if (movable) actions.push(
+      { id: 'copy', label: s.editCopy, icon: 'copy', run: () => c.openEditor('copy', target) },
+      { id: 'move', label: s.editMove, icon: 'move', run: () => c.openEditor('move', target) },
+      { id: 'remove', label: s.editRemove, icon: 'remove', run: () => c.openEditor('remove', target) },
+    );
+    actions.push({ id: 'locate', label: s.source, icon: 'xml', run: () => locate(row) });
+    c.menu.open({ anchor, ...point, label: row.label, actions });
+  }
   function keyboard(event) {
-    if (hasModifier(event)) return;
     const list = rows();
     const index = positions().get(state.selected) ?? -1, row = list[index];
+    if (row && (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      contextMenu(row, document.getElementById('form-row-' + row.key) ?? event.currentTarget);
+      return;
+    }
+    if (event.altKey && row && c.writable() && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      move(row, event.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+    if (hasModifier(event) || event.target.closest('button')) return;
     let next;
     switch (event.key) {
       case 'ArrowDown': next = list[Math.min(list.length - 1, index + 1)]; break;
@@ -97,13 +143,12 @@ export function StructurePane(props) {
     if (next) { c.select(next.node); virtual.reveal(list.indexOf(next)); }
     event.preventDefault();
   }
-  createEffect(on(() => state.ui.search, virtual.reset));
   createEffect(on(() => props.reveal, key => {
     if (!key) return;
     virtual.reveal(positions().get(key) ?? -1);
   }));
   // Selection from the form must be visible without shifting focus to this window.
-  createEffect(on(() => state.selected, key => {
+  createEffect(on([() => state.selected, () => state.modelSequence], ([key]) => {
     virtual.reveal(positions().get(key) ?? -1);
   }));
 
@@ -116,13 +161,6 @@ export function StructurePane(props) {
     </div></header>
     <InspectorTabs tabs={['elements', 'commandInterface']} active={state.ui.treeTab} change={name => c.ui('treeTab', name)}
       strings={state.strings} label={state.strings.structure}/>
-    <Show when={tree() && state.authoring && props.editTarget}><div class="form-inspector-edit-tools">
-      <button type="button" data-edit-action="addElement" onClick={() => c.openEditor('addElement', props.editTarget)}>{state.strings.editAddDefinition}</button>
-      <Show when={props.editTarget.kind === 'element'}>
-        <For each={['copy', 'move', 'remove']}>{action => <button type="button" data-edit-action={action}
-          onClick={() => c.openEditor(action, props.editTarget)}>{state.strings[{ copy: 'editCopy', move: 'editMove', remove: 'editRemove' }[action]]}</button>}</For>
-      </Show>
-    </div></Show>
     <div ref={virtual.mount} hidden={!tree()} role="tree" tabIndex="0" class="form-tree" aria-label={state.strings.elements}
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-row-${state.selected}` : undefined}
       onScroll={virtual.scroll} onKeyDown={keyboard}>
@@ -134,7 +172,10 @@ export function StructurePane(props) {
               aria-expanded={row.children.length ? expanded() : undefined} title={row.title && row.title !== row.label ? `${row.path}\n${row.title}` : row.path}
               classList={{ 'form-tree-row': true, selected: isSelected(row), related: related(row), 'form-tree-hidden': row.node.presentation.displayed === false }}
               style={{ top: `${(virtual.start() + index()) * treeHeight}px`, '--form-depth': row.depth }}
-              onClick={() => { c.select(row.node); virtual.focus(); }} onDblClick={() => locate(row)}>
+              onClick={() => { c.select(row.node); virtual.focus(); }} onDblClick={() => locate(row)}
+              onContextMenu={event => {
+                event.preventDefault(); contextMenu(row, event.currentTarget, { x: event.clientX, y: event.clientY });
+              }}>
               <Show when={row.children.length} fallback={<span class="form-tree-expander"/>}>
                 <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded() ? state.strings.collapse : state.strings.expand}
                   onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
@@ -145,6 +186,17 @@ export function StructurePane(props) {
               <span class="form-truncate">{row.label}</span>
               <Show when={row.title && row.title !== row.label}><span class="form-tree-caption form-truncate">{row.title}</span></Show>
               <Show when={related(row)}><span class="form-row-link" title={state.strings.related}><InspectorIcon name="link"/></span></Show>
+              <div class="form-tree-actions">
+                <Show when={isSelected(row) && c.writable() && c.drag.movable(row.key)}>
+                  <InspectorIconButton icon="up" label={state.strings.editUp} action="moveUp" disabled={!movement(row, -1)}
+                    onClick={event => { event.stopPropagation(); move(row, -1); }}/>
+                  <InspectorIconButton icon="down" label={state.strings.editDown} action="moveDown" disabled={!movement(row, 1)}
+                    onClick={event => { event.stopPropagation(); move(row, 1); }}/>
+                </Show>
+                <Show when={c.writable()}><InspectorIconButton icon="more" label={state.strings.editActions} action="rowMenu" hasPopup="menu"
+                  expanded={c.menu.menu()?.anchor?.closest('[data-form-tree-node]')?.dataset.formTreeNode === row.key}
+                  onClick={event => { event.stopPropagation(); contextMenu(row, event.currentTarget); }}/></Show>
+              </div>
             </div>;
           }}</For>
         </div>
@@ -205,6 +257,20 @@ export function DataPane(props) {
   const current = () => props.activeData ?? props.relatedData;
   const isSelected = row => props.activeData?.id === row.id;
   const linked = row => props.relatedData?.id === row.id && !isSelected(row);
+  function dataMenu(row, anchor, point) {
+    props.select(row);
+    const s = state.strings, target = dataTarget(row), actions = [];
+    if (c.writable()) {
+      if (row.section === 'attributes') actions.push({
+        id: 'placeAttribute', label: s.editPlaceAttribute, icon: 'add', run: () => c.drag.addAttribute(row),
+      });
+      if (target) actions.push({
+        id: 'removeDefinition', label: s.editRemove, icon: 'remove', run: () => c.openEditor('remove', target),
+      });
+    }
+    actions.push({ id: 'locateData', label: s.source, icon: 'xml', run: () => props.locate(row) });
+    c.menu.open({ anchor, ...point, label: row.displayPath, actions });
+  }
   let grid;
   const fold = row => {
     if (props.terms.length) return;
@@ -213,10 +279,15 @@ export function DataPane(props) {
     props.clearReveal();
   };
   function keyboard(event) {
-    if (event.target.closest('button,[role=separator]') || hasModifier(event)) return;
     const list = rows().filter(row => !row.heading);
     const index = list.findIndex(row => row.id === current()?.id);
     const row = list[index];
+    if (row && (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      dataMenu(row, document.getElementById('form-data-' + row.id) ?? event.currentTarget);
+      return;
+    }
+    if (event.target.closest('button,[role=separator]') || hasModifier(event)) return;
     let next;
     switch (event.key) {
       case 'ArrowDown': next = list[Math.min(index + 1, list.length - 1)]; break;
@@ -240,22 +311,19 @@ export function DataPane(props) {
     if (next) { props.select(next); virtual.reveal(rows().indexOf(next)); }
     event.preventDefault();
   }
-  createEffect(on([() => state.ui.tab, () => state.ui.search], virtual.reset));
+  createEffect(on(() => state.ui.tab, virtual.reset));
   createEffect(on(() => props.reveal, id => {
     if (id) virtual.reveal(rows().findIndex(row => row.id === id));
   }));
   const width = () => bound(state.ui.dataWidth, 26, 74);
   const range = { minimum: 26, maximum: 74 };
   return <section class="form-pane form-pane--data" hidden={props.hidden} aria-label={state.strings.data}>
-    <header class="form-pane-heading"><h2>{state.strings.data}</h2></header>
+    <header class="form-pane-heading"><h2>{state.strings.data}</h2>
+      <Show when={c.writable()}><InspectorIconButton icon="add" label={state.strings.editAddDefinition} action="addDefinition"
+        onClick={() => c.openEditor('addDefinition', props.editTarget, state.ui.tab)}/></Show>
+    </header>
     <InspectorTabs tabs={definitionSections} active={state.ui.tab} change={name => c.ui('tab', name)}
       strings={state.strings} label={state.strings.data}/>
-    <Show when={state.authoring}><div class="form-inspector-edit-tools">
-      <button type="button" data-edit-action="addDefinition"
-        onClick={() => c.openEditor('addDefinition', props.editTarget, state.ui.tab)}>{state.strings.editAddDefinition}</button>
-      <Show when={props.editTarget}><button type="button" data-edit-action="removeDefinition"
-        onClick={() => c.openEditor('remove', props.editTarget)}>{state.strings.editRemove}</button></Show>
-    </div></Show>
     <div ref={element => { grid = element; virtual.mount(element); }} class="form-table-scroll form-data-grid"
       role="treegrid" aria-label={state.strings[state.ui.tab]} aria-colcount="2" aria-rowcount={rows().length + 1} tabIndex="0"
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-data-${props.activeData.id}` : undefined}
@@ -274,8 +342,10 @@ export function DataPane(props) {
             <tr classList={{ 'form-data-row': true, selected: isSelected(row), related: linked(row) }} id={`form-data-${row.id}`}
               role="row" aria-level={row.depth + 1} aria-selected={isSelected(row)} aria-rowindex={virtual.start() + index() + 2}
               aria-expanded={hasChildren(row) ? expanded(row) : undefined}
-              data-form-data-path={row.path} title={row.path}
-              onClick={() => { props.select(row); virtual.focus(); }} onDblClick={() => props.locate(row)}>
+              data-form-data-path={row.path} data-form-attribute={row.section === 'attributes' ? row.id : undefined}
+              draggable={row.section === 'attributes' && c.writable()} title={row.path}
+              onClick={() => { props.select(row); virtual.focus(); }} onDblClick={() => props.locate(row)}
+              onContextMenu={event => { event.preventDefault(); dataMenu(row, event.currentTarget, { x: event.clientX, y: event.clientY }); }}>
               <td role="gridcell"><div class="form-data-name" style={{ '--form-depth': row.depth }}>
                 <Show when={hasChildren(row)} fallback={<span class="form-tree-expander" aria-hidden="true"/>}>
                   <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded(row) ? state.strings.collapse : state.strings.expand}
