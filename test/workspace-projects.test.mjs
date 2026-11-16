@@ -9,7 +9,7 @@ class Emitter {
   fire(value) { for (const callback of this.callbacks) callback(value); }
   dispose() { this.callbacks.clear(); }
 }
-function uri(value) { return { toString: () => value }; }
+function uri(value) { return { toString: () => value, scheme: value.startsWith("/") ? "file" : value.split(":")[0], fsPath: value }; }
 function folder(value, index = 0) { return { uri: uri(value), name: value.split('/').at(-1), index }; }
 const deferred = () => {
   let resolve;
@@ -18,7 +18,7 @@ const deferred = () => {
 };
 
 function fixture(t, folders = [], files = new Map()) {
-  const changed = new Emitter(), watchers = [], stats = [], writes = [], contexts = new Map();
+  const changed = new Emitter(), watchers = [], native = [], stats = [], writes = [], contexts = new Map();
   const created = new Emitter(), deleted = new Emitter(), renamed = new Emitter();
   const vscode = {
     EventEmitter: Emitter, FileType: { File: 1, Directory: 2 },
@@ -45,12 +45,22 @@ function fixture(t, folders = [], files = new Map()) {
       },
     },
   };
+  const filesystem = {
+    watch(path, options, change) {
+      const watcher = { path, options, change, closed: false,
+        on(event, callback) { assert.equal(event, 'error'); this.fail = callback; },
+        close() { this.closed = true; },
+      };
+      native.push(watcher);
+      return watcher;
+    },
+  };
   const module = { exports: {} };
   runInNewContext('(function(require,module,exports){' + readFileSync(new URL('../out/workspace-projects.js', import.meta.url), 'utf8') + '\n})')(
-    name => { assert.equal(name, 'vscode'); return vscode; }, module, module.exports);
+    name => { if (name === 'node:fs') return filesystem; assert.equal(name, 'vscode'); return vscode; }, module, module.exports);
   const projects = new module.exports.WorkspaceProjects();
   t.after(() => projects.dispose());
-  return { projects, vscode, files, changed, created, deleted, renamed, watchers, stats, writes, contexts,
+  return { projects, vscode, files, changed, created, deleted, renamed, watchers, native, stats, writes, contexts,
     roots: () => Array.from(projects.folders, value => value.uri.toString()),
     visible: () => contexts.get('eska.hasProject'),
   };
@@ -162,4 +172,31 @@ test('disposal wins over an in-flight context write and pending filesystem reads
   f.projects.dispose(); complete.resolve();
   await f.projects.settled(); await Promise.resolve();
   assert.equal(f.visible(), false); assert.deepEqual(f.roots(), []);
+});
+
+test('local directory feed covers root marker creation before the provider watcher and stops on disposal', async t => {
+  const f = fixture(t, [folder('/work'), folder('vscode-remote://ssh/remote', 1)]);
+  await f.projects.settled();
+  assert.deepEqual(f.native.map(watcher => watcher.path), ['/work']);
+  const watcher = f.native[0];
+  assert.equal(watcher.options.persistent, false);
+  const before = f.stats.length;
+  watcher.change('rename', 'other-file');
+  await f.projects.settled();
+  assert.equal(f.stats.length, before);
+  f.files.set('/work/eska.toml', 1);
+  watcher.change('rename', 'eska.toml');
+  await f.projects.settled();
+  assert.equal(f.visible(), true);
+  f.files.delete('/work/eska.toml');
+  watcher.change('rename', null);
+  await f.projects.settled();
+  assert.equal(f.visible(), false);
+  watcher.fail(new Error('watcher unavailable'));
+  assert.equal(watcher.closed, true);
+  watcher.change('rename', 'eska.toml');
+  await f.projects.settled();
+  assert.equal(f.stats.length, before + 4);
+  f.projects.dispose();
+  assert.ok(f.watchers.every(watcher => watcher.disposed));
 });

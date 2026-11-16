@@ -1,4 +1,28 @@
+import { watch } from "node:fs";
 import * as vscode from "vscode";
+
+const markerName = "eska.toml";
+
+/** Local directory events bridge the interval before the VS Code provider watcher starts. */
+function watchRootMarker(folder: vscode.WorkspaceFolder, refresh: () => void): vscode.Disposable {
+  if (folder.uri.scheme !== "file") return { dispose() {} };
+  try {
+    let closed = false;
+    const watcher = watch(folder.uri.fsPath, { persistent: false }, (_event, filename) => {
+      if (!closed && (filename === null || filename.toLowerCase() === markerName)) refresh();
+    });
+    const close = (): void => {
+      if (closed) return;
+      closed = true;
+      watcher.close();
+    };
+    // Filesystem providers and Explorer file events still work if this OS watcher fails.
+    watcher.on("error", close);
+    return { dispose: close };
+  } catch {
+    return { dispose() {} };
+  }
+}
 
 /** Root marker presence is independent of TOML validity and backend availability. */
 export class WorkspaceProjects implements vscode.Disposable {
@@ -41,8 +65,8 @@ export class WorkspaceProjects implements vscode.Disposable {
     for (const folder of folders) {
       const key = folder.uri.toString();
       if (this.watchers.has(key)) continue;
-      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, "eska.toml"), false, true, false);
-      this.watchers.set(key, vscode.Disposable.from(watcher,
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, markerName), false, true, false);
+      this.watchers.set(key, vscode.Disposable.from(watcher, watchRootMarker(folder, () => this.refresh()),
         watcher.onDidCreate(() => this.refresh()), watcher.onDidDelete(() => this.refresh())));
     }
     this.refresh();
@@ -54,14 +78,14 @@ export class WorkspaceProjects implements vscode.Disposable {
   }
 
   private filesChanged(files: readonly vscode.Uri[]): void {
-    const markers = new Set((vscode.workspace.workspaceFolders ?? []).map(folder => vscode.Uri.joinPath(folder.uri, "eska.toml").toString()));
+    const markers = new Set((vscode.workspace.workspaceFolders ?? []).map(folder => vscode.Uri.joinPath(folder.uri, markerName).toString()));
     if (files.some(file => markers.has(file.toString()))) this.refresh();
   }
 
   private async check(folders: readonly vscode.WorkspaceFolder[], revision: number): Promise<void> {
     const found = await Promise.all(folders.map(async folder => {
       try {
-        const stat = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, "eska.toml"));
+        const stat = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, markerName));
         return stat.type & vscode.FileType.File ? folder : undefined;
       } catch { return undefined; }
     }));

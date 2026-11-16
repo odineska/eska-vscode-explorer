@@ -35,17 +35,6 @@ exports.run = async function () {
       await fs.writeFile(marker, fixture.manifest);
       await presence(true, 'external creation immediately after opening the panel shows the section');
     }
-    // VS Code defers its shared workspace watcher until startup has finished. The probe's
-    // activation returns immediately, and this explicit readiness condition avoids racing it.
-    const logs = path.join(path.dirname(fixture.root), 'profile', 'logs');
-    await until(async () => {
-      const files = await fs.readdir(logs, { recursive: true });
-      for (const file of files.filter(file => file.endsWith('fileWatcher.log'))) {
-        const text = await fs.readFile(path.join(logs, file), 'utf8');
-        if (text.includes(`[File Watcher ('parcel')] Started watching: '${fixture.root}'`)) return true;
-      }
-      return false;
-    }, 'normal workbench started its shared workspace watcher');
     const manifest = fixture.manifest ?? await fs.readFile(marker, 'utf8');
     if (fixture.manifest && !process.env.ESKA_HOST_RUN_DEBUG_EARLY) {
       await fs.writeFile(marker, manifest);
