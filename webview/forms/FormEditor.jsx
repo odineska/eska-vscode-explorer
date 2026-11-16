@@ -96,7 +96,7 @@ export function FormEditor(props) {
                   node={selection()} catalog={catalogue()} model={c.state.model} submit={preview}/>
               </Match>
               <Match when={intent === 'addDefinition'}>
-                <FormDefinitionEditor strings={s} node={selection()} section={props.draft.section} submit={preview}/>
+                <FormDefinitionEditor strings={s} locale={locale()} options={schema().typeOptions} node={selection()} section={props.draft.section} submit={preview}/>
               </Match>
               <Match when={selection()}>
                 <FormStructureEditor intent={intent} strings={s} node={selection()} schema={schema()}

@@ -89,8 +89,11 @@ exports.run = async () => {
     await open('addDefinition');
     assert.ok(await input('dialog input[required]', 'EditorFlag'));
     assert.ok(await input('dialog select[aria-label]', JSON.stringify(['http://www.w3.org/2001/XMLSchema','boolean']), 'change'));
+    assert.ok(await input('dialog select[aria-label]', JSON.stringify(['http://www.w3.org/2001/XMLSchema','decimal']), 'change'));
+    assert.ok(await input('dialog [data-type-qualifier="Digits"]', '18'));
+    assert.ok(await input('dialog [data-type-qualifier="FractionDigits"]', '4'));
     await preview(); await save();
-    assert.match(await source(), /name="EditorFlag".*xs:boolean/s);
+    assert.match(await source(), /name="EditorFlag"[^]*?xs:boolean[^]*?xs:decimal[^]*?FractionDigits>4/);
 
     await open('appearance');
     assert.ok(await input('dialog [data-form-edit-scope]', '1', 'change'));
@@ -162,7 +165,7 @@ exports.run = async () => {
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('workbench.action.files.revert');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'form-editor',
-      scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'add typed form attribute',
+      scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'add a composite form attribute with number qualifiers',
         'create conditional rule with typed condition and formatted field', 'save a dynamic-list rule with two values', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
   } finally { ui.close(); }
 };

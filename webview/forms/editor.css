@@ -138,3 +138,22 @@
   .form-edit-list-value { grid-template-columns: minmax(0, 1fr); }
   .form-edit-list-value button { justify-self: start; }
 }
+
+.form-type-editor,
+.form-type-member {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.form-type-member {
+  padding: 6px;
+  border: 1px solid var(--vscode-panel-border);
+}
+
+.form-type-caption { overflow-wrap: anywhere; }
+.form-type-qualifiers {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+}

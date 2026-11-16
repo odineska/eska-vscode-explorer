@@ -1,6 +1,7 @@
 import { For, Index, Show, createMemo, createSignal } from 'solid-js';
 import { CORE_NS, XS_NS, addType, defaultLanguage, localized, property, scalar } from './editor-model.mjs';
 import { FORM_NS } from './model.mjs';
+import { FormTypeEditor, formTypeId } from './FormTypeEditor.jsx';
 
 const supported = new Set(['text', 'boolean', 'number', 'localized', 'enum', 'binding', 'reference', 'shortcut', 'color', 'event']);
 const typeOptions = [
@@ -13,18 +14,18 @@ export function TypeChoice(props) {
   const choices = createMemo(() => {
     const selected = props.value;
     const result = typeOptions.map(([namespace, name, label]) => ({ key: { namespace, name }, label: props.strings[label] ?? name }));
-    if (selected && !result.some(item => typeId(item.key) === typeId(selected))) result.push({ key: selected, label: selected.name });
+    if (selected && !result.some(item => formTypeId(item.key) === formTypeId(selected))) result.push({ key: selected, label: selected.name });
     return result;
   });
-  return <select aria-label={props.strings.editType} value={typeId(props.value)} onChange={event => {
-    props.change(choices().find(item => typeId(item.key) === event.currentTarget.value)?.key);
+  return <select aria-label={props.strings.editType} value={formTypeId(props.value)} onChange={event => {
+    props.change(choices().find(item => formTypeId(item.key) === event.currentTarget.value)?.key);
   }}>
     <option value="">{props.strings.editChoose}</option>
-    <For each={choices()}>{item => <option value={typeId(item.key)} selected={typeId(item.key) === typeId(props.value)}>{item.label}</option>}</For>
+    <For each={choices()}>{item => <option value={formTypeId(item.key)} selected={formTypeId(item.key) === formTypeId(props.value)}>{item.label}</option>}</For>
   </select>;
 }
 
-const typeId = key => key ? JSON.stringify([key.namespace, key.name]) : '';
+
 
 export function LocalizedFields(props) {
   const values = () => props.values.length ? props.values : [{ language: props.language, content: '' }];
@@ -102,10 +103,13 @@ function ValueEditor(props) {
     // A single-type selector must never flatten an existing composite type.
     const parts = () => value()?.Record ?? [];
     const type = () => parts().find(item => item.key.namespace === CORE_NS && item.key.name === 'Type');
-    return <Show when={!parts().some(item => item !== type())} fallback={<span>{s.editUnsupported}</span>}>
+    const simple = () => <Show when={!parts().some(item => item !== type())} fallback={<span>{s.editUnsupported}</span>}>
       <TypeChoice value={type()?.value.QualifiedText?.key} strings={s}
         change={key => props.change(key ? addType(key).value : undefined)}/>
     </Show>;
+    return <Show when={props.schema.typeOptions} fallback={simple()}>{options =>
+      <FormTypeEditor strings={s} locale={props.locale} options={options()} value={value()} change={props.change}/>
+    }</Show>;
   }
   switch (field.editor) {
     case 'boolean':

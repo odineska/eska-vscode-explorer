@@ -110,7 +110,7 @@ export class FormEditor {
     draft.busy = true;
     try {
       switch (value.action) {
-        case "open": await this.open(draft); break;
+        case "open": await this.open(draft, value.includeTypes === true); break;
         case "preview": await this.preview(draft, operations(value.operations)); break;
         case "back": delete draft.plan; break;
         case "save": await this.save(draft); break;
@@ -155,10 +155,10 @@ export class FormEditor {
     }
   }
 
-  private async open(draft: Draft): Promise<void> {
+  private async open(draft: Draft, includeTypes: boolean): Promise<void> {
     const { tree, entry, path, snapshot, origin } = draft.context;
     await this.checkBuffers(draft, [path]);
-    const schema = await tree.request(entry.project, "metadata/formEditSchema", { form: draft.form });
+    const schema = await tree.request(entry.project, "metadata/formEditSchema", { form: draft.form, ...(includeTypes ? { includeTypes } : {}) });
     this.check(draft);
     if (schema.schemaVersion !== 1 || schema.form !== draft.form || !hash(schema.snapshot) || !isWirePath(schema.path)
       || !Array.isArray(schema.nodes) || !Array.isArray(schema.elementKinds) || !Array.isArray(schema.definitionKinds)
@@ -171,8 +171,8 @@ export class FormEditor {
     this.check(draft);
     draft.snapshot = schema.snapshot;
     draft.writable = schema.writable;
-    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, writable } = schema;
-    this.reply(draft.id, "ready", { schema: { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, writable } });
+    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } = schema;
+    this.reply(draft.id, "ready", { schema: { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } });
   }
 
   private async preview(draft: Draft, operations: RecordValue[]): Promise<void> {

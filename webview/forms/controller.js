@@ -20,7 +20,8 @@ export function controller(api) {
     setEditStatus('');
     setEditResult(null);
     setEdit({ id, intent, target, section });
-    post({ type: 'formEdit', action: 'open', id });
+    const includeTypes = intent === 'addDefinition' || intent === 'properties' && ['attribute', 'parameter'].includes(target?.kind);
+    post({ type: 'formEdit', action: 'open', id, includeTypes });
   }
   function editAction(action, payload = {}) {
     const draft = edit();

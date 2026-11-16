@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { TypeChoice } from './FormEditorFields.jsx';
-import { addType, definitionSections, targetKey } from './editor-model.mjs';
+import { FormTypeEditor } from './FormTypeEditor.jsx';
+import { addType, definitionSections, property, targetKey } from './editor-model.mjs';
 
 function pathLabel(node, index, strings) {
   if (node.target.kind === 'root') return strings.form;
@@ -99,7 +100,7 @@ export function FormDefinitionEditor(props) {
     event.preventDefault();
     if (!name().trim() || !section) return;
     props.submit([{ kind: 'addDefinition', section, parent: column() ? props.node.target : null,
-      name: name().trim(), properties: type() ? [addType(type())] : [] }]);
+      name: name().trim(), properties: type() ? [property('Type', type())] : [] }]);
   }
   return <form id="form-edit-draft" class="form-edit-form" onSubmit={submit}>
     <Show when={canColumn} fallback={<strong>{s[section === 'attribute' ? 'editAttribute' : section === 'command' ? 'editCommand' : 'editParameter']}</strong>}>
@@ -108,6 +109,9 @@ export function FormDefinitionEditor(props) {
       </select></label>
     </Show>
     <label>{s.editName}<input type="text" required value={name()} onInput={event => setName(event.currentTarget.value)}/></label>
-    <Show when={section !== 'command'}><label>{s.editType}<TypeChoice value={type()} change={setType} strings={s}/></label></Show>
+    <Show when={section !== 'command'}><Show when={props.options} fallback={<label>{s.editType}<TypeChoice
+      value={type()?.Record[0]?.value.QualifiedText?.key} change={key => setType(key ? addType(key).value : undefined)} strings={s}/></label>}>
+      <FormTypeEditor strings={s} locale={props.locale} options={props.options} value={type()} change={setType}/>
+    </Show></Show>
   </form>;
 }
