@@ -89,7 +89,7 @@ show/hide inactive filter affects presentation independently.
 
 ## Run, apply and debug
 
-Open **Run and Debug** from the project tree. Switching between `test` and
+Right-click **Project Settings** and choose **Configure Project**. Switching between `test` and
 `prod` keeps separate drafts until the settings tab is closed. **Save Profile**
 and **Discard Changes** affect only the open profile. Clearing **Configure this
 profile** removes its local declaration when you save.
@@ -99,8 +99,8 @@ profile** removes its local declaration when you save.
 endpoints without opening a 1C session. The project settings file belongs in
 the local Git ignore.
 
-The project settings context menu starts a normal test client or previews the
-changes for a test infobase. Apply requires confirmation for the displayed base
+The **ESKA: Run 1C** section in the standard **Run and Debug** panel starts a
+normal test client or previews the changes for a test infobase. Apply requires confirmation for the displayed base
 and files. The first import and unsupported partial changes require a separate
 full-import preview. To update an installed `InfoBase` extension, open the ESKA
 workspace root and select the extension project. ESKA uses the main project's

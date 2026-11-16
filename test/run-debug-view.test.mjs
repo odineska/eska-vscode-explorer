@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
-import { runtimeActions, runtimeCommands, runtimeGroup } from '../out/runtime-tree.js';
+import { runtimeActions } from '../out/runtime-tree.js';
 
 test('Run and Debug contributes a project-presence view and preserves independent activation', () => {
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -38,8 +38,6 @@ test('all six commands share their existing IDs, order, icons and localized labe
   const view = new module.exports.RunDebugView(projects);
   const commands = await view.getChildren();
   assert.deepEqual(commands, runtimeActions());
-  const existing = runtimeCommands(runtimeGroup({ key: 'project' }));
-  assert.deepEqual(commands, existing.map(({ command, title, icon }) => ({ command, title, icon })));
   assert.deepEqual(commands.map(item => item.command.split('.').at(-1)),
     ['runTest', 'debugLaunch', 'debugAttach', 'applyTest', 'applyAndRunTest', 'applyAndDebugTest']);
   const labels = commands.map(command => view.getTreeItem(command).label);

@@ -20,15 +20,12 @@ exports.run = async () => {
   await vscode.commands.executeCommand('eska.explorer.restart');
   await until(() => explorer.connection.state.kind === 'ready', 'project connection');
   const roots = await explorer.getChildren();
-  const group = roots.find(item => item.runtimeKind === 'group');
-  assert.ok(group, 'explicit runtime group');
-  assert.equal(explorer.getTreeItem(group).label, ru ? 'Запуск и отладка' : 'Run and Debug');
-  const commands = await explorer.getChildren(group);
+  assert.ok(roots.every(item => !("runtimeKind" in item)), 'no duplicate runtime branch in Explorer');
+  const commands = await explorer.runDebug.getChildren();
   assert.equal(commands.length, 6);
   for (const command of commands) {
-    assert.equal(explorer.getParent(command), group);
-    const item = explorer.getTreeItem(command);
-    assert.equal(item.command.arguments[0].project, group.project);
+    const item = explorer.runDebug.getTreeItem(command);
+    assert.equal(item.command.command, command.command);
   }
   const settings = roots.find(item => item.fileKind === 'group' && item.kind === 'settings');
   assert.ok(settings);
@@ -72,7 +69,7 @@ exports.run = async () => {
     plan: { mode: 'incremental', target: root, platform_version: '8.3.27.2342', confirmation: 'fixture-token', changes } }));
   const update = commands.find(item => item.command.endsWith('.applyTest'));
   const open = async () => {
-    const operation = vscode.commands.executeCommand(update.command, update);
+    const operation = vscode.commands.executeCommand(update.command);
     const ui = await connect(until, '#changes');
     await until(() => ui.evaluate("document.getElementById('changes').textContent.includes('Товар0999')"), 'complete review');
     assert.equal(await ui.evaluate("document.getElementById('cancel').textContent"), ru ? 'Отмена' : 'Cancel');
@@ -119,10 +116,10 @@ exports.run = async () => {
     await finish(ui, operation, "document.getElementById('accept').click()");
     await fs.access(path.join(evidence, 'confirmed'));
     await vscode.commands.executeCommand('notifications.clearAll');
-    await vscode.commands.executeCommand(update.command, update);
+    await vscode.commands.executeCommand(update.command);
     await until(() => workbench.evaluate(`document.body.innerText.includes(${JSON.stringify(ru ? 'Тестовая база соответствует последнему применённому снимку.' : 'The test infobase matches the last applied snapshot.')})`), 'unchanged notification');
     const run = commands.find(item => item.command.endsWith('.runTest'));
-    await vscode.commands.executeCommand(run.command, run);
+    await vscode.commands.executeCommand(run.command);
     const calls = await fs.readFile(path.join(evidence, 'calls.log'), 'utf8');
     assert.equal(calls.split('\n').filter(line => line.includes('--confirm')).length, 1);
     assert.ok(calls.includes('"run"'));
