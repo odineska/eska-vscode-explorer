@@ -1,3 +1,5 @@
+import { formEditorStrings } from "./editor-strings.js";
+
 const en = {
   "typeCount.one": "{0} type", "typeCount.few": "{0} types", "typeCount.many": "{0} types", "typeCount.other": "{0} types",
   "dataType.reference": "Reference", moreUses: "Show more uses",
@@ -336,4 +338,7 @@ const ru: Record<keyof typeof en, string> = {
   "command.SearchHistory": "История поиска",
   "command.OpenFromMainServer": "Открыть с основного сервера", "command.OpenFromStandaloneServer": "Открыть с автономного сервера",
 };
-export function formStrings(locale: string): Record<string, string> { return { ...(locale.toLowerCase().startsWith("ru") ? ru : en) }; }
+export function formStrings(locale: string): Record<string, string> {
+  const russian = locale.toLowerCase().startsWith("ru");
+  return { ...(russian ? ru : en), ...formEditorStrings(russian) };
+}

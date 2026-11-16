@@ -116,6 +116,13 @@ export function StructurePane(props) {
     </div></header>
     <InspectorTabs tabs={['elements', 'commandInterface']} active={state.ui.treeTab} change={name => c.ui('treeTab', name)}
       strings={state.strings} label={state.strings.structure}/>
+    <Show when={tree() && state.authoring && props.editTarget}><div class="form-inspector-edit-tools">
+      <button type="button" data-edit-action="addElement" onClick={() => c.openEditor('addElement', props.editTarget)}>{state.strings.editAddDefinition}</button>
+      <Show when={props.editTarget.kind === 'element'}>
+        <For each={['copy', 'move', 'remove']}>{action => <button type="button" data-edit-action={action}
+          onClick={() => c.openEditor(action, props.editTarget)}>{state.strings[{ copy: 'editCopy', move: 'editMove', remove: 'editRemove' }[action]]}</button>}</For>
+      </Show>
+    </div></Show>
     <div ref={virtual.mount} hidden={!tree()} role="tree" tabIndex="0" class="form-tree" aria-label={state.strings.elements}
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-row-${state.selected}` : undefined}
       onScroll={virtual.scroll} onKeyDown={keyboard}>
@@ -243,6 +250,12 @@ export function DataPane(props) {
     <header class="form-pane-heading"><h2>{state.strings.data}</h2></header>
     <InspectorTabs tabs={definitionSections} active={state.ui.tab} change={name => c.ui('tab', name)}
       strings={state.strings} label={state.strings.data}/>
+    <Show when={state.authoring}><div class="form-inspector-edit-tools">
+      <button type="button" data-edit-action="addDefinition"
+        onClick={() => c.openEditor('addDefinition', props.editTarget, state.ui.tab)}>{state.strings.editAddDefinition}</button>
+      <Show when={props.editTarget}><button type="button" data-edit-action="removeDefinition"
+        onClick={() => c.openEditor('remove', props.editTarget)}>{state.strings.editRemove}</button></Show>
+    </div></Show>
     <div ref={element => { grid = element; virtual.mount(element); }} class="form-table-scroll form-data-grid"
       role="treegrid" aria-label={state.strings[state.ui.tab]} aria-colcount="2" aria-rowcount={rows().length + 1} tabIndex="0"
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-data-${props.activeData.id}` : undefined}

@@ -153,6 +153,8 @@ export function PropertyInspector(props) {
         <h3 title={data()?.name ?? props.selected?.label}>{data()?.label ?? props.selected?.label ?? state.strings.form}</h3>
         <Show when={path()}><div class="form-context-path" title={path()}>{data()?.displayPath ?? path()}</div></Show>
         <div class="form-property-actions">
+          <Show when={state.authoring && props.editTarget}><button type="button" data-edit-action="properties"
+            onClick={() => c.openEditor('properties', props.editTarget)}>{state.strings.editProperties}</button></Show>
           <Show when={canShow()}><button type="button" onClick={() => props.showOnForm(node())}><InspectorIcon name="preview"/>{state.strings.showOnForm}</button></Show>
           <Show when={canLocate()}><button type="button" onClick={() => data() ? props.locateData(data()) : locate({ kind: 'element' })}><InspectorIcon name="xml"/>{state.strings.source}</button></Show>
           <Show when={!data() && !related() && node().presentation.binding}><button type="button" onClick={() => locate({ kind: 'binding' })}>{state.strings.binding}</button></Show>

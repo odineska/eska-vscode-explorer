@@ -1,6 +1,7 @@
 import { For, Show, createSignal, createMemo, createEffect, onMount, onCleanup } from 'solid-js';
 import { Preview } from './Preview.jsx';
 import { Splitter } from './Splitter.jsx';
+import { FormEditor } from './FormEditor.jsx';
 import { Inspector } from './Inspector.jsx';
 import { inspectorLayout } from './inspector-layout.mjs';
 
@@ -39,6 +40,7 @@ export function App(props) {
   });
   return <main class="form-shell" ref={shell} data-view-role={state.role}>
     <div class="form-toolbar" ref={toolbar}><span id="title" class="form-truncate" title={state.title ?? state.strings.title}>{state.title ?? state.strings.title}</span><span class="form-toolbar-spacer"/>
+      <Show when={state.authoring}><button type="button" data-edit-action="appearance" onClick={() => c.openEditor('appearance')}>{state.strings.editAppearance}</button></Show>
       <button type="button" onClick={() => c.post({ type: 'source' })}>{state.strings.xml}</button><button type="button" onClick={() => c.post({ type: 'refresh' })}>{state.strings.refresh}</button>
       <Show when={state.role === 'main'} fallback={<button type="button" onClick={() => c.post({ type: 'dock' })}>{state.strings.dock}</button>}>
         <button type="button" onClick={() => c.post({ type: state.detached ? 'revealPreview' : 'detach' })}>{state.detached ? state.strings.revealPreview : state.strings.detach}</button>
@@ -53,6 +55,7 @@ export function App(props) {
       </Show>
       <Show when={state.role === 'preview' || !state.detached}><Preview controller={c}/></Show>
     </Show>
-    <footer ref={status} classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
+    <Show when={c.edit()} keyed>{draft => <FormEditor controller={c} draft={draft}/>}</Show>
+    <footer ref={status} classList={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || state.strings[c.editStatus()] || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
   </main>;
 }

@@ -3,6 +3,7 @@ import { DataPane, InspectorTabs, StructurePane } from './InspectorLists.jsx';
 import { PropertyInspector } from './PropertyInspector.jsx';
 import { InspectorIcon, InspectorIconButton } from './InspectorIcon.jsx';
 import { attributeFor, commandFor, indexInspector, inspectorTerms } from './inspector-model.mjs';
+import { dataTarget as editDataTarget, elementTarget } from './editor-model.mjs';
 import { Splitter } from './Splitter.jsx';
 
 const compactTabs = ['elements', 'data'];
@@ -17,6 +18,9 @@ export function Inspector(props) {
   const activeData = createMemo(() => index().byData.get(state.ui.inspectedData));
   const relatedData = createMemo(() => activeData() ? undefined
     : attributeFor(index(), selected()?.binding) ?? commandFor(index(), selected()?.command));
+  const selectedElement = () => elementTarget(selected()?.node, state.model.root);
+  const selectedDefinition = () => editDataTarget(activeData());
+  const editSelection = () => activeData() ? selectedDefinition() : selectedElement();
   const pluralRules = createMemo(() => new Intl.PluralRules(state.locale));
   const compact = () => props.layout.mode === 'compact' || props.layout.mode === 'compactStacked';
   const [dataReveal, setDataReveal] = createSignal('', { equals: false });
@@ -85,7 +89,7 @@ export function Inspector(props) {
         strings={state.strings} label={state.strings.inspectorViews}/></Show>
     </div>
     <StructurePane controller={c} index={index()} terms={terms()} activeData={activeData()}
-      reveal={treeReveal()} selectData={selectData} hidden={compact() && state.ui.compactPane !== 'elements'}/>
+      reveal={treeReveal()} selectData={selectData} editTarget={selectedElement()} hidden={compact() && state.ui.compactPane !== 'elements'}/>
     <Show when={props.layout.mode === 'columns'}>
       <Splitter vertical class="form-splitter form-splitter--vertical form-inspector-sash--structure"
         label={state.strings.resizeStructure} range={{ minimum: props.layout.leftMinimum, maximum: props.layout.leftMaximum }}
@@ -93,7 +97,7 @@ export function Inspector(props) {
         change={value => resize('left', props.layout.leftMinimum, props.layout.leftMaximum, value)}/>
     </Show>
     <DataPane controller={c} index={index()} terms={terms()} activeData={activeData()} relatedData={relatedData()}
-      reveal={dataReveal()} revealed={revealedData()} clearReveal={() => setDataReveal('')} select={selectData} locate={locateData} pluralRules={pluralRules()} hidden={compact() && state.ui.compactPane !== 'data'}/>
+      reveal={dataReveal()} editTarget={selectedDefinition()} revealed={revealedData()} clearReveal={() => setDataReveal('')} select={selectData} locate={locateData} pluralRules={pluralRules()} hidden={compact() && state.ui.compactPane !== 'data'}/>
     <Show when={props.layout.mode === 'columns' || props.layout.mode === 'compact'}>
       <Splitter vertical class="form-splitter form-splitter--vertical form-inspector-sash--properties"
         label={state.strings.resizeProperties} range={{ minimum: props.layout.rightMinimum, maximum: props.layout.rightMaximum }}
@@ -101,7 +105,7 @@ export function Inspector(props) {
         change={value => resize(compact() ? 'compactRight' : 'right', props.layout.rightMinimum, props.layout.rightMaximum, value)}/>
     </Show>
     <PropertyInspector controller={c} index={index()} selected={selected()} activeData={activeData()} relatedData={relatedData()}
-      showData={showData} showElement={showElement} showOnForm={c.showOnForm} pluralRules={pluralRules()} locateData={locateData} canLocateData={dataTarget} copy={c.copyType}/>
+      editTarget={editSelection()} showData={showData} showElement={showElement} showOnForm={c.showOnForm} pluralRules={pluralRules()} locateData={locateData} canLocateData={dataTarget} copy={c.copyType}/>
     <span class="form-visually-hidden" role="status">{state.copiedType ? state.strings.typeCopied : ''}</span>
   </div>;
 }

@@ -9,6 +9,7 @@ import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { inspectorIcons } from "../icons.js";
+import { FormEditor } from "./editor.js";
 import { FormSession } from "./client.js";
 import { identityKey, isIdentity, isDataPath, isExpandedDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
@@ -24,7 +25,7 @@ type Role = "main" | "preview";
 type InputPath = Pick<FormInput, "root" | "path">;
 type InputLocation = Pick<FormDependency, "id" | "root" | "path" | "role">;
 type InputRoot = { wire: WirePath; path: string };
-interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean; pendingReveal?: ElementIdentity }
+interface Frame { panel: vscode.WebviewPanel; role: Role; ready: boolean; pendingReveal?: ElementIdentity; editor?: FormEditor }
 interface View {
   key: string; path: string; entry: TreeEntry; tree: MetadataTree; application: string | undefined; title: string; frames: Map<Role, Frame>;
   client: FormSession | undefined; snapshot: FormSnapshot | undefined; nodes: Map<string, FormNode>; selected: ElementIdentity | undefined;
@@ -137,10 +138,10 @@ export class FormPreviewService implements vscode.Disposable {
     if (role === "main") localResourceRoots.push(vscode.Uri.joinPath(this.context.extensionUri, "resources", "icons"));
     const panel = restored ?? vscode.window.createWebviewPanel(VIEW_TYPE, role === "main" ? view.title : `${view.title} — ${this.strings().preview}`,
       role === "main" ? vscode.ViewColumn.One : vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots });
-    const frame = { panel, role, ready: false }; view.frames.set(role, frame);
+    const frame: Frame = { panel, role, ready: false }; view.frames.set(role, frame);
     panel.webview.options = { enableScripts: true, localResourceRoots };
     panel.webview.onDidReceiveMessage(value => { void this.receive(view, frame, value).catch(error => this.failure(view, error)); });
-    panel.onDidDispose(() => { if (view.frames.get(role) === frame) view.frames.delete(role); if (!view.frames.size) this.release(view); else this.publish(view); });
+    panel.onDidDispose(() => { frame.editor?.dispose(); if (view.frames.get(role) === frame) view.frames.delete(role); if (!view.frames.size) this.release(view); else this.publish(view); });
     panel.webview.html = this.html(panel.webview, role === "main");
     return frame;
   }
@@ -160,8 +161,36 @@ export class FormPreviewService implements vscode.Disposable {
     }));
     return `<style>${rules.join("")}</style>`;
   }
+  private canEdit(view: View): boolean {
+    const state = this.connection.state;
+    return !view.closed && !view.suspended && !this.disposed && view.phase !== "stale" && view.phase !== "disconnected"
+      && this.tree() === view.tree && vscode.workspace.isTrusted && state.kind === "ready"
+      && state.formEditor === true && projectEnabled(view.entry.project.info);
+  }
+
+  private editor(view: View, frame: Frame): FormEditor {
+    return frame.editor ??= new FormEditor(() => {
+      if (!this.canEdit(view) || view.frames.get("main") !== frame || !view.snapshot) return undefined;
+      const origin = view.inputs.get(formSourceKey(view.path));
+      if (!origin || origin !== view.snapshot.model.root.identity.source) return undefined;
+      return { tree: view.tree, entry: view.entry, path: view.path, snapshot: view.snapshot, origin };
+    }, this.sourceUri, value => { void frame.panel.webview.postMessage(value); }, selected => {
+      if (selected?.kind === "element" && view.snapshot) {
+        view.selected = { ...view.snapshot.model.root.identity, key: { kind: "xml", value: String(selected.id) } };
+      }
+      view.phase = "loading";
+      view.notice = this.strings().updating!;
+      this.publish(view, false);
+      this.schedule(view, 0);
+    });
+  }
+
   private async receive(view: View, frame: Frame, value: unknown): Promise<void> {
     if (view.closed || this.disposed || !isRecord(value)) return;
+    if (value.type === "formEdit" && frame.role === "main" && view.frames.get("main") === frame) {
+      await this.editor(view, frame).receive(value);
+      return;
+    }
     if (value.type === "ready") {
       frame.ready = true;
       view.previewNavigation ??= parsePreviewNavigation(value.previewNavigation) ?? { pages: {}, collapsed: {} };
@@ -432,7 +461,7 @@ export class FormPreviewService implements vscode.Disposable {
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
-      ...(frame.role === "main" ? { palette: view.palette ?? null } : {}),
+      ...(frame.role === "main" ? { palette: view.palette ?? null, authoring: view.phase === "ready" && this.canEdit(view) } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
       ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });

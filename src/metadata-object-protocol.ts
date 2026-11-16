@@ -52,6 +52,12 @@ export function objectCapability(hello: unknown, key: "metadataObjects" | "formA
   return value.enabled;
 }
 
+export function formEditorCapability(hello: unknown): boolean {
+  if (!objectCapability(hello, "formAuthoring") || !isRecord(hello) || !isRecord(hello.capabilities)
+    || !isRecord(hello.capabilities.formAuthoring) || !isRecord(hello.apiVersion)) return false;
+  return Number(hello.apiVersion.minor) >= 51 && hello.capabilities.formAuthoring.interactive === true;
+}
+
 export function objectSchema(value: unknown, parent: string | null, kind?: string): ObjectSchema {
   if (!isRecord(value) || value.schemaVersion !== 1 || value.parent !== parent || !Array.isArray(value.kinds) || !value.kinds.every(text)
     || !Array.isArray(value.kindOptions) || !value.kindOptions.every(option => isRecord(option) && text(option.key)

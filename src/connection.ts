@@ -1,4 +1,4 @@
-import { objectCapability } from "./metadata-object-protocol.js";
+import { formEditorCapability, objectCapability } from "./metadata-object-protocol.js";
 import { creationCapability } from "./metadata-creation-protocol.js";
 import { formCapabilities, type FormLimits } from "./form-preview/protocol.js";
 import { stringCapabilities, type StringEndpoint } from "./language/strings.js";
@@ -15,7 +15,7 @@ import { sourceCapabilities, type SourceEndpoint } from "./source-access.js";
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -233,7 +233,8 @@ export class Connection {
             supportFiles: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportFiles === true,
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,
             analyzerConfiguration: isRecord(response) && isRecord(response.capabilities) && response.capabilities.analyzerConfiguration === true,
-            queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"), target });
+            queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"),
+            formEditor: backend === "project" && formEditorCapability(response), target });
         }
       } catch (error) {
         if (!negotiated && error instanceof ExplorerError
