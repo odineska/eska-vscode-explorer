@@ -22,7 +22,7 @@ function formLayout(response: unknown): Record<string, string[]> | undefined {
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; formLayout?: Record<string, string[]>; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; formLayout?: Record<string, string[]>; formHistory?: boolean; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -77,7 +77,7 @@ export class Connection {
     }
     const child = this.sessionChild(sessionId);
     const sourceMutation = this.sourceMutation(method);
-    const structural = ["metadata/renamePreview", "metadata/renameApply", "metadata/undoProperty", "metadata/create", "metadata/previewObject", "metadata/applyObject", "metadata/previewFormEdit", "metadata/applyFormEdit"].includes(method)
+    const structural = ["metadata/renamePreview", "metadata/renameApply", "metadata/undoProperty", "metadata/create", "metadata/previewObject", "metadata/applyObject", "metadata/previewFormEdit", "metadata/applyFormEdit", "metadata/replayFormEdit"].includes(method)
       || (method === "metadata/updateProperty" && typeof params?.contextSnapshot === "string");
     // Backend scans cannot stop midway. Keep the barrier until their actual reply, even if a tab closes.
     const pending = child.request(method, { ...params, sessionId }, structural ? 600_000 : undefined, structural ? undefined : signal);
@@ -242,7 +242,9 @@ export class Connection {
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,
             analyzerConfiguration: isRecord(response) && isRecord(response.capabilities) && response.capabilities.analyzerConfiguration === true,
             queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"),
-            formEditor: backend === "project" && formEditorCapability(response), ...(layout ? { formLayout: layout } : {}), target });
+            formEditor: backend === "project" && formEditorCapability(response), ...(layout ? { formLayout: layout } : {}),
+            formHistory: backend === "project" && isRecord(response) && isRecord(response.capabilities)
+              && isRecord(response.capabilities.formAuthoring) && response.capabilities.formAuthoring.history === true, target });
         }
       } catch (error) {
         if (!negotiated && error instanceof ExplorerError

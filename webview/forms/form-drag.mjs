@@ -42,7 +42,7 @@ export function createFormDrag(controller, index) {
     clearMarker();
   }
   function movable(key) {
-    if (!state.authoring || !state.formLayout || controller.edit()) return false;
+    if (!state.authoring || !state.formLayout || controller.edit() || controller.replaying()) return false;
     const row = rows().get(key);
     const root = state.model?.root;
     return !!row && !!siblingRow(rows(), row) && elementTarget(row.node, root)?.kind === 'element';

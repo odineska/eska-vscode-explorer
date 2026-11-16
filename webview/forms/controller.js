@@ -8,14 +8,40 @@ import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
   const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, referenceData: false,
-    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null,
+    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, formHistory: false,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
   const [edit, setEdit] = createSignal(null);
   const [editResult, setEditResult] = createSignal(null);
   const [editStatus, setEditStatus] = createSignal('');
   let editorId = 0;
+  let historyId = 0;
+  const noHistory = { undo: false, redo: false };
+  const [history, setHistory] = createSignal(noHistory);
+  const [replaying, setReplaying] = createSignal(false);
+  function historyRequest(action) {
+    post({ type: 'formEditHistory', id: ++historyId, action });
+  }
+  function refreshFormHistory() {
+    setHistory(noHistory);
+    if (state.authoring && state.formHistory && !replaying()) historyRequest('state');
+  }
+  function replayForm(action) {
+    if (!state.authoring || !state.formHistory || edit() || replaying() || !history()[action]) return false;
+    setReplaying(true);
+    setHistory(noHistory);
+    setEditStatus('');
+    historyRequest(action);
+    return true;
+  }
+  function historyKey(event) {
+    if (!event.ctrlKey && !event.metaKey || event.altKey || event.isComposing
+      || event.target?.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
+    const action = event.code === 'KeyZ' ? (event.shiftKey ? 'redo' : 'undo')
+      : event.code === 'KeyY' ? 'redo' : undefined;
+    if (action && replayForm(action)) event.preventDefault();
+  }
   function openEditor(intent, target, section, placement) {
-    if (!state.authoring || edit()) return;
+    if (!state.authoring || edit() || replaying()) return;
     const id = ++editorId;
     setEditStatus('');
     setEditResult(null);
@@ -82,6 +108,12 @@ export function controller(api) {
     if (!value || typeof value !== 'object') return;
 
     batch(() => {
+      if (value.type === 'formEditHistoryResult' && value.id === historyId) {
+        if (value.message) setEditStatus(value.message);
+        setReplaying(false);
+        setHistory({ undo: value.undo === true, redo: value.redo === true });
+        return;
+      }
       if (value.type === 'formEditResult' && edit()?.id === value.id) {
         setEditResult(value);
         if (value.phase === 'saved') {
@@ -125,7 +157,7 @@ export function controller(api) {
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
       if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'notice', 'restore', 'title']) {
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'formHistory', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
       if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));
@@ -164,5 +196,5 @@ export function controller(api) {
     persist(!shared);
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });
-  return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editResult, editAction, closeEditor, editStatus, dispose: () => { window.removeEventListener('message', receive); cancelAnimationFrame(persistFrame); } };
+  return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editResult, editAction, closeEditor, editStatus, history, replaying, refreshFormHistory, replayForm, historyKey, dispose: () => { window.removeEventListener('message', receive); cancelAnimationFrame(persistFrame); } };
 }

@@ -228,7 +228,7 @@ export class MetadataTree {
     signal = signal ? AbortSignal.any([signal, scope.signal]) : scope.signal;
     // Watcher overflow itself performs refresh; synchronizing it again would await its own delivery.
     if (method !== "metadata/refresh") await this.synchronizeInputs();
-    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply" || method === "metadata/create" || method === "metadata/applyObject" || method === "metadata/applyFormEdit";
+    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply" || method === "metadata/create" || method === "metadata/applyObject" || method === "metadata/applyFormEdit" || method === "metadata/replayFormEdit";
     for (let attempt = 0; attempt < (mutation ? 1 : 3); attempt++) {
       if (signal?.aborted) throw new ExplorerError("cancelled");
       if (this.disposed) throw new ExplorerError("obsolete");

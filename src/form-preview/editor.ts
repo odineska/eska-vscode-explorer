@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { isDeepStrictEqual } from "node:util";
 import { readFile } from "node:fs/promises";
-import { relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { ExplorerError, isRecord, isWirePath } from "../protocol.js";
 import { configuredReadOnlyResource } from "../editor-policy.js";
@@ -30,6 +30,11 @@ interface Draft {
 
 const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 const hash = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+function diskSnapshot(context: Context): string | undefined {
+  const dependency = context.snapshot.dependencies.find(item => item.id === context.origin && item.role === "form");
+  return dependency?.version === null && hash(dependency.snapshot) ? dependency.snapshot : undefined;
+}
+
 const limit = 1_000_000; // Below the metadata RPC request limit, including the context envelope.
 const excerptLimit = 16_000;
 
@@ -79,6 +84,7 @@ function shorten(text: string): string {
 export class FormEditor {
   private draft: Draft | undefined;
   private serial = 0;
+  private replaying = false;
 
   constructor(private readonly current: () => Context | undefined,
     private readonly uri: (path: string) => Promise<vscode.Uri>,
@@ -91,7 +97,7 @@ export class FormEditor {
     const id = value.id;
     if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return;
     if (value.action === "open") {
-      if (id <= this.serial || this.draft?.committing) return;
+      if (id <= this.serial || this.draft?.committing || this.replaying) return;
       this.serial = id;
       const context = this.current();
       if (!context || context.entry.node.id.kind !== "object") {
@@ -135,18 +141,29 @@ export class FormEditor {
     this.post({ type: "formEditResult", id, phase, ...detail });
   }
 
-  private check(draft: Draft): void {
+  private checkContext(context: Context): void {
     const current = this.current();
-    if (this.draft !== draft || !current || current.tree !== draft.context.tree || current.entry.project !== draft.context.entry.project
-      || current.entry.node.id.kind !== "object" || current.entry.node.id.objectId !== draft.form || current.origin !== draft.context.origin) {
-      throw new ExplorerError("sourceChanged");
-    }
+    if (!current || current.tree !== context.tree || current.entry.project !== context.entry.project
+      || current.entry.node.id.kind !== "object" || context.entry.node.id.kind !== "object"
+      || current.entry.node.id.objectId !== context.entry.node.id.objectId || current.origin !== context.origin
+      || formSourceKey(current.path) !== formSourceKey(context.path)) throw new ExplorerError("sourceChanged");
+  }
+
+  private check(draft: Draft): void {
+    if (this.draft !== draft) throw new ExplorerError("sourceChanged");
+    this.checkContext(draft.context);
   }
 
   private async checkBuffers(draft: Draft, paths: string[]): Promise<void> {
     this.check(draft);
-    const uri = await this.uri(draft.context.path);
+    await this.checkSourceBuffers(draft.context, paths);
     this.check(draft);
+  }
+
+  private async checkSourceBuffers(context: Context, paths: string[]): Promise<void> {
+    this.checkContext(context);
+    const uri = await this.uri(context.path);
+    this.checkContext(context);
     if (uri.scheme !== "file" || configuredReadOnlyResource(uri, "xml")) throw new ExplorerError("requestFailed", "property_read_only");
     const inputs = new Set(paths.map(formSourceKey));
     for (const document of vscode.workspace.textDocuments) {
@@ -156,7 +173,7 @@ export class FormEditor {
   }
 
   private async open(draft: Draft, includeTypes: boolean): Promise<void> {
-    const { tree, entry, path, snapshot, origin } = draft.context;
+    const { tree, entry, path } = draft.context;
     await this.checkBuffers(draft, [path]);
     const schema = await tree.request(entry.project, "metadata/formEditSchema", { form: draft.form, ...(includeTypes ? { includeTypes } : {}) });
     this.check(draft);
@@ -165,8 +182,7 @@ export class FormEditor {
       || !isRecord(schema.propertyCaptions) || !isRecord(schema.choiceCaptions) || typeof schema.writable !== "boolean")
       throw new ExplorerError("protocolInvalid");
     const source = await existingSource(entry.project.info.sourcePath, schema.path);
-    const dependency = snapshot.dependencies.find(item => item.id === origin && item.role === "form");
-    if (relative(path, source) !== "" || !dependency || dependency.version !== null || dependency.snapshot !== schema.snapshot)
+    if (relative(path, source) !== "" || diskSnapshot(draft.context) !== schema.snapshot)
       throw new ExplorerError("sourceChanged");
     this.check(draft);
     draft.snapshot = schema.snapshot;
@@ -221,6 +237,52 @@ export class FormEditor {
     }
   }
 
+  async receiveHistory(value: RecordValue): Promise<void> {
+    const { id, action } = value;
+    if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0
+      || action !== "state" && action !== "undo" && action !== "redo") return;
+    const respond = (result: RecordValue): void => this.post({ type: "formEditHistoryResult", id, ...result });
+    const context = this.current();
+    const snapshot = context && diskSnapshot(context);
+    if (!context || context.entry.node.id.kind !== "object" || !snapshot) {
+      respond(action === "state" ? { undo: false, redo: false } : { message: "editConflict" });
+      return;
+    }
+    const { tree, entry, path } = context;
+    const form = context.entry.node.id.objectId;
+    if (action === "state") {
+      try {
+        const result = await tree.request(entry.project, "metadata/formEditHistory", { form, snapshot });
+        this.checkContext(context);
+        if (typeof result.undo !== "boolean" || typeof result.redo !== "boolean") throw new ExplorerError("protocolInvalid");
+        respond({ undo: result.undo, redo: result.redo });
+      } catch {
+        respond({ undo: false, redo: false });
+      }
+      return;
+    }
+    if (this.draft || this.replaying) {
+      respond({ message: "editLocked" });
+      return;
+    }
+    this.replaying = true;
+    let submitted = false;
+    try {
+      await this.checkSourceBuffers(context, [path, join(dirname(path), "Form", "Module.bsl")]);
+      submitted = true;
+      const result = await tree.request(entry.project, "metadata/replayFormEdit", { form, snapshot, undo: action === "undo" });
+      if (result.schemaVersion !== 1 || result.form !== form || result.changed !== true || !hash(result.snapshot))
+        throw new ExplorerError("protocolInvalid");
+      respond({ message: action === "undo" ? "editUndone" : "editRedone" });
+      this.applied();
+    } catch (error) {
+      respond({ message: this.error(error, submitted) });
+      if (submitted) this.applied();
+    } finally {
+      this.replaying = false;
+    }
+  }
+
   private references(details: RecordValue | undefined): string[] {
     return Array.isArray(details?.paths) ? details.paths.filter((path): path is string => typeof path === "string").slice(0, 20) : [];
   }
@@ -229,6 +291,7 @@ export class FormEditor {
     if (error instanceof ExplorerError) {
       switch (error.domain) {
         case "creation_dirty_source": return "editDirty";
+        case "property_history_unavailable": return "editHistoryUnavailable";
         case "property_read_only": case "property_edit_busy": return "editLocked";
         case "creation_invalid_name": case "form_name_collision": return "editInvalidName";
         case "form_references": return "editReferences";

@@ -187,9 +187,16 @@ export class FormPreviewService implements vscode.Disposable {
 
   private async receive(view: View, frame: Frame, value: unknown): Promise<void> {
     if (view.closed || this.disposed || !isRecord(value)) return;
-    if (value.type === "formEdit" && frame.role === "main" && view.frames.get("main") === frame) {
-      await this.editor(view, frame).receive(value);
-      return;
+    if (frame.role === "main" && view.frames.get("main") === frame) {
+      if (value.type === "formEdit") {
+        await this.editor(view, frame).receive(value);
+        return;
+      }
+      if (value.type === "formEditHistory") {
+        const state = this.connection.state;
+        if (state.kind === "ready" && state.formHistory === true) await this.editor(view, frame).receiveHistory(value);
+        return;
+      }
     }
     if (value.type === "ready") {
       frame.ready = true;
@@ -462,7 +469,8 @@ export class FormPreviewService implements vscode.Disposable {
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
       ...(frame.role === "main" ? { palette: view.palette ?? null, authoring: view.phase === "ready" && this.canEdit(view),
-        formLayout: this.connection.state.kind === "ready" ? this.connection.state.formLayout ?? null : null } : {}),
+        formLayout: this.connection.state.kind === "ready" ? this.connection.state.formLayout ?? null : null,
+        formHistory: this.connection.state.kind === "ready" && this.connection.state.formHistory === true } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
       ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });

@@ -28,6 +28,8 @@ export function App(props) {
     });
     onCleanup(() => cancelAnimationFrame(frame));
   });
+  createEffect(on([() => state.authoring, () => state.formHistory, () => state.revision, () => state.formSessionId],
+    c.refreshFormHistory));
   onMount(() => {
     const measure = () => {
       const next = { width: shell.clientWidth, height: shell.clientHeight,
@@ -39,9 +41,13 @@ export function App(props) {
     measure();
     onCleanup(() => { observer.disconnect(); drag.clear(); });
   });
-  return <main class="form-shell" ref={shell} data-view-role={state.role}
-    onDragStart={drag.start} onDragEnd={drag.clear} onDragOver={drag.over} onDragLeave={drag.leave} onDrop={drag.drop}>
+  return <main class="form-shell" ref={shell} data-view-role={state.role} aria-busy={c.replaying()}
+    onDragStart={drag.start} onDragEnd={drag.clear} onDragOver={drag.over} onDragLeave={drag.leave} onDrop={drag.drop} onKeyDown={c.historyKey}>
     <div class="form-toolbar" ref={toolbar}><span id="title" class="form-truncate" title={state.title ?? state.strings.title}>{state.title ?? state.strings.title}</span><span class="form-toolbar-spacer"/>
+      <Show when={state.authoring && state.formHistory}>
+        <button type="button" data-form-history="undo" disabled={!c.history().undo || c.replaying()} onClick={() => c.replayForm('undo')}>{state.strings.editUndo}</button>
+        <button type="button" data-form-history="redo" disabled={!c.history().redo || c.replaying()} onClick={() => c.replayForm('redo')}>{state.strings.editRedo}</button>
+      </Show>
       <Show when={state.authoring}><button type="button" data-edit-action="appearance" onClick={() => c.openEditor('appearance')}>{state.strings.editAppearance}</button></Show>
       <button type="button" onClick={() => c.post({ type: 'source' })}>{state.strings.xml}</button><button type="button" onClick={() => c.post({ type: 'refresh' })}>{state.strings.refresh}</button>
       <Show when={state.role === 'main'} fallback={<button type="button" onClick={() => c.post({ type: 'dock' })}>{state.strings.dock}</button>}>

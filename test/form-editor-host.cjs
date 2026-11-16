@@ -113,6 +113,7 @@ exports.run = async () => {
     await preview(); await save();
     assert.match(await source(), /name="EditorFlag"[^]*?xs:boolean[^]*?xs:decimal[^]*?FractionDigits>4/);
 
+    const beforeList = await source();
     await open('appearance');
     assert.ok(await input('dialog [data-form-edit-scope]', '1', 'change'));
     assert.ok(await textButton('Add rule', 'Добавить правило'));
@@ -128,6 +129,15 @@ exports.run = async () => {
     assert.ok(await input('.form-edit-list-value:nth-child(2) input', 'Two'));
     await preview(); await save();
     assert.match(await source(), /<ListSettings>.*<dcsset:comparisonType>InList<\/dcsset:comparisonType>.*>One<\/dcsset:right>.*>Two<\/dcsset:right>/s);
+
+    const afterList = await source();
+    const history = action => ui.evaluate(
+      "(action => { const button = document.querySelector('[data-form-history=' + action + ']'); " +
+      "if (!button || button.disabled) return false; button.click(); return true; })(" + JSON.stringify(action) + ")");
+    await until(() => history('undo'), 'undo the list edit');
+    await until(async () => await source() === beforeList, 'undo restores exact original bytes');
+    await until(() => history('redo'), 'redo the list edit');
+    await until(async () => await source() === afterList, 'redo restores exact edited bytes');
 
     const beforeAppearance = await source();
     await open('appearance');
@@ -184,6 +194,6 @@ exports.run = async () => {
     await vscode.commands.executeCommand('workbench.action.files.revert');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'form-editor',
       scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'drag and save a tree element inside a page', 'add a composite form attribute with number qualifiers',
-        'create conditional rule with typed condition and formatted field', 'save a dynamic-list rule with two values', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
+        'create conditional rule with typed condition and formatted field', 'save a dynamic-list rule with two values', 'undo and redo a saved form change', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
   } finally { ui.close(); }
 };
