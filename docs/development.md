@@ -24,6 +24,45 @@ ESKA_TEST_ROOT="$(realpath ../eska-playground)" bun test
 node --test test/*.test.mjs
 ```
 
+### Секция запуска и отладки до первого F5
+
+Регрессия `test/run-debug-view-host.cjs` проверяет настоящее представление в
+стандартной панели, автоматическую активацию, корневые маркеры, операции с
+файлами, ошибочный TOML, добавление/удаление папок и выбор проекта. Все шесть
+зарегистрированных обработчиков вызываются с перехватом конечной операции:
+информационная база не запускается и не изменяется. Для изменений состава
+папок runner создаёт сохранённый `.code-workspace`, поскольку переход из
+single-folder в multi-root сам VS Code может сопровождать перезапуском host.
+
+После настройки `VSCODE_EXECUTABLE`, `ESKA_TEST_BINARY` и `ESKA_TEST_ROOT`:
+
+```bash
+ESKA_HOST_DEBUG_PORT=9472 node test/run-host.mjs test/run-debug-view-host.cjs
+ESKA_HOST_DEBUG_PORT=9472 ESKA_HOST_RUN_DEBUG_EMPTY=1 \
+  node test/run-host.mjs test/run-debug-view-host.cjs
+ESKA_HOST_DEBUG_PORT=9472 ESKA_HOST_RUN_DEBUG_EMPTY=1 ESKA_HOST_NORMAL=1 \
+  node test/run-host.mjs test/run-debug-presence-normal-host.cjs
+```
+
+Последний сценарий проверяет внешние `writeFile`/`rename`/`unlink` в обычном
+окне, через публичные API и DOM. Он явно ждёт готовности штатного workspace
+watcher по журналу собственного тестового профиля; это условие теста, а не
+опрос файлов в расширении. Для воспроизведения внешнего создания маркера
+сразу после открытия окна добавьте `ESKA_HOST_RUN_DEBUG_EARLY=1`.
+
+В VS Code 1.109 точечный `RelativePattern` внутри workspace зависит от общего
+наблюдателя, который запускается с задержкой при старте окна. Ранние операции
+штатного файлового Explorer дополнительно отслеживаются через
+`onDidCreateFiles`/`onDidDeleteFiles`/`onDidRenameFiles`. Доставка внешнего
+изменения до готовности общего наблюдателя — известная граница API. В обычном
+окне VS Code 1.109 на Linux раннее внешнее создание маркера было пропущено:
+секция не появилась и после 45 секунд ожидания. Этот сценарий не исправлен;
+отдельный early-прогон сохраняет его как воспроизводимую проверку. Периодический
+опрос, рекурсивное сканирование и изменение внутренних контекстов отладки для
+его обхода не используются.
+Поведение подписки на общий наблюдатель описывает
+[`ensureWatching` в исходниках VS Code 1.109](https://github.com/microsoft/vscode/blob/1.109.0/src/vs/workbench/api/common/extHostFileSystemEventService.ts).
+
 ### Windows PowerShell
 
 Проверки выполняются в Node Extension Host. Для интеграционных сценариев нужны

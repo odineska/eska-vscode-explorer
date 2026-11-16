@@ -15,14 +15,12 @@ export interface RuntimeGroup {
   key: string;
   project: ProjectTree;
 }
-export interface RuntimeCommand {
+export interface RuntimeAction { command: string; title: MessageKey; icon: string }
+export interface RuntimeCommand extends RuntimeAction {
   runtimeKind: "command";
   key: string;
   project: ProjectTree;
   parent: RuntimeGroup;
-  command: string;
-  title: MessageKey;
-  icon: string;
 }
 export type RuntimeEntry = RuntimeGroup | RuntimeCommand;
 
@@ -34,6 +32,11 @@ export function runtimeGroup(project: ProjectTree): RuntimeGroup {
 export function runtimeCommands(parent: RuntimeGroup): RuntimeCommand[] {
   return actions.map(([command, title, icon]) => ({ runtimeKind: "command", key: `${parent.key}:${command}`,
     parent, project: parent.project, command: `eska.explorer.${command}`, title, icon }));
+}
+
+/** Both native views use the same command identities, order, icons and translations. */
+export function runtimeActions(): RuntimeAction[] {
+  return actions.map(([command, title, icon]) => ({ command: `eska.explorer.${command}`, title, icon }));
 }
 
 export function runtimeLabel(entry: RuntimeEntry, language: string): string {

@@ -36,6 +36,10 @@ try {
     "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  if (["run-debug-view-host.cjs", "run-debug-presence-normal-host.cjs"].includes(basename(suite)) && process.env.ESKA_HOST_RUN_DEBUG_EMPTY) {
+    fixture.manifest = await readFile(join(fixture.root, "eska.toml"), "utf8");
+    await rm(join(fixture.root, "eska.toml"));
+  }
   const native = ["debug-http-host.cjs", "runtime-apply-host.cjs"].includes(basename(suite))
     ? JSON.parse(process.env.ESKA_HOST_HTTP_FIXTURE) : undefined;
   const applicationApply = native?.scenario === "apply-application-debug";
@@ -268,6 +272,16 @@ try {
   }
   let workspace = workspaceFolder;
   let secondFixture;
+  if (["run-debug-view-host.cjs", "run-debug-presence-normal-host.cjs"].includes(basename(suite))) {
+    // Keep the workspace identity stable while the suite adds/removes folders.
+    workspace = join(root, "run-debug.code-workspace");
+    await writeFile(workspace, JSON.stringify({ folders: [{ path: fixture.root }], settings: {
+      "eska.explorer.executable": binary, "eska.explorer.backend": backend,
+      "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false,
+      "eska.explorer.checkForFormatterUpdates": false, "eska.explorer.checkForDebuggerUpdates": false,
+      "eska.explorer.languageFeatures": false, "eska.explorer.analyzerExecutable": join(root, "missing-analyzer"), ...nativeToolSettings,
+    } }));
+  }
   if (process.env.ESKA_HOST_MULTI_ROOT) {
     secondFixture = await createTreeProject(join(root, "second"));
     workspace = join(root, "support.code-workspace");
@@ -319,7 +333,9 @@ exports.activate = async function () {
     await writeFile(join(probe, "package.json"), JSON.stringify({ name: "restore-probe", publisher: "eska-test",
       version: "0.0.1", engines: { vscode: "^1.109.0" }, main: "./extension.cjs", activationEvents: ["onStartupFinished"] }));
     await writeFile(join(probe, "extension.cjs"), `const vscode = require('vscode');
-exports.activate = async function () {
+${basename(suite) === "run-debug-presence-normal-host.cjs"
+  ? "exports.activate = function () { void runProbe(); }; async function runProbe() {"
+  : "exports.activate = async function () {"}
   if (process.env.ESKA_HOST_RUN === '-1') return;
   try { await require(${JSON.stringify(hostSuite)}).run(); }
   catch (error) {

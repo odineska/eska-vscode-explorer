@@ -1,4 +1,5 @@
 {
+  "runDebugView": "ESKA: запуск 1С",
   "queryOpen": "Открыть запрос",
   "queryResume": "Продолжить черновик запроса",
   "queryCompare": "Сравнить исходник владельца",

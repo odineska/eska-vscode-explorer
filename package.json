@@ -23,7 +23,8 @@
     "onFileSystem:eska-query",
     "onFileSystem:eska-protected",
     "onView:eska.explorer.projects",
-    "workspaceContains:**/eska.toml",
+    "workspaceContains:eska.toml",
+    "onStartupFinished",
     "onLanguage:bsl",
     "onLanguage:sdbl",
     "onWebviewPanel:eska.formViewer"
@@ -392,6 +393,14 @@
           "name": "ESKA: 1C Explorer",
           "visibility": "collapsed",
           "contextualTitle": "ESKA: 1C Explorer"
+        }
+      ],
+      "debug": [
+        {
+          "id": "eska.explorer.runDebug",
+          "name": "%runDebugView%",
+          "when": "eska.hasProject",
+          "visibility": "visible"
         }
       ]
     },
