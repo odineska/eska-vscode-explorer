@@ -8,18 +8,18 @@ import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
   const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, referenceData: false,
-    notice: '', restore: null, selected: '', copiedType: false, authoring: false,
+    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
   const [edit, setEdit] = createSignal(null);
   const [editResult, setEditResult] = createSignal(null);
   const [editStatus, setEditStatus] = createSignal('');
   let editorId = 0;
-  function openEditor(intent, target, section) {
+  function openEditor(intent, target, section, placement) {
     if (!state.authoring || edit()) return;
     const id = ++editorId;
     setEditStatus('');
     setEditResult(null);
-    setEdit({ id, intent, target, section });
+    setEdit({ id, intent, target, section, placement });
     const includeTypes = intent === 'addDefinition' || intent === 'properties' && ['attribute', 'parameter'].includes(target?.kind);
     post({ type: 'formEdit', action: 'open', id, includeTypes });
   }
@@ -125,7 +125,7 @@ export function controller(api) {
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
       if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'notice', 'restore', 'title']) {
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
       if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));

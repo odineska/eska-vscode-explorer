@@ -130,7 +130,7 @@ export function StructurePane(props) {
         <div class="form-tree-canvas" style={{ height: `${rows().length * treeHeight}px` }}>
           <For each={virtual.visible()}>{(row, index) => {
             const expanded = () => !state.ui.folded[row.key] || !!props.terms.length;
-            return <div role="treeitem" id={`form-row-${row.key}`} aria-level={row.depth + 1} aria-selected={isSelected(row)}
+            return <div role="treeitem" data-form-tree-node={row.key} draggable={c.drag.movable(row.key)} id={`form-row-${row.key}`} aria-level={row.depth + 1} aria-selected={isSelected(row)}
               aria-expanded={row.children.length ? expanded() : undefined} title={row.title && row.title !== row.label ? `${row.path}\n${row.title}` : row.path}
               classList={{ 'form-tree-row': true, selected: isSelected(row), related: related(row), 'form-tree-hidden': row.node.presentation.displayed === false }}
               style={{ top: `${(virtual.start() + index()) * treeHeight}px`, '--form-depth': row.depth }}

@@ -157,3 +157,10 @@
   gap: 6px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
 }
+
+[data-form-drop="inside"] { outline: 2px solid var(--vscode-focusBorder); outline-offset: -2px; }
+[data-form-drop="before"] { box-shadow: inset 0 2px var(--vscode-focusBorder); }
+[data-form-drop="after"] { box-shadow: inset 0 -2px var(--vscode-focusBorder); }
+[data-form-drop="before-x"] { box-shadow: inset 2px 0 var(--vscode-focusBorder); }
+[data-form-drop="after-x"] { box-shadow: inset -2px 0 var(--vscode-focusBorder); }
+.form-tree-row[draggable="true"] { cursor: grab; }

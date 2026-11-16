@@ -17,7 +17,8 @@ export function FormStructureEditor(props) {
   const containers = schema.nodes.filter(candidate => ['root', 'element'].includes(candidate.target.kind) && children.get(candidate.kind)?.length);
   const isAdd = intent === 'addElement';
   const isCopy = intent === 'copy';
-  const defaultParent = isAdd && children.get(node?.kind)?.length ? node : index.get(targetKey(node?.parent));
+  const proposed = index.get(targetKey(props.placement?.parent));
+  const defaultParent = proposed ?? (isAdd && children.get(node?.kind)?.length ? node : index.get(targetKey(node?.parent)));
   function ownSubtree(candidate) {
     for (let current = candidate; current; current = index.get(targetKey(current.parent))) {
       if (targetKey(current.target) === targetKey(node.target)) return true;
@@ -29,7 +30,7 @@ export function FormStructureEditor(props) {
   const [parent, setParent] = createSignal(parents.includes(defaultParent) ? defaultParent : parents[0]);
   const [name, setName] = createSignal(isCopy && node?.name ? node.name + 'Copy' : '');
   const [kind, setKind] = createSignal('');
-  const [before, setBefore] = createSignal('');
+  const [before, setBefore] = createSignal(props.placement?.before == null ? '' : String(props.placement.before));
   const [confirm, setConfirm] = createSignal(false);
   const kindLabel = kind => s[`elementKind.${kind}`] ?? kind;
   const kinds = () => children.get(parent()?.kind) ?? [];

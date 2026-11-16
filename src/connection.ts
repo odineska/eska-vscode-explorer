@@ -12,10 +12,17 @@ import { recoveryCapabilities, type RecoveryEndpoint } from "./query/recovery-pr
 import { querySessionCapabilities } from "./query/session-protocol.js";
 import { sourceCapabilities, type SourceEndpoint } from "./source-access.js";
 
+function formLayout(response: unknown): Record<string, string[]> | undefined {
+  if (!isRecord(response) || !isRecord(response.capabilities) || !isRecord(response.capabilities.formAuthoring)) return;
+  const layout = response.capabilities.formAuthoring.layoutParents;
+  if (!isRecord(layout) || !Object.values(layout).every(value => Array.isArray(value) && value.every(kind => typeof kind === "string"))) return;
+  return layout as Record<string, string[]>;
+}
+
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; formLayout?: Record<string, string[]>; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -219,6 +226,7 @@ export class Connection {
           start: { value: target.path, encoding: "utf-8" }, selection: { kind: "current" }, diskCache: true,
         }));
         if (revision === this.revision) {
+          const layout = formLayout(response);
           diagnostic(this.log, "connection_ready", { backendVersion: version, sessionId: session.sessionId,
             projects: session.projects.map((project) => ({ projectId: project.projectId, type: project.type,
               rootPath: project.rootPath, sourcePath: project.sourcePath, generation: project.generation })) });
@@ -234,7 +242,7 @@ export class Connection {
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,
             analyzerConfiguration: isRecord(response) && isRecord(response.capabilities) && response.capabilities.analyzerConfiguration === true,
             queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"),
-            formEditor: backend === "project" && formEditorCapability(response), target });
+            formEditor: backend === "project" && formEditorCapability(response), ...(layout ? { formLayout: layout } : {}), target });
         }
       } catch (error) {
         if (!negotiated && error instanceof ExplorerError

@@ -24,7 +24,12 @@ export function FormEditor(props) {
     const result = c.editResult();
     if (!result) return;
     setPending('');
-    if (result.phase === 'ready') setSchema(result.schema);
+    if (result.phase === 'ready') {
+      setSchema(result.schema);
+      if (result.schema.writable && props.draft.placement) {
+        preview([{ kind: 'moveElement', target, ...props.draft.placement }]);
+      }
+    }
     if (result.phase === 'preview') {
       setReview(result.changed ? result.changes : null);
       if (!result.changed) setError('editNoChanges');
@@ -99,7 +104,7 @@ export function FormEditor(props) {
                 <FormDefinitionEditor strings={s} locale={locale()} options={schema().typeOptions} node={selection()} section={props.draft.section} submit={preview}/>
               </Match>
               <Match when={selection()}>
-                <FormStructureEditor intent={intent} strings={s} node={selection()} schema={schema()}
+                <FormStructureEditor intent={intent} placement={props.draft.placement} strings={s} node={selection()} schema={schema()}
                   locale={locale()} submit={preview}/>
               </Match>
             </Switch>

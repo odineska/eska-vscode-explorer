@@ -86,6 +86,24 @@ exports.run = async () => {
     await preview(); await save();
     assert.doesNotMatch(await source(), /name="EditorGroupCopy"/);
 
+    assert.ok(await ui.evaluate("(" + function () {
+      const tree = [...document.querySelectorAll('[data-form-tree-node]')];
+      const from = tree.find(row => row.textContent.trim() === 'EditorGroup');
+      const to = tree.find(row => row.textContent.trim().startsWith('Other'));
+      if (!from?.draggable || !to) return false;
+      const dataTransfer = new DataTransfer();
+      from.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+      const rectangle = to.getBoundingClientRect();
+      const target = { bubbles: true, cancelable: true, dataTransfer, clientY: rectangle.top + rectangle.height / 2 };
+      to.dispatchEvent(new DragEvent('dragover', target));
+      if (to.dataset.formDrop !== 'inside') return false;
+      to.dispatchEvent(new DragEvent('drop', target));
+      return true;
+    }.toString() + ")()"));
+    await until(() => ui.evaluate("!!document.querySelector('.form-edit-review')"), 'drag creates a reviewed plan');
+    await save();
+    assert.match(await source(), /<Page name="Other"[^]*?<UsualGroup name="EditorGroup"/);
+
     await open('addDefinition');
     assert.ok(await input('dialog input[required]', 'EditorFlag'));
     assert.ok(await input('dialog select[aria-label]', JSON.stringify(['http://www.w3.org/2001/XMLSchema','boolean']), 'change'));
@@ -165,7 +183,7 @@ exports.run = async () => {
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('workbench.action.files.revert');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'form-editor',
-      scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'add a composite form attribute with number qualifiers',
+      scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'drag and save a tree element inside a page', 'add a composite form attribute with number qualifiers',
         'create conditional rule with typed condition and formatted field', 'save a dynamic-list rule with two values', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
   } finally { ui.close(); }
 };

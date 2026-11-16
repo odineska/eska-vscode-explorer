@@ -2,7 +2,7 @@ import { batch, createMemo, createSignal, on, Show } from 'solid-js';
 import { DataPane, InspectorTabs, StructurePane } from './InspectorLists.jsx';
 import { PropertyInspector } from './PropertyInspector.jsx';
 import { InspectorIcon, InspectorIconButton } from './InspectorIcon.jsx';
-import { attributeFor, commandFor, indexInspector, inspectorTerms } from './inspector-model.mjs';
+import { attributeFor, commandFor, inspectorTerms } from './inspector-model.mjs';
 import { dataTarget as editDataTarget, elementTarget } from './editor-model.mjs';
 import { Splitter } from './Splitter.jsx';
 
@@ -10,9 +10,7 @@ const compactTabs = ['elements', 'data'];
 
 export function Inspector(props) {
   const c = props.controller, state = c.state;
-  // The host revision covers both the form and the metadata read while composing it.
-  const index = createMemo(on([() => state.revision, () => state.model, () => state.locale],
-    () => indexInspector(state.model, state.locale, state.strings)));
+  const index = () => props.index;
   const terms = createMemo(() => inspectorTerms(state.ui.search, state.locale));
   const selected = createMemo(() => index().nodes.get(state.selected) ?? index().nodes.values().next().value);
   const activeData = createMemo(() => index().byData.get(state.ui.inspectedData));

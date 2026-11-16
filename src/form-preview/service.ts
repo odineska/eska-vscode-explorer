@@ -461,7 +461,8 @@ export class FormPreviewService implements vscode.Disposable {
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
-      ...(frame.role === "main" ? { palette: view.palette ?? null, authoring: view.phase === "ready" && this.canEdit(view) } : {}),
+      ...(frame.role === "main" ? { palette: view.palette ?? null, authoring: view.phase === "ready" && this.canEdit(view),
+        formLayout: this.connection.state.kind === "ready" ? this.connection.state.formLayout ?? null : null } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
       ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
