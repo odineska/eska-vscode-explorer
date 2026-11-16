@@ -10,6 +10,9 @@ exports.run = async () => {
   const extension = vscode.extensions.all.find(item => item.packageJSON.name === 'eska-explorer');
   await fs.mkdir(path.join(fixture.source, 'Ext'), { recursive: true });
   await fs.writeFile(path.join(fixture.source, 'Ext', 'ParentConfigurations.bin'), '{6,0,0,0,0,0}');
+  const list = '<Attribute name="DynamicRows" id="50"><Type><v8:Type xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">cfg:DynamicList</v8:Type></Type>'
+    + '<Settings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="DynamicList"><ListSettings/></Settings></Attribute>';
+  await fs.writeFile(fixture.form.path, (await fs.readFile(fixture.form.path, 'utf8')).replace('</Attributes>', list + '</Attributes>'));
   const explorer = await extension.activate();
   await vscode.commands.executeCommand('eska.explorer.connect');
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.form.path));
@@ -89,6 +92,22 @@ exports.run = async () => {
     await preview(); await save();
     assert.match(await source(), /name="EditorFlag".*xs:boolean/s);
 
+    await open('appearance');
+    assert.ok(await input('dialog [data-form-edit-scope]', '1', 'change'));
+    assert.ok(await textButton('Add rule', 'Добавить правило'));
+    assert.ok(await input('dialog select[aria-label]', 'background', 'change'));
+    assert.ok(await textButton('Add', 'Добавить', '.form-edit-settings'));
+    assert.ok(await textButton('Conditions', 'Условия', '.form-edit-tabs'));
+    assert.ok(await textButton('Add condition', 'Добавить условие'));
+    assert.ok(await input('dialog .form-edit-compare input[list]', 'Number'));
+    assert.ok(await input('dialog .form-edit-compare select', 'InList', 'change'));
+    assert.ok(await textButton('Add value', 'Добавить значение'));
+    assert.ok(await input('.form-edit-list-value:nth-child(1) input', 'One'));
+    assert.ok(await textButton('Add value', 'Добавить значение'));
+    assert.ok(await input('.form-edit-list-value:nth-child(2) input', 'Two'));
+    await preview(); await save();
+    assert.match(await source(), /<ListSettings>.*<dcsset:comparisonType>InList<\/dcsset:comparisonType>.*>One<\/dcsset:right>.*>Two<\/dcsset:right>/s);
+
     const beforeAppearance = await source();
     await open('appearance');
     assert.ok(await textButton('Add rule', 'Добавить правило'));
@@ -144,6 +163,6 @@ exports.run = async () => {
     await vscode.commands.executeCommand('workbench.action.files.revert');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'form-editor',
       scenarios: ['add and select a form element', 'edit a boolean property', 'copy, move and delete a form element', 'add typed form attribute',
-        'create conditional rule with typed condition and formatted field', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
+        'create conditional rule with typed condition and formatted field', 'save a dynamic-list rule with two values', 'edit existing rule', 'cancel reviewed changes', 'external change blocks a stale save', 'dirty source blocks publication'] }));
   } finally { ui.close(); }
 };

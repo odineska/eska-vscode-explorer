@@ -171,8 +171,8 @@ export class FormEditor {
     this.check(draft);
     draft.snapshot = schema.snapshot;
     draft.writable = schema.writable;
-    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, writable } = schema;
-    this.reply(draft.id, "ready", { schema: { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, writable } });
+    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, writable } = schema;
+    this.reply(draft.id, "ready", { schema: { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, writable } });
   }
 
   private async preview(draft: Draft, operations: RecordValue[]): Promise<void> {

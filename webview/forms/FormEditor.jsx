@@ -51,7 +51,8 @@ export function FormEditor(props) {
   });
   const title = () => s[titles[intent]];
   const locale = () => c.state.locale.startsWith('ru') ? 'ru-RU' : 'en-US';
-  const canPreview = () => schema()?.writable && !(intent === 'appearance' && !schema().conditionalAppearance)
+  const appearanceAvailable = () => schema()?.conditionalAppearance || schema()?.dynamicListAppearance?.some(list => list.appearance);
+  const canPreview = () => schema()?.writable && !(intent === 'appearance' && !appearanceAvailable())
     && (intent === 'addDefinition' || intent === 'appearance' || selection());
   const blocked = () => c.editResult()?.fatal || ['editUnknownWrite', 'editSavedRefresh', 'editConflict'].includes(error());
   function preview(operations) {
@@ -85,7 +86,7 @@ export function FormEditor(props) {
           <Show when={schema()?.writable} fallback={<Show when={schema()}><p>{s.editLocked}</p></Show>}>
             <Switch>
               <Match when={intent === 'appearance'}>
-                <Show when={schema().conditionalAppearance} fallback={<p>{s.editUnsupported}</p>}>
+                <Show when={appearanceAvailable()} fallback={<p>{s.editUnsupported}</p>}>
                   <ConditionalAppearanceEditor schema={schema()} strings={s} locale={locale()} paths={dataPaths()}
                     model={c.state.model} submit={preview}/>
                 </Show>

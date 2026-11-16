@@ -118,3 +118,23 @@
   .form-edit-property, .form-edit-review-part { grid-template-columns: minmax(0, 1fr); }
   .form-edit-property > button { justify-self: start; }
 }
+
+.form-edit-value-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  justify-items: start;
+}
+
+.form-edit-list-value {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+
+@media (max-width: 400px) {
+  .form-edit-list-value { grid-template-columns: minmax(0, 1fr); }
+  .form-edit-list-value button { justify-self: start; }
+}
