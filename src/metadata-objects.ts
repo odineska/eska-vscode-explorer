@@ -62,16 +62,21 @@ export class MetadataObjects implements vscode.Disposable {
             && typeof error.details.value === "string" ? { property: error.details.property, value: error.details.value } : undefined;
           if (error.domain === "object_property_conflict" && (!conflict || !conflict.property)) throw new ExplorerError("protocolInvalid");
           const fields = request.operation === "create" && !request.template && error.domain === "object_invalid";
-          const schema = conflict || fields
-            ? await this.schema(tree, entry, request.parent, prompt, fields && request.operation === "create" ? request.kind : undefined) : undefined;
+          const schema = conflict || fields ? await this.correctionSchema(tree, entry, request, prompt) : undefined;
           prompt.check();
           const title = conflict ? schema?.propertyCaptions[conflict.property]?.[language] ?? conflict.property : "";
           const edit = message(language, conflict || fields ? "objectEditFields" : "objectEditName");
           const notice = conflict ? message(language, "objectPropertyConflict", title, conflict.value) : message(language, this.failure(error, false));
           if (await this.api.window.showErrorMessage(notice, edit, message(language, "propertyCancel")) !== edit) return;
           prompt.check();
-          if (conflict) {
-            if (!await this.scalarProperty(request, conflict.property, title, prompt, conflict.value)) return;
+          if (conflict && schema) {
+            const field = schema.initialFields?.find(field => field.property === conflict.property);
+            const kind = schema.kindOptions.find(kind => kind.value === schema.selectedKind)?.key;
+            if (!kind) throw new ExplorerError("protocolInvalid");
+            const required = schema.requiredProperties[kind]?.includes(conflict.property) === true;
+            const corrected = field ? await this.initialProperty(request, field, title, prompt, conflict.value)
+              : await this.scalarProperty(request, conflict.property, title, prompt, conflict.value, required);
+            if (!corrected) return;
           } else if (fields && request.operation === "create" && schema) {
             if (!await this.requiredProperties(request, schema, prompt)) return;
           } else request.name = await this.name(request.name, prompt);
@@ -127,8 +132,7 @@ export class MetadataObjects implements vscode.Disposable {
     const id = entry.node.id;
     if (id.kind === "module") return;
     const owner = id.kind === "object" ? id.objectId : id.owner;
-    const root = owner === entry.project.info.root.objectId && entry.project.info.type === "configuration";
-    const parent = root ? null : owner;
+    const parent = this.metadataParent(entry, owner);
     const schema = await this.schema(tree, entry, parent, prompt);
     const indicated = id.kind === "collection" && id.collection.kind === "metadata" ? id.collection.metadataKind : undefined;
     const options = indicated ? schema.kindOptions.filter(option => option.key === indicated) : schema.kindOptions;
@@ -163,6 +167,22 @@ export class MetadataObjects implements vscode.Disposable {
     return objectSchema(value, parent, kind);
   }
 
+  private metadataParent(entry: TreeEntry, owner: string): string | null {
+    return owner === entry.project.info.root.objectId && entry.project.info.type === "configuration" ? null : owner;
+  }
+
+  /** Copy keeps its original owner; tree identities remain opaque and are never split into paths. */
+  private async correctionSchema(tree: MetadataTree, entry: TreeEntry, request: ObjectValues, prompt: Prompt): Promise<ObjectSchema> {
+    if (request.operation === "create") return this.schema(tree, entry, request.parent, prompt, request.kind);
+    const node = entry.node.parent;
+    if (!node || node.kind === "module") throw new ExplorerError("protocolInvalid");
+    const parent = this.metadataParent(entry, node.kind === "object" ? node.objectId : node.owner);
+    const schema = await this.schema(tree, entry, parent, prompt);
+    const kind = schema.kindOptions.find(kind => kind.key === entry.node.metadataKind)?.value;
+    if (!kind) throw new ExplorerError("protocolInvalid");
+    return this.schema(tree, entry, parent, prompt, kind);
+  }
+
   private async requiredProperties(request: Extract<ObjectRequest, { operation: "create" }>, schema: ObjectSchema, prompt: Prompt): Promise<boolean> {
     const kind = schema.kindOptions.find(kind => kind.value === request.kind)?.key;
     if (!kind) throw new ExplorerError("protocolInvalid");
@@ -180,10 +200,10 @@ export class MetadataObjects implements vscode.Disposable {
   }
 
   /** Unique-property conflicts correct the backend-named field without discarding other input. */
-  private async scalarProperty(request: ObjectValues, property: string, title: string, prompt: Prompt, initial = ""): Promise<boolean> {
+  private async scalarProperty(request: ObjectValues, property: string, title: string, prompt: Prompt, initial = "", required = true): Promise<boolean> {
     const value = await this.api.window.showInputBox({ title, value: request.propertyValues[property] ?? initial,
-      prompt: message(prompt.language, "objectPropertyValue", title), ignoreFocusOut: true,
-      validateInput: value => value.trim() ? undefined : message(prompt.language, "propertyInvalid") }, prompt.token);
+      prompt: message(prompt.language, required ? "objectPropertyValue" : "objectPropertyOptionalValue", title), ignoreFocusOut: true,
+      validateInput: value => required && !value.trim() ? message(prompt.language, "propertyInvalid") : undefined }, prompt.token);
     prompt.check();
     if (value === undefined) return false;
     request.propertyValues = { ...request.propertyValues, [property]: value };
@@ -191,7 +211,7 @@ export class MetadataObjects implements vscode.Disposable {
   }
 
   /** Initial selections use backend choices and the same identities as the property editor. */
-  private async initialProperty(request: ObjectValues, field: InitialField, title: string, prompt: Prompt): Promise<boolean> {
+  private async initialProperty(request: ObjectValues, field: InitialField, title: string, prompt: Prompt, initial?: string): Promise<boolean> {
     if (!field.options.length) {
       void this.api.window.showInformationMessage(message(prompt.language, "objectNoChoices", title));
       return false;
@@ -208,7 +228,7 @@ export class MetadataObjects implements vscode.Disposable {
       if (!selected?.length) return false;
       request.propertyTypes[field.property] = selected.map(option => option.key);
     } else {
-      const current = field.multiple ? request.propertyReferences[field.property] ?? [] : [request.propertyValues[field.property]];
+      const current = field.multiple ? request.propertyReferences[field.property] ?? [] : [request.propertyValues[field.property] ?? initial];
       const options = field.options.map(option => ({ label: option.caption[prompt.language], value: option.value,
         description: option.value, picked: current.includes(option.value),
       }));

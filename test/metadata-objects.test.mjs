@@ -68,7 +68,7 @@ async function fixture(t) {
   return root;
 }
 function harness(root, options = {}) {
-  const calls = [], requests = [], messages = [], inputDefaults = [], inputTitles = [], picks = [], progress = [], reviews = [];
+  const calls = [], requests = [], messages = [], inputDefaults = [], inputTitles = [], inputValidations = [], schemaCalls = [], picks = [], progress = [], reviews = [];
   let dirty = options.dirty === 'before', current, ui, attempts = 0, inProgress=false;
   class Uri { constructor(scheme,path) { this.scheme=scheme;this.fsPath=path; } static file(path) { return new Uri('file',path); } }
   class CancellationTokenSource { token={isCancellationRequested:false};cancel(){this.token.isCancellationRequested=true;}dispose(){} }
@@ -89,22 +89,22 @@ function harness(root, options = {}) {
           onDidDispose(callback){closed=callback;return{dispose(){}};},dispose(){if(disposed)return;disposed=true;closed?.();}};
         return panel;
       },
-      async showInputBox(value){assert.equal(inProgress,false);inputDefaults.push(value.value);inputTitles.push(value.title);return options.cancelInput===inputDefaults.length?undefined:options.inputs?.shift()??'Twin';},
+      async showInputBox(value){assert.equal(inProgress,false);inputDefaults.push(value.value);inputTitles.push(value.title);inputValidations.push(value.validateInput?.(""));return options.cancelInput===inputDefaults.length?undefined:options.inputs?.shift()??'Twin';},
       async showQuickPick(items,settings){assert.equal(inProgress,false);picks.push({items,settings});return options.pick?options.pick(items,settings):settings?.canPickMany?items:items.find(item=>item.object===options.template)??items[0];},
       async showInformationMessage(value){messages.push(value);},
       async showErrorMessage(value,...items){assert.equal(inProgress,false);messages.push(value);return options.retry?items[0]:undefined;},
     } };
   const project=options.entry?.project??{info:{root:{kind:'object',objectId:'root'},type:'configuration',sourcePath:wire(root)}};
-  const entry=options.entry??{project,node:{id:{kind:'object',objectId:options.operation==='create'?'root':'original'},metadataKind:'catalog',label:{kind:'name',text:'Original'}}};
-  const tree={ async children(owner){if(options.tree)return options.tree.children(owner);return options.template&&owner.node.id.objectId==='root'?[{project,node:{id:{kind:'object',objectId:options.template},metadataKind:options.schema.kindOptions[0].key,label:{kind:'name',text:'Original'}}}]:[];}, async request(_project,method,params){calls.push(method);assert.equal(inProgress,method==='metadata/previewObject'||method==='metadata/applyObject');
+  const entry=options.entry??{project,node:{id:{kind:'object',objectId:options.operation==='create'?'root':'original'},metadataKind:options.schema?.kindOptions[0]?.key??'catalog',parent:{kind:'collection',owner:'root',collection:{kind:'metadata',metadataKind:options.schema?.kindOptions[0]?.key??'catalog'}},label:{kind:'name',text:'Original'}}};
+  const tree={ async children(owner){if(options.tree)return options.tree.children(owner);return options.template&&owner.node.id.objectId===(options.entry?.node.id.objectId??'root')?[{project,node:{id:{kind:'object',objectId:options.template},metadataKind:options.schema.kindOptions[0].key,label:{kind:'name',text:'Original'}}}]:[];}, async request(_project,method,params){calls.push(method);assert.equal(inProgress,method==='metadata/previewObject'||method==='metadata/applyObject');
     if(options.tree){if(method==='metadata/previewObject')requests.push(structuredClone(params.request));return options.tree.request(_project,method,params);}
-    if(method==='metadata/objectSchema')return {...options.schema??schema,...params.kind?{selectedKind:params.kind,initialFields:options.initialFields??[]}:{} };
+    if(method==='metadata/objectSchema'){schemaCalls.push(structuredClone(params));return {...options.schema??schema,...params.kind?{selectedKind:params.kind,initialFields:options.initialFields??[]}:{} };}
     if(method==='metadata/previewObject'){requests.push(structuredClone(params.request));if(options.retry&&attempts++<(options.failures??1))throw new ExplorerError('requestFailed',options.retryDomain??'creation_collision',options.retryDetails);return planFor(params.request,options.referenced);}
     assert.equal(method,'metadata/applyObject');if(options.uncertain)throw new ExplorerError('connectionLost');
     return{schemaVersion:1,changed:true,objectId:params.prepared.request.operation==='delete'?'original':'twin',snapshot:params.prepared.expectedOutputSnapshot};
   } };
   current=tree;ui=new MetadataObjects(api,()=>options.readOnly===true);
-  return{ui,calls,requests,messages,inputDefaults,inputTitles,picks,progress,reviews,run:()=>ui.run(tree,entry,options.operation??'copy',()=>current,options.locale??'ru-RU',()=>{throw new Error('unexpected legacy creation');})};
+  return{ui,calls,requests,messages,inputDefaults,inputTitles,inputValidations,schemaCalls,picks,progress,reviews,run:()=>ui.run(tree,entry,options.operation??'copy',()=>current,options.locale??'ru-RU',()=>{throw new Error('unexpected legacy creation');})};
 }
 
 for(const scenario of [{name:'dirty original input',dirty:'before'},{name:'dirty input during review',dirty:'review'},{name:'disk conflict',changed:true},
@@ -154,6 +154,34 @@ for (const [kind,key,property,caption] of [['HTTPService','http-service','RootUR
     assert.ok(value.messages[0].includes(caption));
   });
 }
+
+for(const operation of ['copy','create'])for(const field of [
+  {kind:'Method',key:'method',property:'HTTPMethod',before:'GET',after:'POST',caption:'HTTP-метод',
+    choices:[{property:'HTTPMethod',kind:'values',multiple:false,options:[{value:'GET',caption:{'ru-RU':'GET','en-US':'GET'}},{value:'POST',caption:{'ru-RU':'POST','en-US':'POST'}}]}]},
+  {kind:'URLTemplate',key:'url-template',property:'Template',before:'/original',after:'',caption:'Шаблон',choices:[]},
+])test(`${operation} corrects scoped ${field.property} from the shared schema`,async t=>{
+  const root=await fixture(t),parent='opaque-owner',source='opaque-source';
+  const project={info:{root:{kind:'object',objectId:'root'},type:'configuration',sourcePath:wire(root)}};
+  const entry={project,node:{id:{kind:'object',objectId:operation==='copy'?source:parent},metadataKind:field.key,
+    parent:{kind:'collection',owner:operation==='copy'?parent:'root',collection:{kind:'metadata',metadataKind:field.key}},label:{kind:'name',text:'Original'}}};
+  const value=harness(root,{operation,entry,retry:true,retryDomain:'object_property_conflict',retryDetails:{property:field.property,value:field.before},
+    template:operation==='create'?source:undefined,initialFields:field.choices,
+    schema:{...schema,parent,kinds:[field.kind],kindOptions:[{key:field.key,value:field.kind,caption:{'ru-RU':field.kind,'en-US':field.kind}}],
+      uniqueProperties:{[field.key]:[field.property]},propertyCaptions:{[field.property]:{'ru-RU':field.caption,'en-US':field.property}}},
+    inputs:field.choices.length?['Twin']:['Twin',''],pick(items){return items.find(item=>item.object===source || item.value===field.after)??items[0];}});
+  deferCleanup(t,()=>value.ui.dispose());assert.equal(await value.run(),'twin');
+  assert.deepEqual(value.requests.map(request=>request.name),['Twin','Twin']);
+  assert.deepEqual(value.requests[1].propertyValues,{[field.property]:field.after});
+  assert.equal(value.requests[1][operation==='copy'?'source':'template'],source);
+  assert.ok(value.schemaCalls.every(call=>call.parent===parent));
+  assert.equal(value.schemaCalls.at(-1).kind,field.kind);
+  if(field.choices.length){
+    assert.equal(value.inputDefaults.length,1);const picked=value.picks.at(-1);
+    assert.equal(picked.settings.title,field.caption);assert.equal(picked.items[0].picked,true);
+  }else{
+    assert.equal(value.inputTitles[1],field.caption);assert.equal(value.inputValidations[1],undefined);
+  }
+});
 
 test('cancelling a unique property correction never publishes the incomplete copy',async t=>{
   const root=await fixture(t),value=harness(root,{retry:true,retryDomain:'object_property_conflict',
@@ -308,8 +336,8 @@ for(const locale of ['ru-RU','en-US'])test(`real object wizard fills required ch
   const connection=new Connection('test',()=>{},()=>{});deferCleanup(t,()=>connection.dispose());await connection.connect({executable,path:root,locale,name:'child-objects'});
   const state=connection.state;assert.equal(state.kind,'ready');
   const tree=new MetadataTree(connection,state.session,()=>{},()=>{});deferCleanup(t,()=>tree.dispose());const project=tree.projects[0];
-  async function seed(kind,name,parent=null,propertyReferences={}) {
-    const request={operation:'create',kind,name,parent,template:null,propertyValues:{},propertyReferences,propertyTypes:{}};
+  async function seed(kind,name,parent=null,propertyReferences={},propertyValues={}) {
+    const request={operation:'create',kind,name,parent,template:null,propertyValues,propertyReferences,propertyTypes:{}};
     const plan=objectPlan(await tree.request(project,'metadata/previewObject',{request}));
     const result=await tree.request(project,'metadata/applyObject',{prepared:plan.prepared});
     return revealHit(tree,project,{objectId:result.objectId,node:{kind:'object',objectId:result.objectId}});
@@ -339,8 +367,33 @@ for(const locale of ['ru-RU','en-US'])test(`real object wizard fills required ch
     return revealHit(tree,project,{objectId:object,node:{kind:'object',objectId:object}});
   }
   const http=await seed('HTTPService','Http');
-  const template=await seed('URLTemplate','Route',http.node.id.objectId);
-  await create(template,'Method','Read','Handler','HandleRequest');
+  const template=await seed('URLTemplate','Route',http.node.id.objectId,{}, {Template:'/source'});
+  const method=await create(template,'Method','Read','Handler','HandleRequest');
+  async function correct(source,owner,kind,operation,name,property,answer,enumeration) {
+    const value=harness(root,{operation,tree,entry:operation==='copy'?source:owner,locale,retry:true,
+      inputs:enumeration?[name]:[name,answer],pick(items){
+        return items.find(item=>item.option?.value===kind || item.object===source.node.id.objectId || item.value===answer)??items[0];
+      }});deferCleanup(t,()=>value.ui.dispose());
+    const object=await value.run();assert.ok(object,JSON.stringify(value.messages));
+    assert.deepEqual(value.requests.map(request=>request.name),[name,name]);
+    assert.deepEqual(value.requests[1].propertyValues,{[property]:answer});
+    if(enumeration) {
+      assert.equal(value.inputDefaults.length,1);
+      assert.ok(value.picks.at(-1).items.some(item=>item.value==='GET'));
+      assert.ok(value.picks.at(-1).items.some(item=>item.value==='POST'));
+    } else assert.equal(value.inputValidations[1],undefined);
+    const result=await revealHit(tree,project,{objectId:object,node:{kind:'object',objectId:object}});
+    assert.equal(result.node.parent.kind==='object'?result.node.parent.objectId:result.node.parent.owner,owner.node.id.objectId);
+  }
+  await correct(method,template,'Method','copy','Post','HTTPMethod','POST',true);
+  await correct(method,template,'Method','create','Patch','HTTPMethod','PATCH',true);
+  await correct(template,http,'URLTemplate','copy','EmptyRoute','Template','',false);
+  await correct(template,http,'URLTemplate','create','OtherRoute','Template','/another',false);
+  const blank=harness(root,{operation:'create',tree,entry:template,locale,retry:true,inputs:['HandleDelete','Delete'],
+    pick(items){return items.find(item=>item.option?.value==='Method' || item.object===null || item.value==='DELETE')??items[0];}});
+  deferCleanup(t,()=>blank.ui.dispose());assert.ok(await blank.run(),JSON.stringify(blank.messages));
+  assert.deepEqual(blank.requests.map(request=>request.name),['Delete','Delete']);
+  assert.deepEqual(blank.requests[1].propertyValues,{Handler:'HandleDelete',HTTPMethod:'DELETE'});
   const web=await seed('WebService','Web');
   const operation=await create(web,'Operation','Execute','ProcedureName','ExecuteOperation');
   await create(operation,'Parameter','Argument');
