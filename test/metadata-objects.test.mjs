@@ -9,7 +9,7 @@ import { plannedSource, verifyObjectSources } from '../out/metadata-object-revie
 import { MetadataTree } from '../out/tree.js';
 import { Connection } from '../out/connection.js';
 import { ExplorerError } from '../out/protocol.js';
-import { revealHit } from '../out/search.js';
+import { revealHit, revealNode } from '../out/search.js';
 import { createTreeProject } from './fixture.mjs';
 import { editingSchema } from '../out/property-editing.js';
 import { deferCleanup } from './cleanup.mjs';
@@ -114,7 +114,7 @@ for(const scenario of [{name:'dirty original input',dirty:'before'},{name:'dirty
 });
 for(const locale of ['ru-RU','en-US'])test(`object copy applies exactly once after a localized complete review: ${locale}`,async t=>{
   const root=await fixture(t),value=harness(root,{locale});deferCleanup(t,()=>value.ui.dispose());
-  assert.equal(await value.run(),'twin');assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,1);
+  assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,1);
   assert.ok(value.reviews[0].detail.includes('owner.xml'));assert.ok(value.reviews[0].detail.includes('11111111-1111-4111-8111-111111111111'));
   assert.deepEqual(value.progress.map(item=>[item.location,item.cancellable]),[[15,false],[15,false]]);
   assert.match(value.progress[0].title,locale==='ru-RU'?/Расчёт/:/Calculating/);
@@ -127,14 +127,14 @@ test('deletion force follows explicit reference review and a second checked prev
 });
 test('validation failure keeps the entered name for correction',async t=>{
   const root=await fixture(t),value=harness(root,{retry:true,inputs:['Duplicate','Corrected']});deferCleanup(t,()=>value.ui.dispose());
-  assert.equal(await value.run(),'twin');assert.equal(value.inputDefaults[1],'Duplicate');assert.equal(value.requests[1].name,'Corrected');
+  assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});assert.equal(value.inputDefaults[1],'Duplicate');assert.equal(value.requests[1].name,'Corrected');
 });
 test('invalid required values can be corrected without losing the name or entered fields',async t=>{
   const root=await fixture(t),value=harness(root,{operation:'create',retry:true,retryDomain:'object_invalid',
     schema:{...schema,kinds:['ScheduledJob'],kindOptions:[{key:'scheduled-job',value:'ScheduledJob',caption:{'ru-RU':'Регламентное задание','en-US':'Scheduled job'}}],
       requiredProperties:{'scheduled-job':['MethodName']},propertyCaptions:{MethodName:{'ru-RU':'Имя метода','en-US':'Method name'}}},
-    inputs:['Bad.Value','NewJob','CommonModule.Tasks.Run']});deferCleanup(t,()=>value.ui.dispose());
-  assert.equal(await value.run(),'twin');assert.deepEqual(value.inputDefaults,['','','Bad.Value']);
+    inputs:['NewJob','Bad.Value','CommonModule.Tasks.Run']});deferCleanup(t,()=>value.ui.dispose());
+  assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});assert.deepEqual(value.inputDefaults,['','','Bad.Value']);
   assert.equal(value.requests[1].name,'NewJob');assert.equal(value.requests[1].propertyValues.MethodName,'CommonModule.Tasks.Run');
 });
 for (const [kind,key,property,caption] of [['HTTPService','http-service','RootURL','Корневой URL'],['WebService','web-service','DescriptorFileName','Имя файла дескриптора']]) {
@@ -144,12 +144,12 @@ for (const [kind,key,property,caption] of [['HTTPService','http-service','RootUR
       schema:{...schema,kinds:[kind],kindOptions:[{key,value:kind,caption:{'ru-RU':kind,'en-US':kind}}],
         propertyCaptions:{[property]:{'ru-RU':caption,'en-US':property}}},
       inputs:['NewService','stillTaken','available']});deferCleanup(t,()=>value.ui.dispose());
-    assert.equal(await value.run(),'twin');
+    assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});
     assert.deepEqual(value.inputDefaults,[operation==='copy'?'OriginalКопия':'','original','stillTaken']);
     assert.deepEqual(value.inputTitles,['Имя',caption,caption]);
     assert.deepEqual(value.requests.map(request=>request.name),['NewService','NewService','NewService']);
     assert.deepEqual(value.requests[2].propertyValues,{[property]:'available'});
-    assert.equal(value.requests[2][operation==='copy'?'source':'template'],'original');
+    assert.equal(value.requests[2][operation==='copy'?'source':'template'],operation==='copy'?'original':null);
     assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,1);
     assert.ok(value.messages[0].includes(caption));
   });
@@ -169,10 +169,10 @@ for(const operation of ['copy','create'])for(const field of [
     schema:{...schema,parent,kinds:[field.kind],kindOptions:[{key:field.key,value:field.kind,caption:{'ru-RU':field.kind,'en-US':field.kind}}],
       uniqueProperties:{[field.key]:[field.property]},propertyCaptions:{[field.property]:{'ru-RU':field.caption,'en-US':field.property}}},
     inputs:field.choices.length?['Twin']:['Twin',''],pick(items){return items.find(item=>item.object===source || item.value===field.after)??items[0];}});
-  deferCleanup(t,()=>value.ui.dispose());assert.equal(await value.run(),'twin');
+  deferCleanup(t,()=>value.ui.dispose());assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});
   assert.deepEqual(value.requests.map(request=>request.name),['Twin','Twin']);
   assert.deepEqual(value.requests[1].propertyValues,{[field.property]:field.after});
-  assert.equal(value.requests[1][operation==='copy'?'source':'template'],source);
+  assert.equal(value.requests[1][operation==='copy'?'source':'template'],operation==='copy'?source:null);
   assert.ok(value.schemaCalls.every(call=>call.parent===parent));
   assert.equal(value.schemaCalls.at(-1).kind,field.kind);
   if(field.choices.length){
@@ -210,7 +210,7 @@ for (const field of [
       else assert.equal(items[0].picked,true);
       return field.multiple?items:selections===1?items.at(-1):items[0];
     }});deferCleanup(t,()=>value.ui.dispose());
-  assert.equal(await value.run(),'twin');assert.equal(selections,2);
+  assert.deepEqual(await value.run(),{kind:'object',objectId:'twin'});assert.equal(selections,2);
   assert.deepEqual(value.inputDefaults,['']);
   const request=value.requests[1];
   assert.equal(request.name,'NewObject');
@@ -224,7 +224,7 @@ test('missing initial choices explain the dependency and never fall back to manu
     schema:{...schema,kinds:['BusinessProcess'],kindOptions:[{key:'business-process',value:'BusinessProcess',caption:{'ru-RU':'Бизнес-процесс','en-US':'Business process'}}],
       requiredProperties:{'business-process':['Task']}}});deferCleanup(t,()=>value.ui.dispose());
   assert.equal(await value.run(),undefined);assert.equal(value.requests.length,0);
-  assert.equal(value.inputDefaults.length,0);assert.ok(value.messages.some(message=>message.includes('подходящих объектов')));
+  assert.equal(value.inputDefaults.length,1);assert.ok(value.messages.some(message=>message.includes('подходящих объектов')));
 });
 
 test('a source buffer made dirty during asynchronous hashing blocks publication',async t=>{
@@ -347,50 +347,51 @@ for(const locale of ['ru-RU','en-US'])test(`real object wizard fills required ch
     const schema=objectSchema(await tree.request(project,'metadata/objectSchema',{parent,kind}),parent,kind);
     const expected=property?schema.propertyCaptions[property][locale]:undefined;
     const value=harness(root,{operation:'create',tree,entry:owner,locale,
-      inputs:property&&!Array.isArray(answer)?[answer,name]:[name],
+      inputs:property&&!Array.isArray(answer)?[name,answer]:[name],
       pick(items,settings){
         if(settings.canPickMany) return items.filter(item=>answer.includes(item.value));
-        return items.find(item=>item.option?.value===kind)??items[0];
+        return items.find(item=>item.metadata?.value===kind)??items[0];
       }});deferCleanup(t,()=>value.ui.dispose());
     const object=await value.run();assert.ok(object,JSON.stringify(value.messages));
     assert.equal(value.requests.length,1);assert.equal(value.requests[0].parent,parent);
-    assert.equal(value.requests[0].name,name);assert.equal(value.reviews.length,1);
+    assert.equal(value.requests[0].name,name);assert.equal(value.reviews.length,0);
     if(property){
       if(Array.isArray(answer)) {
         assert.deepEqual(value.requests[0].propertyReferences,{[property]:answer});
         assert.ok(value.picks.some(pick=>pick.settings.title===expected && pick.settings.canPickMany));
       }else{
-        assert.deepEqual(value.requests[0].propertyValues,{[property]:answer});assert.equal(value.inputTitles[0],expected);
+        assert.deepEqual(value.requests[0].propertyValues,{[property]:answer});assert.equal(value.inputTitles[1],expected);
       }
       if(locale==='ru-RU')assert.notEqual(expected,property);
     }
-    return revealHit(tree,project,{objectId:object,node:{kind:'object',objectId:object}});
+    return revealHit(tree,project,{objectId:object.objectId,node:object});
   }
   const http=await seed('HTTPService','Http');
   const template=await seed('URLTemplate','Route',http.node.id.objectId,{}, {Template:'/source'});
   const method=await create(template,'Method','Read','Handler','HandleRequest');
   async function correct(source,owner,kind,operation,name,property,answer,enumeration) {
     const value=harness(root,{operation,tree,entry:operation==='copy'?source:owner,locale,retry:true,
-      inputs:enumeration?[name]:[name,answer],pick(items){
-        return items.find(item=>item.option?.value===kind || item.object===source.node.id.objectId || item.value===answer)??items[0];
+      inputs:enumeration?(operation==='create'?[name,'HandleRequest']:[name]):[name,answer],pick(items){
+        return items.find(item=>item.metadata?.value===kind || item.object===source.node.id.objectId || item.value===answer)??items[0];
       }});deferCleanup(t,()=>value.ui.dispose());
     const object=await value.run();assert.ok(object,JSON.stringify(value.messages));
     assert.deepEqual(value.requests.map(request=>request.name),[name,name]);
-    assert.deepEqual(value.requests[1].propertyValues,{[property]:answer});
+    assert.deepEqual(value.requests[1].propertyValues,{...(operation==='create'&&enumeration?{Handler:'HandleRequest'}:{}),[property]:answer});
     if(enumeration) {
-      assert.equal(value.inputDefaults.length,1);
+      assert.equal(value.inputDefaults.length,operation==='create'?2:1);
       assert.ok(value.picks.at(-1).items.some(item=>item.value==='GET'));
       assert.ok(value.picks.at(-1).items.some(item=>item.value==='POST'));
     } else assert.equal(value.inputValidations[1],undefined);
-    const result=await revealHit(tree,project,{objectId:object,node:{kind:'object',objectId:object}});
+    const result=await revealHit(tree,project,{objectId:object.objectId,node:object});
     assert.equal(result.node.parent.kind==='object'?result.node.parent.objectId:result.node.parent.owner,owner.node.id.objectId);
   }
   await correct(method,template,'Method','copy','Post','HTTPMethod','POST',true);
   await correct(method,template,'Method','create','Patch','HTTPMethod','PATCH',true);
   await correct(template,http,'URLTemplate','copy','EmptyRoute','Template','',false);
+  await seed('URLTemplate','DefaultRoute',http.node.id.objectId,{}, {Template:'/*'});
   await correct(template,http,'URLTemplate','create','OtherRoute','Template','/another',false);
-  const blank=harness(root,{operation:'create',tree,entry:template,locale,retry:true,inputs:['HandleDelete','Delete'],
-    pick(items){return items.find(item=>item.option?.value==='Method' || item.object===null || item.value==='DELETE')??items[0];}});
+  const blank=harness(root,{operation:'create',tree,entry:template,locale,retry:true,inputs:['Delete','HandleDelete'],
+    pick(items){return items.find(item=>item.metadata?.value==='Method' || item.object===null || item.value==='DELETE')??items[0];}});
   deferCleanup(t,()=>blank.ui.dispose());assert.ok(await blank.run(),JSON.stringify(blank.messages));
   assert.deepEqual(blank.requests.map(request=>request.name),['Delete','Delete']);
   assert.deepEqual(blank.requests[1].propertyValues,{Handler:'HandleDelete',HTTPMethod:'DELETE'});
@@ -405,4 +406,38 @@ for(const locale of ['ru-RU','en-US'])test(`real object wizard fills required ch
   await create(journal,'Column','Amount','References',['Document.Posted.Attribute.Amount']);
   const xml=await readFile(join(source.source,'DocumentJournals','Journal.xml'),'utf8');
   assert.ok(xml.includes('Document.Posted.Attribute.Amount'));
+});
+
+for(const locale of ['ru-RU','en-US'])test(`collection Add fixes the kind and owner, and module roles are exhausted: ${locale}`,{skip:!executable},async t=>{
+  const root=await fixture(t),source=await createTreeProject(root);
+  await mkdir(join(source.source,'Ext'),{recursive:true});await writeFile(join(source.source,'Ext','ParentConfigurations.bin'),'{6,0,0,0,0,0}');
+  const connection=new Connection('test',()=>{},()=>{});deferCleanup(t,()=>connection.dispose());await connection.connect({executable,path:root,locale,name:'context-creation'});
+  const state=connection.state;assert.equal(state.kind,'ready');
+  const tree=new MetadataTree(connection,state.session,()=>{},()=>{});deferCleanup(t,()=>tree.dispose());const project=tree.projects[0];
+  async function collection(owner,kind){return (await tree.children(owner)).find(entry=>entry.node.id.kind==='collection'&&entry.node.id.collection.metadataKind===kind);}
+  async function add(entry,name,expectedKind,expectedParent){
+    assert.ok(entry);
+    const value=harness(root,{operation:'create',tree,entry,locale,inputs:[name],pick(){throw Error('selected collection must not ask for kind or template');}});
+    deferCleanup(t,()=>value.ui.dispose());const node=await value.run();assert.ok(node,JSON.stringify(value.messages));
+    assert.equal(value.requests[0].kind,expectedKind);assert.equal(value.requests[0].parent,expectedParent);assert.equal(value.requests[0].template,null);
+    assert.equal(value.reviews.length,0);assert.equal(value.inputDefaults.length,1);assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,1);
+    return revealHit(tree,project,{objectId:node.objectId,node});
+  }
+  const catalog=await add(await collection(await tree.root(project),'catalog'),'ContextCatalog','Catalog',null);
+  const owner=catalog.node.id.objectId;
+  await add(await collection(catalog,'attribute'),'Value','Attribute',owner);
+  const table=await add(await collection(catalog,'tabular-section'),'Lines','TabularSection',owner);
+  await add(table,'Item','Attribute',table.node.id.objectId);
+  await add(await collection(catalog,'form'),'Card','Form',owner);
+  for(const role of ['object','manager']){
+    const value=harness(root,{operation:'create',tree,entry:catalog,locale,pick(items){return items.find(item=>item.role===role);}});
+    deferCleanup(t,()=>value.ui.dispose());const node=await value.run();assert.deepEqual(node,{kind:'module',owner,role},JSON.stringify(value.messages));
+    assert.equal(value.inputDefaults.length,0);assert.deepEqual(value.requests,[{operation:'create-module',owner,role}]);
+    const module=await revealNode(tree,project,node);assert.equal(module.node.id.role,role);
+  }
+  const group=(await tree.children(catalog)).find(entry=>entry.node.id.kind==='collection'&&entry.node.id.collection.kind==='modules');
+  assert.ok(group);
+  const exhausted=harness(root,{operation:'create',tree,entry:group,locale});deferCleanup(t,()=>exhausted.ui.dispose());
+  assert.equal(await exhausted.run(),undefined);assert.equal(exhausted.requests.length,0);assert.equal(exhausted.inputDefaults.length,0);
+  assert.equal((await tree.children(group)).length,2);
 });

@@ -2,7 +2,7 @@ import { MetadataObjects } from "./metadata-objects.js";
 import type { ObjectOperation } from "./metadata-object-protocol.js";
 import { MetadataCreation } from "./metadata-creation.js";
 import { configuredReadOnly, configuredReadOnlyResource } from "./editor-policy.js";
-import { revealHit } from "./search.js";
+import { revealHit, revealNode } from "./search.js";
 import { FormPreviewService } from "./form-preview/service.js";
 import { FormattingService } from "./formatting/service.js";
 import { QueryDesigner } from "./query/designer.js";
@@ -44,6 +44,8 @@ import { ProjectSettings } from "./project-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
+
+const collectionContexts = { metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
 type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
@@ -548,7 +550,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       ? supportsRootFilter(entry.project)
         ? this.hideEmptyGroups(entry.project) ? "eskaRootFiltered" : "eskaRootUnfiltered"
         : "eskaRoot"
-      : node.id.kind === "collection" ? "eskaMetadataGroup"
+      : node.id.kind === "collection" ? collectionContexts[node.id.collection.kind]
         : commonModule ? "eskaCommonModule" : directModuleRole(entry) ? "eskaModuleObject" : isForm(entry) ? "eskaForm" : "eskaMetadata";
     if (!node.parent && this.sorting.order(entry.project) === "alphabetical") item.contextValue += "Sorted";
     if (node.creationKinds?.length && this.connection.state.kind === "ready" && this.connection.state.metadataCreation) item.contextValue += "Creatable";
@@ -1007,15 +1009,19 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       entry = await tree.root(project);
     }
     if (!("node" in entry) || entry.node.id.kind === "module" || !tree.projects.includes(entry.project)) return;
-    const objectId = await this.metadataObjects.run(tree, entry, operation, () => this.tree, this.treeLanguage,
-      (owner, kind) => this.metadataCreation.run(tree, owner, () => this.tree, this.treeLanguage, kind));
-    if (!objectId || this.tree !== tree || this.disposed) return;
+    const node = await this.metadataObjects.run(tree, entry, operation, () => this.tree, this.treeLanguage);
+    if (!node || this.tree !== tree || this.disposed) return;
     try {
-      const created = await revealHit(tree, entry.project, { objectId, node: { kind: "object", objectId } });
+      const created = await revealNode(tree, entry.project, node);
+      const owner = node.kind === "module" ? entry.project.nodes.get(nodeKey({ kind: "object", objectId: node.owner })) : undefined;
+      const target: TreeEntry | FormSource = owner && isForm(owner) ? { owner, target: "form-module" }
+        : owner && directModuleRole(owner) ? owner : created;
       if (this.tree !== tree || this.disposed) return;
       await this.expandRootForReveal(tree, entry.project);
-      await this.revealInView(tree, created, { select: true, focus: true });
-      if (isForm(created)) await this.openForm(created); else await this.showProperties(created);
+      await this.revealInView(tree, target, { select: true, focus: true });
+      if ("owner" in target) await this.open(target.owner, target.target);
+      else if (node.kind === "module") await this.open(target);
+      else if (isForm(created)) await this.openForm(created); else await this.showProperties(created);
     } catch (error) {
       this.output.warn(JSON.stringify({ event: "object_reveal_failed", code: error instanceof ExplorerError ? error.code : "requestFailed" }));
     }

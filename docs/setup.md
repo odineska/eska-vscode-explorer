@@ -184,14 +184,15 @@ no automatic undo yet. Editing form elements is outside this feature.
 
 ## Creating objects and forms
 
-Metadata API 1.49 adds **Create metadata object…**, **Copy metadata object…** and
-**Delete metadata object…** to the tree and command palette. Select a root,
-collection or owner, then choose an allowed kind and an existing template or
-an empty object. Whole-form creation and copying include the descriptor and
-payload. Managed-form structure can be edited through CLI `metadata form-edit`;
-a graphical element designer is not implemented yet.
+Choose **Add…** in a collection's context menu. The collection determines the
+kind and owner; enter a name and any required properties. The object opens in
+its property panel, or in the viewer for a form. Use **Copy metadata object…**
+to create from an existing object. Copy and delete operations show affected
+files and references for confirmation. These operations require Metadata API 1.49.
 
-Review affected files, UUID allocations and detected references before writing.
-Copying keeps the same owner and generates new owned UUIDs while preserving
-modules and resources. Cancelling and unsaved source buffers prevent publication.
-The infobase is not updated automatically. [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).
+Metadata API 1.50 adds missing modules for their owner. A document can have one
+object module and one manager module. Roles determine paths and filenames;
+existing BSL or binary modules cannot be replaced. A new module opens in the editor.
+Managed forms can be edited through CLI `metadata form-edit`; the graphical
+element designer is not implemented yet. The infobase is not updated automatically.
+[Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).

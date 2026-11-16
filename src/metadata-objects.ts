@@ -3,16 +3,13 @@ import { isDeepStrictEqual } from "node:util";
 import { ApplyReview } from "./apply-review.js";
 import { ExplorerError, isRecord } from "./protocol.js";
 import { message, type MessageKey } from "./messages.js";
-import { revealHit } from "./search.js";
-import type { MetadataTree, TreeEntry } from "./tree.js";
-import type { CreationKind } from "./metadata-creation-protocol.js";
+import type { MetadataTree, TreeEntry, NodeId } from "./tree.js";
 import { objectPlan, objectSchema, type ObjectOperation, type ObjectPlan, type ObjectRequest, type ObjectSchema, type InitialField } from "./metadata-object-protocol.js";
 import { objectReview, verifyObjectSources } from "./metadata-object-review.js";
 
 type Language = "ru-RU" | "en-US";
 type Prompt = { language: Language; token: vscode.CancellationToken; check(): void };
-type Creation = (entry: TreeEntry, kind: CreationKind) => Promise<string | undefined>;
-type ObjectValues = Exclude<ObjectRequest, { operation: "delete" }>;
+type ObjectValues = Extract<ObjectRequest, { operation: "create" | "copy" }>;
 
 /** Native selection and review reuse Rust schemas; no metadata writer or object registry lives here. */
 export class MetadataObjects implements vscode.Disposable {
@@ -28,7 +25,7 @@ export class MetadataObjects implements vscode.Disposable {
   dispose(): void { this.disposed = true; this.stale(); }
 
   async run(tree: MetadataTree, entry: TreeEntry, operation: ObjectOperation, current: () => MetadataTree | undefined,
-    language: Language, creation: Creation): Promise<string | undefined> {
+    language: Language): Promise<NodeId | undefined> {
     if (this.active) { void this.api.window.showInformationMessage(message(language, "creationBusy")); return; }
     if (!this.api.workspace.isTrusted || entry.node.id.kind === "module") return;
     const scope = new this.api.CancellationTokenSource(); this.active = scope;
@@ -38,11 +35,11 @@ export class MetadataObjects implements vscode.Disposable {
     } };
     let committing = false;
     try {
-      const selected = operation === "create" ? await this.createRequest(tree, entry, prompt, creation)
+      const selected = operation === "create" ? await this.createRequest(tree, entry, prompt)
         : this.existingRequest(entry, operation, language);
-      if (typeof selected === "string" || selected === undefined) return selected;
+      if (selected === undefined) return;
       let request = selected;
-      if (request.operation !== "delete") request.name = await this.name(request.name, prompt);
+      if (request.operation === "copy") request.name = await this.name(request.name, prompt);
       let plan: ObjectPlan;
       while (true) {
         try {
@@ -56,7 +53,7 @@ export class MetadataObjects implements vscode.Disposable {
           break;
         } catch (error) {
           prompt.check();
-          if (request.operation === "delete" || !(error instanceof ExplorerError)
+          if (request.operation === "delete" || request.operation === "create-module" || !(error instanceof ExplorerError)
             || !["creation_collision", "creation_invalid_name", "object_invalid", "object_property_conflict"].includes(error.domain ?? "")) throw error;
           const conflict = error.domain === "object_property_conflict" && typeof error.details?.property === "string"
             && typeof error.details.value === "string" ? { property: error.details.property, value: error.details.value } : undefined;
@@ -85,7 +82,7 @@ export class MetadataObjects implements vscode.Disposable {
       await verifyObjectSources(this.api, entry.project.info.sourcePath, plan, this.readOnly, prompt.check); prompt.check();
       const title = message(language, operation === "create" ? "objectCreate" : operation === "copy" ? "objectCopy" : "objectDelete");
       const accept = message(language, operation === "delete" ? plan.references.length ? "objectDeleteWithReferences" : "objectDeleteApply" : "creationApply");
-      if (!await this.review.show(title, objectReview(plan, language), accept, message(language, "propertyCancel"))) return;
+      if (operation !== "create" && !await this.review.show(title, objectReview(plan, language), accept, message(language, "propertyCancel"))) return;
       prompt.check();
       if (request.operation === "delete" && plan.references.length) {
         request = { ...request, force: true };
@@ -109,9 +106,12 @@ export class MetadataObjects implements vscode.Disposable {
       });
       if (!isRecord(result) || result.schemaVersion !== 1 || result.changed !== true || result.objectId !== plan.objectId
         || result.snapshot !== plan.prepared.expectedOutputSnapshot) throw new ExplorerError("protocolInvalid");
-      if (current() === tree && !this.disposed) void this.api.window.showInformationMessage(message(language,
-        operation === "delete" ? "objectDeleted" : "creationCreated", request.operation === "delete" ? this.label(entry, language) : request.name));
-      return operation === "delete" ? undefined : plan.objectId ?? undefined;
+      if (current() === tree && !this.disposed) void this.api.window.showInformationMessage(request.operation === "create-module"
+        ? message(language, "objectModuleCreated") : message(language, operation === "delete" ? "objectDeleted" : "creationCreated",
+          request.operation === "delete" ? this.label(entry, language) : request.name));
+      if (operation === "delete" || !plan.objectId) return;
+      return request.operation === "create-module" ? { kind: "module", owner: plan.objectId, role: request.role }
+        : { kind: "object", objectId: plan.objectId };
     } catch (error) {
       if (error instanceof ExplorerError && ["cancelled", "obsolete"].includes(error.code)) return;
       if (!this.disposed) void this.api.window.showErrorMessage(message(language, this.failure(error, committing)));
@@ -128,34 +128,32 @@ export class MetadataObjects implements vscode.Disposable {
       : { operation, source: entry.node.id.objectId, name: `${this.label(entry, language)}${message(language, "objectCopySuffix")}`, parent: null, propertyValues: {}, propertyReferences: {}, propertyTypes: {} };
   }
 
-  private async createRequest(tree: MetadataTree, entry: TreeEntry, prompt: Prompt, creation: Creation): Promise<ObjectRequest | string | undefined> {
+  private async createRequest(tree: MetadataTree, entry: TreeEntry, prompt: Prompt): Promise<ObjectRequest | undefined> {
     const id = entry.node.id;
-    if (id.kind === "module") return;
+    if (id.kind === "module" || id.kind === "collection" && !["metadata", "modules"].includes(id.collection.kind)) return;
     const owner = id.kind === "object" ? id.objectId : id.owner;
     const parent = this.metadataParent(entry, owner);
     const schema = await this.schema(tree, entry, parent, prompt);
-    const indicated = id.kind === "collection" && id.collection.kind === "metadata" ? id.collection.metadataKind : undefined;
-    const options = indicated ? schema.kindOptions.filter(option => option.key === indicated) : schema.kindOptions;
     if (!schema.operations.includes("create")) throw new ExplorerError("requestFailed", "property_read_only");
-    if (!options.length) throw new ExplorerError("requestFailed", "object_unsupported");
-    const picked = options.length === 1 ? options[0]! : await this.api.window.showQuickPick(options.map(option => ({
-      label: option.caption[prompt.language], description: option.key, option,
-    })), { title: message(prompt.language, "objectKind"), matchOnDescription: true, ignoreFocusOut: true }, prompt.token).then(value => value?.option);
+    const indicated = id.kind === "collection" && id.collection.kind === "metadata" ? id.collection.metadataKind : undefined;
+    const kinds = id.kind === "collection" && id.collection.kind === "modules" ? []
+      : indicated ? schema.kindOptions.filter(option => option.key === indicated) : schema.kindOptions;
+    const modules = indicated ? [] : schema.moduleOptions ?? [];
+    const options = [
+      ...kinds.map(kind => ({ label: kind.caption[prompt.language], description: kind.key, metadata: kind, role: undefined })),
+      ...modules.map(module => ({ label: module.caption[prompt.language], description: module.role, metadata: undefined, role: module.role })),
+    ];
+    if (!options.length) { void this.api.window.showInformationMessage(message(prompt.language, "objectNothingToAdd")); return; }
+    const picked = options.length === 1 ? options[0] : await this.api.window.showQuickPick(options,
+      { title: message(prompt.language, "objectKind"), matchOnDescription: true, ignoreFocusOut: true }, prompt.token);
     prompt.check();
     if (!picked) return;
-    const ownerEntry = id.kind === "object" ? entry : await revealHit(tree, entry.project, { objectId: owner, node: { kind: "object", objectId: owner } });
-    const legacy = picked.key === "attribute" ? "attribute" : picked.key === "tabular-section" ? "table-part" : undefined;
-    if (legacy && ownerEntry.node.creationKinds?.includes(legacy)) return creation(ownerEntry, legacy);
-    const templates = await this.templates(tree, ownerEntry, picked, prompt);
-    const selected = !templates.length ? undefined : await this.api.window.showQuickPick([
-      { label: message(prompt.language, "objectBlank"), object: null as string | null },
-      ...templates.map(entry => ({ label: this.label(entry, prompt.language), object: entry.node.id.kind === "object" ? entry.node.id.objectId : null })),
-    ], { title: message(prompt.language, "objectTemplate"), ignoreFocusOut: true }, prompt.token);
-    prompt.check();
-    if (templates.length && !selected) return;
-    const request: Extract<ObjectRequest, { operation: "create" }> = { operation: "create", kind: picked.value, name: "", parent, template: selected?.object ?? null, propertyValues: {}, propertyReferences: {}, propertyTypes: {} };
-    if (!request.template && (schema.requiredProperties[picked.key]?.length ?? 0) > 0) {
-      const selectedSchema = await this.schema(tree, entry, parent, prompt, picked.value);
+    if (picked.role) return { operation: "create-module", owner, role: picked.role };
+    if (!picked.metadata) throw new ExplorerError("protocolInvalid");
+    const request: Extract<ObjectRequest, { operation: "create" }> = { operation: "create", kind: picked.metadata.value,
+      name: await this.name("", prompt), parent, template: null, propertyValues: {}, propertyReferences: {}, propertyTypes: {} };
+    if ((schema.requiredProperties[picked.metadata.key]?.length ?? 0) > 0) {
+      const selectedSchema = await this.schema(tree, entry, parent, prompt, picked.metadata.value);
       if (!await this.requiredProperties(request, selectedSchema, prompt)) return;
     }
     return request;
@@ -243,19 +241,6 @@ export class MetadataObjects implements vscode.Disposable {
     return true;
   }
 
-  /** Resolve only the selected owner's collection; do not build a whole-configuration search index. */
-  private async templates(tree: MetadataTree, owner: TreeEntry, kind: ObjectSchema["kindOptions"][number], prompt: Prompt): Promise<TreeEntry[]> {
-    const pending = [owner], result: TreeEntry[] = [];
-    while (pending.length) {
-      for (const child of await tree.children(pending.pop()!)) {
-        prompt.check(); const id = child.node.id;
-        if (id.kind === "collection" && (id.collection.kind === "common" || id.collection.kind === "metadata" && id.collection.metadataKind === kind.key)) pending.push(child);
-        else if (id.kind === "object" && child.node.metadataKind === kind.key) result.push(child);
-      }
-    }
-    return result;
-  }
-
   private async name(value: string, prompt: Prompt): Promise<string> {
     const result = await this.api.window.showInputBox({ title: message(prompt.language, "objectName"), value, ignoreFocusOut: true,
       validateInput: text => text.trim() ? undefined : message(prompt.language, "creationInvalidName") }, prompt.token);
@@ -275,7 +260,8 @@ export class MetadataObjects implements vscode.Disposable {
       case "creation_collision": return "creationCollision";
       case "creation_invalid_name": return "creationInvalidName";
       case "object_unsupported": return "objectUnsupported";
-      case "object_invalid": case "object_property_conflict": return "propertyInvalid";
+      case "object_invalid": return error.details?.field === "role" ? "objectModuleUnavailable" : "propertyInvalid";
+      case "object_property_conflict": return "propertyInvalid";
       case "object_references": return "objectReferencesNotice";
       case "object_committed_refresh_required": return "creationCommitted";
       case "property_conflict": case "stale_generation": return "propertyConflict";

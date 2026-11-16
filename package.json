@@ -528,17 +528,17 @@
         },
         {
           "command": "eska.explorer.properties",
-          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem == eskaForm || viewItem =~ /^eskaRoot(Filtered|Unfiltered)?(Sorted)?(Creatable|Parent)?$/)",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem =~ /^eskaForm(Parent)?$/ || viewItem =~ /^eskaRoot(Filtered|Unfiltered)?(Sorted)?(Creatable|Parent)?$/)",
           "group": "navigation@1"
         },
         {
           "command": "eska.explorer.openXml",
-          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem == eskaForm || viewItem =~ /^eskaRoot(Filtered|Unfiltered)?(Sorted)?(Creatable|Parent)?$/)",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem =~ /^eskaForm(Parent)?$/ || viewItem =~ /^eskaRoot(Filtered|Unfiltered)?(Sorted)?(Creatable|Parent)?$/)",
           "group": "navigation@2"
         },
         {
           "command": "eska.explorer.refreshNode",
-          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaMetadataGroup || viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem == eskaForm || viewItem =~ /^eskaRoot(Sorted)?(Creatable|Parent)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?(Creatable|Parent)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?(Creatable|Parent)?$/)",
+          "when": "view == eska.explorer.projects && (viewItem == eskaFiles || viewItem == eskaMetadataGroup || viewItem == eskaModulesGroup || viewItem == eskaGroup || viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem =~ /^eskaForm(Parent)?$/ || viewItem =~ /^eskaRoot(Sorted)?(Creatable|Parent)?$/ || viewItem =~ /^eskaRootFiltered(Sorted)?(Creatable|Parent)?$/ || viewItem =~ /^eskaRootUnfiltered(Sorted)?(Creatable|Parent)?$/)",
           "group": "inline@3"
         },
         {
@@ -578,33 +578,33 @@
         },
         {
           "command": "eska.explorer.previewForm",
-          "when": "view == eska.explorer.projects && (viewItem == eskaForm || viewItem == eskaFormSource)",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaForm(Parent)?$/ || viewItem == eskaFormSource)",
           "group": "navigation@0"
         },
         {
           "command": "eska.explorer.openFormXml",
-          "when": "view == eska.explorer.projects && (viewItem == eskaForm || viewItem == eskaFormSource)",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaForm(Parent)?$/ || viewItem == eskaFormSource)",
           "group": "navigation@3"
         },
         {
-          "command": "eska.explorer.createMetadata",
-          "when": "view == eska.explorer.projects && viewItem =~ /Creatable$/ && isWorkspaceTrusted && eska.explorer.metadataCreation",
+          "command": "eska.explorer.createObject",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaRoot/ || viewItem == eskaMetadataGroup || viewItem == eskaModulesGroup || viewItem =~ /(Creatable|Parent)$/) && isWorkspaceTrusted && eska.explorer.metadataObjects",
           "group": "navigation@4"
         },
         {
-          "command": "eska.explorer.createObject",
-          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaRoot/ || viewItem == eskaMetadataGroup || viewItem =~ /(Creatable|Parent)$/) && isWorkspaceTrusted && eska.explorer.metadataObjects",
-          "group": "authoring@1"
-        },
-        {
           "command": "eska.explorer.copyObject",
-          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem == eskaForm) && isWorkspaceTrusted && eska.explorer.metadataObjects",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem =~ /^eskaForm(Parent)?$/) && isWorkspaceTrusted && eska.explorer.metadataObjects",
           "group": "authoring@2"
         },
         {
           "command": "eska.explorer.deleteObject",
-          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem == eskaForm) && isWorkspaceTrusted && eska.explorer.metadataObjects",
+          "when": "view == eska.explorer.projects && (viewItem =~ /^eskaMetadata(Creatable|Parent)?$/ || viewItem =~ /^eskaCommonModule(Creatable|Parent)?$/ || viewItem =~ /^eskaModuleObject(Creatable|Parent)?$/ || viewItem =~ /^eskaForm(Parent)?$/) && isWorkspaceTrusted && eska.explorer.metadataObjects",
           "group": "authoring@3"
+        },
+        {
+          "command": "eska.explorer.createMetadata",
+          "when": "view == eska.explorer.projects && viewItem =~ /Creatable$/ && isWorkspaceTrusted && eska.explorer.metadataCreation && !eska.explorer.metadataObjects",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
@@ -678,7 +678,7 @@
         },
         {
           "command": "eska.explorer.createMetadata",
-          "when": "eska.explorer.metadataCreation"
+          "when": "eska.explorer.metadataCreation && !eska.explorer.metadataObjects"
         },
         {
           "command": "eska.explorer.createObject",

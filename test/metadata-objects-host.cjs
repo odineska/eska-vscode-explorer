@@ -16,13 +16,22 @@ exports.run = async function () {
   await vscode.commands.executeCommand('eska.explorer.connect');
   await until(() => explorer.connection.state.kind === 'ready' && !explorer.support.loading, 'ready metadata tree');
   assert.equal(explorer.connection.state.metadataObjects, true);
-  const root = (await explorer.getChildren()).find(value => value.node);
+  const roots = await explorer.getChildren();
+  assert.ok(roots.every(value => !("runtimeKind" in value)));
+  assert.equal((await explorer.runDebug.getChildren()).length, 6);
+  const root = roots.find(value => value.node);
+  await vscode.commands.executeCommand("eska.explorer.showEmptyGroups", root);
+  const rootChildren = await explorer.getChildren(root);
+  const common = rootChildren.find(value => value.node?.id.collection?.kind === 'common');
+  const forms = (await explorer.getChildren(common)).find(value => value.node?.id.collection?.metadataKind === 'common-form');
+  assert.ok(forms);
+  assert.equal(explorer.getTreeItem(forms).contextValue, 'eskaMetadataGroup');
   const service = explorer.metadataObjects, originalApi = service.api, originalReview = service.review.show.bind(service.review);
   const inputs = [], errors = [], reviews = [];
   let kind = 'CommonForm', cancel = false, duringReview;
   service.api = { Uri: vscode.Uri, ProgressLocation: vscode.ProgressLocation, CancellationTokenSource: vscode.CancellationTokenSource, workspace: vscode.workspace, window: {
     withProgress(options,task) { return vscode.window.withProgress(options,task); },
-    async showQuickPick(items) { return items.find(item => item.option?.value === kind) ?? items[0]; },
+    async showQuickPick(items) { return items.find(item => item.metadata?.value === kind) ?? items[0]; },
     async showInputBox(options) {
       const value = inputs.shift(); assert.notEqual(value, undefined, options.title);
       assert.equal(options.validateInput?.(value), undefined); return value;
@@ -48,7 +57,7 @@ exports.run = async function () {
       await vscode.workspace.getConfiguration('eska.explorer').update('treeLanguage', locale, vscode.ConfigurationTarget.Workspace);
       await until(() => explorer.treeLanguage === locale, 'tree locale changed');
       inputs.push(locale === 'en-US' ? 'NativeForm' : 'РусскаяФорма');
-      await vscode.commands.executeCommand('eska.explorer.createObject', root);
+      await vscode.commands.executeCommand('eska.explorer.createObject', forms);
       assert.deepEqual(errors, []);
       const name = locale === 'en-US' ? 'NativeForm' : 'РусскаяФорма';
       await until(() => explorer.view.selection[0]?.node?.label?.text === name, 'created form selected');
@@ -56,7 +65,7 @@ exports.run = async function () {
     }
     const original = explorer.view.selection[0];
     assert.equal(original.node.label.text, 'РусскаяФорма');
-    assert.equal(explorer.getTreeItem(original).contextValue, 'eskaForm');
+    assert.equal(explorer.getTreeItem(original).contextValue, 'eskaFormParent');
     const originalXml = await fs.readFile(descriptor('РусскаяФорма'), 'utf8');
     inputs.push('ФормаДвойник');
     await vscode.commands.executeCommand('eska.explorer.copyObject', original);
@@ -92,8 +101,17 @@ exports.run = async function () {
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('workbench.action.files.revert');
     assert.equal(document.isDirty, false);
+
+    await vscode.commands.executeCommand('eska.explorer.createObject', original);
+    const modulePath = path.join(fixture.source, 'CommonForms', 'РусскаяФорма', 'Ext', 'Form', 'Module.bsl');
+    assert.equal((await fs.readFile(modulePath)).length, 0);
+    await until(() => vscode.window.activeTextEditor?.document.uri.fsPath === modulePath, 'created form module opens in editor');
+    const formBefore = await fs.readFile(descriptor('РусскаяФорма'));
+    await vscode.commands.executeCommand('eska.explorer.createObject', original);
+    assert.deepEqual(await fs.readFile(descriptor('РусскаяФорма')), formBefore);
+    assert.equal(inputs.length, 0, 'module creation never asks for an arbitrary name');
   } finally { service.api = originalApi; service.review.show = originalReview; }
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'metadata-objects',
     treeLanguages: ['en-US', 'ru-RU'], nativeReviews: reviews.length,
-    checked: ['public create/copy/delete commands', 'real review DOM', 'form reveal', 'fresh UUID', 'payload bytes', 'cancel delete', 'dirty copy source'] }));
+    checked: ['no runtime branch in Explorer', 'six actions in Run and Debug', 'collection-scoped Add', 'public create/copy/delete commands', 'real review DOM', 'form reveal', 'fresh UUID', 'payload bytes', 'cancel delete', 'dirty copy source', 'form module opens in editor', 'duplicate module cannot be created'] }));
 };
