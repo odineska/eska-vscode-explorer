@@ -80,5 +80,8 @@
   "selectAutoAttachTypes": "Выбрать типы автоподключения 1С",
   "checkDebuggerUpdates": "Проверить обновления отладчика",
   "recoverDebuggerInstallation": "Восстановить установку отладчика",
-  "createMetadata": "Добавить реквизит или табличную часть…"
+  "createMetadata": "Добавить реквизит или табличную часть…",
+  "createObject": "Создать объект метаданных…",
+  "copyObject": "Копировать объект метаданных…",
+  "deleteObject": "Удалить объект метаданных…"
 }

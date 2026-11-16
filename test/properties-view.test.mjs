@@ -539,3 +539,25 @@ test("linked dependency errors show the blocking document without losing the dra
   assert.equal(Object.values(tab.state.editing.drafts)[0].value, "mine");
   assert.equal(f.requests.length, 3);
 });
+
+for (const kind of ['types', 'references']) test(`${kind} collection uses checked native multi-select and preserves selections`, async t => {
+  const f = fixture(t), schema = editable('');
+  const first = {namespace:'http://www.w3.org/2001/XMLSchema',name:'string'};
+  const second = {namespace:'http://www.w3.org/2001/XMLSchema',name:'boolean'};
+  schema.fields[0].schema = kind === 'types' ? {kind,domain:'value',keys:[first]}
+    : {kind,domain:'CatalogOwners',values:['Catalog.Customer']};
+  const tab = await openEditable(f,schema);
+  f.vscode.window.showQuickPick = async (items,options) => {
+    assert.equal(options.canPickMany,true); assert.equal(items[0].picked,true); assert.equal(items[1].picked,false);
+    return items;
+  };
+  const picking = tab.receive({type:kind==='types'?'pickType':'pickReference',revision:tab.state.revision,field:0});
+  f.requests[2].resolve({choices:kind==='types' ? [{key:first,caption:{'ru-RU':'Строка'}},{key:second,caption:{'ru-RU':'Булево'}}]
+    : [{value:'Catalog.Customer',caption:{'ru-RU':'Клиент'}},{value:'Catalog.Contract',caption:{'ru-RU':'Договор'}}]});
+  await settle();
+  assert.equal(f.requests[3].method,'metadata/updateProperty');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.requests[3].params.change)), kind==='types' ? {kind,keys:[first,second]}
+    : {kind,values:['Catalog.Customer','Catalog.Contract']});
+  f.requests[3].resolve({...response(),editing:{...schema,snapshot:'b'.repeat(64)}}); await picking;
+  assert.equal(Object.keys(tab.state.editing.drafts).length,0);
+});

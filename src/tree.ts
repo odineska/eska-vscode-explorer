@@ -11,6 +11,7 @@ export interface MetadataNode {
   id: NodeId;
   metadataKind?: string | null;
   creationKinds?: CreationKind[];
+  objectCreation?: boolean;
   parent: NodeId | null;
   label: { kind: "name"; text: string } | { kind: "key"; key: string; translations: Record<"ru-RU" | "en-US", string> };
   state: "empty" | "non_empty" | "unloaded" | "error";
@@ -65,6 +66,7 @@ export function parseNode(value: unknown): MetadataNode {
   }
   if (value.creationKinds !== undefined && (!Array.isArray(value.creationKinds) || value.id.kind !== "object"
     || !value.creationKinds.every(kind => kind === "attribute" || kind === "table-part"))) throw new ExplorerError("protocolInvalid");
+  if (value.objectCreation !== undefined && typeof value.objectCreation !== "boolean") throw new ExplorerError("protocolInvalid");
   const label = value.label;
   if (!(label.kind === "name" && typeof label.text === "string")
     && !(label.kind === "key" && typeof label.key === "string" && isRecord(label.translations)
@@ -226,7 +228,7 @@ export class MetadataTree {
     signal = signal ? AbortSignal.any([signal, scope.signal]) : scope.signal;
     // Watcher overflow itself performs refresh; synchronizing it again would await its own delivery.
     if (method !== "metadata/refresh") await this.synchronizeInputs();
-    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply" || method === "metadata/create";
+    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply" || method === "metadata/create" || method === "metadata/applyObject" || method === "metadata/applyFormEdit";
     for (let attempt = 0; attempt < (mutation ? 1 : 3); attempt++) {
       if (signal?.aborted) throw new ExplorerError("cancelled");
       if (this.disposed) throw new ExplorerError("obsolete");

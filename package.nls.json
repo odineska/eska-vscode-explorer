@@ -80,5 +80,8 @@
   "selectAutoAttachTypes": "Select 1C Auto-Attach Types",
   "checkDebuggerUpdates": "Check debugger updates",
   "recoverDebuggerInstallation": "Recover debugger installation",
-  "createMetadata": "Add Attribute or Tabular Section…"
+  "createMetadata": "Add Attribute or Tabular Section…",
+  "createObject": "Create metadata object…",
+  "copyObject": "Copy metadata object…",
+  "deleteObject": "Delete metadata object…"
 }

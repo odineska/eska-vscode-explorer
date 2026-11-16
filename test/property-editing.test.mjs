@@ -33,3 +33,17 @@ test('integer schema rejects rounded, malformed and reversed bounds before showi
   ]) assert.throws(() => editingSchema(envelope(schema)), { code: 'protocolInvalid' });
   assert.doesNotThrow(() => editingSchema(envelope({ kind: 'integer', min: 0, max: 628 })));
 });
+
+test('type/reference collections are validated and cannot accept injected scalar or webview values', () => {
+  for (const schema of [
+    {kind:'types',domain:'eventSource',keys:[{namespace:'http://v8.1c.ru/8.1/data/enterprise/current-config',name:'DocumentObject.Loan'}]},
+    {kind:'references',domain:'CatalogOwners',values:['Catalog.Customer']},
+  ]) {
+    const field = editingSchema(envelope(schema)).fields[0];
+    assert.equal(propertyChange({kind:'text',value:'injected'},field),undefined);
+    assert.equal(propertyChange({kind:'types',keys:[]},field),undefined);
+    assert.equal(propertyChange({kind:'references',values:[]},field),undefined);
+  }
+  for (const schema of [{kind:'types',domain:'unknown',keys:[]},{kind:'types',domain:'value',keys:[{name:'bad'}]},
+    {kind:'references',domain:'CatalogOwners',values:[1]}]) assert.throws(()=>editingSchema(envelope(schema)),{code:'protocolInvalid'});
+});

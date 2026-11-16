@@ -6,7 +6,7 @@ import { existingSource } from "./source.js";
 import { message, type MessageKey } from "./messages.js";
 import type { MetadataTree, TreeEntry } from "./tree.js";
 import { creationSchema, creationPlan, creationPreview, type Caption, type CreateRequest, type CreateType,
-  type CreationSchema, type CreationPlan, type CreationOption } from "./metadata-creation-protocol.js";
+  type CreationSchema, type CreationPlan, type CreationOption, type CreationKind } from "./metadata-creation-protocol.js";
 
 const SCHEME = "eska-metadata-creation";
 type Language = "ru-RU" | "en-US";
@@ -34,7 +34,7 @@ export class MetadataCreation implements vscode.Disposable {
   stale(): void { this.active?.cancel(); this.active = undefined; }
   dispose(): void { this.disposed = true; this.stale(); this.provider.dispose(); this.documents.clear(); }
 
-  async run(tree: MetadataTree, entry: TreeEntry, current: () => MetadataTree | undefined, language: Language): Promise<string | undefined> {
+  async run(tree: MetadataTree, entry: TreeEntry, current: () => MetadataTree | undefined, language: Language, initialKind?: CreationKind): Promise<string | undefined> {
     if (this.active) { void this.api.window.showInformationMessage(message(language, "creationBusy")); return; }
     if (!this.api.workspace.isTrusted || entry.node.id.kind !== "object") return;
     const scope = new this.api.CancellationTokenSource(); this.active = scope;
@@ -47,7 +47,7 @@ export class MetadataCreation implements vscode.Disposable {
       const schema = creationSchema(await tree.request(entry.project, "metadata/creationSchema", { owner: entry.node.id.objectId }), entry.node.id.objectId);
       prompt.check();
       if (!schema.writable) throw new ExplorerError("requestFailed", "property_read_only");
-      const request = await this.gather(schema, prompt);
+      const request = await this.gather(initialKind ? { ...schema, kinds: schema.kinds.filter(kind => kind === initialKind) } : schema, prompt);
       const plan = creationPlan(await tree.request(entry.project, "metadata/previewCreate", { request }));
       prompt.check();
       if (!isDeepStrictEqual(plan.prepared.request, request)) throw new ExplorerError("protocolInvalid");

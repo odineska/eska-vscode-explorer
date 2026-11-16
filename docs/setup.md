@@ -180,3 +180,18 @@ unchanged. The wizard preserves unsaved XML and support restrictions, and does
 not update the infobase. Changed sources require a new preview. If the write
 acknowledgement is lost, inspect the tree and XML before retrying. Creation has
 no automatic undo yet. Editing form elements is outside this feature.
+
+
+## Creating objects and forms
+
+Metadata API 1.49 adds **Create metadata object…**, **Copy metadata object…** and
+**Delete metadata object…** to the tree and command palette. Select a root,
+collection or owner, then choose an allowed kind and an existing template or
+an empty object. Whole-form creation and copying include the descriptor and
+payload. Managed-form structure can be edited through CLI `metadata form-edit`;
+a graphical element designer is not implemented yet.
+
+Review affected files, UUID allocations and detected references before writing.
+Copying keeps the same owner and generates new owned UUIDs while preserving
+modules and resources. Cancelling and unsaved source buffers prevent publication.
+The infobase is not updated automatically. [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).

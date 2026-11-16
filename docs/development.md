@@ -824,3 +824,49 @@ Native suite использует настоящий extension host и backend; 
 строк, отмена и сохранность несохранённого XML во время review. Runner создаёт
 собственные проект и профиль в playground. `VSCODE_EXECUTABLE` при необходимости
 указывает на установленный VS Code/VSCodium.
+
+
+### Целые объекты и формы
+
+`src/metadata-objects.ts` оркестрирует нативные выборы, review и готовый план
+Rust API 1.49; в TypeScript нет генератора Designer XML. Типы операций и проверки
+wire-ответов находятся в `metadata-object-protocol.ts`, containment, потоковая
+проверка snapshots и обзор изменений — в `metadata-object-review.ts`.
+Используются существующие `ApplyReview`, выбор проекта, source protections и
+мастер `MetadataCreation` для реквизитов/табличных частей. Backend schema задаёт
+виды, обязательные свойства и локализованные подписи. После выбора вида запрос
+`metadata/objectSchema` с `kind` возвращает `initialFields`: типы, ссылки и
+стандартные значения для native QuickPick. Выбранные значения сохраняются при
+повторной проверке. Конфликт уникального свойства исправляется по структурированным
+`property`/`value` из backend, без специальных веток для HTTP- или Web-сервисов.
+
+`test/metadata-objects.test.mjs` покрывает согласование capability, ошибки wire,
+containment, dirty-буферы до review и во время асинхронной проверки, read-only,
+отмену, замену соединения, подтверждение удаления со ссылками, сохранение ввода
+и отсутствие повторных мутаций. С реальным backend проверяются create → reveal
+→ form schema → copy → delete, новая идентичность и сохранение payload в RU/EN.
+Отдельно проверяются конфликты `RootURL` и `DescriptorFileName` при копировании
+и создании по образцу, начальные списки выбора и запись составных типов и ссылок:
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node --test test/metadata-objects.test.mjs test/metadata-creation.test.mjs
+
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+ESKA_HOST_DEBUG_PORT=9476 \
+node test/run-host.mjs test/metadata-objects-host.cjs
+```
+
+Native suite использует публичные команды и настоящий review webview: DOM
+подтверждается через штатные кнопки. Ответы мастеру подаются через test facade.
+Проверяются обе локали дерева, reveal формы, новые UUID, побайтовая сохранность
+содержимого, отмена удаления и несохранённая форма при копировании.
+Платформа 1С и информационная база этим UI-тестом не запускаются.
+
+Списки `types` и `references` API 1.49 используют существующую панель свойств и
+нативный множественный выбор. Варианты и текущие значения даёт backend; webview
+не может прислать произвольную структурную запись. Для обязательного типа до
+создания владельца мастер принимает расширенное имя `{URI}Имя` и передаёт
+`propertyTypes`; проверка домена и ссылок остаётся в Rust.
