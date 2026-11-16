@@ -1,4 +1,5 @@
 {
+  "runDebugView": "ESKA: Run 1C",
   "queryOpen": "Open query",
   "queryResume": "Resume query draft",
   "queryCompare": "Compare query owner",
@@ -78,5 +79,9 @@
   "attachDebugTarget": "Select 1C Debug Target",
   "selectAutoAttachTypes": "Select 1C Auto-Attach Types",
   "checkDebuggerUpdates": "Check debugger updates",
-  "recoverDebuggerInstallation": "Recover debugger installation"
+  "recoverDebuggerInstallation": "Recover debugger installation",
+  "createMetadata": "Add Attribute or Tabular Section…",
+  "createObject": "Create metadata object…",
+  "copyObject": "Copy metadata object…",
+  "deleteObject": "Delete metadata object…"
 }

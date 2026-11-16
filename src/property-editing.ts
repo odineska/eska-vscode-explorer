@@ -3,7 +3,8 @@ import type { PropertyKey, PropertyCaption } from "./properties.js";
 
 export interface FieldStep { key: PropertyKey; occurrence: number }
 export type PropertyChange = { kind: "text"; value: string } | { kind: "dataType"; key: PropertyKey }
-  | { kind: "value"; key: PropertyKey | null; value: string };
+  | { kind: "value"; key: PropertyKey | null; value: string }
+  | { kind: "types"; keys: PropertyKey[] } | { kind: "references"; values: string[] };
 export interface ValueType {
   key: PropertyKey;
   caption: PropertyCaption;
@@ -17,8 +18,8 @@ export interface EditingField {
   language: string | null;
   captions: PropertyCaption[];
   caption?: PropertyCaption;
-  options?: { value: string; caption: PropertyCaption }[];
-  schema: { domain?: string; kind: "text" | "boolean" | "integer" | "unsignedInteger" | "decimal" | "enum" | "dataType" | "reference" | "value"; min?: number | string; max?: number | string; key?: PropertyKey | null; nullable?: boolean; types?: ValueType[] };
+  options?: { value?: string; key?: PropertyKey; caption: PropertyCaption }[];
+  schema: { domain?: string; kind: "text" | "boolean" | "integer" | "unsignedInteger" | "decimal" | "enum" | "dataType" | "reference" | "value" | "types" | "references"; keys?: PropertyKey[]; values?: string[]; min?: number | string; max?: number | string; key?: PropertyKey | null; nullable?: boolean; types?: ValueType[] };
 }
 export interface EditingSchema {
   contextSnapshot?: string | null;
@@ -49,16 +50,16 @@ export interface EditingView {
 export function fieldId(path: FieldStep[]): string { return JSON.stringify(path); }
 
 /** Only expanded XML identities are accepted; prefixes and source offsets never address writes. */
-function isKey(value: unknown): value is PropertyKey {
+export function isPropertyKey(value: unknown): value is PropertyKey {
   return isRecord(value) && typeof value.name === "string" && value.name.length > 0
     && (value.namespace === null || typeof value.namespace === "string");
 }
 
 /** Value dialogs require typed choices with both captions; malformed responses never expose controls. */
 function isValueSchema(value: Record<string, unknown>): boolean {
-  if (value.key !== null && !isKey(value.key)) return false;
+  if (value.key !== null && !isPropertyKey(value.key)) return false;
   return Array.isArray(value.types) && value.types.length > 0 && value.types.every(type => isRecord(type)
-    && isKey(type.key) && isRecord(type.caption) && typeof type.caption["ru-RU"] === "string"
+    && isPropertyKey(type.key) && isRecord(type.caption) && typeof type.caption["ru-RU"] === "string"
     && typeof type.caption["en-US"] === "string" && isRecord(type.constraints)
     && ["string", "number", "boolean", "date", "reference"].includes(String(type.constraints.kind))
     && (type.constraints.kind !== "date" || ["DateTime", "Date", "Time"].includes(String(type.constraints.fractions))));
@@ -67,7 +68,7 @@ function isValueSchema(value: Record<string, unknown>): boolean {
 /** Unknown restriction reasons remain readable without becoming writable controls. */
 function isReadOnlyProperties(value: unknown): boolean {
   return value === undefined || (Array.isArray(value)
-    && value.every(item => isRecord(item) && isKey(item.key) && typeof item.reason === "string"));
+    && value.every(item => isRecord(item) && isPropertyKey(item.key) && typeof item.reason === "string"));
 }
 
 /** Validate the backend schema before exposing a write control or storing its file location. */
@@ -80,11 +81,15 @@ export function editingSchema(value: unknown): EditingSchema {
     || (value.linkedObjects !== undefined && (!Number.isSafeInteger(value.linkedObjects) || (value.linkedObjects as number) < 0))
     || typeof value.redo !== "boolean" || ["renameAvailable", "undoRename", "redoRename", "undoLinked", "redoLinked"].some(key => value[key] !== undefined && typeof value[key] !== "boolean") || !Array.isArray(value.fields) || value.fields.some(field => !isRecord(field)
       || !Array.isArray(field.path) || !field.path.length || field.path.length > 64
-      || field.path.some(step => !isRecord(step) || !isKey(step.key) || !Number.isSafeInteger(step.occurrence) || (step.occurrence as number) < 0)
+      || field.path.some(step => !isRecord(step) || !isPropertyKey(step.key) || !Number.isSafeInteger(step.occurrence) || (step.occurrence as number) < 0)
       || (field.linked !== undefined && typeof field.linked !== "boolean")
       || (field.linked === true && typeof value.contextSnapshot !== "string")
       || typeof field.value !== "string" || !Array.isArray(field.captions)
-      || !isRecord(field.schema) || !["text", "boolean", "integer", "unsignedInteger", "decimal", "enum", "dataType", "reference", "value"].includes(String(field.schema.kind))
+      || !isRecord(field.schema) || !["text", "boolean", "integer", "unsignedInteger", "decimal", "enum", "dataType", "reference", "value", "types", "references"].includes(String(field.schema.kind))
+      || (field.schema.kind === "types" && (!["value", "reference", "eventSource"].includes(String(field.schema.domain))
+        || !Array.isArray(field.schema.keys) || !field.schema.keys.every(isPropertyKey)))
+      || (field.schema.kind === "references" && (typeof field.schema.domain !== "string" || !Array.isArray(field.schema.values)
+        || !field.schema.values.every(value => typeof value === "string")))
       || !integerBounds(field.schema)
       || (field.schema.kind === "value" && !isValueSchema(field.schema)))) {
     throw new ExplorerError("protocolInvalid");
@@ -107,7 +112,7 @@ function integerBounds(schema: Record<string, unknown>): boolean {
 /** UI messages can propose only the operation advertised for the selected field. */
 export function propertyChange(value: unknown, field: EditingField): PropertyChange | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.kind === "text" && !["dataType", "reference", "value"].includes(field.schema.kind) && typeof value.value === "string" && value.value.length <= 1_048_576) {
+  if (value.kind === "text" && !["dataType", "reference", "value", "types", "references"].includes(field.schema.kind) && typeof value.value === "string" && value.value.length <= 1_048_576) {
     return { kind: "text", value: value.value };
   }
   return undefined; // Data type changes originate exclusively from the host's checked picker.

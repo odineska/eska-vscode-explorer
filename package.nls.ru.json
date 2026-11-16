@@ -1,4 +1,5 @@
 {
+  "runDebugView": "ESKA: запуск 1С",
   "queryOpen": "Открыть запрос",
   "queryResume": "Продолжить черновик запроса",
   "queryCompare": "Сравнить исходник владельца",
@@ -78,5 +79,9 @@
   "attachDebugTarget": "Выбрать предмет отладки 1С",
   "selectAutoAttachTypes": "Выбрать типы автоподключения 1С",
   "checkDebuggerUpdates": "Проверить обновления отладчика",
-  "recoverDebuggerInstallation": "Восстановить установку отладчика"
+  "recoverDebuggerInstallation": "Восстановить установку отладчика",
+  "createMetadata": "Добавить реквизит или табличную часть…",
+  "createObject": "Создать объект метаданных…",
+  "copyObject": "Копировать объект метаданных…",
+  "deleteObject": "Удалить объект метаданных…"
 }

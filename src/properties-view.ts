@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { nativePath } from "./source.js";
-import { editingSchema, fieldId, propertyChange, type EditingView, type PropertyChange } from "./property-editing.js";
+import { editingSchema, fieldId, propertyChange, isPropertyKey, type EditingView, type PropertyChange } from "./property-editing.js";
 import { renamePlan } from "./metadata-rename.js";
 import { reviewRename } from "./property-rename-review.js";
 import { pickPropertyValue } from "./property-value-picker.js";
@@ -329,25 +329,32 @@ class PropertyTab implements vscode.Disposable {
       return;
     }
     if (input.type === "pickType") {
-      if (this.editor.busy || this.editor.blocked || field.schema.kind !== "dataType") return;
+      if (this.editor.busy || this.editor.blocked || !["dataType", "types"].includes(field.schema.kind)) return;
       try {
         const revision = this.revision;
         const result = await this.tree.request(this.entry.project, "metadata/propertyTypeChoices", { objectId: this.entry.node.id.objectId, path: field.path });
-        const options = Array.isArray(result.choices) ? result.choices.filter(isRecord).filter(item => isRecord(item.key) && isRecord(item.caption)) : [];
-        const selected = await vscode.window.showQuickPick(options.map(item => ({
+        const options = Array.isArray(result.choices) ? result.choices.filter(isRecord).filter(item => isPropertyKey(item.key) && isRecord(item.caption)) : [];
+        const draft = this.editor.drafts[id];
+        const keys = draft?.kind === "types" ? draft.keys : field.schema.keys ?? [];
+        const items = options.map(item => ({
           label: String((item.caption as Record<string, unknown>)[this.language()] ?? ""),
           description: item.metadataKind ? String((item.key as Record<string, unknown>).name).split(".").slice(1).join(".") : "", item,
-        })), { title: message(vscode.env.language, "propertyChangeType"), matchOnDescription: true });
+          picked: keys.some(key => isPropertyKey(item.key) && key.name === item.key.name && key.namespace === item.key.namespace),
+        }));
+        const settings = { title: message(vscode.env.language, "propertyChangeType"), matchOnDescription: true };
+        const selected = field.schema.kind === "types" ? await vscode.window.showQuickPick(items, { ...settings, canPickMany: true })
+          : await vscode.window.showQuickPick(items, settings);
         if (!selected || revision !== this.revision || this.disposed) return;
-        const change = { kind: "dataType", key: selected.item.key } as PropertyChange;
+        const change = Array.isArray(selected) ? { kind: "types", keys: selected.map(item => item.item.key) } as PropertyChange
+          : { kind: "dataType", key: selected.item.key } as PropertyChange;
         this.editor.drafts[id] = change;
-        this.editor.draftTitles[id] = selected.label;
+        this.editor.draftTitles[id] = Array.isArray(selected) ? selected.map(item => item.label).join(", ") : selected.label;
         await this.writeEdit(id, change);
       } catch { this.editorNotice("requestFailed"); }
       return;
     }
     if (input.type === "pickReference") {
-      if (this.editor.busy || this.editor.blocked || field.schema.kind !== "reference") return;
+      if (this.editor.busy || this.editor.blocked || !["reference", "references"].includes(field.schema.kind)) return;
       try {
         const revision = this.revision;
         const result = await this.tree.request(this.entry.project, "metadata/propertyReferenceChoices", { objectId: this.entry.node.id.objectId, path: field.path });
@@ -355,11 +362,17 @@ class PropertyTab implements vscode.Disposable {
           .filter(item => typeof item.value === "string" && isRecord(item.caption))
           .map(item => ({ label: String((item.caption as Record<string, unknown>)[this.language()] ?? item.value), value: item.value as string }));
         if (field.schema.nullable) options.unshift({ label: message(vscode.env.language, "propertyUnset"), value: "" });
-        const selected = await vscode.window.showQuickPick(options, { title: message(vscode.env.language, "propertyChooseReference"), matchOnDescription: true });
+        const draft = this.editor.drafts[id];
+        const values = draft?.kind === "references" ? draft.values : field.schema.values ?? [];
+        const items = options.map(item => ({ ...item, picked: values.includes(item.value) }));
+        const settings = { title: message(vscode.env.language, "propertyChooseReference"), matchOnDescription: true };
+        const selected = field.schema.kind === "references" ? await vscode.window.showQuickPick(items, { ...settings, canPickMany: true })
+          : await vscode.window.showQuickPick(items, settings);
         if (!selected || revision !== this.revision || this.disposed) return;
-        const change: PropertyChange = { kind: "text", value: selected.value };
+        const change: PropertyChange = Array.isArray(selected) ? { kind: "references", values: selected.map(item => item.value) }
+          : { kind: "text", value: selected.value };
         this.editor.drafts[id] = change;
-        this.editor.draftTitles[id] = selected.label;
+        this.editor.draftTitles[id] = Array.isArray(selected) ? selected.map(item => item.label).join(", ") : selected.label;
         await this.writeEdit(id, change);
       } catch { this.editorNotice("requestFailed"); }
       return;

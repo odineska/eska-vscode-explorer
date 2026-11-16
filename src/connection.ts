@@ -1,3 +1,5 @@
+import { objectCapability } from "./metadata-object-protocol.js";
+import { creationCapability } from "./metadata-creation-protocol.js";
 import { formCapabilities, type FormLimits } from "./form-preview/protocol.js";
 import { stringCapabilities, type StringEndpoint } from "./language/strings.js";
 import { formatCapabilities } from "./formatting/protocol.js";
@@ -13,7 +15,7 @@ import { sourceCapabilities, type SourceEndpoint } from "./source-access.js";
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -68,7 +70,7 @@ export class Connection {
     }
     const child = this.sessionChild(sessionId);
     const sourceMutation = this.sourceMutation(method);
-    const structural = ["metadata/renamePreview", "metadata/renameApply", "metadata/undoProperty"].includes(method)
+    const structural = ["metadata/renamePreview", "metadata/renameApply", "metadata/undoProperty", "metadata/create", "metadata/previewObject", "metadata/applyObject", "metadata/previewFormEdit", "metadata/applyFormEdit"].includes(method)
       || (method === "metadata/updateProperty" && typeof params?.contextSnapshot === "string");
     // Backend scans cannot stop midway. Keep the barrier until their actual reply, even if a tab closes.
     const pending = child.request(method, { ...params, sessionId }, structural ? 600_000 : undefined, structural ? undefined : signal);
@@ -231,7 +233,7 @@ export class Connection {
             supportFiles: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportFiles === true,
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,
             analyzerConfiguration: isRecord(response) && isRecord(response.capabilities) && response.capabilities.analyzerConfiguration === true,
-            queryEditing: queries, target });
+            queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"), target });
         }
       } catch (error) {
         if (!negotiated && error instanceof ExplorerError
@@ -279,7 +281,7 @@ export class Connection {
   /** Native authorization snapshots expire before any queued request can change source ownership in this process. */
   private sourceMutation(method: string): boolean {
     if ((method.startsWith("query/session") && !["query/sessionGet", "query/sessionComments"].includes(method))
-      || ["workspace/close", "query/recoveryOpen", "query/recoveryClose", "query/recoveryRemove"].includes(method)) {
+      || ["workspace/close", "query/recoveryOpen", "query/recoveryClose", "query/recoveryRemove", "metadata/create", "metadata/applyObject", "metadata/applyFormEdit"].includes(method)) {
       this.sourceEra = {};
       return true;
     }

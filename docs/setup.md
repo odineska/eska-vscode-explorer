@@ -164,3 +164,34 @@ for individual actions. Connection errors appear in the connection log, language
 errors in Output. Legacy `eska ide` must be selected explicitly using
 `backend = "legacy"` and an `eska` executable.
 [Updates and recovery](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Backend selection](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md).
+
+## Creating attributes and tabular sections
+
+With a Metadata API 1.48 backend, select an owner in the tree and choose
+**Add Attribute or Tabular Section…**. The command palette also uses the selected
+owner. Choose the data types and qualifiers, optionally enter a synonym and
+comment, then inspect the native XML diff. Choose **Create** in the notification
+to write the reviewed changes and reveal the new object in the tree.
+
+Catalogs, documents, data processors and reports (including external EPF/ERF)
+support attributes and tabular sections; tabular sections support attributes.
+Configuration extensions are not supported yet. Cancelling leaves sources
+unchanged. The wizard preserves unsaved XML and support restrictions, and does
+not update the infobase. Changed sources require a new preview. If the write
+acknowledgement is lost, inspect the tree and XML before retrying. Creation has
+no automatic undo yet. Editing form elements is outside this feature.
+
+
+## Creating objects and forms
+
+Metadata API 1.49 adds **Create metadata object…**, **Copy metadata object…** and
+**Delete metadata object…** to the tree and command palette. Select a root,
+collection or owner, then choose an allowed kind and an existing template or
+an empty object. Whole-form creation and copying include the descriptor and
+payload. Managed-form structure can be edited through CLI `metadata form-edit`;
+a graphical element designer is not implemented yet.
+
+Review affected files, UUID allocations and detected references before writing.
+Copying keeps the same owner and generates new owned UUIDs while preserving
+modules and resources. Cancelling and unsaved source buffers prevent publication.
+The infobase is not updated automatically. [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).

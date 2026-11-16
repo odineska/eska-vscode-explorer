@@ -24,6 +24,45 @@ ESKA_TEST_ROOT="$(realpath ../eska-playground)" bun test
 node --test test/*.test.mjs
 ```
 
+### Секция запуска и отладки до первого F5
+
+Регрессия `test/run-debug-view-host.cjs` проверяет настоящее представление в
+стандартной панели, автоматическую активацию, корневые маркеры, операции с
+файлами, ошибочный TOML, добавление/удаление папок и выбор проекта. Все шесть
+зарегистрированных обработчиков вызываются с перехватом конечной операции:
+информационная база не запускается и не изменяется. Для изменений состава
+папок runner создаёт сохранённый `.code-workspace`, поскольку переход из
+single-folder в multi-root сам VS Code может сопровождать перезапуском host.
+
+После настройки `VSCODE_EXECUTABLE`, `ESKA_TEST_BINARY` и `ESKA_TEST_ROOT`:
+
+```bash
+ESKA_HOST_DEBUG_PORT=9472 node test/run-host.mjs test/run-debug-view-host.cjs
+ESKA_HOST_DEBUG_PORT=9472 ESKA_HOST_RUN_DEBUG_EMPTY=1 \
+  node test/run-host.mjs test/run-debug-view-host.cjs
+ESKA_HOST_DEBUG_PORT=9472 ESKA_HOST_RUN_DEBUG_EMPTY=1 ESKA_HOST_NORMAL=1 \
+  node test/run-host.mjs test/run-debug-presence-normal-host.cjs
+```
+
+Последний сценарий проверяет внешние `writeFile`/`rename`/`unlink` в обычном
+окне, через публичные API и DOM. Он явно ждёт готовности штатного workspace
+watcher по журналу собственного тестового профиля; это условие теста, а не
+опрос файлов в расширении. Для воспроизведения внешнего создания маркера
+сразу после открытия окна добавьте `ESKA_HOST_RUN_DEBUG_EARLY=1`.
+
+В VS Code 1.109 точечный `RelativePattern` внутри workspace зависит от общего
+наблюдателя, который запускается с задержкой при старте окна. Ранние операции
+штатного файлового Explorer дополнительно отслеживаются через
+`onDidCreateFiles`/`onDidDeleteFiles`/`onDidRenameFiles`. Доставка внешнего
+изменения до готовности общего наблюдателя — известная граница API. В обычном
+окне VS Code 1.109 на Linux раннее внешнее создание маркера было пропущено:
+секция не появилась и после 45 секунд ожидания. Этот сценарий не исправлен;
+отдельный early-прогон сохраняет его как воспроизводимую проверку. Периодический
+опрос, рекурсивное сканирование и изменение внутренних контекстов отладки для
+его обхода не используются.
+Поведение подписки на общий наблюдатель описывает
+[`ensureWatching` в исходниках VS Code 1.109](https://github.com/microsoft/vscode/blob/1.109.0/src/vs/workbench/api/common/extHostFileSystemEventService.ts).
+
 ### Windows PowerShell
 
 Проверки выполняются в Node Extension Host. Для интеграционных сценариев нужны
@@ -761,3 +800,77 @@ native-правым отступом 3 px и baseline от внутренней 
 states-host ждёт готовность raster и проверяет dirty Blue → Red → Blue
 без замены input или записи файлов. Проверка bitmap отделена от остающегося
 расхождения горизонтального размещения отдельных старых форм.
+
+## Создание метаданных
+
+`test/metadata-creation.test.mjs` проверяет согласование API 1.48, схему и
+побайтовый preview, отсутствие повторной записи, отмену и несохранённый XML.
+С `ESKA_TEST_BINARY` выполняются настоящие RPC discovery → preview → create
+→ reveal для обеих локалей.
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node --test test/metadata-creation.test.mjs
+
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node test/run-host.mjs test/metadata-creation-host.cjs
+```
+
+Native suite использует настоящий extension host и backend; ответы мастеру
+подаются через test facade. Проверяются реквизит, табличная часть и вложенный
+реквизит, native diff, автоматический reveal, RU/EN, BOM и смешанные окончания
+строк, отмена и сохранность несохранённого XML во время review. Runner создаёт
+собственные проект и профиль в playground. `VSCODE_EXECUTABLE` при необходимости
+указывает на установленный VS Code/VSCodium.
+
+
+### Целые объекты и формы
+
+`src/metadata-objects.ts` оркестрирует нативные выборы, review и готовый план
+Rust API 1.49; в TypeScript нет генератора Designer XML. Типы операций и проверки
+wire-ответов находятся в `metadata-object-protocol.ts`, containment, потоковая
+проверка snapshots и обзор изменений — в `metadata-object-review.ts`.
+Используются существующие `ApplyReview`, выбор проекта, source protections и
+мастер `MetadataCreation` для реквизитов/табличных частей. Backend schema задаёт
+виды, обязательные свойства и локализованные подписи. После выбора вида запрос
+`metadata/objectSchema` с `kind` возвращает `initialFields`: типы, ссылки и
+стандартные значения для native QuickPick. Выбранные значения сохраняются при
+повторной проверке. Конфликт уникального свойства исправляется по структурированным
+`property`/`value` из backend, без специальных веток для HTTP- или Web-сервисов.
+
+`test/metadata-objects.test.mjs` покрывает согласование capability, ошибки wire,
+containment, dirty-буферы до review и во время асинхронной проверки, read-only,
+отмену, замену соединения, подтверждение удаления со ссылками, сохранение ввода
+и отсутствие повторных мутаций. С реальным backend проверяются create → reveal
+→ form schema → copy → delete, новая идентичность и сохранение payload в RU/EN.
+Через тот же controller и реальный backend проверяются обязательные свойства
+Method/Operation/Column и значение XDTOValueType параметра Web-сервиса.
+Индикатор прогресса охватывает только preview/write; late dirty/scope-проверки
+повторяются после входа в write phase.
+Отдельно проверяются конфликты `RootURL` и `DescriptorFileName` при копировании
+и создании по образцу, начальные списки выбора и запись составных типов и ссылок:
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+node --test test/metadata-objects.test.mjs test/metadata-creation.test.mjs
+
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+ESKA_HOST_DEBUG_PORT=9476 \
+node test/run-host.mjs test/metadata-objects-host.cjs
+```
+
+Native suite использует публичные команды и настоящий review webview: DOM
+подтверждается через штатные кнопки. Ответы мастеру подаются через test facade.
+Проверяются обе локали дерева, reveal формы, новые UUID, побайтовая сохранность
+содержимого, отмена удаления и несохранённая форма при копировании.
+Платформа 1С и информационная база этим UI-тестом не запускаются.
+
+Списки `types` и `references` API 1.49 используют существующую панель свойств и
+нативный множественный выбор. Варианты и текущие значения даёт backend; webview
+не может прислать произвольную структурную запись. Для обязательного типа до
+создания владельца мастер принимает расширенное имя `{URI}Имя` и передаёт
+`propertyTypes`; проверка домена и ссылок остаётся в Rust.

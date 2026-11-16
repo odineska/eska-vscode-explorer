@@ -1,3 +1,4 @@
+import type { CreationKind } from "./metadata-creation-protocol.js";
 import { renameTransition, renamedIdentity, type RenameTransition } from "./metadata-rename.js";
 import { Connection } from "./connection.js";
 import { ExplorerError, isRecord, isToken, parseWorkspace, projectEnabled, type ProjectInfo, type WorkspaceSession } from "./protocol.js";
@@ -9,6 +10,8 @@ export type NodeId = { kind: "object"; objectId: string }
 export interface MetadataNode {
   id: NodeId;
   metadataKind?: string | null;
+  creationKinds?: CreationKind[];
+  objectCreation?: boolean;
   parent: NodeId | null;
   label: { kind: "name"; text: string } | { kind: "key"; key: string; translations: Record<"ru-RU" | "en-US", string> };
   state: "empty" | "non_empty" | "unloaded" | "error";
@@ -61,6 +64,9 @@ export function parseNode(value: unknown): MetadataNode {
     || typeof value.rootSection !== "boolean" || !["empty", "non_empty", "unloaded", "error"].includes(String(value.state))) {
     throw new ExplorerError("protocolInvalid");
   }
+  if (value.creationKinds !== undefined && (!Array.isArray(value.creationKinds) || value.id.kind !== "object"
+    || !value.creationKinds.every(kind => kind === "attribute" || kind === "table-part"))) throw new ExplorerError("protocolInvalid");
+  if (value.objectCreation !== undefined && typeof value.objectCreation !== "boolean") throw new ExplorerError("protocolInvalid");
   const label = value.label;
   if (!(label.kind === "name" && typeof label.text === "string")
     && !(label.kind === "key" && typeof label.key === "string" && isRecord(label.translations)
@@ -222,7 +228,7 @@ export class MetadataTree {
     signal = signal ? AbortSignal.any([signal, scope.signal]) : scope.signal;
     // Watcher overflow itself performs refresh; synchronizing it again would await its own delivery.
     if (method !== "metadata/refresh") await this.synchronizeInputs();
-    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply";
+    const mutation = method === "metadata/updateProperty" || method === "metadata/undoProperty" || method === "metadata/renameApply" || method === "metadata/create" || method === "metadata/applyObject" || method === "metadata/applyFormEdit";
     for (let attempt = 0; attempt < (mutation ? 1 : 3); attempt++) {
       if (signal?.aborted) throw new ExplorerError("cancelled");
       if (this.disposed) throw new ExplorerError("obsolete");
