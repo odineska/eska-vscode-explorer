@@ -68,40 +68,47 @@ async function fixture(t) {
   return root;
 }
 function harness(root, options = {}) {
-  const calls = [], requests = [], messages = [], inputDefaults = [], inputTitles = [], picks = [], reviews = [];
-  let dirty = options.dirty === 'before', current, ui, attempts = 0;
+  const calls = [], requests = [], messages = [], inputDefaults = [], inputTitles = [], picks = [], progress = [], reviews = [];
+  let dirty = options.dirty === 'before', current, ui, attempts = 0, inProgress=false;
   class Uri { constructor(scheme,path) { this.scheme=scheme;this.fsPath=path; } static file(path) { return new Uri('file',path); } }
   class CancellationTokenSource { token={isCancellationRequested:false};cancel(){this.token.isCancellationRequested=true;}dispose(){} }
-  const api = { Uri, CancellationTokenSource, ViewColumn: { Active: 1 }, workspace: { isTrusted: true,
+  const api = { Uri, CancellationTokenSource, ViewColumn: { Active: 1 }, ProgressLocation: { Notification: 15 }, workspace: { isTrusted: true,
     textDocuments: [{ uri: Uri.file(join(root,'module.bsl')), get isDirty(){return dirty;} }] },
     window: {
+      async withProgress(settings,task){
+        assert.equal(inProgress,false);progress.push(settings);inProgress=true;
+        if(options.dirty==='write-progress'&&progress.length===2)dirty=true;
+        if(options.stale==='write-progress'&&progress.length===2){current=undefined;ui.stale();}
+        try{return await task();}finally{inProgress=false;}
+      },
       createWebviewPanel() {
         let receive, closed; let disposed=false;
         const panel={webview:{html:'', async postMessage(value){reviews.push(value); if(options.dirty==='review')dirty=true;
-          if(options.changed)await writeFile(join(root,'owner.xml'),'changed'); if(options.stale){current=undefined;ui.stale();return;}
+          if(options.changed)await writeFile(join(root,'owner.xml'),'changed'); if(options.stale===true){current=undefined;ui.stale();return;}
           receive({type:options.cancel?'cancel':'accept'});},onDidReceiveMessage(callback){receive=callback;queueMicrotask(()=>receive({type:'ready'}));return{dispose(){}};}},
           onDidDispose(callback){closed=callback;return{dispose(){}};},dispose(){if(disposed)return;disposed=true;closed?.();}};
         return panel;
       },
-      async showInputBox(value){inputDefaults.push(value.value);inputTitles.push(value.title);return options.cancelInput===inputDefaults.length?undefined:options.inputs?.shift()??'Twin';},
-      async showQuickPick(items,settings){picks.push({items,settings});return options.pick?options.pick(items,settings):settings?.canPickMany?items:items.find(item=>item.object===options.template)??items[0];},
+      async showInputBox(value){assert.equal(inProgress,false);inputDefaults.push(value.value);inputTitles.push(value.title);return options.cancelInput===inputDefaults.length?undefined:options.inputs?.shift()??'Twin';},
+      async showQuickPick(items,settings){assert.equal(inProgress,false);picks.push({items,settings});return options.pick?options.pick(items,settings):settings?.canPickMany?items:items.find(item=>item.object===options.template)??items[0];},
       async showInformationMessage(value){messages.push(value);},
-      async showErrorMessage(value,...items){messages.push(value);return options.retry?items[0]:undefined;},
+      async showErrorMessage(value,...items){assert.equal(inProgress,false);messages.push(value);return options.retry?items[0]:undefined;},
     } };
-  const project={info:{root:{kind:'object',objectId:'root'},type:'configuration',sourcePath:wire(root)}};
-  const entry={project,node:{id:{kind:'object',objectId:options.operation==='create'?'root':'original'},metadataKind:'catalog',label:{kind:'name',text:'Original'}}};
-  const tree={ async children(owner){return options.template&&owner.node.id.objectId==='root'?[{project,node:{id:{kind:'object',objectId:options.template},metadataKind:options.schema.kindOptions[0].key,label:{kind:'name',text:'Original'}}}]:[];}, async request(_project,method,params){calls.push(method);
+  const project=options.entry?.project??{info:{root:{kind:'object',objectId:'root'},type:'configuration',sourcePath:wire(root)}};
+  const entry=options.entry??{project,node:{id:{kind:'object',objectId:options.operation==='create'?'root':'original'},metadataKind:'catalog',label:{kind:'name',text:'Original'}}};
+  const tree={ async children(owner){if(options.tree)return options.tree.children(owner);return options.template&&owner.node.id.objectId==='root'?[{project,node:{id:{kind:'object',objectId:options.template},metadataKind:options.schema.kindOptions[0].key,label:{kind:'name',text:'Original'}}}]:[];}, async request(_project,method,params){calls.push(method);assert.equal(inProgress,method==='metadata/previewObject'||method==='metadata/applyObject');
+    if(options.tree){if(method==='metadata/previewObject')requests.push(structuredClone(params.request));return options.tree.request(_project,method,params);}
     if(method==='metadata/objectSchema')return {...options.schema??schema,...params.kind?{selectedKind:params.kind,initialFields:options.initialFields??[]}:{} };
     if(method==='metadata/previewObject'){requests.push(structuredClone(params.request));if(options.retry&&attempts++<(options.failures??1))throw new ExplorerError('requestFailed',options.retryDomain??'creation_collision',options.retryDetails);return planFor(params.request,options.referenced);}
     assert.equal(method,'metadata/applyObject');if(options.uncertain)throw new ExplorerError('connectionLost');
     return{schemaVersion:1,changed:true,objectId:params.prepared.request.operation==='delete'?'original':'twin',snapshot:params.prepared.expectedOutputSnapshot};
   } };
   current=tree;ui=new MetadataObjects(api,()=>options.readOnly===true);
-  return{ui,calls,requests,messages,inputDefaults,inputTitles,picks,reviews,run:()=>ui.run(tree,entry,options.operation??'copy',()=>current,options.locale??'ru-RU',()=>{throw new Error('unexpected legacy creation');})};
+  return{ui,calls,requests,messages,inputDefaults,inputTitles,picks,progress,reviews,run:()=>ui.run(tree,entry,options.operation??'copy',()=>current,options.locale??'ru-RU',()=>{throw new Error('unexpected legacy creation');})};
 }
 
 for(const scenario of [{name:'dirty original input',dirty:'before'},{name:'dirty input during review',dirty:'review'},{name:'disk conflict',changed:true},
-  {name:'cancelled review',cancel:true},{name:'readonly file',readOnly:true},{name:'replaced backend',stale:true}]) test(`object operation never writes after ${scenario.name}`,async t=>{
+  {name:'cancelled review',cancel:true},{name:'readonly file',readOnly:true},{name:'replaced backend',stale:true},{name:'dirty input on entering write progress',dirty:'write-progress'},{name:'replaced backend on entering write progress',stale:'write-progress'}]) test(`object operation never writes after ${scenario.name}`,async t=>{
   const root=await fixture(t),value=harness(root,scenario);deferCleanup(t,()=>value.ui.dispose());
   assert.equal(await value.run(),undefined);assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,0);
 });
@@ -109,6 +116,9 @@ for(const locale of ['ru-RU','en-US'])test(`object copy applies exactly once aft
   const root=await fixture(t),value=harness(root,{locale});deferCleanup(t,()=>value.ui.dispose());
   assert.equal(await value.run(),'twin');assert.equal(value.calls.filter(call=>call==='metadata/applyObject').length,1);
   assert.ok(value.reviews[0].detail.includes('owner.xml'));assert.ok(value.reviews[0].detail.includes('11111111-1111-4111-8111-111111111111'));
+  assert.deepEqual(value.progress.map(item=>[item.location,item.cancellable]),[[15,false],[15,false]]);
+  assert.match(value.progress[0].title,locale==='ru-RU'?/Расчёт/:/Calculating/);
+  assert.match(value.progress[1].title,locale==='ru-RU'?/Запись/:/Writing/);
 });
 test('deletion force follows explicit reference review and a second checked preview',async t=>{
   const root=await fixture(t),value=harness(root,{operation:'delete',referenced:true});deferCleanup(t,()=>value.ui.dispose());
@@ -290,4 +300,56 @@ for(const locale of ['ru-RU','en-US'])test(`real Rust object/form creation, copy
     const xml = await readFile(join(fixtureSource.source,kind==='Constant'?'Constants':'Subsystems',name+'.xml'),'utf8');
     for (const value of changeKind==='types'?[':string</',':boolean</']:change.values) assert.ok(xml.includes(value),`${kind}.${property} persists ${value}`);
   }
+});
+
+for(const locale of ['ru-RU','en-US'])test(`real object wizard fills required child properties in the selected owner: ${locale}`,{skip:!executable},async t=>{
+  const root=await fixture(t),source=await createTreeProject(root);
+  await mkdir(join(source.source,'Ext'),{recursive:true});await writeFile(join(source.source,'Ext','ParentConfigurations.bin'),'{6,0,0,0,0,0}');
+  const connection=new Connection('test',()=>{},()=>{});deferCleanup(t,()=>connection.dispose());await connection.connect({executable,path:root,locale,name:'child-objects'});
+  const state=connection.state;assert.equal(state.kind,'ready');
+  const tree=new MetadataTree(connection,state.session,()=>{},()=>{});deferCleanup(t,()=>tree.dispose());const project=tree.projects[0];
+  async function seed(kind,name,parent=null,propertyReferences={}) {
+    const request={operation:'create',kind,name,parent,template:null,propertyValues:{},propertyReferences,propertyTypes:{}};
+    const plan=objectPlan(await tree.request(project,'metadata/previewObject',{request}));
+    const result=await tree.request(project,'metadata/applyObject',{prepared:plan.prepared});
+    return revealHit(tree,project,{objectId:result.objectId,node:{kind:'object',objectId:result.objectId}});
+  }
+  async function create(owner,kind,name,property,answer) {
+    const parent=owner.node.id.objectId;
+    const schema=objectSchema(await tree.request(project,'metadata/objectSchema',{parent,kind}),parent,kind);
+    const expected=property?schema.propertyCaptions[property][locale]:undefined;
+    const value=harness(root,{operation:'create',tree,entry:owner,locale,
+      inputs:property&&!Array.isArray(answer)?[answer,name]:[name],
+      pick(items,settings){
+        if(settings.canPickMany) return items.filter(item=>answer.includes(item.value));
+        return items.find(item=>item.option?.value===kind)??items[0];
+      }});deferCleanup(t,()=>value.ui.dispose());
+    const object=await value.run();assert.ok(object,JSON.stringify(value.messages));
+    assert.equal(value.requests.length,1);assert.equal(value.requests[0].parent,parent);
+    assert.equal(value.requests[0].name,name);assert.equal(value.reviews.length,1);
+    if(property){
+      if(Array.isArray(answer)) {
+        assert.deepEqual(value.requests[0].propertyReferences,{[property]:answer});
+        assert.ok(value.picks.some(pick=>pick.settings.title===expected && pick.settings.canPickMany));
+      }else{
+        assert.deepEqual(value.requests[0].propertyValues,{[property]:answer});assert.equal(value.inputTitles[0],expected);
+      }
+      if(locale==='ru-RU')assert.notEqual(expected,property);
+    }
+    return revealHit(tree,project,{objectId:object,node:{kind:'object',objectId:object}});
+  }
+  const http=await seed('HTTPService','Http');
+  const template=await seed('URLTemplate','Route',http.node.id.objectId);
+  await create(template,'Method','Read','Handler','HandleRequest');
+  const web=await seed('WebService','Web');
+  const operation=await create(web,'Operation','Execute','ProcedureName','ExecuteOperation');
+  await create(operation,'Parameter','Argument');
+  const webXml=await readFile(join(source.source,'WebServices','Web.xml'),'utf8');
+  assert.match(webXml,/<XDTOValueType>xs:string<\/XDTOValueType>/);
+  const document=await seed('Document','Posted');
+  await seed('Attribute','Amount',document.node.id.objectId);
+  const journal=await seed('DocumentJournal','Journal',null,{RegisteredDocuments:['Document.Posted']});
+  await create(journal,'Column','Amount','References',['Document.Posted.Attribute.Amount']);
+  const xml=await readFile(join(source.source,'DocumentJournals','Journal.xml'),'utf8');
+  assert.ok(xml.includes('Document.Posted.Attribute.Amount'));
 });

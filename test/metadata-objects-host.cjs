@@ -20,7 +20,8 @@ exports.run = async function () {
   const service = explorer.metadataObjects, originalApi = service.api, originalReview = service.review.show.bind(service.review);
   const inputs = [], errors = [], reviews = [];
   let kind = 'CommonForm', cancel = false, duringReview;
-  service.api = { Uri: vscode.Uri, CancellationTokenSource: vscode.CancellationTokenSource, workspace: vscode.workspace, window: {
+  service.api = { Uri: vscode.Uri, ProgressLocation: vscode.ProgressLocation, CancellationTokenSource: vscode.CancellationTokenSource, workspace: vscode.workspace, window: {
+    withProgress(options,task) { return vscode.window.withProgress(options,task); },
     async showQuickPick(items) { return items.find(item => item.option?.value === kind) ?? items[0]; },
     async showInputBox(options) {
       const value = inputs.shift(); assert.notEqual(value, undefined, options.title);

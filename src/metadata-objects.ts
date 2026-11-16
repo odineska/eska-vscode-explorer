@@ -46,7 +46,11 @@ export class MetadataObjects implements vscode.Disposable {
       let plan: ObjectPlan;
       while (true) {
         try {
-          plan = objectPlan(await tree.request(entry.project, "metadata/previewObject", { request }));
+          plan = objectPlan(await this.api.window.withProgress({ location: this.api.ProgressLocation.Notification,
+            title: message(language, "objectCalculating"), cancellable: false }, () => {
+            prompt.check();
+            return tree.request(entry.project, "metadata/previewObject", { request });
+          }));
           prompt.check();
           if (!isDeepStrictEqual(plan.prepared.request, request)) throw new ExplorerError("protocolInvalid");
           break;
@@ -80,15 +84,24 @@ export class MetadataObjects implements vscode.Disposable {
       prompt.check();
       if (request.operation === "delete" && plan.references.length) {
         request = { ...request, force: true };
-        const forced = objectPlan(await tree.request(entry.project, "metadata/previewObject", { request }));
+        const forced = objectPlan(await this.api.window.withProgress({ location: this.api.ProgressLocation.Notification,
+          title: message(language, "objectCalculating"), cancellable: false }, () => {
+          prompt.check();
+          return tree.request(entry.project, "metadata/previewObject", { request });
+        }));
+        prompt.check();
         if (!isDeepStrictEqual(forced.prepared.request, request) || !isDeepStrictEqual(forced.files, plan.files)
           || !isDeepStrictEqual(forced.references, plan.references) || !isDeepStrictEqual(forced.inputs, plan.inputs)) throw new ExplorerError("sourceChanged");
         plan = forced;
       }
-      await verifyObjectSources(this.api, entry.project.info.sourcePath, plan, this.readOnly, prompt.check); prompt.check();
-      committing = true;
-      // A lost acknowledgement cannot authorize replay of an object or form mutation.
-      const result = await tree.request(entry.project, "metadata/applyObject", { prepared: plan.prepared });
+      const result = await this.api.window.withProgress({ location: this.api.ProgressLocation.Notification,
+        title: message(language, "objectWriting"), cancellable: false }, async () => {
+        // Recheck buffers and scope after entering the write phase, before the only publication call.
+        await verifyObjectSources(this.api, entry.project.info.sourcePath, plan, this.readOnly, prompt.check); prompt.check();
+        committing = true;
+        // A lost acknowledgement cannot authorize replay of an object or form mutation.
+        return tree.request(entry.project, "metadata/applyObject", { prepared: plan.prepared });
+      });
       if (!isRecord(result) || result.schemaVersion !== 1 || result.changed !== true || result.objectId !== plan.objectId
         || result.snapshot !== plan.prepared.expectedOutputSnapshot) throw new ExplorerError("protocolInvalid");
       if (current() === tree && !this.disposed) void this.api.window.showInformationMessage(message(language,
