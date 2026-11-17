@@ -37,9 +37,10 @@ import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
-  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant === 'tableMovementMenu' ? 'tableMenu' : props.variant) : undefined);
-  return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
-    {image => <NativeStandardPicture image={image()} name={props.name} variant={props.variant}/>}
+  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
+  const tableAction = () => props.os === 'linux' && props.variant === 'tableActionMenu';
+  return <Show when={tableAction() || drawing()} fallback={<BrowserIcon name={props.name}/>}>
+    <NativeStandardPicture image={drawing()} name={props.name} variant={props.variant}/>
   </Show>;
 }
 function BrowserIcon(props) {

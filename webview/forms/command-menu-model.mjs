@@ -11,7 +11,8 @@ const standardPictures = new Map(Object.entries({
   Delete: 'DeleteListItemDirectly', Post: 'Post', UndoPosting: 'UndoPosting',
   ShowInList: 'ShowInList', ChangeHistory: 'ChangeHistory', CustomizeForm: 'CustomizeForm', Help: 'Help',
 }));
-const tableMovementPictures = new Map([
+const tableMenuPictures = new Map([
+  ['Table.StandardCommand.Add', 'Add'],
   ['Table.StandardCommand.MoveUp', 'MoveUp'],
   ['Table.StandardCommand.MoveDown', 'MoveDown'],
 ]);
@@ -37,8 +38,8 @@ export function menuPicture(item, rootMenu) {
   const picture = item.presentation?.picture ?? item.picture;
   if (picture) return picture;
   if (!rootMenu) {
-    const name = tableMovementPictures.get(item.key);
-    return name ? { kind: 'standard', name, variant: 'tableMovementMenu' } : undefined;
+    const name = tableMenuPictures.get(item.key);
+    return name ? { kind: 'standard', name, variant: 'tableActionMenu' } : undefined;
   }
   const name = standardPictures.get(standardAction(item));
   return name ? { kind: 'standard', name } : undefined;

@@ -3,7 +3,7 @@ import { scaleRaster } from './raster-scale.mjs';
 import { selectStandardPictureVariant, standardPicturePixelScale } from './standard-picture-density.mjs';
 import { usesStandardPictureArtwork } from './standard-pictures.mjs';
 import { webStandardPictures } from './web-standard-pictures.mjs';
-import { webTableMovementPictures } from './web-table-movement-pictures.mjs';
+import { webTableMenuPictures } from './web-table-menu-pictures.mjs';
 
 export const StandardPictureScaleContext = createContext();
 
@@ -66,16 +66,16 @@ function NativePictureCanvas(props) {
 
 export function NativeStandardPicture(props) {
   const context = useContext(StandardPictureScaleContext);
-  const standardVariant = useStandardPictureVariant(() => props.name, () => !props.image.isTemplate
+  const standardVariant = useStandardPictureVariant(() => props.name, () => !!props.image && !props.image.isTemplate
     && usesStandardPictureArtwork(props.name, props.variant));
   const variant = () => {
-    if (props.variant !== 'tableMovementMenu') return standardVariant();
-    const variants = webTableMovementPictures[props.name];
+    if (props.variant !== 'tableActionMenu') return standardVariant();
+    const variants = webTableMenuPictures[props.name];
     const { zoom, pixelRatio } = context?.() ?? { zoom: 100, pixelRatio: 1 };
     return (selectStandardPictureVariant(variants, zoom, pixelRatio)
       ?? variants?.find(item => item.scale === 100))?.source;
   };
-  return <Show when={variant()} fallback={<NativePictureCanvas image={props.image}/>}>
+  return <Show when={variant()} fallback={<Show when={props.image}>{image => <NativePictureCanvas image={image()}/>}</Show>}>
     {source => <img class="taxi-icon" data-native-picture="ready" src={source()} alt=""
       draggable="false" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>}
   </Show>;

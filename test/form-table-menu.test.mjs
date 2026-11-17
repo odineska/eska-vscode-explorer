@@ -11,12 +11,21 @@ const button = (name, location='Auto') => ({key:'declared-'+name,kind:'Button',c
 
 test('table movement rows have a picture alongside their caption and honor an authored picture', () => {
   const up = action('MoveUp'), down = action('MoveDown');
-  assert.deepEqual(menuPicture(up, false), {kind:'standard',name:'MoveUp',variant:'tableMovementMenu'});
-  assert.deepEqual(menuPicture(down, false), {kind:'standard',name:'MoveDown',variant:'tableMovementMenu'});
+  assert.deepEqual(menuPicture(up, false), {kind:'standard',name:'MoveUp',variant:'tableActionMenu'});
+  assert.deepEqual(menuPicture(down, false), {kind:'standard',name:'MoveDown',variant:'tableActionMenu'});
   assert.equal(menuCaption(up, {locale:'ru-RU',strings:{'command.MoveUp':'Переместить вверх'}}, false), 'Переместить вверх');
   const picture = {kind:'common',source:'custom'};
   assert.equal(menuPicture({...up,picture}, false), picture);
-  assert.equal(menuPicture(action('Add'), false), undefined);
+  assert.equal(menuPicture(action('Change'), false), undefined);
+});
+
+test('the table Add row uses its menu picture and honors an authored override', () => {
+  const add = action('Add');
+  assert.deepEqual(menuPicture(add, false), {kind:'standard',name:'Add',variant:'tableActionMenu'});
+  assert.equal(menuCaption(add, {locale:'ru-RU',strings:{'command.Add':'Добавить'}}, false), 'Добавить');
+  const picture = {kind:'common',source:'custom'};
+  assert.equal(menuPicture({...add,picture}, false), picture);
+  assert.equal(menuPicture({...add,key:'Form.StandardCommand.Add'}, true), undefined);
 });
 
 test('the list menu includes sections independently of the inline overflow', () => {
