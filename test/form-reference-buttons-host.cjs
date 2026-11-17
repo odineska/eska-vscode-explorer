@@ -15,9 +15,9 @@ const readState = `(() => {
       return [style.backgroundImage.startsWith('url("data:image/png;base64,'), parseFloat(style.backgroundSize),
         style.imageRendering, parseFloat(style.width) * devicePixelRatio * Number(document.querySelector('.form-zoom select').value) / 100];
     }),
-    disabled: visibleGlyphs(field(23)).length,
-    readOnly: visibleGlyphs(field(21)).map(tile => tile.dataset.webInputGlyph),
-    forcedReadOnly: visibleGlyphs(field(22)).map(tile => tile.dataset.webInputGlyph),
+    states: [21, 22, 23].map(id => visibleGlyphs(field(id)).map(tile => [
+      tile.dataset.webInputGlyph, tile.parentElement.hasAttribute('data-inactive'),
+    ])),
     open: document.querySelector('[data-element$=":11"] [data-web-input-glyph=open]')?.getBoundingClientRect().toJSON(),
     geometry: [...document.querySelectorAll('.taxi-input, .taxi-input-button')].map(node => {
       const box = node.getBoundingClientRect(), form = node.closest('.taxi-form-frame').getBoundingClientRect();
@@ -36,16 +36,23 @@ async function setZoom(ui, zoom) {
   await ui.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
 }
 
-async function checkOpenPixels(ui) {
-  const filename = 'reference-buttons-zoom75-' + vscode.env.language;
+async function checkOpenPixels(ui, { zoom, field, gray, expected }) {
+  const filename = `reference-buttons-zoom${zoom}-open-${field}-${vscode.env.language}`;
+  const button = `document.querySelector('[data-element$=":${field}"] [data-reference-button=open]')`;
+  const setBlank = value => ui.evaluate(`(() => {
+    const slot = ${button};
+    const tile = slot.querySelector('.taxi-web-input-glyphs');
+    if (tile) tile.style.visibility = '${value ? 'hidden' : ''}';
+    else slot.style.backgroundImage = '${value ? 'none' : ''}';
+  })()`);
   const png = await ui.screenshot(filename + '.png', true);
-  await ui.evaluate(`document.querySelector('[data-element$=":11"] [data-web-input-glyph=open]').style.visibility = 'hidden'`);
+  await setBlank(true);
   let blank;
   try {
     await ui.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
     blank = await ui.screenshot(filename + '-without-open.png', true);
   } finally {
-    await ui.evaluate(`document.querySelector('[data-element$=":11"] [data-web-input-glyph=open]').style.visibility = ''`);
+    await setBlank(false);
   }
   const ink = await ui.evaluate(`(async () => {
     async function pixels(png) {
@@ -61,16 +68,16 @@ async function checkOpenPixels(ui) {
     ]);
     const points = [];
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i] === 77 && data[i + 1] === 77 && data[i + 2] === 77 && background[i] === 255
+      if (Math.abs(data[i] - ${gray}) <= 1 && data[i] === data[i + 1] && data[i] === data[i + 2] && background[i] === 255
         && background[i + 1] === 255 && background[i + 2] === 255) points.push([i / 4 % width, Math.floor(i / 4 / width)]);
     }
     const bounds = axis => {
       const coordinates = points.map(point => point[axis]);
-      return Math.max(...coordinates) - Math.min(...coordinates) + 1;
+      return coordinates.length ? Math.max(...coordinates) - Math.min(...coordinates) + 1 : 0;
     };
     return [points.length, bounds(0), bounds(1)];
   })()`);
-  assert.deepEqual(ink, [33, 9, 9], '75% open sprite keeps its original physical ink');
+  assert.deepEqual(ink, expected, `${zoom}% open sprite in field ${field} retains the original physical ink in gray ${gray}`);
 }
 
 async function checkPictureOverrides(ui, view, document) {
@@ -106,13 +113,21 @@ async function checkFieldValues({ ui, view, document, kind }) {
   const before = await ui.evaluate(readState);
   assert.deepEqual(before.roles, []);
   try {
-    for (const [zoom, size] of [[50, 14], [75, 14], [125, 20], [150, 24], [200, 32]]) {
+    for (const [zoom, size] of [[75, 14], [125, 20], [50, 14], [150, 24], [200, 32]]) {
       await setZoom(ui, zoom);
-      const { roles, styles, disabled, readOnly, forcedReadOnly, open } = await ui.evaluate(readState);
+      if (zoom === 75 || zoom === 125) {
+        // The original 85% and 125% tiles have 33 and 45 fully opaque ink pixels.
+        const expected = zoom === 75 ? [33, 9, 9] : [45, 12, 12];
+        await checkOpenPixels(ui, { zoom, field: 23, gray: 164, expected });
+        await checkOpenPixels(ui, { zoom, field: 22, gray: 77, expected });
+      }
+      const { roles, styles, states, open } = await ui.evaluate(readState);
       assert.deepEqual(roles, ['choice', 'dropdown', 'open']);
-      assert.equal(disabled, 0);
-      assert.deepEqual(readOnly, ['open']);
-      assert.deepEqual(forcedReadOnly, ['open']);
+      assert.deepEqual(states, [
+        [['open', false]],
+        [['dropdown', true], ['open', false]],
+        [['dropdown', true], ['open', true]],
+      ]);
       assert.ok(open.width > 0);
       for (const [original, backgroundWidth, rendering, physicalWidth] of styles) {
         assert.equal(original, true);
@@ -121,7 +136,6 @@ async function checkFieldValues({ ui, view, document, kind }) {
         assert.ok(Math.abs(physicalWidth - size) < 0.08, JSON.stringify({ zoom, size, physicalWidth }));
       }
       if (zoom === 75) {
-        await checkOpenPixels(ui);
         await checkPictureOverrides(ui, view, document);
       }
     }

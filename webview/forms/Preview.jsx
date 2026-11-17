@@ -761,7 +761,7 @@ function MenuLevel(props) {
 }
 function WebInputGlyph(props) {
   const centers = createMemo(() => webInputGlyphCenters(props.kind, props.height));
-  return <span class="taxi-web-input-glyphs" aria-hidden="true">
+  return <span class="taxi-web-input-glyphs" aria-hidden="true" data-inactive={props.inactive ? '' : undefined}>
     <For each={centers()}>{([role, x, y]) => <span class="taxi-web-input-glyph" data-web-input-glyph={role}
       style={webInputButtonTile(props.atlas, role, x, y, referenceButtonSlotWidth - 1, props.height - 2)}/>}</For>
   </span>;
@@ -769,8 +769,8 @@ function WebInputGlyph(props) {
 
 function PrimitiveChoiceGlyph(props) {
   return <Switch fallback="...">
-    <Match when={props.atlas && !props.inactive && ['calculator', 'calendar', 'list', 'choice'].includes(props.kind)}>
-      <WebInputGlyph kind={props.kind === 'list' ? 'dropdown' : props.kind} height={props.height} atlas={props.atlas}/>
+    <Match when={props.atlas && ['calculator', 'calendar', 'list', 'choice'].includes(props.kind)}>
+      <WebInputGlyph kind={props.kind === 'list' ? 'dropdown' : props.kind} height={props.height} atlas={props.atlas} inactive={props.inactive}/>
     </Match>
     <Match when={props.kind === 'calendar'}>
       <Show when={props.os === 'linux'} fallback={<Icon name="Calendar"/>}>
@@ -854,8 +854,8 @@ function Input(props) {
     <Show when={referenceButtons()} fallback={<>
       <Show when={choice() && primitiveSelection()?.includes('dropdown')}>
         <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list"
-          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive(), atlas() && !inactive())}, #fff` }}>
-          <Show when={atlas() && !inactive()}>{source => <WebInputGlyph kind="dropdown" height={controlHeight()} atlas={source()}/>}</Show>
+          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive(), atlas())}, #fff` }}>
+          <Show when={atlas()}>{source => <WebInputGlyph kind="dropdown" height={controlHeight()} atlas={source()} inactive={inactive()}/>}</Show>
         </span>
       </Show>
       <Show when={choice() && (primitiveSelection()?.includes('choice') ?? true)}>
@@ -871,13 +871,12 @@ function Input(props) {
       <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
     </>}>{buttons => <For each={buttons()}>{kind => {
       const inactiveButton = () => disabled() || readOnly() && kind !== 'open';
-      const webGlyph = () => !inactiveButton() && atlas();
       return <span class="taxi-input-button" data-reference-button={kind}
         data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
         classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
         data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
-        aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(), inactiveButton(), webGlyph()) }}>
-        <Show when={webGlyph()}>{source => <WebInputGlyph kind={kind} height={referenceButtonHeight()} atlas={source()}/>}</Show>
+        aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(), inactiveButton(), atlas()) }}>
+        <Show when={atlas()}>{source => <WebInputGlyph kind={kind} height={referenceButtonHeight()} atlas={source()} inactive={inactiveButton()}/>}</Show>
         <Show when={kind === 'choice' && choicePicture()}>
           <InputChoicePicture picture={choicePicture()} assets={state.model.assets} os={state.os}
             height={referenceButtonHeight()} inactive={inactive()}/>

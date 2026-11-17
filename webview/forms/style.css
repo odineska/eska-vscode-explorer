@@ -146,6 +146,8 @@ button { cursor: default; }
 }
 .taxi-input-button:has(> :is(.taxi-input-choice-picture, .taxi-web-input-glyphs)) { position: relative; }
 .taxi-web-input-glyphs { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* Blend the ink toward white, preserving alpha and the native inactive #a4a4a4 tone over custom backgrounds. */
+.taxi-web-input-glyphs[data-inactive] { filter: invert(1) brightness(.51) invert(1); }
 .taxi-web-input-glyph { position: absolute; image-rendering: pixelated; }
 .taxi-input-button:is([data-choice-picture-empty], :has(> .taxi-input-choice-picture)) > .taxi-web-input-glyphs { display: none; }
 .taxi-input-choice-picture { position: absolute; z-index: 1; pointer-events: none; }
