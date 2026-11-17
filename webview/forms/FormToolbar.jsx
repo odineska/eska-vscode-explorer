@@ -27,7 +27,7 @@ export function FormToolbar(props) {
     <button type="button" class="form-menu-toggle" data-edit-action="formMenu" aria-haspopup="menu"
       aria-expanded={c.menu.menu()?.anchor.dataset.editAction === 'formMenu'} onClick={toggle}>{s.form}<InspectorIcon name="down"/></button>
     <Show when={c.state.authoring || c.state.draftStatus?.dirty}><InspectorIconButton icon="save" label={s.editSave} action="save"
-      disabled={!c.dirty() || c.state.draftStatus?.saving || c.state.draftStatus?.conflict} onClick={c.save}/></Show>
+      disabled={!c.dirty() || c.replaying() || c.state.draftStatus?.saving || c.state.draftStatus?.conflict} onClick={c.save}/></Show>
   </>;
 }
 

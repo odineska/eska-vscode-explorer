@@ -25,7 +25,7 @@ export function controller(api) {
     : actionNotice() || state.draftStatus?.notice || (dirty() ? 'editUnsaved' : '');
   const history = () => state.draftStatus ?? { undo: false, redo: false };
   const dirty = () => state.draftStatus?.dirty || fieldPending() + changing() > 0;
-  const writable = () => state.authoring && !state.draftStatus?.conflict && !state.draftStatus?.saving;
+  const writable = () => state.authoring && !replaying() && !state.draftStatus?.conflict && !state.draftStatus?.saving;
   function draftAction(action, payload) {
     const id = ++draftId;
     setActionNotice('');
@@ -58,7 +58,7 @@ export function controller(api) {
     return draftAction(action, { operations, merge }).finally(() => setChanging(count => count - 1));
   }
   function save() {
-    if (!dirty() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
+    if (!dirty() || replaying() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
     flushFields();
     void draftAction('save');
   }

@@ -198,3 +198,39 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   runInContext('stopObserving(); formController.dispose();', context);
   assert.equal(listeners.size, 0);
 });
+
+
+test('form actions stay unavailable until Undo/Redo acknowledges the already rendered snapshot', async () => {
+  const bundle = await build({ entryPoints: [fileURLToPath(new URL('../webview/forms/controller.js', import.meta.url))],
+    bundle: true, write: false, platform: 'browser', format: 'cjs', conditions: ['browser', 'production'],
+    define: { 'process.env.NODE_ENV': '"production"' } });
+  const listeners = new Map(), messages = [], module = { exports: {} };
+  const context = createContext({ module, exports: module.exports, console,
+    requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
+    window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) } });
+  runInContext(bundle.outputFiles[0].text, context);
+  const controller = module.exports.controller({ getState: () => undefined, setState: () => {},
+    postMessage: value => messages.push(structuredClone(value)) });
+  const receive = value => listeners.get('message')({ data: runInContext(`(${JSON.stringify(value)})`, context) });
+  let sequence = 0;
+  for (const action of ['undo', 'redo']) {
+    receive({ type: 'state', sequence: ++sequence, authoring: true, draftStatus: { undo: true, redo: true, dirty: true } });
+    const replay = controller.replayForm(action);
+    const request = messages.at(-1);
+    assert.equal(request.action, action);
+    // The preview refresh may reach the webview before the command response.
+    receive({ type: 'state', sequence: ++sequence, draftStatus: { undo: true, redo: true, dirty: true } });
+    assert.equal(controller.writable(), false, 'controls must not advertise actions which openEditor ignores');
+    controller.openEditor('addDefinition');
+    assert.equal(controller.edit(), null);
+    controller.save();
+    assert.equal(messages.at(-1), request, 'Save must also wait for the pending history action');
+    receive({ type: 'formDraftResult', id: request.id });
+    await replay;
+    assert.equal(controller.writable(), true);
+    controller.openEditor('addDefinition');
+    assert.equal(controller.edit()?.intent, 'addDefinition');
+    controller.closeEditor();
+  }
+  controller.dispose();
+});
