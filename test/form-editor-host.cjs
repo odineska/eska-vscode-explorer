@@ -49,10 +49,10 @@ async function submit(ui) {
   }), 'action written to the form');
 }
 
-function drag(ui, sourceSelector, name, offset) {
-  return dom(ui, (sourceSelector, name, offset) => {
+function drag(ui, sourceSelector, name, offset, targetSelector) {
+  return dom(ui, (sourceSelector, name, offset, targetSelector) => {
     const source = document.querySelector(sourceSelector);
-    const target = [...document.querySelectorAll('[data-form-tree-node]')]
+    const target = targetSelector ? document.querySelector(targetSelector) : [...document.querySelectorAll('[data-form-tree-node]')]
       .find(row => row.querySelector(':scope > .form-truncate')?.textContent === name);
     if (!source?.draggable || !target) return '';
     const dt = new DataTransfer(), box = target.getBoundingClientRect();
@@ -63,7 +63,19 @@ function drag(ui, sourceSelector, name, offset) {
     target.dispatchEvent(new DragEvent('drop', input));
     source.dispatchEvent(new DragEvent('dragend', input));
     return marker;
-  }, sourceSelector, name, offset);
+  }, sourceSelector, name, offset, targetSelector);
+}
+
+const previewField = '[data-element$=":2"]';
+const previewAction = '[data-element$=":3"]';
+function elementOrder(ui, attribute) {
+  return dom(ui, attribute => [...document.querySelectorAll('[' + attribute + ']')]
+    .map(element => element.getAttribute(attribute).split(':').at(-1))
+    .filter(id => id === '2' || id === '3').join(','), attribute);
+}
+function historyKey(ui, code) {
+  return dom(ui, code => document.querySelector('.form-shell').dispatchEvent(
+    new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ctrlKey: true, code })), code);
 }
 
 const inputTitle = '[data-edit-property="Title"] input';
@@ -182,6 +194,26 @@ exports.run = async () => {
     await until(async () => (await read()).includes('<Visible>false</Visible>') && !view.editor.dirty && !view.editor.status.saving, 'visibility saved automatically');
     await until(() => click(ui, action('undo')), 'saved undo command available');
     await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'undo reaches detached preview');
+    await until(() => !view.editor.dirty && !view.editor.status.saving, 'form saved before detached drag');
+    const beforeMove = await read();
+    assert.ok(await click(floating, previewField));
+    await until(() => dom(floating, selector => document.querySelector(selector)?.draggable, previewField), 'selected detached element is draggable');
+    assert.equal(await drag(floating, previewField, undefined, 0.95, previewAction), 'after');
+    await until(async () => /<Button name="Action"[^]*?<InputField name="Name"/.test(await read())
+      && !view.editor.dirty && !view.editor.status.saving, 'detached move saved automatically');
+    const afterMove = await read();
+    await until(async () => await elementOrder(floating, 'data-element') === '3,2'
+      && await elementOrder(ui, 'data-form-tree-node') === '3,2', 'detached move updates preview and main tree');
+    await historyKey(floating, 'KeyZ');
+    await until(async () => await read() === beforeMove && !view.editor.status.saving, 'detached Undo restores exact XML');
+    await until(async () => await elementOrder(floating, 'data-element') === '2,3'
+      && await elementOrder(ui, 'data-form-tree-node') === '2,3', 'detached Undo synchronizes both frames');
+    await historyKey(floating, 'KeyY');
+    await until(async () => await read() === afterMove && !view.editor.status.saving, 'detached Redo restores the move');
+    await until(async () => await elementOrder(floating, 'data-element') === '3,2'
+      && await elementOrder(ui, 'data-form-tree-node') === '3,2', 'detached Redo synchronizes both frames');
+    await until(() => click(ui, action('undo')), 'main frame can undo the detached move');
+    await until(async () => await read() === beforeMove && !view.editor.status.saving, 'shared history restores XML from main frame');
     const previewBefore = view.frames.get('preview');
     previewBefore.panel.dispose();
     await until(() => dom(ui, () => document.querySelector('.form-inspectors').dataset.inspectorLayout === 'columns'), 'closing preview restores docked layout');
@@ -190,6 +222,8 @@ exports.run = async () => {
     await until(() => view.frames.get('preview')?.ready && view.frames.get('preview') !== previewBefore, 'preview can be reopened');
     floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
     await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'reopened preview receives current saved XML');
+    assert.ok(await click(floating, previewField));
+    await until(() => dom(floating, selector => document.querySelector(selector)?.draggable, previewField), 'reopened detached preview retains dragging');
     assert.ok(await click(floating, action('dockPreview')));
     await until(() => !view.frames.has('preview'), 'return preview');
     await until(() => main.panel.active, 'main form active after docking');
