@@ -49,17 +49,37 @@ function at(imageUrl, x, y) {
 }
 
 /** Shared image sources keep the repeated glyphs out of the form's DOM tree. */
-export function referenceButtonBackground(kind, height, inactive) {
+export function referenceButtonBackground(kind, height, inactive, webGlyph = false) {
   const variant = Number(inactive);
   if (kind === 'spin') {
     const middle = Math.floor(height / 2);
     const border = 'var(--taxi-input-button-border, #a0a0a0)';
+    const divider = `linear-gradient(${border}, ${border}) 0 ${middle - 1}px / ${referenceButtonSlotWidth - 1}px 1px no-repeat`;
+    if (webGlyph) return divider;
     return [
       at(spinUp[variant], 8, Math.max(5, Math.floor((middle - 1) / 2)) - 1),
       at(spinDown[variant], 8, Math.floor((height + middle - 4) / 2) - 1),
-      `linear-gradient(${border}, ${border}) 0 ${middle - 1}px / ${referenceButtonSlotWidth - 1}px 1px no-repeat`,
+      divider,
     ].join(', ');
   }
+  if (webGlyph) return 'none';
   const { x, y, images } = stencils[kind];
   return at(images[variant], x, y + Math.round((height - 23) / 2));
+}
+
+const glyphCenters = {
+  dropdown: [9.5, 9.5], choice: [9.5, 13.5], clear: [9.5, 9.5], open: [10.5, 9.5],
+  calendar: [10, 10.5], calculator: [10, 10.5],
+};
+
+export function webInputGlyphCenters(kind, height) {
+  if (kind !== 'spin') {
+    const [x, y] = glyphCenters[kind];
+    return [[kind, x, y + Math.round((height - 23) / 2)]];
+  }
+  const middle = Math.floor(height / 2);
+  return [
+    ['spin-up', 9.5, Math.max(5, Math.floor((middle - 1) / 2))],
+    ['spin-down', 9.5, Math.floor((height + middle - 4) / 2)],
+  ];
 }

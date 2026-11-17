@@ -24,7 +24,7 @@ export function createNativeTextRuntime(scriptUrl, zoom = () => 100) {
     return new Uint8Array(await response.arrayBuffer());
   };
   return {
-    failed,
+    failed, density,
     // Native glyph bitmaps are calibrated for one physical pixel per CSS pixel.
     // Browser text retains the same layout while remaining sharp on scaled displays.
     pixelAligned: () => density() === 1 && zoom() === 100,

@@ -17,7 +17,7 @@ const result = await build({ ...bundleOptions, entryPoints: ["src/extension.ts"]
   platform: "node", target: "node22", format: "cjs", external: ["vscode"] });
 const browserOptions = { ...bundleOptions, outdir: "out",
   platform: "browser", target: "chrome140", format: "iife",
-  loader: { ".ttf": "file", ".wasm": "file" }, assetNames: "form-fonts/[name]-[hash]",
+  loader: { ".ttf": "file", ".wasm": "file", ".png": "dataurl" }, assetNames: "form-fonts/[name]-[hash]",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "solid-jsx", setup(builder) {
     builder.onLoad({ filter: /\.jsx$/ }, async args => {

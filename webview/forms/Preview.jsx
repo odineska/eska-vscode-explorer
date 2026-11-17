@@ -21,7 +21,8 @@ import { NativeInputCalculator } from './NativeInputCalculator.jsx';
 import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { InputChoicePicture } from './InputChoicePicture.jsx';
-import { referenceButtonBackground } from './reference-button-paint.mjs';
+import { referenceButtonBackground, webInputGlyphCenters } from './reference-button-paint.mjs';
+import { webInputButtonAtlas, webInputButtonTile } from './web-input-button-atlas.mjs';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
@@ -29,7 +30,7 @@ import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
 import { pageInputTitlePair, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
-import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
+import { NativeStandardPicture, StandardPictureScaleContext, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { positionCommandMenu } from './command-menu-position.js';
@@ -38,7 +39,7 @@ import { rgb } from './native-control-paint.js';
 export function Icon(props) {
   const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
   return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
-    {image => <NativeStandardPicture image={image()}/>}
+    {image => <NativeStandardPicture image={image()} name={props.name} variant={props.variant}/>}
   </Show>;
 }
 function BrowserIcon(props) {
@@ -239,7 +240,11 @@ export function Preview(props) {
     '--taxi-form-items-min-height': layout.nativeFormScroll() ? `${layout.itemsMinimumHeight()}px` : undefined,
     'min-width': '28px',
   });
-  return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
+  const pictureScale = () => ({
+    zoom: state.ui.zoom,
+    pixelRatio: props.controller.nativeText?.density?.() ?? window.devicePixelRatio,
+  });
+  return <StandardPictureScaleContext.Provider value={pictureScale}><FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined}
       data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" data-form-drop-root={root().key} classList={{ 'taxi-selected': state.selected === root().key }}
@@ -258,7 +263,7 @@ export function Preview(props) {
         </div>
       </div>
     </div>
-  </div></FormLayoutContext.Provider>;
+  </div></FormLayoutContext.Provider></StandardPictureScaleContext.Provider>;
 }
 function updatePageScrollButtons(event) {
   const items = event.currentTarget;
@@ -754,8 +759,19 @@ function MenuLevel(props) {
     }}</For>
   </div>;
 }
+function WebInputGlyph(props) {
+  const centers = createMemo(() => webInputGlyphCenters(props.kind, props.height));
+  return <span class="taxi-web-input-glyphs" aria-hidden="true">
+    <For each={centers()}>{([role, x, y]) => <span class="taxi-web-input-glyph" data-web-input-glyph={role}
+      style={webInputButtonTile(props.atlas, role, x, y, referenceButtonSlotWidth - 1, props.height - 2)}/>}</For>
+  </span>;
+}
+
 function PrimitiveChoiceGlyph(props) {
   return <Switch fallback="...">
+    <Match when={props.atlas && !props.inactive && ['calculator', 'calendar', 'list', 'choice'].includes(props.kind)}>
+      <WebInputGlyph kind={props.kind === 'list' ? 'dropdown' : props.kind} height={props.height} atlas={props.atlas}/>
+    </Match>
     <Match when={props.kind === 'calendar'}>
       <Show when={props.os === 'linux'} fallback={<Icon name="Calendar"/>}>
         <NativeInputCalendar height={props.height} inactive={props.inactive} fallback={<Icon name="Calendar"/>}/>
@@ -785,6 +801,8 @@ function Input(props) {
   const multiline = () => flag(node(), 'MultiLine', false);
   const referenceButtons = createMemo(() => referenceInputButtons(node(), state.os));
   const referenceButtonHeight = () => inputHeight(node(), state.os);
+  const atlas = createMemo(() => state.os === 'linux' && webInputButtonAtlas(state.ui.zoom,
+    props.controller.nativeText?.density?.() ?? window.devicePixelRatio));
   const readOnly = () => flag(node(), 'ReadOnly', false);
   const disabled = () => paint()?.disabled ?? !flag(node(), 'Enabled');
   const textSizing = createMemo(() => textInputWidthBounds(node(), state.os));
@@ -836,30 +854,36 @@ function Input(props) {
     <Show when={referenceButtons()} fallback={<>
       <Show when={choice() && primitiveSelection()?.includes('dropdown')}>
         <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list"
-          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive())}, #fff` }}/>
+          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive(), atlas() && !inactive())}, #fff` }}>
+          <Show when={atlas() && !inactive()}>{source => <WebInputGlyph kind="dropdown" height={controlHeight()} atlas={source()}/>}</Show>
+        </span>
       </Show>
       <Show when={choice() && (primitiveSelection()?.includes('choice') ?? true)}>
         <span class="taxi-input-button taxi-input-button--choice" data-choice-kind={choiceKind()}
           classList={{ 'taxi-input-button--number': choiceKind() === 'calculator' }}>
           <InputChoicePicture picture={choiceKind() === 'list' ? undefined : choicePicture()} assets={state.model.assets}
             os={state.os} height={controlHeight()} inactive={inactive()}
-            fallback={<PrimitiveChoiceGlyph kind={choiceKind()} os={state.os} height={controlHeight()} inactive={inactive()}/>}/>
+            fallback={<PrimitiveChoiceGlyph kind={choiceKind()} os={state.os} height={controlHeight()} inactive={inactive()} atlas={atlas()}/>}/>
         </span>
       </Show>
       <Show when={inputOpenButton(node(), state.os)}><span class="taxi-input-button taxi-input-button--open"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
       <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
       <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
-    </>}>{buttons => <For each={buttons()}>{kind => <span class="taxi-input-button" data-reference-button={kind}
-      data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
-      classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
-      data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
-      aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(),
-        disabled() || readOnly() && kind !== 'open') }}>
+    </>}>{buttons => <For each={buttons()}>{kind => {
+      const inactiveButton = () => disabled() || readOnly() && kind !== 'open';
+      const webGlyph = () => !inactiveButton() && atlas();
+      return <span class="taxi-input-button" data-reference-button={kind}
+        data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
+        classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
+        data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
+        aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(), inactiveButton(), webGlyph()) }}>
+        <Show when={webGlyph()}>{source => <WebInputGlyph kind={kind} height={referenceButtonHeight()} atlas={source()}/>}</Show>
         <Show when={kind === 'choice' && choicePicture()}>
           <InputChoicePicture picture={choicePicture()} assets={state.model.assets} os={state.os}
             height={referenceButtonHeight()} inactive={inactive()}/>
         </Show>
-      </span>}</For>}</Show>
+      </span>;
+    }}</For>}</Show>
   </div>;
 }
 function Field(props) {

@@ -144,7 +144,10 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-input > .taxi-input-button[data-reference-button]:not([data-choice-picture-empty], :has(> .taxi-input-choice-picture)) {
   background: var(--taxi-reference-button-paint), #fff;
 }
-.taxi-input-button:has(> .taxi-input-choice-picture) { position: relative; }
+.taxi-input-button:has(> :is(.taxi-input-choice-picture, .taxi-web-input-glyphs)) { position: relative; }
+.taxi-web-input-glyphs { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.taxi-web-input-glyph { position: absolute; image-rendering: pixelated; }
+.taxi-input-button:is([data-choice-picture-empty], :has(> .taxi-input-choice-picture)) > .taxi-web-input-glyphs { display: none; }
 .taxi-input-choice-picture { position: absolute; z-index: 1; pointer-events: none; }
 .taxi-preview:not([data-os=linux]) .taxi-input-choice-picture[data-choice-picture-inactive] { filter: grayscale(1); opacity: .5; }
 .taxi-input[data-native-reference].taxi-input--incomplete::after {

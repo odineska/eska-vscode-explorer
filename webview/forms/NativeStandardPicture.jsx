@@ -1,4 +1,20 @@
-import { Show, createEffect, createMemo } from 'solid-js';
+import { Show, createContext, createEffect, createMemo, useContext } from 'solid-js';
+import { selectStandardPictureVariant } from './standard-picture-density.mjs';
+import { webStandardPictures } from './web-standard-pictures.mjs';
+
+export const StandardPictureScaleContext = createContext();
+
+export function useStandardPictureVariant(name, enabled) {
+  const scale = useContext(StandardPictureScaleContext);
+  return createMemo(() => {
+    if (!scale || !enabled() || typeof name() !== 'string') return;
+    const key = name().replace(/^StdPicture\./, '');
+    if (!Object.hasOwn(webStandardPictures, key)) return;
+    const { zoom, pixelRatio } = scale();
+    const variant = selectStandardPictureVariant(webStandardPictures[key], zoom, pixelRatio);
+    if (variant) return { source: variant.source, pixelScale: zoom * pixelRatio / 100 };
+  });
+}
 
 function paint(canvas, image) {
   canvas.width = image.width;
@@ -22,7 +38,7 @@ function NativeTemplatePicture(props) {
   return <TemplatePicture source={source()} native/>;
 }
 
-export function NativeStandardPicture(props) {
+function NativePictureCanvas(props) {
   let canvas;
   createEffect(() => {
     if (!props.image.isTemplate) paint(canvas, props.image);
@@ -30,4 +46,13 @@ export function NativeStandardPicture(props) {
   return <Show when={props.image.isTemplate} fallback={
     <canvas ref={canvas} class="taxi-icon" data-native-picture="ready" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>
   }><NativeTemplatePicture image={props.image}/></Show>;
+}
+
+export function NativeStandardPicture(props) {
+  const variant = useStandardPictureVariant(() => props.name, () => !props.image.isTemplate
+    && (props.variant === undefined || props.variant === 'standard'));
+  return <Show when={variant()} fallback={<NativePictureCanvas image={props.image}/>}>
+    {raster => <img class="taxi-icon" data-native-picture="ready" src={raster().source} alt=""
+      draggable="false" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>}
+  </Show>;
 }
