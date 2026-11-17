@@ -132,7 +132,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private supportContextsPending: Promise<void> = Promise.resolve();
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.scm = new MetadataChanges(this.git, () => this.treeLanguage, async () => {
+    this.scm = new MetadataChanges(context, this.git, () => this.treeLanguage, async () => {
       await this.projects.settled();
       if (!this.projects.folders.length || this.tree) return;
       const folder = await this.chooseFolder(this.projects.folders, "choose");
