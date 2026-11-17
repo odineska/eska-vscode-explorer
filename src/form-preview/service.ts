@@ -10,6 +10,8 @@ import type { Connection } from "../connection.js";
 import { querySnapshot } from "../query/text-transfer.js";
 import { inspectorIcons } from "../icons.js";
 import { FormEditor } from "./editor.js";
+import { eventTarget, type EventTarget } from "./handler-protocol.js";
+import { createHandlerModule, applyHandlerPlan, handlerFailure } from "./handler-edit.js";
 import { FormSession } from "./client.js";
 import { identityKey, isIdentity, isDataPath, isExpandedDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
@@ -38,6 +40,7 @@ interface View {
   inspectorState: InspectorState | undefined;
   expandedData: Map<string, string[]>;
   editor?: FormEditor;
+  handlerEditing?: boolean;
 }
 async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
   const found = await revealFile(tree, path);
@@ -263,6 +266,19 @@ export class FormPreviewService implements vscode.Disposable {
     if (value.type === "revealPreview") { view.frames.get("preview")?.panel.reveal(); return; }
     if (value.type === "dock") { const main = view.frames.get("main") ?? this.frame(view, "main"); view.frames.get("preview")?.panel.dispose(); main.panel.reveal(); this.publish(view); return; }
     if (value.type === "source") { view.navigation++; await vscode.window.showTextDocument(await this.openSource(view.path), { preview: false }); return; }
+    if (value.type === "handlerEdit" && frame.role === "main" && Number.isSafeInteger(value.id)) {
+      const target = eventTarget(value.target);
+      if (!target || typeof value.event !== "string" || value.event.length > 128) return;
+      const reply = (result: Record<string, unknown>): void => { if (!view.closed && view.frames.get(frame.role) === frame)
+        void frame.panel.webview.postMessage({ type: "formHandlerResult", id: value.id, target, event: value.event, ...result }); };
+      if (!this.canEdit(view) || view.handlerEditing || !view.client?.limits.handlerAuthoring) { reply({ message: "editUnavailable" }); return; }
+      view.handlerEditing = true;
+      const navigation = ++view.navigation;
+      try { reply(await this.editHandler(view, target, value.event, navigation)); }
+      catch (error) { this.log(`form_handler_edit ${String(error)}`); reply({ message: handlerFailure(error) }); }
+      finally { view.handlerEditing = false; }
+      return;
+    }
     if (value.type === "handler" && Number.isSafeInteger(value.index) && (value.index as number) >= 0) {
       const navigation = ++view.navigation;
       try { await this.handler(view, value.index as number, navigation); }
@@ -490,7 +506,7 @@ export class FormPreviewService implements vscode.Disposable {
       const updateSchema = frame.role === "main" && (frame === initializeNavigation || frame.editSchema !== schema);
       frame.editSchema = schema;
       void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
-      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, referenceData: view.client?.limits.referenceData === true,
+      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, handlerAuthoring: view.client?.limits.handlerAuthoring === true, referenceData: view.client?.limits.referenceData === true,
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
@@ -555,6 +571,52 @@ export class FormPreviewService implements vscode.Disposable {
       await this.revealLocation(document, text, saved ?? Buffer.from(text, "utf8"), location, current);
     } catch (error) { if (current()) throw error; }
   }
+  private async settleHandler(view: View): Promise<void> {
+    await view.running;
+    if (view.timer) { clearTimeout(view.timer); view.timer = undefined; }
+    view.wanted++;
+    const running = this.refresh(view); view.running = running;
+    try { await running; } finally { if (view.running === running) view.running = undefined; }
+    if (view.closed || this.disposed || view.phase !== "ready") throw new ExplorerError("sourceChanged");
+  }
+  private async editHandler(view: View, target: EventTarget, event: string, navigation: number): Promise<{ name: string; bound: boolean }> {
+    await this.settleHandler(view);
+    const checked = () => {
+      if (view.closed || this.disposed || view.navigation !== navigation || !this.canEdit(view)) throw new ExplorerError("sourceChanged");
+    };
+    checked();
+    let client = view.client!, snapshot = view.snapshot!;
+    let source = await client.handlerEditSource(target, event);
+    checked();
+    const original = { name: source.name, source: source.source, root: source.root, path: source.path };
+    const context = () => ({ connection: this.connection, tree: view.tree, entry: view.entry, formPath: view.path,
+      formSnapshot: snapshot.dependencies.find(input => input.role === "form" && input.id === snapshot.model.root.identity.source)?.snapshot ?? "", current: () => {
+      checked(); if (client !== view.client || snapshot !== view.snapshot || client.current !== snapshot) throw new ExplorerError("sourceChanged");
+    } });
+    if (!source.exists) {
+      // Validate the exact template before committing even an empty module.
+      await client.handlerEditPlan(target, event, source, "", "new");
+      await createHandlerModule(context(), source);
+      await this.settleHandler(view); checked();
+      client = view.client!; snapshot = view.snapshot!;
+      source = await client.handlerEditSource(target, event);
+      if (JSON.stringify(original) !== JSON.stringify({ name: source.name, source: source.source, root: source.root, path: source.path }) || !source.exists) throw new ExplorerError("sourceChanged");
+    }
+    const document = await this.openSource(await existingSource(source.root, source.path));
+    let plan = await client.handlerEditPlan(target, event, source, document.getText(), String(document.version));
+    context().current();
+    if (await applyHandlerPlan(context(), document, plan)) {
+      await this.settleHandler(view); checked(); client = view.client!; snapshot = view.snapshot!;
+      source = await client.handlerEditSource(target, event);
+      if (source.name !== original.name || source.source !== original.source) throw new ExplorerError("sourceChanged");
+      plan = await client.handlerEditPlan(target, event, source, document.getText(), String(document.version));
+      if (plan.change) throw new ExplorerError("sourceChanged");
+    }
+    const text = document.getText();
+    if (!await this.revealLocation(document, text, Buffer.from(text, "utf8"), plan, this.navigationGuard(view, client, snapshot, navigation))) throw new ExplorerError("sourceChanged");
+    return { name: source.name, bound: source.bound };
+  }
+
   private async handler(view: View, index: number, navigation: number): Promise<void> {
     const { client, snapshot } = view;
     if (!client || !snapshot?.model.handlers?.[index] || view.phase !== "ready") throw new ExplorerError("sourceChanged");

@@ -5,7 +5,7 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 export const MAX_FORM_DEPENDENCIES = 1024;
 const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
+export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; handlerAuthoring?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
 export interface FormPropertyMatch { identity: ElementIdentity; id: string; label: string; value: string }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
@@ -182,6 +182,7 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
     ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}),
+    ...(value.apiVersion.minor >= 54 && data.handlerAuthoring === true ? { handlerAuthoring: true } : {}),
     ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}),
     ...(value.apiVersion.minor >= 53 && data.propertySearch === true ? { propertySearch: true } : {}),
     ...(value.apiVersion.minor >= 47 && data.referenceData === true ? { referenceData: true } : {}) };

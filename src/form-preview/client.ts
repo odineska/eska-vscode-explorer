@@ -1,3 +1,4 @@
+import { parseHandlerEditSource, parseHandlerEditPlan, type HandlerEditSource, type HandlerEditPlan, type EventTarget } from "./handler-protocol.js";
 import type { Connection } from "../connection.js";
 import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
@@ -133,6 +134,28 @@ export class FormSession {
           const value = await this.request("form/handlerLocate", { formSessionId: this.current.formSessionId, revision: source.revision, index,
             input: { source: source.source, version, ...input } }, generation);
           this.check(value, generation); return parseLocation(value);
+        });
+    });
+    this.pending = action.catch(() => {}); return action;
+  }
+  async handlerEditSource(target: EventTarget, event: string): Promise<HandlerEditSource> {
+    await this.pending;
+    if (this.closed) throw new ExplorerError("obsolete");
+    if (!this.limits.handlerAuthoring) throw new ExplorerError("incompatible");
+    const generation = this.entry.project.info.generation;
+    const value = await this.request("form/handlerEditSource", { formSessionId: this.current.formSessionId, revision: this.current.revision, target, event }, generation);
+    this.check(value, generation); return parseHandlerEditSource(value);
+  }
+  handlerEditPlan(target: EventTarget, event: string, source: HandlerEditSource, text: string, version: string): Promise<HandlerEditPlan> {
+    const action = this.pending.then(async () => {
+      if (this.closed) throw new ExplorerError("obsolete");
+      if (!this.limits.handlerAuthoring || this.current.revision !== source.revision) throw new ExplorerError("sourceChanged");
+      const generation = this.entry.project.info.generation;
+      return withQueryText(text, { maxSnapshotBytes: this.limits.maxOverlayBytes, maxInlineBytes: this.limits.maxInlineBytes },
+        (method, params) => this.request(method, params, generation), async id => { await this.request("query/bufferClose", { bufferId: id }); }, async input => {
+          const value = await this.request("form/handlerEditPlan", { formSessionId: this.current.formSessionId, revision: source.revision, target, event,
+            input: { source: source.source, version, ...input } }, generation);
+          this.check(value, generation); return parseHandlerEditPlan(value);
         });
     });
     this.pending = action.catch(() => {}); return action;
