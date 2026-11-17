@@ -114,11 +114,30 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
 }
 
-[data-form-drop="inside"] { outline: 2px solid var(--vscode-focusBorder); outline-offset: -2px; }
-[data-form-drop="before"] { box-shadow: inset 0 2px var(--vscode-focusBorder); }
-[data-form-drop="after"] { box-shadow: inset 0 -2px var(--vscode-focusBorder); }
-[data-form-drop="before-x"] { box-shadow: inset 2px 0 var(--vscode-focusBorder); }
-[data-form-drop="after-x"] { box-shadow: inset -2px 0 var(--vscode-focusBorder); }
+.form-tree-row[data-form-drop="inside"] { outline: 2px solid var(--vscode-focusBorder); outline-offset: -2px; }
+.form-tree-row[data-form-drop="before"] { box-shadow: inset 0 2px var(--vscode-focusBorder); }
+.form-tree-row[data-form-drop="after"] { box-shadow: inset 0 -2px var(--vscode-focusBorder); }
+.form-tree-row[data-form-drop="before-x"] { box-shadow: inset 2px 0 var(--vscode-focusBorder); }
+.form-tree-row[data-form-drop="after-x"] { box-shadow: inset -2px 0 var(--vscode-focusBorder); }
+/* Paint above the control surface, which can cover the element's inset shadow. */
+.taxi-preview .taxi-form-frame[data-form-drop="inside"] { position: relative; }
+.taxi-preview .taxi-element[data-form-drop]::before,
+.taxi-preview .taxi-form-frame[data-form-drop="inside"]::after,
+.taxi-preview .taxi-form-frame.taxi-selected[data-form-drop="inside"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border: 0 solid var(--vscode-focusBorder);
+}
+.taxi-preview .taxi-element[data-form-drop="inside"]::before,
+.taxi-preview .taxi-form-frame[data-form-drop="inside"]::after,
+.taxi-preview .taxi-form-frame.taxi-selected[data-form-drop="inside"]::after { border-width: 2px; }
+.taxi-preview .taxi-element[data-form-drop="before"]::before { border-top-width: 2px; }
+.taxi-preview .taxi-element[data-form-drop="after"]::before { border-bottom-width: 2px; }
+.taxi-preview .taxi-element[data-form-drop="before-x"]::before { border-left-width: 2px; }
+.taxi-preview .taxi-element[data-form-drop="after-x"]::before { border-right-width: 2px; }
 .form-tree-row[draggable="true"] { cursor: grab; }
 
 .form-tree-actions { margin-inline-start: auto; display: flex; flex-shrink: 0; gap: 0; }

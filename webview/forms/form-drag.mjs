@@ -1,4 +1,5 @@
 import { elementTarget, textProperty } from './editor-model.mjs';
+import { previewClientRect } from './preview-coordinates.mjs';
 
 const elementMime = 'application/x-eska-form-element';
 const attributeMime = 'application/x-eska-form-attribute';
@@ -73,7 +74,11 @@ export function createFormDrag(controller, index) {
   const { state } = controller;
   let dragged, marker;
   const rows = () => index().nodes;
-  const targetElement = event => event.target.closest?.('[data-form-tree-node], [data-element], [data-form-drop-root]');
+  const targetElement = event => {
+    const target = event.target.closest?.('[data-form-tree-node], [data-element], [data-form-drop-root]');
+    const wrapper = target?.closest('.taxi-element[data-element]');
+    return wrapper && wrapper.dataset.element === target.dataset.element ? wrapper : target;
+  };
   const key = element => element.dataset.formTreeNode ?? element.dataset.element ?? element.dataset.formDropRoot;
   const addAt = (attribute, row, position) => formAttributeAddition(rows(), state.model.root, state.formLayout, attribute, row, position);
   function clearMarker() {
@@ -112,8 +117,10 @@ export function createFormDrag(controller, index) {
     const row = rows().get(key(element));
     if (!row) return;
     const horizontal = element.parentElement?.classList.contains('taxi-items--horizontal');
-    const rect = element.getBoundingClientRect();
-    const offset = horizontal ? (event.clientX - rect.left) / rect.width : (event.clientY - rect.top) / rect.height;
+    const rect = previewClientRect(element);
+    const extent = horizontal ? rect.width : rect.height;
+    if (extent <= 0) return;
+    const offset = (horizontal ? event.clientX - rect.left : event.clientY - rect.top) / extent;
     const adjacent = offset < .5 ? 'before' : 'after';
     const tryPosition = position => {
       const move = source && formMovePlacement(rows(), state.model.root, state.formLayout, source, row, position);
@@ -126,12 +133,15 @@ export function createFormDrag(controller, index) {
   function over(event) {
     if (!dragged) return;
     const target = placement(event);
-    clearMarker();
-    if (!target) return;
+    if (!target) { clearMarker(); return; }
     event.preventDefault();
     event.dataTransfer.dropEffect = target.operation.kind === 'moveElement' ? 'move' : 'copy';
-    marker = target.element;
-    marker.dataset.formDrop = target.horizontal && target.position !== 'inside' ? target.position + '-x' : target.position;
+    if (marker !== target.element) {
+      clearMarker();
+      marker = target.element;
+    }
+    const position = target.horizontal && target.position !== 'inside' ? target.position + '-x' : target.position;
+    if (marker.dataset.formDrop !== position) marker.dataset.formDrop = position;
   }
   function leave(event) {
     if (marker?.contains(event.target) && !marker.contains(event.relatedTarget)) clearMarker();

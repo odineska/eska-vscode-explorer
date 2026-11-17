@@ -56,7 +56,11 @@ function drag(ui, sourceSelector, name, offset, targetSelector) {
       .find(row => row.querySelector(':scope > .form-truncate')?.textContent === name);
     if (!source?.draggable || !target) return '';
     const dt = new DataTransfer(), box = target.getBoundingClientRect();
-    const input = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: box.top + box.height * offset, clientX: box.left + 10 };
+    const button = target.querySelector('.taxi-button');
+    const zoom = Number(target.closest('.taxi-preview')?.style.zoom) || 1;
+    const face = button?.getBoundingClientRect();
+    const scale = face && !button.contains(document.elementFromPoint(face.x + face.width / 2, face.y + face.height / 2)) ? zoom : 1;
+    const input = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: (box.top + box.height * offset) * scale, clientX: (box.left + 10) * scale };
     source.dispatchEvent(new DragEvent('dragstart', input));
     target.dispatchEvent(new DragEvent('dragover', input));
     const marker = target.dataset.formDrop ?? '';
@@ -68,14 +72,114 @@ function drag(ui, sourceSelector, name, offset, targetSelector) {
 
 const previewField = '[data-element$=":2"]';
 const previewAction = '[data-element$=":3"]';
+const previewGroup = '[data-element$=":1"]';
+async function previewZoom(ui, zoom) {
+  assert.ok(await setValue(ui, '.form-zoom select', String(zoom), 'change'));
+  await until(() => dom(ui, zoom => Number(document.querySelector('.taxi-preview').style.zoom) === zoom / 100, zoom), 'preview zoom applied');
+}
+async function checkZoomedDrag(ui, view) {
+  for (const zoom of [50, 75, 125, 150, 200]) {
+    await previewZoom(ui, zoom);
+    const input = previewField + ' .taxi-input';
+    await dom(ui, selector => document.querySelector(selector).scrollIntoView({ block: 'nearest', inline: 'nearest' }), input);
+    await ui.pointer(input, true);
+    await until(async () => view.selected?.key.value === '2' &&
+      await dom(ui, selector => document.querySelector(selector)?.draggable, previewField), 'trusted click selected the zoomed field');
+    assert.deepEqual(await dom(ui, (sourceSelector, targetSelector, groupSelector) => {
+      const source = document.querySelector(sourceSelector), target = document.querySelector(targetSelector);
+      const group = document.querySelector(groupSelector);
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const face = target.querySelector('.taxi-button'), faceRect = face.getBoundingClientRect();
+      const point = { x: faceRect.x + faceRect.width / 2, y: faceRect.y + faceRect.height / 2 };
+      const zoom = Number(face.closest('.taxi-preview').style.zoom);
+      const scale = face.contains(document.elementFromPoint(point.x, point.y)) ? 1 : zoom;
+      const transfer = new DataTransfer();
+      const event = (type, dest, offset) => {
+        const rect = dest.getBoundingClientRect();
+        return new DragEvent(type, {
+          bubbles: true, cancelable: true, dataTransfer: transfer,
+          clientX: point.x * scale, clientY: (rect.top + rect.height * offset) * scale,
+        });
+      };
+      const sourceSelected = source.classList.contains('taxi-selected');
+      source.dispatchEvent(event('dragstart', source, 0.5));
+      const markers = [[target, 0.05, 'borderTopWidth'], [target, 0.95, 'borderBottomWidth'], [group, 0.5, 'borderLeftWidth']]
+        .map(([destination, offset, edge]) => {
+          const drag = event('dragover', destination, offset);
+          const hit = destination === target ? document.elementFromPoint(drag.clientX, drag.clientY) : destination;
+          if (!destination.contains(hit)) return false;
+          hit.dispatchEvent(drag);
+          const layer = getComputedStyle(destination, '::before');
+          const scale = Number(destination.closest('.taxi-preview').style.zoom);
+          return [destination.dataset.formDrop, Math.round(parseFloat(layer[edge]) * scale), layer.pointerEvents, Number(layer.zIndex) > 1];
+        });
+      source.dispatchEvent(event('dragend', source, 0.5));
+      return [sourceSelected, ...markers, !document.querySelector('[data-form-drop]')];
+    }, previewField, previewAction, previewGroup), [
+      true, ...['before', 'after', 'inside'].map(marker => [marker, Math.floor(zoom / 50), 'none', true]), true,
+    ], 'drop feedback at ' + zoom + '%');
+  }
+  await previewZoom(ui, 75);
+  assert.deepEqual(await dom(ui, selector => {
+    const source = document.querySelector(selector);
+    const wrapper = document.querySelector('.taxi-element[data-element$=":9"]');
+    const projection = wrapper.querySelector('[data-view-status][data-element]');
+    const dataTransfer = new DataTransfer(), rect = projection.getBoundingClientRect();
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height * 0.8;
+    const zoom = Number(wrapper.closest('.taxi-preview').style.zoom);
+    const scale = projection.contains(document.elementFromPoint(x, y)) ? 1 : zoom;
+    const hit = document.elementFromPoint(x * scale, y * scale);
+    const event = type => new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer, clientX: x * scale, clientY: y * scale });
+    source.dispatchEvent(event('dragstart'));
+    if (projection.contains(hit)) hit.dispatchEvent(event('dragover'));
+    const result = [projection.dataset.element === wrapper.dataset.element, wrapper.dataset.formDrop,
+      !!projection.dataset.formDrop, getComputedStyle(wrapper, '::before').position];
+    source.dispatchEvent(event('dragend'));
+    return result;
+  }, previewField), [true, 'after', false, 'absolute'], 'standalone status projection marks its same-identity element wrapper');
+}
+async function checkSelectedRootDrop(ui, view) {
+  const root = '.taxi-form-frame';
+  assert.ok(await click(ui, root));
+  await until(async () => view.selected?.key.kind === 'root' &&
+    await dom(ui, selector => document.querySelector(selector).classList.contains('taxi-selected'), root),
+  'selected form root is rendered');
+  assert.deepEqual(await dom(ui, selector => {
+    const root = document.querySelector(selector);
+    const source = document.querySelector('[data-form-tree-node$=":2"]');
+    const dataTransfer = new DataTransfer();
+    const event = type => new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer });
+    root.style.setProperty('--vscode-focusBorder', 'rgb(1, 2, 3)');
+    try {
+      source.dispatchEvent(event('dragstart'));
+      root.dispatchEvent(event('dragover'));
+      const layer = getComputedStyle(root, '::after');
+      return [root.dataset.formDrop, layer.borderTopColor, layer.top, layer.pointerEvents, layer.zIndex];
+    } finally {
+      source.dispatchEvent(event('dragend'));
+      root.style.removeProperty('--vscode-focusBorder');
+    }
+  }, root), ['inside', 'rgb(1, 2, 3)', '0px', 'none', '3'], 'drop feedback takes priority over selected root outline');
+}
 function elementOrder(ui, attribute) {
   return dom(ui, attribute => [...document.querySelectorAll('[' + attribute + ']')]
     .map(element => element.getAttribute(attribute).split(':').at(-1))
     .filter(id => id === '2' || id === '3').join(','), attribute);
 }
-function historyKey(ui, code) {
-  return dom(ui, code => document.querySelector('.form-shell').dispatchEvent(
-    new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ctrlKey: true, code })), code);
+async function historyKey(ui, code) {
+  await until(async () => {
+    const result = await dom(ui, code => {
+      let forwarded = false;
+      const observe = () => { forwarded = true; };
+      window.addEventListener('keydown', observe);
+      const accepted = !document.querySelector('.form-shell').dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ctrlKey: true, code }));
+      window.removeEventListener('keydown', observe);
+      return { accepted, forwarded };
+    }, code);
+    if (result.accepted) assert.equal(result.forwarded, false, 'handled history key does not reach workbench forwarding');
+    return result.accepted;
+  }, 'preview history can handle ' + code);
 }
 
 const inputTitle = '[data-edit-property="Title"] input';
@@ -87,7 +191,10 @@ const leaf = 'EditorLeaf';
 exports.run = async () => {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const file = fixture.form.path, read = () => fs.readFile(file, 'utf8');
-  const initial = (await read()).replace('<Width>50</Width>', '<!-- keep this -->\r\n<Width>50</Width>');
+  const initial = (await read()).replace('<Width>50</Width>', '<!-- keep this -->\r\n<Width>50</Width>')
+    .replace('</ChildItems></UsualGroup>', '<PDFDocumentField name="StatusOwner" id="10"><Visible>false</Visible></PDFDocumentField>'
+      + '<ViewStatusAddition name="StandaloneStatus" id="9"><AdditionSource><Item>StatusOwner</Item>'
+      + '<Type>ViewStatusRepresentation</Type></AdditionSource></ViewStatusAddition></ChildItems></UsualGroup>');
   await fs.mkdir(path.join(fixture.source, 'Ext'), { recursive: true });
   await fs.writeFile(path.join(fixture.source, 'Ext', 'ParentConfigurations.bin'), '{6,0,0,0,0,0}');
   await fs.writeFile(file, initial);
@@ -149,6 +256,17 @@ exports.run = async () => {
     await until(() => dom(ui, (selector, expected) => document.querySelector(selector)?.selectedOptions[0]?.textContent === expected,
       skip, defaultCaption), 'localized default restored');
     assert.ok(!(await read()).includes('>default<'), 'translation keys never become source values');
+    await checkSelectedRootDrop(ui, view);
+    const dockedBeforeMove = await read();
+    await checkZoomedDrag(ui, view);
+    assert.equal(await drag(ui, previewField, undefined, 0.95, previewAction), 'after');
+    await until(async () => await elementOrder(ui, 'data-element') === '3,2'
+      && await elementOrder(ui, 'data-form-tree-node') === '3,2' && await read() !== dockedBeforeMove
+      && !view.editor.dirty && !view.editor.status.saving, '75% attached move updates XML and preview');
+    await historyKey(ui, 'KeyZ');
+    await until(async () => await read() === dockedBeforeMove && !view.editor.status.saving
+      && await elementOrder(ui, 'data-element') === '2,3', '75% attached Undo restores exact XML and preview');
+    await previewZoom(ui, 100);
     assert.ok(await click(ui, action('detachPreview')));
     await until(() => view.frames.get('preview')?.ready, 'preview opened');
     floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
@@ -196,6 +314,7 @@ exports.run = async () => {
     await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'undo reaches detached preview');
     await until(() => !view.editor.dirty && !view.editor.status.saving, 'form saved before detached drag');
     const beforeMove = await read();
+    await checkZoomedDrag(floating, view);
     assert.ok(await click(floating, previewField));
     await until(() => dom(floating, selector => document.querySelector(selector)?.draggable, previewField), 'selected detached element is draggable');
     assert.equal(await drag(floating, previewField, undefined, 0.95, previewAction), 'after');
@@ -214,6 +333,7 @@ exports.run = async () => {
       && await elementOrder(ui, 'data-form-tree-node') === '3,2', 'detached Redo synchronizes both frames');
     await until(() => click(ui, action('undo')), 'main frame can undo the detached move');
     await until(async () => await read() === beforeMove && !view.editor.status.saving, 'shared history restores XML from main frame');
+    await previewZoom(floating, 100);
     const previewBefore = view.frames.get('preview');
     previewBefore.panel.dispose();
     await until(() => dom(ui, () => document.querySelector('.form-inspectors').dataset.inspectorLayout === 'columns'), 'closing preview restores docked layout');
