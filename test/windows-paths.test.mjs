@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { win32 } from "node:path";
+import { win32, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 
@@ -15,7 +15,7 @@ function windowsModules(platform = "win32") {
     })(name => overrides[name] ?? require(name), module, module.exports);
     return module.exports;
   };
-  const source = load("source");
+  const source = load("source", { "node:path": platform === "win32" ? win32 : posix });
   return { ...source, ...load("language/context", { "node:path": win32, "../source.js": source }) };
 }
 
@@ -60,4 +60,37 @@ test("ordinary paths retain their bytes and unsupported Windows namespaces are r
   assert.equal(unix.nativePath(wire(verbatim)), verbatim);
   assert.throws(() => windows.nativePath(wire("\\\\?\\GLOBALROOT\\Device\\Harddisk0")), { code: "unsupportedPath" });
   assert.throws(() => windows.nativePath(wire("\\\\?\\UNC\\server")), { code: "unsupportedPath" });
+});
+
+test("source plans share Windows drive, UNC and verbatim paths without accepting escapes", () => {
+  const { resolveSourcePath, sourceKey } = windowsModules();
+  const wire = value => ({ value, encoding: "utf-8" });
+  for (const base of ["C:/Проект #1 [данные]/100%", "//server/share/Проект", "D:/work"]) {
+    const root = win32.normalize(base), relative = "Catalogs/Товары/Forms/Основная/Ext/Form.xml";
+    const expected = win32.join(root, relative);
+    for (const spelling of [root, win32.toNamespacedPath(root), base]) {
+      const file = resolveSourcePath(wire(spelling), wire(relative));
+      assert.equal(file, expected);
+      assert.equal(sourceKey(file), sourceKey(win32.toNamespacedPath(expected)));
+      assert.equal(sourceKey(file), sourceKey(expected.toUpperCase()));
+    }
+    for (const child of ["../outside", "..\\outside", "sub/../file", "sub\\..\\file", "C:relative", "C:/outside", "/absolute",
+      "//server/share/absolute", "file.xml:stream", "./file", "sub//file", "sub\\\\file"]) {
+      assert.throws(() => resolveSourcePath(wire(root), wire(child)), { code: "protocolInvalid" }, child);
+    }
+  }
+  assert.notEqual(sourceKey("C:/Form.xml"), sourceKey("D:/Form.xml"));
+  assert.notEqual(sourceKey("//server/share/Form.xml"), sourceKey("//other/share/Form.xml"));
+});
+
+test("Unix source plans preserve backslashes, percent signs, Unicode and filename case", () => {
+  const { resolveSourcePath, sourceKey } = windowsModules("linux");
+  const wire = value => ({ value, encoding: "utf-8" });
+  const root = "/Проект #1 [данные]/100%";
+  for (const child of ["forms/Form.xml", "forms/form.xml", "forms/back\\slash.xml", "forms/Имя %20.xml"])
+    assert.equal(resolveSourcePath(wire(root), wire(child)), root + "/" + child);
+  assert.notEqual(sourceKey("/forms/Form.xml"), sourceKey("/forms/form.xml"));
+  assert.notEqual(sourceKey("/forms/a\\b.xml"), sourceKey("/forms/a/b.xml"));
+  for (const child of ["../outside", "./file", "sub/../file", "/outside", "sub//file"])
+    assert.throws(() => resolveSourcePath(wire(root), wire(child)), { code: "protocolInvalid" });
 });

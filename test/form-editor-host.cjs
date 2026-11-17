@@ -286,6 +286,27 @@ exports.run = async () => {
       restored = [...service.views.values()][0];
       return draftText(restored ?? {}).includes('Recover this title');
     }, 'checked draft restored after all views closed');
+    // A native editor may address the same source through a directory symlink/junction.
+    const alias = path.join(fixture.root, 'form alias [Кириллица]');
+    await fs.symlink(path.dirname(file), alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const aliased = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(alias, path.basename(file))));
+    await vscode.window.showTextDocument(aliased, { preview: false });
+    const unsaved = new vscode.WorkspaceEdit();
+    unsaved.insert(aliased.uri, new vscode.Position(0, 0), '<!-- unsaved native source -->');
+    assert.equal(await vscode.workspace.applyEdit(unsaved), true);
+    assert.equal(aliased.isDirty, true);
+    let refused;
+    await restored.editor.receive({ action: 'save', id: 901 }, value => { refused = value; });
+    assert.equal(refused?.message, 'editDirty');
+    assert.equal(await read(), current);
+    assert.ok(draftText(restored).includes('Recover this title'));
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    await restored.editor.receive({ action: 'discard', id: 902 }, () => {});
+    await until(() => restored.editor.schema?.writable && restored.phase === 'ready', 'editor recovers after discarding a conflicting draft');
+    ui = await frame({ state: { title: restored.frames.get('main').panel.title } });
+    await until(() => namedRow(ui, 'Name'), 'field after dirty alias conflict');
+    await until(() => setValue(ui, title, 'Recover this title'), 'edit after dirty alias conflict');
+    await until(() => draftText(restored).includes('Recover this title'), 'new draft after dirty alias conflict');
     const external = current.replace('<!-- keep this -->', '<!-- external -->');
     await fs.writeFile(file, external);
     await until(() => restored.editor.status.conflict, 'external XML conflict is recognized');
@@ -294,7 +315,7 @@ exports.run = async () => {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, locale: vscode.env.language, nativeWindow: true, liveDraft: true,
       exactSave: true, groupedUndo: true, propertySearch: true, attributeDrop: ['inside', 'before'],
-      draftRecovery: true, externalConflict: true, conditionalAppearance: true,
+      draftRecovery: true, externalConflict: true, dirtySourceAlias: true, conditionalAppearance: true,
     }));
   } finally { ui.close(); floating?.close(); }
 };

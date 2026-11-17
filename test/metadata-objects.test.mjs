@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { objectCapability, objectSchema, objectPlan } from '../out/metadata-object-protocol.js';
 import { MetadataObjects } from '../out/metadata-objects.js';
-import { plannedSource, verifyObjectSources } from '../out/metadata-object-review.js';
+import { verifyObjectSources } from '../out/metadata-object-review.js';
+import { resolveSourcePath } from '../out/source.js';
 import { MetadataTree } from '../out/tree.js';
 import { Connection } from '../out/connection.js';
 import { ExplorerError } from '../out/protocol.js';
@@ -57,8 +58,8 @@ test('object plans reject malformed snapshots and all paths remain contained', (
     const value = structuredClone(planFor(request)); mutate(value); assert.throws(() => objectPlan(value), { code: 'protocolInvalid' });
   }
   const root = wire(resolve('.'));
-  for (const path of ['../outside','./file','folder//file',resolve('/tmp/outside')]) assert.throws(() => plannedSource(root, wire(path)), { code: 'protocolInvalid' });
-  assert.equal(plannedSource(root, wire('Catalogs/New.xml')), resolve('Catalogs/New.xml'));
+  for (const path of ['../outside','./file','folder//file',resolve('/tmp/outside')]) assert.throws(() => resolveSourcePath(root, wire(path)), { code: 'protocolInvalid' });
+  assert.equal(resolveSourcePath(root, wire('Catalogs/New.xml')), resolve('Catalogs/New.xml'));
 });
 
 async function fixture(t) {
@@ -440,4 +441,17 @@ for(const locale of ['ru-RU','en-US'])test(`collection Add fixes the kind and ow
   const exhausted=harness(root,{operation:'create',tree,entry:group,locale});deferCleanup(t,()=>exhausted.ui.dispose());
   assert.equal(await exhausted.run(),undefined);assert.equal(exhausted.requests.length,0);assert.equal(exhausted.inputDefaults.length,0);
   assert.equal((await tree.children(group)).length,2);
+});
+
+test('object review detects dirty dependencies opened through a symlink or junction', async t => {
+  const root = await fixture(t);
+  const alias = join(root, 'alias');
+  await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const api = { Uri: { file: fsPath => ({ scheme: 'file', fsPath }) }, workspace: {
+    textDocuments: [{ uri: { scheme: 'file', fsPath: join(alias, 'module.bsl') }, isDirty: true }],
+  } };
+  await assert.rejects(verifyObjectSources(api, wire(root), planFor(request), () => false, () => {}),
+    { domain: 'creation_dirty_source' });
+  api.workspace.textDocuments[0].isDirty = false;
+  await verifyObjectSources(api, wire(root), planFor(request), () => false, () => {});
 });

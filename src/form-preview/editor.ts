@@ -5,11 +5,9 @@ import { dirname, join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { ExplorerError, isRecord, isWirePath } from "../protocol.js";
 import { configuredReadOnlyResource } from "../editor-policy.js";
-import { plannedSource } from "../metadata-object-review.js";
-import { existingSource } from "../source.js";
+import { hasDirtySource, existingSource, resolveSourcePath, sourceKey } from "../source.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
 import type { FormSnapshot } from "./protocol.js";
-import { formSourceKey } from "./source.js";
 
 type RecordValue = Record<string, unknown>;
 type AssignedTarget = { kind: "element"; id: number } | { kind: "attribute" | "command" | "parameter"; name: string };
@@ -227,7 +225,7 @@ export class FormEditor {
     if (this.closed || !current || current.tree !== context.tree || current.entry.project !== context.entry.project
       || current.entry.node.id.kind !== "object" || context.entry.node.id.kind !== "object"
       || current.entry.node.id.objectId !== context.entry.node.id.objectId || current.origin !== context.origin
-      || formSourceKey(current.path) !== formSourceKey(context.path)) throw new ExplorerError("sourceChanged");
+      || sourceKey(current.path) !== sourceKey(context.path)) throw new ExplorerError("sourceChanged");
   }
 
   private async checkSourceBuffers(context: Context, paths: string[]): Promise<void> {
@@ -235,11 +233,9 @@ export class FormEditor {
     const uri = await this.uri(context.path);
     this.checkContext(context);
     if (uri.scheme !== "file" || configuredReadOnlyResource(uri, "xml")) throw new ExplorerError("requestFailed", "property_read_only");
-    const inputs = new Set(paths.map(formSourceKey));
-    for (const document of vscode.workspace.textDocuments) {
-      if (document.uri.scheme === "file" && document.isDirty && inputs.has(formSourceKey(document.uri.fsPath)))
-        throw new ExplorerError("requestFailed", "creation_dirty_source");
-    }
+    if (await hasDirtySource(paths, vscode.workspace.textDocuments))
+      throw new ExplorerError("requestFailed", "creation_dirty_source");
+    this.checkContext(context);
   }
 
   private async checkBase(base: Base, inputs: string[] = []): Promise<Buffer> {
@@ -283,9 +279,9 @@ export class FormEditor {
       || !isDeepStrictEqual(request, prepared.request) || !hash(prepared.sourceSnapshot) || !hash(prepared.expectedOutputSnapshot)
       || !Array.isArray(preview.inputs) || !preview.inputs.every(isWirePath) || !Array.isArray(preview.assignedIds) || !schemaValues(preview.draft))
       throw new ExplorerError("protocolInvalid");
-    const source = plannedSource(entry.project.info.sourcePath, preview.source);
+    const source = resolveSourcePath(entry.project.info.sourcePath, preview.source);
     if (relative(path, source) !== "") throw new ExplorerError("protocolInvalid");
-    const inputs = preview.inputs.map(input => plannedSource(entry.project.info.sourcePath, input));
+    const inputs = preview.inputs.map(input => resolveSourcePath(entry.project.info.sourcePath, input));
     const bytes = await this.checkBase(base, inputs);
     const text = patchedText(bytes, preview.changes, prepared.expectedOutputSnapshot);
     const targets = preview.assignedIds.map(value => isRecord(value) ? target(value.target) : undefined);

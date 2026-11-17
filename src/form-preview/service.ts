@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, extname, basename } from "node:path";
 import { ExplorerError, isRecord, projectEnabled, type WirePath } from "../protocol.js";
-import { existingSource, nativePath, resolveSource, isForm } from "../source.js";
+import { existingSource, nativePath, resolveSource, isForm, sourceKey } from "../source.js";
 import { relativeFile, revealFile } from "../reveal.js";
 import { type MetadataTree, type TreeEntry, nodeKey } from "../tree.js";
 import type { Connection } from "../connection.js";
@@ -14,7 +14,7 @@ import { FormSession } from "./client.js";
 import { identityKey, isIdentity, isDataPath, isExpandedDataPath, MAX_FORM_DEPENDENCIES, type FormInput, type FormInputSource, type FormPreparation, type FormDependency, type FormSnapshot, type ElementIdentity, type FormNode, type FormPalette, type FormTarget, type Location } from "./protocol.js";
 import { formStrings } from "./strings.js";
 import { parsePreviewNavigation, type PreviewNavigation } from "./navigation.js";
-import { formEditorRange, formSourceKey } from "./source.js";
+import { formEditorRange } from "./source.js";
 import { movePreviewToNewWindow } from "./window.js";
 import { defaultInspectorUi, parseInspectorState, type InspectorState } from "./inspector-state.js";
 
@@ -48,7 +48,7 @@ async function formEntry(tree: MetadataTree, path: string): Promise<TreeEntry> {
 function inputKey(input: InputPath): string { return JSON.stringify([input.root, input.path]); }
 function isXml(path: string): boolean { return extname(path).toLowerCase() === ".xml"; }
 async function checkedInputPath(input: InputPath): Promise<string> {
-  return formSourceKey(await realpath(await existingSource(input.root, input.path)));
+  return sourceKey(await realpath(await existingSource(input.root, input.path)));
 }
 function inputInRoots(roots: readonly InputRoot[], file: string): InputPath | undefined {
   for (const root of roots) {
@@ -88,8 +88,8 @@ export class FormPreviewService implements vscode.Disposable {
     this.schedule(view, 0);
   }
   private async view(tree: MetadataTree, entry: TreeEntry, path: string, application: string | undefined): Promise<View> {
-    const key = `${formSourceKey(path)}\0${application ?? ""}`;
-    const existing = this.views.get(key) ?? [...this.views.values()].find(view => formSourceKey(view.path) === formSourceKey(path) && application !== undefined && view.application === application);
+    const key = `${sourceKey(path)}\0${application ?? ""}`;
+    const existing = this.views.get(key) ?? [...this.views.values()].find(view => sourceKey(view.path) === sourceKey(path) && application !== undefined && view.application === application);
     if (existing) return existing;
     const pending = this.opening.get(key); if (pending) return pending;
     const create = Promise.resolve().then(() => {
@@ -173,7 +173,7 @@ export class FormPreviewService implements vscode.Disposable {
     const storageKey = "formDraft." + this.inspectorKey(view.key);
     return view.editor ??= new FormEditor(() => {
       if (!this.canEdit(view) || !view.snapshot) return undefined;
-      const origin = view.inputs.get(formSourceKey(view.path));
+      const origin = view.inputs.get(sourceKey(view.path));
       if (!origin || origin !== view.snapshot.model.root.identity.source) return undefined;
       return { tree: view.tree, entry: view.entry, path: view.path, snapshot: view.snapshot, origin };
     }, this.sourceUri, (render, selected) => {
@@ -295,8 +295,8 @@ export class FormPreviewService implements vscode.Disposable {
   private async documentChanged(document: vscode.TextDocument): Promise<void> {
     if (this.disposed || document.uri.scheme !== "file") return;
     const file = await realpath(document.uri.fsPath).catch(() => document.uri.fsPath);
-    const path = formSourceKey(file);
-    for (const view of this.views.values()) if (view.inputs.has(path) || formSourceKey(view.path) === path
+    const path = sourceKey(file);
+    for (const view of this.views.values()) if (view.inputs.has(path) || sourceKey(view.path) === path
       || document.isDirty && isXml(path) && inputInRoots(view.inputRoots, file) !== undefined) this.schedule(view);
   }
   private schedule(view: View, delay = 120): void {
@@ -391,7 +391,7 @@ export class FormPreviewService implements vscode.Disposable {
     for (const document of vscode.workspace.textDocuments) {
       if (document.uri.scheme !== "file" || !document.isDirty || !isXml(document.uri.fsPath)) continue;
       const file = await realpath(document.uri.fsPath).catch(() => undefined); if (!file) continue;
-      const path = formSourceKey(file), form = view.formInputs.get(path);
+      const path = sourceKey(file), form = view.formInputs.get(path);
       if (basename(file).toLowerCase() === "form.xml" && !form) continue;
       const known = dependencies.find(input => input.role !== "picture" && input.id === view.inputs.get(path)
         && allowedRoots.has(JSON.stringify(input.root)));
@@ -402,7 +402,7 @@ export class FormPreviewService implements vscode.Disposable {
       result.set(key, { root: location.root, path: location.path, text, version: String(document.version) });
     }
     const draft = view.editor?.overlay;
-    const source = draft && view.formInputs.get(formSourceKey(view.path));
+    const source = draft && view.formInputs.get(sourceKey(view.path));
     if (draft && source) result.set(inputKey(source), { root: source.root, path: source.path, ...draft });
     return [...result.values()];
   }
@@ -452,16 +452,16 @@ export class FormPreviewService implements vscode.Disposable {
       const path = await checkedInputPath(dependency);
       watched.add(path);
       if (dependency.role !== "picture") inputs.set(path, dependency.id);
-      const root = nativePath(dependency.root); roots.set(formSourceKey(root), vscode.Uri.file(root));
+      const root = nativePath(dependency.root); roots.set(sourceKey(root), vscode.Uri.file(root));
     }
-    for (const root of view.inputRoots) roots.set(formSourceKey(root.path), vscode.Uri.file(nativePath(root.wire)));
+    for (const root of view.inputRoots) roots.set(sourceKey(root.path), vscode.Uri.file(nativePath(root.wire)));
     if (view.closed || view.suspended || this.disposed) return;
     this.clearWatchers(view);
     view.inputs = inputs;
     view.watchKey = key;
     for (const root of roots.values()) {
       this.watchFiles(view, new vscode.RelativePattern(root, "**/*"), uri => {
-        const path = formSourceKey(uri.fsPath);
+        const path = sourceKey(uri.fsPath);
         if (watched.has(path) || isXml(path) || /[\\/](?:StyleItems|Styles|CommonPictures)[\\/]/.test(uri.fsPath)) this.schedule(view);
       });
     }
