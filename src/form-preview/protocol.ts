@@ -5,7 +5,7 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 export const MAX_FORM_DEPENDENCIES = 1024;
 const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
+export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; handlerAuthoring?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
 export interface FormPropertyMatch { identity: ElementIdentity; id: string; label: string; value: string }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
@@ -65,7 +65,7 @@ export interface FormPalette {
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[]; valueType?: FieldType }
 export interface FormDataField { path: string[]; caption?: FormText; valueType: FieldType; type: PropertyField | null; origin: Origin | null }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
-export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
+export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; caption?: PaletteCaption | null; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
 export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; expandedData?: string[][]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
@@ -182,6 +182,7 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
   return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
     ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}),
+    ...(value.apiVersion.minor >= 54 && data.handlerAuthoring === true ? { handlerAuthoring: true } : {}),
     ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}),
     ...(value.apiVersion.minor >= 53 && data.propertySearch === true ? { propertySearch: true } : {}),
     ...(value.apiVersion.minor >= 47 && data.referenceData === true ? { referenceData: true } : {}) };
@@ -227,7 +228,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
   if (scriptVariant !== undefined && scriptVariant !== "russian" && scriptVariant !== "english") invalid();
   node(value.model.root, 0);
   if (value.model.handlers !== undefined && (!Array.isArray(value.model.handlers) || value.model.handlers.length > 16_384 || !value.model.handlers.every(handler =>
-    isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
+    isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && (handler.caption === null || caption(handler.caption)) && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
     && (handler.owner.kind === "element" && isIdentity(handler.owner.identity) && identities.has(identityKey(handler.owner.identity))
       || handler.owner.kind === "command" && typeof handler.owner.name === "string")))) invalid();
   for (const name of ["attributes", "commands", "parameters"]) if (!Array.isArray(value.model[name]) || !(value.model[name] as unknown[]).every(value => isRecord(value)

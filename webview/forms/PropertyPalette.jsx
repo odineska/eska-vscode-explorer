@@ -58,7 +58,7 @@ function Row(props) {
         </Match>
         <Match when={true}>{caption(value().caption, state) ?? value().value ?? state.strings.form}</Match>
       </Switch>}>
-        {field => <>{props.control(field())}<Show when={handler()}>
+        {field => <>{props.control(field())}<Show when={handler() && !props.editableHandler(field())}>
           <InspectorIconButton icon="xml" label={state.strings.handler} onClick={() => props.openHandler(handler().index)}/>
         </Show></>}
       </Show>
@@ -69,7 +69,7 @@ function Row(props) {
 export function PropertyPalette(props) {
   const rows = category => props.palette.rows.filter(row => row.category === category && row.available !== false);
   const render = row => <Row row={row} node={props.node} state={props.state} locate={props.locate}
-    field={props.field} control={props.control} handlers={props.handlers} openHandler={props.openHandler}/>;
+    field={props.field} control={props.control} handlers={props.handlers} openHandler={props.openHandler} editableHandler={props.editableHandler}/>;
   const group = (label, entries) => <table class="form-properties"><tbody>
     <tr class="form-property-category"><th colspan="2">{label()}</th></tr><For each={entries()}>{render}</For>
   </tbody></table>;

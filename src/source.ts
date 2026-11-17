@@ -136,6 +136,7 @@ export type SourceTarget = "default" | "xml" | "form" | "form-module";
 
 /** Forms and objects with a Modules group open properties; direct-code objects use their BSL mapping. */
 export async function resolveTreeSource(tree: MetadataTree, entry: TreeEntry): Promise<OpenSource | undefined> {
+  if (entry.node.id.kind === "standardAttribute") return undefined;
   if (entry.node.id.kind !== "object" || entry.node.metadataKind === "event-subscription") {
     return resolveSource(tree, entry);
   }
@@ -165,7 +166,7 @@ export async function resolveSource(tree: MetadataTree, entry: TreeEntry, target
     return { path: source.path, position: handlerRange(text, handler.name) };
   }
   const id = entry.node.id;
-  if (id.kind === "collection") throw new ExplorerError("sourceMissing");
+  if (id.kind === "collection" || id.kind === "standardAttribute") throw new ExplorerError("sourceMissing");
   const moduleRole = id.kind === "module" ? id.role : target === "form-module" ? "module"
     : target === "default" ? directModuleRole(entry) : undefined;
   if ((target === "form" || target === "form-module") && !isForm(entry)) throw new ExplorerError("sourceMissing");

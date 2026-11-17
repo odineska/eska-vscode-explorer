@@ -129,7 +129,10 @@ export class FormEditor {
         return;
       }
       const snapshot = context && diskSnapshot(context);
-      if (!context || !snapshot || context.entry.node.id.kind !== "object") {
+      // A preview may still carry our just-committed overlay. Native dirty buffers,
+      // rather than its delayed version token, decide whether authoring is available.
+      if (!context || context.entry.node.id.kind !== "object"
+        || await hasDirtySource([context.path], vscode.workspace.textDocuments)) {
         if (this.base || this.lastUnavailable !== "editDirty") {
           this.base = undefined;
           this.history = { undo: false, redo: false };
@@ -138,35 +141,15 @@ export class FormEditor {
         }
         return;
       }
-      if (this.base?.snapshot === snapshot && this.base.context.tree === context.tree
+      if (this.base && this.base.snapshot === snapshot && this.base.context.tree === context.tree
         && this.base.context.entry.project === context.entry.project) return;
       if (this.steps.length) this.reset();
-      const form = context.entry.node.id.objectId;
       try {
-        await this.checkSourceBuffers(context, [context.path]);
-        const [value, history] = await Promise.all([
-          context.tree.request(context.entry.project, "metadata/formEditSchema", { form, includeTypes: true }),
-          context.tree.request(context.entry.project, "metadata/formEditHistory", { form, snapshot }),
-        ]);
-        this.checkContext(context);
-        if (!schemaValues(value) || value.schemaVersion !== 1 || value.form !== form || value.snapshot !== snapshot || !isWirePath(value.path)
-          || !Array.isArray(value.elementKinds) || !Array.isArray(value.definitionKinds)
-          || !isRecord(value.propertyCaptions) || !isRecord(value.choiceCaptions) || typeof value.writable !== "boolean")
-          throw new ExplorerError("protocolInvalid");
-        const source = await existingSource(context.entry.project.info.sourcePath, value.path);
-        this.checkContext(context);
-        const current = this.current();
-        if (relative(context.path, source) !== "" || !current || diskSnapshot(current) !== snapshot)
-          throw new ExplorerError("sourceChanged");
-        const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } = value;
-        const schema = { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable };
-        this.base = { context, form, snapshot, schema };
-        this.history = { undo: history.undo === true, redo: history.redo === true };
-        this.lastUnavailable = writable ? "" : "editLocked";
+        const base = await this.loadBase(context);
         if (this.recovery) {
-          if (this.recovery.snapshot !== snapshot) throw new ExplorerError("sourceChanged");
+          if (this.recovery.snapshot !== base.snapshot) throw new ExplorerError("sourceChanged");
           const steps = this.recovery.steps;
-          this.plan = await this.prepare(this.base, steps);
+          this.plan = await this.prepare(base, steps);
           this.steps = steps;
           this.cursor = steps.length;
           this.revision++;
@@ -179,6 +162,36 @@ export class FormEditor {
         this.changed(false);
       }
     });
+  }
+
+  /** A committed edit may precede the asynchronous preview refresh. Read the actual source,
+   * so the next queued action never uses a stale preview snapshot or loses its history. */
+  private async loadBase(context: Context): Promise<Base> {
+    if (context.entry.node.id.kind !== "object") throw new ExplorerError("sourceChanged");
+    await this.checkSourceBuffers(context, [context.path]);
+    const snapshot = digest(await readFile(context.path));
+    this.checkContext(context);
+    const form = context.entry.node.id.objectId;
+    const [value, history] = await Promise.all([
+      context.tree.request(context.entry.project, "metadata/formEditSchema", { form, includeTypes: true }),
+      context.tree.request(context.entry.project, "metadata/formEditHistory", { form, snapshot }),
+    ]);
+    this.checkContext(context);
+    if (!schemaValues(value) || value.schemaVersion !== 1 || value.form !== form || value.snapshot !== snapshot || !isWirePath(value.path)
+      || !Array.isArray(value.elementKinds) || !Array.isArray(value.definitionKinds)
+      || !isRecord(value.propertyCaptions) || !isRecord(value.choiceCaptions) || typeof value.writable !== "boolean")
+      throw new ExplorerError("protocolInvalid");
+    const source = await existingSource(context.entry.project.info.sourcePath, value.path);
+    if (sourceKey(context.path) !== sourceKey(source)) throw new ExplorerError("protocolInvalid");
+    const { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable } = value;
+    const schema = { nodes, elementKinds, definitionKinds, propertyCaptions, choiceCaptions, conditionalAppearance, dynamicListAppearance, typeOptions, writable };
+    const base = { context, form, snapshot, schema };
+    await this.checkBase(base);
+    this.base = base;
+    this.conflict = false;
+    this.history = { undo: history.undo === true, redo: history.redo === true };
+    this.lastUnavailable = writable ? "" : "editLocked";
+    return base;
   }
 
   receive(value: RecordValue, respond: (value: RecordValue) => void): Promise<void> {
@@ -198,7 +211,10 @@ export class FormEditor {
         else if (action === "change" || action === "placeAttribute") {
           const items = operations(value.operations);
           if (action === "placeAttribute") this.allocateName(items);
-          if (items.length) selected = await this.change(items, value.merge);
+          if (items.length) {
+            selected = await this.change(items, value.merge);
+            await this.save();
+          }
         } else return;
         respond({ type: "formDraftResult", id, ...(selected ? { target: selected } : {}) });
       } catch (error) {
@@ -327,18 +343,23 @@ export class FormEditor {
     this.saving = true;
     this.notice = "";
     this.changed(false);
+    let committed = false;
     try {
       const result = await tree.request(entry.project, "metadata/applyFormEdit", { prepared: plan.prepared, steps });
-      if (result.schemaVersion !== 1 || result.form !== base.form || result.changed !== true || result.snapshot !== plan.prepared.expectedOutputSnapshot)
+      if (result.schemaVersion !== 1 || result.form !== base.form || result.changed !== true || !hash(result.snapshot) || result.snapshot !== plan.prepared.expectedOutputSnapshot)
         throw new ExplorerError("protocolInvalid");
+      committed = true;
       this.reset();
-      this.base = undefined;
-      this.notice = "editSaved";
+      // Keep the validated schema while the backend reloads; hiding it would remount inputs.
+      this.base = { ...base, snapshot: result.snapshot, schema: plan.schema };
       await this.persist(undefined);
+      await this.loadBase(base.context);
+      this.notice = "editSaved";
     } catch (error) {
-      this.notice = this.message(error, true);
+      const failure = committed ? new ExplorerError("requestFailed", "form_committed_refresh_required") : error;
+      this.notice = this.message(failure, true);
       this.conflict = true;
-      throw error;
+      throw failure;
     } finally {
       this.saving = false;
       this.changed(true);
@@ -360,8 +381,13 @@ export class FormEditor {
     const result = await tree.request(entry.project, "metadata/replayFormEdit", { form: base.form, snapshot: base.snapshot, undo: action === "undo" });
     if (result.schemaVersion !== 1 || result.form !== base.form || result.changed !== true || !hash(result.snapshot))
       throw new ExplorerError("protocolInvalid");
-    this.base = undefined;
+    this.base = { ...base, snapshot: result.snapshot };
     this.history = { undo: false, redo: false };
+    try { await this.loadBase(base.context); }
+    catch {
+      this.conflict = true;
+      throw new ExplorerError("requestFailed", "form_committed_refresh_required");
+    }
     this.notice = action === "undo" ? "editUndone" : "editRedone";
     this.changed(true);
   }

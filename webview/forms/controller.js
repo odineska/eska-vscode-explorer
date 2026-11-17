@@ -2,22 +2,24 @@ import { createStore, reconcile, unwrap } from 'solid-js/store';
 import { batch, createSignal } from 'solid-js';
 import { prepare, key, formElementPath, pageSelections } from './model.mjs';
 import { parsePreviewNavigation } from '../../src/form-preview/navigation.js';
+import { property } from './editor-model.mjs';
 import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/inspector-state.js';
 
 /** Only UI state is persisted. Models and backend session handles are refreshed after reload. */
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
-  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, referenceData: false,
+  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, handlerAuthoring: false, referenceData: false,
     notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, editSchema: null, draftStatus: null, propertySearch: false, propertyMatches: null,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
   const [edit, setEdit] = createSignal(null);
   const [fieldPending, setFieldPending] = createSignal(0);
   const [changing, setChanging] = createSignal(0);
   const [replaying, setReplaying] = createSignal(false);
+  const [handlerBusy, setHandlerBusy] = createSignal(false);
   const [propertyReveal, revealProperty] = createSignal('', { equals: false });
   const [dataReveal, setDataReveal] = createSignal('', { equals: false });
   const [actionNotice, setActionNotice] = createSignal('');
-  const pending = new Map(), fields = new Map();
+  const pending = new Map(), fields = new Map(), changes = new Set();
   let draftId = 0;
   let fieldId = 0;
   const fieldPrefix = Date.now().toString(36) + '-';
@@ -25,7 +27,7 @@ export function controller(api) {
     : actionNotice() || state.draftStatus?.notice || (dirty() ? 'editUnsaved' : '');
   const history = () => state.draftStatus ?? { undo: false, redo: false };
   const dirty = () => state.draftStatus?.dirty || fieldPending() + changing() > 0;
-  const writable = () => state.authoring && !replaying() && !state.draftStatus?.conflict && !state.draftStatus?.saving;
+  const writable = () => state.authoring && !replaying() && !handlerBusy() && !state.draftStatus?.conflict;
   function draftAction(action, payload) {
     const id = ++draftId;
     setActionNotice('');
@@ -55,15 +57,42 @@ export function controller(api) {
   function flushFields() { for (const key of fields.keys()) flushField(key); }
   function change(operations, merge, action = 'change') {
     setChanging(count => count + 1);
-    return draftAction(action, { operations, merge }).finally(() => setChanging(count => count - 1));
+    const request = draftAction(action, { operations, merge }).finally(() => {
+      changes.delete(request);
+      setChanging(count => count - 1);
+    });
+    changes.add(request);
+    return request;
+  }
+  async function editHandler(target, event) {
+    if (!state.handlerAuthoring || !writable()) return;
+    target = { ...target };
+    const session = state.formSessionId;
+    flushFields();
+    setHandlerBusy(true);
+    try {
+      // A handler may belong to an element just created by a queued form edit.
+      const results = await Promise.all([...changes]);
+      if (session !== state.formSessionId || results.some(result => result.message) || state.draftStatus?.conflict) return;
+      const result = await new Promise(resolve => {
+        const id = ++draftId;
+        pending.set(id, resolve);
+        post({ type: 'handlerEdit', id, target, event });
+      });
+      if (!result.name || result.message || result.bound || session !== state.formSessionId) return;
+      const operation = target.kind === 'command'
+        ? { kind: 'setProperty', target, property: property('Action', { Text: result.name }) }
+        : { kind: 'setEvent', target, event, handler: result.name };
+      await change([operation]);
+    } finally { setHandlerBusy(false); }
   }
   function save() {
-    if (!dirty() || replaying() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
+    if (!dirty() || replaying() || handlerBusy() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
     flushFields();
     void draftAction('save');
   }
   async function replayForm(action) {
-    if (edit() || replaying() || !history()[action] && !fieldPending()) return;
+    if (edit() || replaying() || handlerBusy() || !history()[action] && !fieldPending()) return;
     flushFields();
     setReplaying(true);
     try { await draftAction(action); }
@@ -145,12 +174,12 @@ export function controller(api) {
     if (!value || typeof value !== 'object') return;
 
     batch(() => {
-      if (value.type === 'formDraftResult') {
+      if (value.type === 'formDraftResult' || value.type === 'formHandlerResult') {
         const resolve = pending.get(value.id);
         pending.delete(value.id);
         if (!resolve) return;
         if (value.message) setActionNotice(value.message);
-        if (value.target?.name) {
+        if (value.type === 'formDraftResult' && value.target?.name) {
           const section = { attribute: 'attributes', command: 'commands', parameter: 'parameters' }[value.target.kind];
           if (section) {
             set('ui', 'tab', section);
@@ -193,7 +222,7 @@ export function controller(api) {
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
       if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
+      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
         if (value[field] !== undefined) set(field, value[field]);
       }
       if (value.editSchema !== undefined) set('editSchema', reconcile(value.editSchema, { key: 'id', merge: true }));
@@ -252,7 +281,7 @@ export function controller(api) {
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });
   return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editStatus, closeEditor,
-    history, replaying, replayForm, historyKey, draftAction, change, save, dirty, writable, propertyReveal, revealProperty, dataReveal, revealData,
+    history, replaying, replayForm, historyKey, draftAction, change, save, dirty, writable, editHandler, handlerBusy, propertyReveal, revealProperty, dataReveal, revealData,
     fieldPending, scheduleField, flushField, discardField, nextFieldId: () => fieldPrefix + ++fieldId,
     dispose: () => {
       window.removeEventListener('message', receive);

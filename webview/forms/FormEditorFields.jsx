@@ -120,13 +120,14 @@ function ValueEditor(props) {
       return <LocalizedFields values={localized(value(), defaultLanguage(props.model))} language={defaultLanguage(props.model)}
         label={props.label} change={values => props.change({ Localized: values })}/>;
     case 'enum':
-      return <select aria-label={props.label} value={text()} onChange={event => {
+      return <select aria-label={props.label} value={value() ? text() : ''} onChange={event => {
         const value = event.currentTarget.value;
-        if (automatic && value === 'Auto') props.change(undefined);
+        if (!value || automatic && value === 'Auto') props.change(undefined);
         else changeText(value);
       }}>
-        <Show when={!field.values.includes(text())}><option value={text()} selected>{text() || s.editChoose}</option></Show>
-        <For each={field.values}>{option => <option value={option} selected={text() === option}>{caption(option)}</option>}</For>
+        <option value="" selected={!value()}>{field.defaultCaption?.[props.locale] ?? s.paletteDefault}</option>
+        <Show when={value() && !field.values.includes(text())}><option value={text()} selected>{caption(text()) || s.editChoose}</option></Show>
+        <For each={field.values}>{option => <option value={option} selected={!!value() && text() === option}>{caption(option)}</option>}</For>
       </select>;
     case 'color':
       return <ColorField label={props.label} strings={s} value={text()} change={changeText}/>;

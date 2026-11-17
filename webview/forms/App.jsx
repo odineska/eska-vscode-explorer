@@ -1,5 +1,5 @@
 import { Show, createSignal, createMemo, createEffect, on, onMount, onCleanup } from 'solid-js';
-import { Preview } from './Preview.jsx';
+import { PreviewSurface } from './PreviewSurface.jsx';
 import { Splitter } from './Splitter.jsx';
 import { FormEditor } from './FormEditor.jsx';
 import { Inspector } from './Inspector.jsx';
@@ -54,7 +54,7 @@ export function App(props) {
           value={() => inspectors().height} change={value => c.ui('upper', Math.max(inspectors().minimumHeight, Math.min(inspectors().maximumHeight, value)))}/>
         </Show>
       </Show>
-      <Show when={state.role === 'preview' || !state.detached}><PreviewToolbar controller={c}/><Preview controller={c}/></Show>
+      <Show when={state.role === 'preview' || !state.detached}><PreviewToolbar controller={c}/><PreviewSurface controller={c}/></Show>
     </Show>
     <FormMenu controller={c.menu}/>
     <Show when={c.edit()} keyed>{draft => <FormEditor controller={c} draft={draft}/>}</Show>

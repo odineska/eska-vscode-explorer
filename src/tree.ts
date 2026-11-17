@@ -4,9 +4,10 @@ import { Connection } from "./connection.js";
 import { ExplorerError, isRecord, isToken, parseWorkspace, projectEnabled, type ProjectInfo, type WorkspaceSession } from "./protocol.js";
 
 export type NodeId = { kind: "object"; objectId: string }
+  | { kind: "standardAttribute"; owner: string; name: string }
   | { kind: "module"; owner: string; role: string }
   | { kind: "collection"; owner: string; collection: { kind: "metadata"; metadataKind: string }
-    | { kind: "common" | "modules" | "unsupported" } };
+    | { kind: "common" | "modules" | "standardAttributes" | "unsupported" } };
 export interface MetadataNode {
   id: NodeId;
   metadataKind?: string | null;
@@ -40,6 +41,7 @@ export interface TreeEntry {
 export function nodeKey(id: NodeId): string {
   if (id.kind === "object") return JSON.stringify([id.kind, id.objectId]);
   if (id.kind === "module") return JSON.stringify([id.kind, id.owner, id.role]);
+  if (id.kind === "standardAttribute") return JSON.stringify([id.kind, id.owner, id.name]);
   return JSON.stringify([id.kind, id.owner, id.collection.kind,
     id.collection.kind === "metadata" ? id.collection.metadataKind : null]);
 }
@@ -50,10 +52,11 @@ export function isNodeId(value: unknown): value is NodeId {
   if (value.kind === "object") return typeof value.objectId === "string";
   if (typeof value.owner !== "string") return false;
   if (value.kind === "module") return typeof value.role === "string";
+  if (value.kind === "standardAttribute") return typeof value.name === "string" && value.name.length > 0;
   if (value.kind !== "collection" || !isRecord(value.collection)) return false;
   const collection = value.collection;
   return collection.kind === "metadata" ? typeof collection.metadataKind === "string"
-    : ["common", "modules", "unsupported"].includes(String(collection.kind));
+    : ["common", "modules", "standardAttributes", "unsupported"].includes(String(collection.kind));
 }
 
 /** Accept backend-supplied labels and schemas without a duplicate metadata catalog. */

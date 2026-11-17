@@ -83,5 +83,12 @@
   "createMetadata": "Add Attribute or Tabular Section…",
   "createObject": "Add…",
   "copyObject": "Copy metadata object…",
-  "deleteObject": "Delete metadata object…"
+  "deleteObject": "Delete metadata object…",
+  "scmView": "ESKA: 1C Changes",
+  "scmOpen": "Open File",
+  "scmDiff": "Open Changes",
+  "scmStage": "Stage Changes",
+  "scmUnstage": "Unstage Changes",
+  "scmDiscard": "Discard Changes",
+  "scmRefresh": "Refresh 1C Changes"
 }

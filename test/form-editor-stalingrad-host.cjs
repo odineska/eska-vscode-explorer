@@ -19,7 +19,7 @@ async function edit(ui, key) {
       control.checked = !control.checked;
       control.dispatchEvent(new Event('change', { bubbles: true }));
     } else {
-      control.value = 'Проверка черновика';
+      control.value = 'Проверка автосохранения';
       control.dispatchEvent(new Event('input', { bubbles: true }));
     }
     return true;
@@ -53,21 +53,20 @@ async function applyDialog(ui, view) {
   await until(async () => {
     const failure = await dom(ui, () => document.querySelector('dialog [role=alert] p')?.textContent);
     assert.ok(!failure, failure);
-    return view.editor.overlay?.text && dom(ui, () => !document.querySelector('dialog[open]'));
-  }, 'compound change enters the draft');
+    return !view.editor.status.saving && !view.editor.dirty && dom(ui, () => !document.querySelector('dialog[open]'));
+  }, 'compound change is saved');
 }
 
-async function editHistory(ui, name, read, expected) {
+async function editHistory(ui, view, name, read, expected) {
   await until(() => click(ui, action(name)), name + ' available');
   await until(async () => await read() === expected, name + ' keeps exact XML bytes');
+  await view.editor.pending;
+  await until(() => dom(ui, action => !document.querySelector('[data-edit-action="' + action + '"]')?.disabled, name === 'undo' ? 'redo' : 'undo'), 'history controls ready');
 }
 
-async function saveDraft(ui, view, read, original) {
-  const changed = view.editor.overlay?.text;
-  assert.ok(changed && changed !== original);
-  assert.equal(await read(), original);
-  await editHistory(ui, 'save', read, changed);
-  return changed;
+async function savedChange(view, read, original) {
+  await until(async () => !view.editor.status.saving && !view.editor.dirty && await read() !== original, 'change automatically saved');
+  return read();
 }
 
 async function editTransactions(ui, view, read, original) {
@@ -91,11 +90,11 @@ async function editTransactions(ui, view, read, original) {
   }
   await dom(ui, () => { document.getElementById('root').style.width = ''; });
   await applyDialog(ui, view);
-  assert.match(view.editor.overlay.text, /<dcsset:comparisonType>NotInList<\/dcsset:comparisonType>[^]*?>ESKA-A<\/dcsset:right>[^]*?>ESKA-B<\/dcsset:right>/);
-  const saved = await saveDraft(ui, view, read, original);
-  await editHistory(ui, 'undo', read, original);
-  await editHistory(ui, 'redo', read, saved);
-  await editHistory(ui, 'undo', read, original);
+  const saved = await savedChange(view, read, original);
+  assert.match(saved, /<dcsset:comparisonType>NotInList<\/dcsset:comparisonType>[^]*?>ESKA-A<\/dcsset:right>[^]*?>ESKA-B<\/dcsset:right>/);
+  await editHistory(ui, view, 'undo', read, original);
+  await editHistory(ui, view, 'redo', read, saved);
+  await editHistory(ui, view, 'undo', read, original);
   return 'conditional appearance for a dynamic list, two typed values, exact save and history';
 }
 
@@ -112,9 +111,8 @@ async function editLoan(ui, view, read, original) {
   assert.equal(await dom(ui, () => document.querySelector('[data-type-qualifier=FractionDigits]').value), '3');
   await dom(ui, () => { document.getElementById('root').style.width = ''; });
   await applyDialog(ui, view);
-  assert.match(view.editor.overlay.text, /name="EskaAcceptanceType"[^]*?DocumentRef\.ВыдачаЗайма[^]*?FractionDigits>3/);
-  await saveDraft(ui, view, read, original);
-  await editHistory(ui, 'undo', read, original);
+  assert.match(await savedChange(view, read, original), /name="EskaAcceptanceType"[^]*?DocumentRef\.ВыдачаЗайма[^]*?FractionDigits>3/);
+  await editHistory(ui, view, 'undo', read, original);
 
   let previous;
   for (const canvas of [false, true]) {
@@ -137,12 +135,11 @@ async function editLoan(ui, view, read, original) {
       from.dispatchEvent(new DragEvent('dragend', options));
       return after;
     }, canvas), 'move a loan field from ' + (canvas ? 'preview' : 'tree'));
-    await until(() => !!view.editor.overlay, 'loan layout change enters the draft');
-    const moved = await saveDraft(ui, view, read, original);
+    const moved = await savedChange(view, read, original);
     assert.ok(moved.indexOf('<InputField name="Дата"') < moved.indexOf('<InputField name="Номер"'));
     if (previous) assert.equal(moved, previous);
     previous = moved;
-    await editHistory(ui, 'undo', read, original);
+    await editHistory(ui, view, 'undo', read, original);
   }
   return 'composite reference type and matching drag from tree and preview';
 }
@@ -185,9 +182,10 @@ exports.run = async () => {
       }
       const start = Date.now();
       await until(() => edit(ui, test.key), 'inline property control');
-      await until(() => view.editor?.overlay?.text && view.snapshot?.dependencies.some(item => item.version?.startsWith('eska-form-')), 'renderer consumed draft overlay');
+      await savedChange(view, read, original);
+      await until(() => !view.snapshot?.dependencies.some(item => item.version?.startsWith('eska-form-')), 'renderer consumed saved changes');
       const updateMs = Date.now() - start;
-      assert.equal(await read(), original);
+      assert.notEqual(await read(), original);
       const widths = [];
       for (const width of [1080, 660, 960]) {
         await dom(ui, width => { document.getElementById('root').style.width = width + 'px'; }, width);
@@ -212,7 +210,7 @@ exports.run = async () => {
         await dom(floating, () => document.querySelector('[data-edit-action=dockPreview]').click());
         await until(() => !view.frames.has('preview'), 'dock complex preview');
       }
-      await dom(ui, () => document.querySelector('[data-edit-action=undo]').click());
+      await editHistory(ui, view, 'undo', read, original);
       await until(() => !view.editor?.overlay && !view.snapshot?.dependencies.some(item => item.version?.startsWith('eska-form-')), 'complex form undo');
       assert.equal(await read(), original);
       const edits = await (test.target ? editLoan : editTransactions)(ui, view, read, original);

@@ -46,7 +46,7 @@ async function submit(ui) {
     const error = document.querySelector('dialog [role="alert"] p')?.textContent;
     if (error) throw Error(error);
     return !document.querySelector('dialog[open]');
-  }), 'action applied to the draft');
+  }), 'action written to the form');
 }
 
 function drag(ui, sourceSelector, name, offset) {
@@ -69,7 +69,6 @@ function drag(ui, sourceSelector, name, offset) {
 const inputTitle = '[data-edit-property="Title"] input';
 const inputVisible = '[data-edit-property="Visible"] input[type=checkbox]';
 const selected = ui => dom(ui, () => document.querySelector('.form-tree-row[aria-selected=true] > .form-truncate')?.textContent);
-const draftText = view => view.editor?.overlay?.text ?? '';
 const group = 'EditorGroup';
 const leaf = 'EditorLeaf';
 
@@ -115,13 +114,29 @@ exports.run = async () => {
     } finally { await config.update('colorTheme', oldTheme, vscode.ConfigurationTarget.Global); }
     if (process.env.ESKA_SCREENSHOT_DIR) await ui.screenshot('editor-attached-' + vscode.env.language + '.png');
     await until(() => namedRow(ui, 'Name'), 'field ready');
-    const value = 'Draft name';
+    const value = 'Saved name';
     const title = inputTitle + (vscode.env.language.startsWith('ru') ? '[aria-label$="(ru)"]' : '[aria-label$="(en)"]');
     await until(() => setValue(ui, title, value), 'inline property of selected element ready');
-    await until(() => draftText(view).includes(value), 'inline title checked');
+    await until(async () => (await read()).includes(value) && !view.editor.dirty && !view.editor.status.saving, 'inline title saved automatically');
     await until(() => dom(ui, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'live title in attached preview');
     assert.deepEqual(await dom(ui, input => [document.activeElement === document.querySelector(input), document.activeElement?.selectionStart], title), [true, 4]);
-    assert.equal(await read(), initial);
+    assert.notEqual(await read(), initial);
+    assert.equal(view.editor.dirty, false);
+    // Platform defaults are localized captions, never technical translation keys written as XML values.
+    const skip = '[data-edit-property="SkipOnInput"] select';
+    const defaultCaption = vscode.env.language.startsWith('ru') ? 'Авто' : 'Default';
+    await until(() => dom(ui, (selector, expected) => {
+      const select = document.querySelector(selector);
+      return select?.value === '' && select.selectedOptions[0]?.textContent === expected;
+    }, skip, defaultCaption), 'absent enum has a localized default option');
+    assert.ok(await setValue(ui, skip, 'true', 'change'));
+    await until(async () => /<SkipOnInput>true<\/SkipOnInput>/.test(await read()) && !view.editor.dirty, 'explicit enum is saved as its XML value');
+    await until(() => dom(ui, selector => document.querySelector(selector)?.value === 'true', skip), 'explicit enum displayed');
+    assert.ok(await setValue(ui, skip, '', 'change'));
+    await until(async () => !(await read()).includes('<SkipOnInput>') && !view.editor.dirty, 'choosing the default removes the explicit XML property');
+    await until(() => dom(ui, (selector, expected) => document.querySelector(selector)?.selectedOptions[0]?.textContent === expected,
+      skip, defaultCaption), 'localized default restored');
+    assert.ok(!(await read()).includes('>default<'), 'translation keys never become source values');
     assert.ok(await click(ui, action('detachPreview')));
     await until(() => view.frames.get('preview')?.ready, 'preview opened');
     floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
@@ -133,17 +148,39 @@ exports.run = async () => {
       const data = document.querySelector('.form-pane--data').getBoundingClientRect();
       return properties.top >= data.bottom && properties.width > data.width + 100 && !document.querySelector('.preview-scroll');
     }));
-    const wide = await dom(ui, () => getComputedStyle(document.querySelector('.form-property-groups')).gridTemplateColumns.split(' ').length);
-    assert.ok(wide >= 2, 'whole categories use multiple columns');
+    await until(() => dom(ui, () => document.querySelector('.form-property-groups')?.dataset.propertyLayout === 'packed'), 'property categories packed after measuring');
+    const packed = await dom(ui, () => {
+      const container = document.querySelector('.form-property-groups');
+      const tables = [...container.children].map(table => {
+        const { left, right, top, bottom, width, height } = table.getBoundingClientRect();
+        return { left, right, top, bottom, width, height, title: table.querySelector('th')?.textContent };
+      });
+      const firstRow = tables.filter(table => Math.abs(table.top - tables[0].top) < 1);
+      const highestBottom = Math.max(...firstRow.map(table => table.bottom));
+      return { columns: getComputedStyle(container).gridTemplateColumns.split(' ').length, tables,
+        fillsGap: tables.some(table => table.top > tables[0].top + 1 && table.top < highestBottom - 1) };
+    });
+    assert.ok(packed.columns >= 2, 'whole categories use multiple columns');
+    assert.ok(packed.fillsGap, 'next category fills the space below a shorter first-row category: ' + JSON.stringify(packed.tables));
+    for (let index = 0; index < packed.tables.length; index++) for (const other of packed.tables.slice(index + 1)) {
+      const current = packed.tables[index];
+      assert.ok(!(current.left < other.right - 1 && other.left < current.right - 1 && current.top < other.bottom - 1 && other.top < current.bottom - 1),
+        'property tables do not overlap: ' + JSON.stringify([current, other]));
+    }
     await dom(ui, () => { document.querySelector('#root').style.width = '436px'; });
     await until(() => dom(ui, () => getComputedStyle(document.querySelector('.form-property-groups')).gridTemplateColumns.split(' ').length === 1), 'groups reflow into one column');
+    assert.ok(await dom(ui, () => {
+      const tables = [...document.querySelector('.form-property-groups').children].map(table => table.getBoundingClientRect());
+      return tables.every((table, index) => !index || table.top >= tables[index - 1].bottom);
+    }), 'one-column categories preserve their reading order without overlap');
     await dom(ui, () => { document.querySelector('#root').style.width = ''; });
+    await until(() => dom(ui, () => getComputedStyle(document.querySelector('.form-property-groups')).gridTemplateColumns.split(' ').length >= 2), 'wide packing restored');
     if (process.env.ESKA_SCREENSHOT_DIR) await ui.screenshot('editor-detached-' + vscode.env.language + '.png');
-    await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'detached preview initialized with current draft');
+    await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'detached preview initialized with saved XML');
     assert.ok(await setValue(ui, inputVisible, false, 'change'));
     await until(() => dom(floating, value => !document.querySelector('.preview-scroll').textContent.includes(value), value), 'visibility updates detached preview');
-    assert.equal(await read(), initial);
-    assert.ok(await click(ui, action('undo')));
+    await until(async () => (await read()).includes('<Visible>false</Visible>') && !view.editor.dirty && !view.editor.status.saving, 'visibility saved automatically');
+    await until(() => click(ui, action('undo')), 'saved undo command available');
     await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'undo reaches detached preview');
     const previewBefore = view.frames.get('preview');
     previewBefore.panel.dispose();
@@ -152,7 +189,7 @@ exports.run = async () => {
     assert.ok(await click(ui, action('detachPreview')));
     await until(() => view.frames.get('preview')?.ready && view.frames.get('preview') !== previewBefore, 'preview can be reopened');
     floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
-    await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'reopened preview receives unsaved XML');
+    await until(() => dom(floating, value => document.querySelector('.preview-scroll').textContent.includes(value), value), 'reopened preview receives current saved XML');
     assert.ok(await click(floating, action('dockPreview')));
     await until(() => !view.frames.has('preview'), 'return preview');
     await until(() => main.panel.active, 'main form active after docking');
@@ -172,7 +209,7 @@ exports.run = async () => {
       .find(row => row.querySelector(':scope > .form-truncate')?.textContent === 'Group')?.dataset.formTreeNode);
     assert.ok(parentKey);
     assert.equal(await drag(ui, '[data-form-tree-node="' + parentKey + '"]', group, 0.5), '', 'cannot drag a parent into its descendant');
-    await until(() => namedRow(ui, 'Name', 'contextmenu'), 'right click an ordinary leaf');
+    await until(async () => await namedRow(ui, 'Name', 'contextmenu') && await dom(ui, () => !!document.querySelector('[data-edit-action=addElement]')), 'right click an ordinary leaf after save');
     assert.equal(await dom(ui, () => document.querySelector('[data-edit-action=addElement]').textContent.trim()),
       vscode.env.language.startsWith('ru') ? 'Добавить' : 'Add');
     assert.ok(await click(ui, action('addElement')));
@@ -180,34 +217,33 @@ exports.run = async () => {
     assert.ok(await setValue(ui, 'dialog input[required]', leaf));
     await submit(ui);
     await until(() => selected(ui).then(value => value === leaf), 'new sibling selected');
-    assert.match(draftText(view), /name="Name"[^]*?name="EditorLeaf"[^]*?name="Action"/);
+    assert.match(await read(), /name="Name"[^]*?name="EditorLeaf"[^]*?name="Action"/);
     assert.ok(await click(ui, action('moveUp')));
-    await until(() => /name="EditorLeaf"[^]*?name="Name"/.test(draftText(view)), 'move within siblings');
+    await until(async () => /name="EditorLeaf"[^]*?name="Name"/.test(await read()) && !view.editor.dirty, 'move within siblings');
     await until(() => dom(ui, () => document.querySelector('[data-edit-action=moveUp]')?.disabled), 'up disabled at first child');
     assert.equal(await drag(ui, '[data-form-attribute="attributes:Name"]', group, 0.5), 'inside');
-    await until(() => /name="EditorGroup"[^]*?<DataPath>Name<\/DataPath>/.test(draftText(view)), 'attribute drop creates a bound child');
-    assert.match(draftText(view), /<Attribute name="Name"/);
+    await until(async () => /name="EditorGroup"[^]*?<DataPath>Name<\/DataPath>/.test(await read()) && !view.editor.dirty, 'attribute drop creates a bound child');
+    assert.match(await read(), /<Attribute name="Name"/);
     assert.equal(await drag(ui, '[data-form-attribute="attributes:Name"]', 'Action', 0.05), 'before');
-    await until(() => /name="Name2"[^]*?<DataPath>Name<\/DataPath>[^]*?name="Action"/.test(draftText(view)), 'attribute drop uses line insertion');
-    const beforeRemoval = draftText(view);
+    await until(async () => /name="Name2"[^]*?<DataPath>Name<\/DataPath>[^]*?name="Action"/.test(await read()) && !view.editor.dirty, 'attribute drop uses line insertion');
+    const beforeRemoval = await read();
     await until(() => namedRow(ui, group, 'contextmenu'), 'delete nested group');
     assert.ok(await click(ui, action('remove')));
     assert.ok(await click(ui, 'dialog input[type=checkbox][required]'));
     await submit(ui);
-    await until(() => !draftText(view).includes('name="EditorGroup"') && !draftText(view).includes('name="Name1"'), 'entire deleted subtree disappears');
-    assert.match(draftText(view), /<Attribute name="Name"/);
-    assert.ok(await click(ui, action('undo')));
-    await until(() => draftText(view) === beforeRemoval, 'undo restores complete subtree bytes');
-    assert.equal(await read(), initial);
-    const current = draftText(view);
-    assert.ok(await click(ui, action('save')));
-    await until(async () => await read() === current, 'single atomic save writes checked draft');
+    await until(async () => { const xml = await read(); return !xml.includes('name="EditorGroup"') && !xml.includes('name="Name1"') && !view.editor.dirty; }, 'entire deleted subtree disappears');
+    assert.match(await read(), /<Attribute name="Name"/);
+    await until(() => click(ui, action('undo')), 'saved undo command available');
+    await until(async () => await read() === beforeRemoval && !view.editor.status.saving, 'undo restores complete subtree bytes on disk');
+    const current = await read();
+    assert.equal(view.editor.dirty, false);
+    assert.equal(await dom(ui, () => !!document.querySelector('[data-edit-action=save]')), false, 'successful edits need no Save button');
     assert.ok((await read()).includes('<!-- keep this -->\r\n'));
     await until(() => dom(ui, () => !document.querySelector('[data-edit-action=undo]')?.disabled), 'saved undo available');
-    assert.ok(await click(ui, action('undo')));
+    await until(() => click(ui, action('undo')), 'saved undo command available');
     await until(async () => !(await read()).includes('name="Name2"'), 'saved undo affects only last action');
     await until(() => dom(ui, () => !document.querySelector('[data-edit-action=redo]')?.disabled), 'saved redo available');
-    assert.ok(await click(ui, action('redo')));
+    await until(() => click(ui, action('redo')), 'saved redo command available');
     await until(async () => await read() === current, 'saved redo restores exact XML');
 
     // Search matches property values and reveals the editor for the selected result.
@@ -256,12 +292,10 @@ exports.run = async () => {
     assert.ok(await setValue(ui, 'dialog input[list="form-appearance-elements"]', 'Name'));
     assert.ok(await appearanceButton('Add', 'Добавить', '.form-edit-formatted'));
     await submit(ui);
-    assert.match(draftText(view), /<ConditionalAppearance[ >][^]*?#AABBCC/);
-    assert.match(draftText(view), /<dcsset:comparisonType>Filled<\/dcsset:comparisonType>/);
-    assert.match(draftText(view), /<dcsset:field>Name<\/dcsset:field>/);
-    assert.equal(await read(), current);
-    await until(() => click(ui, action('save')), 'save form conditional appearance');
-    await until(async () => (await read()).includes('#AABBCC'), 'rule on disk');
+    assert.match(await read(), /<ConditionalAppearance[ >][^]*?#AABBCC/);
+    assert.match(await read(), /<dcsset:comparisonType>Filled<\/dcsset:comparisonType>/);
+    assert.match(await read(), /<dcsset:field>Name<\/dcsset:field>/);
+    await until(async () => (await read()).includes('#AABBCC') && !view.editor.dirty && !view.editor.status.saving, 'conditional appearance saved automatically');
     await until(() => click(ui, action('undo')), 'undo the saved rule');
     await until(async () => await read() === current, 'undo recovers the exact form XML');
 
@@ -274,8 +308,9 @@ exports.run = async () => {
     const reopened = [...service.views.values()][0];
     ui = await frame({ state: { title: reopened.frames.get('main').panel.title } });
     await until(() => namedRow(ui, 'Name'), 'reopened field available');
-    await until(() => setValue(ui, title, 'Recover this title'), 'edit the reopened field');
-    await until(() => draftText(reopened).includes('Recover this title'), 'a checked draft was checkpointed');
+    await until(() => setValue(ui, title, 'Saved after reopening'), 'edit the reopened field');
+    await until(async () => (await read()).includes('Saved after reopening') && !reopened.editor.dirty, 'reopened form autosaved');
+    const persisted = await read();
     reopened.frames.get('main').panel.dispose();
     ui.close();
     await until(() => service.views.size === 0, 'all form views closed');
@@ -284,8 +319,10 @@ exports.run = async () => {
     let restored;
     await until(() => {
       restored = [...service.views.values()][0];
-      return draftText(restored ?? {}).includes('Recover this title');
-    }, 'checked draft restored after all views closed');
+      return restored?.editor?.schema?.writable && restored.phase === 'ready';
+    }, 'automatically saved form restored after all views closed');
+    assert.equal(await read(), persisted);
+    assert.equal(restored.editor.dirty, false);
     // A native editor may address the same source through a directory symlink/junction.
     const alias = path.join(fixture.root, 'form alias [Кириллица]');
     await fs.symlink(path.dirname(file), alias, process.platform === 'win32' ? 'junction' : 'dir');
@@ -296,26 +333,25 @@ exports.run = async () => {
     assert.equal(await vscode.workspace.applyEdit(unsaved), true);
     assert.equal(aliased.isDirty, true);
     let refused;
-    await restored.editor.receive({ action: 'save', id: 901 }, value => { refused = value; });
-    assert.equal(refused?.message, 'editDirty');
-    assert.equal(await read(), current);
-    assert.ok(draftText(restored).includes('Recover this title'));
+    await restored.editor.receive({ action: 'change', id: 901, operations: [{ kind: 'setProperty', target: { kind: 'form' },
+      property: { key: { name: 'Width', namespace: 'http://v8.1c.ru/8.3/xcf/logform' }, qualifiers: [], value: { Text: '75' } } }] }, value => { refused = value; });
+    // A preview refresh can invalidate the context before the dirty-buffer preflight finishes.
+    assert.ok(['editDirty', 'editConflict'].includes(refused?.message), JSON.stringify(refused));
+    assert.equal(await read(), persisted);
+    assert.equal(aliased.isDirty, true);
+    assert.ok(aliased.getText().startsWith('<!-- unsaved native source -->'));
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
     await restored.editor.receive({ action: 'discard', id: 902 }, () => {});
-    await until(() => restored.editor.schema?.writable && restored.phase === 'ready', 'editor recovers after discarding a conflicting draft');
+    restored.frames.get('main').panel.reveal(undefined, false);
+    await until(() => restored.editor.schema?.writable && restored.phase === 'ready', 'editor ready after resolving a dirty alias');
     ui = await frame({ state: { title: restored.frames.get('main').panel.title } });
     await until(() => namedRow(ui, 'Name'), 'field after dirty alias conflict');
-    await until(() => setValue(ui, title, 'Recover this title'), 'edit after dirty alias conflict');
-    await until(() => draftText(restored).includes('Recover this title'), 'new draft after dirty alias conflict');
-    const external = current.replace('<!-- keep this -->', '<!-- external -->');
-    await fs.writeFile(file, external);
-    await until(() => restored.editor.status.conflict, 'external XML conflict is recognized');
-    assert.equal(await read(), external);
-    assert.ok(draftText(restored).includes('Recover this title'));
+    await until(() => setValue(ui, title, 'Saved after alias'), 'edit after dirty alias conflict');
+    await until(async () => (await read()).includes('Saved after alias') && !restored.editor.dirty, 'automatic save resumes after dirty alias conflict');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
-      passed: true, locale: vscode.env.language, nativeWindow: true, liveDraft: true,
-      exactSave: true, groupedUndo: true, propertySearch: true, attributeDrop: ['inside', 'before'],
-      draftRecovery: true, externalConflict: true, dirtySourceAlias: true, conditionalAppearance: true,
+      passed: true, locale: vscode.env.language, nativeWindow: true, automaticSave: true, localizedDefaultRoundtrip: true, packedProperties: true,
+      exactSave: true, savedUndoRedo: true, propertySearch: true, attributeDrop: ['inside', 'before'],
+      savedReopen: true, dirtySourceAlias: true, conditionalAppearance: true,
     }));
   } finally { ui.close(); floating?.close(); }
 };

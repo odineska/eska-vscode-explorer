@@ -22,7 +22,7 @@ function formLayout(response: unknown): Record<string, string[]> | undefined {
 export interface ConnectionTarget { executable: string; path: string; name: string; locale: "ru-RU" | "en-US"; backend?: BackendKind }
 export type ConnectionState =
   | { kind: "disconnected" | "connecting" | "stopping" }
-  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; formAuthoring?: boolean; formEditor?: boolean; formLayout?: Record<string, string[]>; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
+  | { kind: "ready"; session: WorkspaceSession; version: string; supportPolicy: boolean; supportFiles: boolean; supportObjects: boolean; sourceNavigation: boolean; analyzerConfiguration: boolean; queryEditing: QueryCapabilities | undefined; metadataCreation?: boolean; metadataObjects?: boolean; sourceLabels?: boolean; standardAttributes?: boolean; formAuthoring?: boolean; formEditor?: boolean; formLayout?: Record<string, string[]>; multilineStrings?: StringEndpoint; formPreview?: FormLimits; target: ConnectionTarget }
   | { kind: "error"; error: ExplorerError };
 
 /** Own the lifecycle independently of VS Code so restarts can be tested with real pipes. */
@@ -227,6 +227,9 @@ export class Connection {
         }));
         if (revision === this.revision) {
           const layout = formLayout(response);
+          const metadata54 = isRecord(response) && isRecord(response.apiVersion) && response.apiVersion.major === 1
+            && typeof response.apiVersion.minor === "number" && response.apiVersion.minor >= 54
+            && isRecord(response.capabilities) ? response.capabilities : undefined;
           diagnostic(this.log, "connection_ready", { backendVersion: version, sessionId: session.sessionId,
             projects: session.projects.map((project) => ({ projectId: project.projectId, type: project.type,
               rootPath: project.rootPath, sourcePath: project.sourcePath, generation: project.generation })) });
@@ -241,6 +244,7 @@ export class Connection {
             supportFiles: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportFiles === true,
             supportObjects: isRecord(response) && isRecord(response.capabilities) && response.capabilities.supportObjects === true,
             analyzerConfiguration: isRecord(response) && isRecord(response.capabilities) && response.capabilities.analyzerConfiguration === true,
+            sourceLabels: metadata54?.sourceLabels === true, standardAttributes: metadata54?.standardAttributes === true,
             queryEditing: queries, metadataCreation: backend === "project" && creationCapability(response), metadataObjects: backend === "project" && objectCapability(response), formAuthoring: backend === "project" && objectCapability(response, "formAuthoring"),
             formEditor: backend === "project" && formEditorCapability(response) && isRecord(response)
               && isRecord(response.capabilities) && isRecord(response.capabilities.formAuthoring)

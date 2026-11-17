@@ -5,17 +5,10 @@ import { nativePath, isFormPayload } from "./source.js";
 import { relativeFile } from "./reveal.js";
 import { message } from "./messages.js";
 import { gitStatus, type GitStatus } from "./git-status.js";
+import { GitRepositories } from "./git-api.js";
 import type { FormSource } from "./forms.js";
 import { nodeKey, type MetadataTree, type ProjectTree, type TreeEntry } from "./tree.js";
 
-// Read-only subset of https://github.com/microsoft/vscode/blob/main/extensions/git/src/api/git.d.ts.
-interface Change { uri: vscode.Uri; originalUri: vscode.Uri; status: number }
-interface Repository {
-  state: { indexChanges: Change[]; workingTreeChanges: Change[]; mergeChanges: Change[];
-    untrackedChanges?: Change[]; onDidChange: vscode.Event<void> };
-}
-interface GitApi { repositories: Repository[]; onDidOpenRepository: vscode.Event<Repository>; onDidCloseRepository: vscode.Event<Repository> }
-interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<boolean>; getAPI(version: 1): GitApi }
 interface FileChange { path: string; status: GitStatus }
 type Entry = TreeEntry | FormSource;
 interface Snapshot { files: FileChange[]; names: Map<string, FileChange[]> }
@@ -29,57 +22,25 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
   private readonly changed = new vscode.EventEmitter<vscode.Uri[] | undefined>();
   readonly onDidChangeFileDecorations = this.changed.event;
   private readonly subscriptions: vscode.Disposable[] = [];
-  private apiSubscriptions: vscode.Disposable[] = [];
-  private readonly repositories = new Map<Repository, vscode.Disposable>();
   private readonly entries = new Map<string, WeakRef<Entry>>();
   private readonly snapshots = new Map<ProjectTree, Snapshot>();
   private results = new Map<string, Promise<vscode.FileDecoration | undefined>>();
   private readonly resolved = new Map<string, vscode.FileDecoration | undefined>();
-  private api: GitApi | undefined;
+  private readonly git: GitRepositories;
   private tree: MetadataTree | undefined;
   private epoch = 0;
   private disposed = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private serial: Promise<unknown> = Promise.resolve();
 
-  constructor() {
+  constructor(git?: GitRepositories) {
+    this.git = git ?? new GitRepositories();
+    if (!git) this.subscriptions.push(this.git);
+    this.subscriptions.push(this.git.onDidChange(() => this.invalidate()));
     this.subscriptions.push(vscode.window.registerFileDecorationProvider(this));
     this.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
       if (event.affectsConfiguration("git.decorations.enabled")) this.invalidate();
     }));
-    void this.attach();
-  }
-
-  /** Git is optional; disabling it must not disable metadata navigation. */
-  private async attach(): Promise<void> {
-    try {
-      const extension = vscode.extensions.getExtension<GitExtension>("vscode.git");
-      if (!extension) return;
-      const git = await extension.activate();
-      if (this.disposed) return;
-      const enable = (): void => {
-        for (const subscription of this.apiSubscriptions) subscription.dispose();
-        this.apiSubscriptions = [];
-        for (const subscription of this.repositories.values()) subscription.dispose();
-        this.repositories.clear();
-        this.api = git.enabled ? git.getAPI(1) : undefined;
-        if (this.api) {
-          for (const repository of this.api.repositories) this.watch(repository);
-          this.apiSubscriptions.push(this.api.onDidOpenRepository(repository => { this.watch(repository); this.invalidate(); }));
-          this.apiSubscriptions.push(this.api.onDidCloseRepository(repository => {
-            this.repositories.get(repository)?.dispose(); this.repositories.delete(repository); this.invalidate();
-          }));
-        }
-        this.invalidate();
-      };
-      this.subscriptions.push(git.onDidChangeEnablement(enable));
-      enable();
-    } catch { /* Git unavailable: leave all custom decorations empty. */ }
-  }
-
-  /** Subscribe to Git's existing status refresh rather than starting another Git process. */
-  private watch(repository: Repository): void {
-    if (!this.repositories.has(repository)) this.repositories.set(repository, repository.state.onDidChange(() => this.invalidate()));
   }
 
   /** Drop obsolete identities when the connection changes. */
@@ -119,7 +80,7 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
     const entry = this.entries.get(key)?.deref();
     if (!entry) return undefined;
     const support = this.support?.("owner" in entry ? entry.owner : entry);
-    if (!this.api || !vscode.workspace.getConfiguration("git").get<boolean>("decorations.enabled", true)) return support;
+    if (!this.git.api || !vscode.workspace.getConfiguration("git").get<boolean>("decorations.enabled", true)) return support;
     if (this.resolved.has(key)) return this.resolved.get(key);
     const cached = this.results.get(key);
     if (cached) return support ?? cached;
@@ -150,7 +111,7 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
     if (cached) return cached;
     const files = new Map<string, FileChange>();
     const root = nativePath(project.info.sourcePath);
-    for (const repository of this.api?.repositories ?? []) {
+    for (const repository of this.git.api?.repositories ?? []) {
       const state = repository.state;
       for (const change of [...state.indexChanges, ...state.workingTreeChanges, ...(state.untrackedChanges ?? []), ...state.mergeChanges]) {
         const status = gitStatus(change.status);
@@ -230,9 +191,7 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
     this.disposed = true; this.epoch++;
     clearTimeout(this.timer);
     for (const subscription of this.subscriptions) subscription.dispose();
-    for (const subscription of this.apiSubscriptions) subscription.dispose();
-    for (const subscription of this.repositories.values()) subscription.dispose();
-    this.repositories.clear(); this.entries.clear(); this.snapshots.clear(); this.results.clear(); this.resolved.clear();
+    this.entries.clear(); this.snapshots.clear(); this.results.clear(); this.resolved.clear();
     this.changed.dispose();
   }
 }

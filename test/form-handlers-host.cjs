@@ -2,7 +2,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
-const { until, frame } = require('./webview-host.cjs');
+const { until, frame, sameSourcePath } = require('./webview-host.cjs');
+
+function handlerButton(name, click = false) {
+  let button = [...document.querySelectorAll('.form-handler')].find(button => button.textContent === name);
+  if (!button) {
+    const input = [...document.querySelectorAll('.form-properties input')].find(input => input.value === name);
+    const cell = input?.closest('td');
+    button = cell?.querySelector('[data-edit-action="handler"]')
+      ?? cell?.querySelector('.form-icon-button:not(.form-inline-reset)');
+  }
+  if (!button || button.disabled) return false;
+  if (click) button.click();
+  return true;
+}
+const hasHandler = (ui, name) => ui.evaluate('(' + handlerButton.toString() + ')(' + JSON.stringify(name) + ')');
+const clickHandler = (ui, name) => ui.evaluate('(' + handlerButton.toString() + ')(' + JSON.stringify(name) + ', true)');
 
 exports.run = async () => {
   const fixture=JSON.parse(process.env.ESKA_HOST_FIXTURE), form=fixture.form;
@@ -15,21 +30,17 @@ exports.run = async () => {
   const service=explorer.formPreview;
   await until(()=>service.views.size===1&&[...service.views.values()][0].phase==='ready','handler form ready');
   const view=[...service.views.values()][0], main=view.frames.get('main'), ui=await frame({fixedFormArea:true,state:{title:main.panel.title}});
-  await until(async()=>await ui.evaluate("document.querySelector('.form-event .form-handler')?.textContent==='ПриОткрытии'"),'root event link');
+  await until(() => hasHandler(ui, 'ПриОткрытии'), 'root event action');
+  assert.equal(view.client.limits.handlerAuthoring === true, process.env.ESKA_HOST_EXPECT_HANDLER_AUTHORING !== '0');
   const navigate=async(name,expected=name)=>{
     main.panel.reveal();
-    await until(() => ui.evaluate(`(()=>{
-      const button = [...document.querySelectorAll('.form-handler')].find(button => button.textContent === ${JSON.stringify(name)});
-      if (!button) return false;
-      button.click();
-      return true;
-    })()`), `handler action ${name}`);
-    await until(()=>vscode.window.activeTextEditor?.document.uri.fsPath===form.module&&vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===expected,'handler declaration selected');
+    await until(() => clickHandler(ui, name), `handler action ${name}`);
+    await until(()=>vscode.window.activeTextEditor && sameSourcePath(vscode.window.activeTextEditor.document.uri.fsPath, form.module)&&vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection)===expected,'handler declaration selected');
     assert.equal(view.phase,'ready');
   };
   await navigate('ПриОткрытии','ПРИОТКРЫТИИ');
   main.panel.reveal();await ui.evaluate("document.querySelector('.taxi-input').click()");
-  await until(async()=>await ui.evaluate("document.querySelectorAll('.form-event .form-handler').length===2"),'repeated input events');
+  await until(async () => await hasHandler(ui, 'NameChanged') && await hasHandler(ui, 'NameChangedAfter'), 'both repeated input event actions');
   await navigate('NameChanged');await navigate('NameChangedAfter');
   main.panel.reveal();
   const client=view.client, locate=client.locateHandler.bind(client), run=service.handler.bind(service);
@@ -37,7 +48,7 @@ exports.run = async () => {
   let release,held=false,pending=0,hold=true;const gate=new Promise(resolve=>release=resolve);
   client.locateHandler=async(...args)=>{const result=await locate(...args);if(hold&&args[0]===first){hold=false;held=true;await gate}return result};
   service.handler=async(...args)=>{pending++;try{return await run(...args)}finally{pending--}};
-  await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].find(button=>button.textContent==='NameChanged').click()");
+  assert.equal(await clickHandler(ui, 'NameChanged'), true);
   await until(()=>held,'actual first handler reply held');
   await navigate('NameChangedAfter');release();await until(()=>pending===0,'late handler request finished');
   assert.equal(vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection),'NameChangedAfter');
@@ -51,20 +62,20 @@ exports.run = async () => {
   client.request=async(method,params,...rest)=>{if(method.startsWith('query/buffer')||method==='form/handlerLocate')uploads.push({method,input:params.input,bufferId:params.bufferId});return request(method,params,...rest)};
   await replace(document,'<Event name="OnChange">NameChanged</Event>','<Event name="OnChange">DirtyChanged</Event>');
   main.panel.reveal();
-  await until(async()=>view.phase==='ready'&&await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].some(button=>button.textContent==='DirtyChanged')"),'dirty XML handler reference');
+  await until(async () => view.phase === 'ready' && await hasHandler(ui, 'DirtyChanged'), 'dirty XML handler reference');
   await navigate('DirtyChanged');assert.equal(module.isDirty,true);
   const transferred=uploads.find(value=>value.method==='form/handlerLocate')?.input?.bufferId;
   assert.equal(typeof transferred,'string');assert.ok(uploads.some(value=>value.method==='query/bufferClose'&&value.bufferId===transferred));
   main.panel.reveal();
   await ui.evaluate(`([...document.querySelectorAll('.form-inspectors .form-tabs button')].find(button=>button.textContent===${JSON.stringify(vscode.env.language.startsWith('ru')?'Команды':'Commands')})).click()`);
   await ui.evaluate("document.querySelector('.form-data-row[data-form-data-path=Execute]').click()");
-  await until(async()=>await ui.evaluate("document.querySelector('.form-properties .form-handler')?.textContent==='ExecuteCommand'"),'selected command action link');
+  await until(() => hasHandler(ui, 'ExecuteCommand'), 'selected command action link');
   await navigate('ExecuteCommand');
   main.panel.reveal();
   await ui.evaluate("[...document.querySelectorAll('.form-tree-row')].find(row=>row.id.endsWith(':2')).click()");
   await replace(document,'<Event name="OnChange" callType="After">NameChangedAfter</Event>','<Event name="OnChange" callType="After">MissingHandler</Event>');
-  await until(async()=>view.phase==='ready'&&await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].some(button=>button.textContent==='MissingHandler')"),'missing handler link');
-  await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].find(button=>button.textContent==='MissingHandler').click()");
+  await until(async () => view.phase === 'ready' && await hasHandler(ui, 'MissingHandler'), 'missing handler link');
+  assert.equal(await clickHandler(ui, 'MissingHandler'), true);
   await until(()=>view.notice=== (vscode.env.language.startsWith('ru')?'Обработчик не найден, неоднозначен или его модуль пока некорректен.':'The handler is missing, ambiguous, or its module is incomplete.'),'missing handler notice');
   assert.equal(view.phase,'ready');
   await ui.screenshot(`form-handlers-${vscode.env.language}.png`);
@@ -72,7 +83,7 @@ exports.run = async () => {
   let releaseUpload,uploadHeld=false,buffer;const uploadGate=new Promise(resolve=>releaseUpload=resolve);
   const tracked=client.request.bind(client), order=[];
   client.request=async(method,params,...rest)=>{const result=await tracked(method,params,...rest);order.push({method,bufferId:params.bufferId});if(method==='query/bufferAppend'&&!uploadHeld){uploadHeld=true;buffer=params.bufferId;await uploadGate}return result};
-  await ui.evaluate("[...document.querySelectorAll('.form-event .form-handler')].find(button=>button.textContent==='DirtyChanged').click()");
+  assert.equal(await clickHandler(ui, 'DirtyChanged'), true);
   await until(()=>uploadHeld,'actual module upload held');
   main.panel.dispose();await until(()=>view.closed&&service.closing.size>0,'last handler consumer closed');
   assert.equal(order.some(item=>item.method==='form/close'),false,'session stays alive until the upload is released');
@@ -83,5 +94,5 @@ exports.run = async () => {
   assert.equal((await tracked('query/bufferClose',{bufferId:buffer})).released,false,'uploaded buffer was released');
   ui.close();await explorer.shutdown();
   await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,formHandlers:true,locale:vscode.env.language,
-    rootEvent:true,repeatedElementEvents:true,commandAction:true,dirtyXmlAndBsl:true,chunkedModuleUpload:true,uploadReleased:true,closeDuringUpload:true,cyrillicBomCrLf:true,literalAndCommentDecoys:true,lateNavigationDiscarded:true,missingHandlerKeepsReadyModel:true,sourceWritesDuringViewing:false}));
+    handlerAuthoring:view.client.limits.handlerAuthoring === true, rootEvent:true,repeatedElementEvents:true,commandAction:true,dirtyXmlAndBsl:true,chunkedModuleUpload:true,uploadReleased:true,closeDuringUpload:true,cyrillicBomCrLf:true,literalAndCommentDecoys:true,lateNavigationDiscarded:true,missingHandlerKeepsReadyModel:true,sourceWritesDuringViewing:false}));
 };
