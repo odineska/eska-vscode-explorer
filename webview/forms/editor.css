@@ -154,3 +154,6 @@
 .form-inline-reset { flex: 0 0 20px; padding: 1px; }
 .form-inline-type summary { cursor: pointer; }
 .form-inline-type[open] { min-width: 0; }
+
+.form-property-control { display: flex; align-items: start; gap: 4px; min-width: 0; }
+.form-property-control > .form-inline-property { flex: 1; min-width: 0; }

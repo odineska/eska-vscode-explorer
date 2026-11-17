@@ -160,8 +160,16 @@ export function PropertyInspector(props) {
   const dataPaths = createMemo(() => [...props.index.byData.values()].filter(row => row.section === 'attributes').map(row => row.path));
   const editField = id => fields().get(id.replace(/^platform:/, ''));
   const preferences = () => ({ node: editNode(), schema: schema(), locale: locale(), strings: state.strings });
-  const control = field => <InlineFormProperty controller={c} field={field} schema={schema()} node={editNode()}
-    typeLabel={type()?.label} locale={locale()} model={state.model} strings={state.strings}/>;
+  const editableHandler = field => state.handlerAuthoring && handlers().filter(item => item.handler.event === field.name).length <= 1
+    && (field.source === 'event'
+    || editNode()?.target.kind === 'command' && field.name === 'Action');
+  const control = field => <div class="form-property-control">
+    <InlineFormProperty controller={c} field={field} schema={schema()} node={editNode()}
+      typeLabel={type()?.label} locale={locale()} model={state.model} strings={state.strings}/>
+    <Show when={editableHandler(field)}><InspectorIconButton icon="xml" action="handler"
+      label={state.strings.editHandler} disabled={!c.writable()}
+      onClick={() => c.editHandler(editNode().target, field.name)}/></Show>
+  </div>;
   const sidebarForm = () => <Show when={fields().size}>
     <For each={editCategories}>{category => {
       const items = () => catalog().filter(field => field.category === category && fields().has(field.id));
@@ -194,6 +202,8 @@ export function PropertyInspector(props) {
     });
     onCleanup(() => { current = false; });
   });
+  const canAuthorExtra = entry => state.handlerAuthoring && state.authoring && editNode()
+    && handlers().filter(item => item.handler.event === entry.handler.event).length === 1;
   const canShow = () => !data() && node().presentation.displayed !== false;
   const canLocate = () => state.phase === 'ready' && (!data() || props.canLocateData(data()));
 
@@ -240,13 +250,15 @@ export function PropertyInspector(props) {
             state={state} locate={data() ? undefined : locate}/>
         </>}>
           <PropertyPalette palette={palette()} node={node()} state={state} locate={locate}
-            field={editField} control={control} handlers={paletteHandlers()} openHandler={openHandler}/>
+            field={editField} control={control} handlers={paletteHandlers()} openHandler={openHandler} editableHandler={editableHandler}/>
         </Show>
         <Show when={extraHandlers().length}><table class="form-properties"><tbody>
           <tr class="form-declared-category"><th colspan="2">{state.strings.events}</th></tr>
           <For each={extraHandlers()}>{entry =>
             <tr class="form-event"><th>{entry.handler.caption?.[locale()] ?? state.editSchema?.propertyCaptions?.[entry.handler.event]?.[locale()] ?? entry.handler.event}</th><td><button class="form-handler" type="button"
-              onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
+              title={state.strings[canAuthorExtra(entry) ? 'editHandler' : 'handler']}
+              disabled={canAuthorExtra(entry) && !c.writable()}
+              onClick={() => canAuthorExtra(entry) ? c.editHandler(editNode().target, entry.handler.event) : openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
           }</For>
         </tbody></table></Show>
       </div>

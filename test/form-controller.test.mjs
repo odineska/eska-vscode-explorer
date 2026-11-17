@@ -234,3 +234,42 @@ test('form actions stay unavailable until Undo/Redo acknowledges the already ren
   }
   controller.dispose();
 });
+
+
+test('handler creation waits for automatic form writes and only binds after success', async () => {
+  const bundle = await build({ entryPoints: [fileURLToPath(new URL('../webview/forms/controller.js', import.meta.url))],
+    bundle: true, write: false, platform: 'browser', format: 'cjs', conditions: ['browser', 'production'],
+    define: { 'process.env.NODE_ENV': '"production"' } });
+  const listeners = new Map(), messages = [], module = { exports: {} };
+  const context = createContext({ module, exports: module.exports, console,
+    requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
+    window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) } });
+  runInContext(bundle.outputFiles[0].text, context);
+  const c = module.exports.controller({ getState: () => undefined, setState: () => {},
+    postMessage: value => messages.push(structuredClone(value)) });
+  const receive = value => listeners.get('message')({ data: runInContext(`(${JSON.stringify(value)})`, context) });
+  receive({ type: 'state', sequence: 1, authoring: true, handlerAuthoring: true, formSessionId: 'form', draftStatus: { saving: true } });
+  assert.equal(c.writable(), true, 'typing remains available while the previous change saves');
+  const change = c.change([{ kind: 'addElement' }]), write = messages.at(-1);
+  const open = c.editHandler({ kind: 'element', id: 10 }, 'OnChange');
+  assert.equal(c.handlerBusy(), true); assert.equal(c.writable(), false);
+  assert.equal(messages.at(-1), write, 'code generation cannot overtake pending XML changes');
+  receive({ type: 'formDraftResult', id: write.id });
+  await change; await new Promise(resolve => setImmediate(resolve));
+  const handler = messages.at(-1); assert.equal(handler.type, 'handlerEdit');
+  receive({ type: 'formHandlerResult', id: handler.id, name: 'FieldOnChange', bound: false });
+  await new Promise(resolve => setImmediate(resolve));
+  const bind = messages.at(-1); assert.equal(bind.type, 'formDraft');
+  assert.deepEqual(bind.operations, [{ kind: 'setEvent', target: { kind: 'element', id: 10 }, event: 'OnChange', handler: 'FieldOnChange' }]);
+  receive({ type: 'formDraftResult', id: bind.id }); await open;
+  assert.equal(c.handlerBusy(), false); assert.equal(c.writable(), true);
+
+  for (const reply of [{ message: 'editDirty' }, { name: 'FieldOnChange', bound: true }]) {
+    const next = c.editHandler({ kind: 'element', id: 10 }, 'OnChange');
+    await new Promise(resolve => setImmediate(resolve));
+    const request = messages.at(-1); assert.equal(request.type, 'handlerEdit');
+    receive({ type: 'formHandlerResult', id: request.id, ...reply }); await next;
+    assert.equal(messages.at(-1), request, 'failure or an existing binding never writes XML');
+  }
+  c.dispose();
+});
