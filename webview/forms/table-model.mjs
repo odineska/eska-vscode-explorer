@@ -277,7 +277,7 @@ export function tableLayout(table, state = {}, additions) {
   const depth = Math.max(1, ...children.map(child => child.depth));
   const bar = commandBar(table);
   const commands = table.presentation.autoCommandItems ?? [];
-  const authoredCommands = bar?.children.some(child => child.presentation.displayed);
+  const authoredCommands = bar?.children.some(child => child.presentation.displayed) ?? false;
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None'
     && (commands.length > 0 || authoredCommands || (table.presentation.tableCommandMenu?.some(group => group.length) ?? false));
   const more = flag(bar, 'Autofill');
@@ -316,7 +316,9 @@ export function tableLayout(table, state = {}, additions) {
   const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
     ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
   const foldableToolbar = linux && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
-  const adaptiveToolbar = foldableToolbar && (nativeDynamicList || nativeWidth > 0);
+  // Authored commands can overflow a static table even when the XML leaves its width automatic.
+  const adaptiveAuthoredToolbar = foldableToolbar && nativeColumns && nativeWidth === 0 && authoredCommands;
+  const adaptiveToolbar = adaptiveAuthoredToolbar || (foldableToolbar && (nativeDynamicList || nativeWidth > 0));
   const viewStatusMinimum = chips && (nativeColumns || adaptiveToolbar) ? viewStatusBandMinimum : 0;
   const controlMinWidth = nativeWidth
     ? Math.max(viewStatusMinimum, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
@@ -331,7 +333,7 @@ export function tableLayout(table, state = {}, additions) {
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, foldableToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

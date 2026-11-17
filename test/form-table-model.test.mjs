@@ -129,6 +129,26 @@ test('an automatic dynamic toolbar can be wider than its fixed grid', () => {
   assert.deepEqual(dimensions(), [240, 240, false]);
 });
 
+test('an automatic-width static table can fold its authored commands while retaining required toolbar commands', () => {
+  const table = fixture(), state = { os: 'linux', locale: 'ru' };
+  const command = field('Custom', 'Button', 'unknown');
+  const bar = { ...field('Commands', 'AutoCommandBar', 'unknown'), children: [command] };
+  table.auxiliary.push(bar, field('Search', 'SearchStringAddition', 'unknown'));
+  const adaptive = () => {
+    const { adaptiveToolbar, adaptiveAuthoredToolbar } = tableLayout(table, state);
+    return [adaptiveToolbar, adaptiveAuthoredToolbar];
+  };
+  assert.deepEqual(adaptive(), [true, true]);
+  table.properties.push(prop('Width', 40));
+  assert.deepEqual(adaptive(), [true, false]);
+  table.properties.pop();
+  command.properties.push(prop('LocationInCommandBar', 'InCommandBar'));
+  assert.deepEqual(adaptive(), [false, false]);
+  command.properties.pop();
+  command.presentation.displayed = false;
+  assert.deepEqual(adaptive(), [false, false]);
+});
+
 test('a static table uses independent Linux sizes for the grid and the command and filter bands', () => {
   const table = fixture();
   table.properties = [prop('HorizontalStretch', false)];

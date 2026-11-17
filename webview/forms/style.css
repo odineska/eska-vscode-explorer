@@ -454,6 +454,7 @@ button { cursor: default; }
 .taxi-table-command-bar > .taxi-button--dropdown,
 .taxi-table-command-bar > [data-table-more] > .taxi-button--dropdown { padding-inline: 8px; }
 .taxi-table-command-bar > [data-table-more] { display: flex; flex: none; }
+.taxi-table-command-bar[data-adaptive-authored-toolbar] > .taxi-element { flex-shrink: 0; }
 .taxi-table-command-bar > [data-table-more] > .taxi-button--dropdown .taxi-down { margin-left: 5px; }
 .taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar] > [data-table-command-hidden] { display: none; }
 .taxi-preview:not([data-form-layout=preferred]) [data-adaptive-table-toolbar][data-table-search-only] > [data-table-more] > button {

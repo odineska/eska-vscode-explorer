@@ -173,6 +173,7 @@ export function Table(props) {
     </div></Show>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? '' : undefined}
       data-adaptive-table-toolbar={layout().adaptiveToolbar ? '' : undefined}
+      data-adaptive-authored-toolbar={layout().adaptiveAuthoredToolbar ? '' : undefined}
       data-foldable-table-toolbar={layout().foldableToolbar ? '' : undefined} data-table-lookup={lookup() ? '' : undefined}>
       <TableCommandActions commands={layout().commands} controller={props.controller}/>
       <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
