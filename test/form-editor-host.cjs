@@ -75,7 +75,10 @@ const previewAction = '[data-element$=":3"]';
 const previewGroup = '[data-element$=":1"]';
 async function previewZoom(ui, zoom) {
   assert.ok(await setValue(ui, '.form-zoom select', String(zoom), 'change'));
-  await until(() => dom(ui, zoom => Number(document.querySelector('.taxi-preview').style.zoom) === zoom / 100, zoom), 'preview zoom applied');
+  await until(() => dom(ui, async zoom => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return Number(document.querySelector('.taxi-preview').style.zoom) === zoom / 100;
+  }, zoom), 'preview zoom applied');
 }
 async function checkZoomedDrag(ui, view) {
   for (const zoom of [50, 75, 125, 150, 200]) {
@@ -83,8 +86,11 @@ async function checkZoomedDrag(ui, view) {
     const input = previewField + ' .taxi-input';
     await dom(ui, selector => document.querySelector(selector).scrollIntoView({ block: 'nearest', inline: 'nearest' }), input);
     await ui.pointer(input, true);
-    await until(async () => view.selected?.key.value === '2' &&
-      await dom(ui, selector => document.querySelector(selector)?.draggable, previewField), 'trusted click selected the zoomed field');
+    await until(async () => view.selected?.key.value === '2' && await dom(ui, async selector => {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const field = document.querySelector(selector);
+      return field?.draggable && field.classList.contains('taxi-selected');
+    }, previewField), 'trusted click selected the zoomed field');
     assert.deepEqual(await dom(ui, (sourceSelector, targetSelector, groupSelector) => {
       const source = document.querySelector(sourceSelector), target = document.querySelector(targetSelector);
       const group = document.querySelector(groupSelector);
@@ -200,20 +206,27 @@ async function checkScrollingDrag(ui, view, read, zoom) {
     const viewport = document.querySelector('.preview-scroll');
     const source = document.querySelector(selector);
     const target = document.querySelector('[data-element$=":200"]');
+    const frames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await frames();
     const scrollport = viewport.querySelector('.taxi-form-scrollport[data-scrollable]') ?? viewport;
-    scrollport.scrollTop = 0;
-    const start = source.querySelector('.taxi-input').getBoundingClientRect();
-    const scaled = source.contains(document.elementFromPoint(start.x + start.width / 2, start.y + start.height / 2)) ? 1 : Number(source.closest('.taxi-preview').style.zoom);
+    let x;
+    const zoom = Number(source.closest('.taxi-preview').style.zoom);
+    const probe = document.createElement('div');
+    Object.assign(probe.style, { position: 'fixed', width: '10px', height: '0', zoom: '2', visibility: 'hidden' });
+    document.body.append(probe);
+    const scaled = probe.getBoundingClientRect().width === 10 ? zoom : 1;
+    probe.remove();
 
-    const targetBox = target.getBoundingClientRect();
-    const x = (targetBox.left + targetBox.width / 2) * scaled;
-    const box = scrollport.getBoundingClientRect();
-    const scrollScale = scrollport === viewport ? 1 : scaled;
-    const edge = box.bottom * scrollScale - 3;
+    const centerX = element => {
+      const rect = element.getBoundingClientRect();
+      return (rect.left + rect.width / 2) * scaled;
+    };
+    const edgeY = () => Math.min(viewport.getBoundingClientRect().bottom,
+      scrollport.getBoundingClientRect().bottom * (scrollport === viewport ? 1 : scaled), window.innerHeight) - 3;
     const pause = () => new Promise(resolve => setTimeout(resolve, 130));
     const transfer = new DataTransfer();
     const fire = (type, y, hit = document.elementFromPoint(x, y), dataTransfer = transfer, relatedTarget) =>
-      hit.dispatchEvent(new DragEvent(type, {
+      hit?.dispatchEvent(new DragEvent(type, {
         bubbles: true, cancelable: true, dataTransfer, clientX: x, clientY: y, relatedTarget,
       }));
     const marker = () => {
@@ -228,19 +241,26 @@ async function checkScrollingDrag(ui, view, read, zoom) {
     firstRow.style.transform = 'translateY(' + (group.getBoundingClientRect().top - rowBox.top) * scaled
       / Number(source.closest('.taxi-preview').style.zoom) + 'px)';
     rowBox = firstRow.getBoundingClientRect();
-    const edgeY = scaled * rowBox.top + 3;
-    const edgeHit = document.elementFromPoint(x, edgeY);
+    x = centerX(firstRow);
+    const groupEdge = scaled * rowBox.top + 3;
+    const edgeHit = document.elementFromPoint(x, groupEdge);
     fire('dragstart', 0, source);
-    fire('dragover', edgeY, edgeHit);
+    fire('dragover', groupEdge, edgeHit);
     const covered = { hit: firstRow.contains(edgeHit), marker: marker() };
     firstRow.style.transform = '';
-    fire('dragend', edgeY, source);
-    scrollport.scrollTop = 0;
+    fire('dragend', groupEdge, source);
+
+    viewport.scrollTop = viewport.scrollLeft = scrollport.scrollTop = 0;
+    await frames();
     fire('dragstart', 0, source);
-    fire('dragover', edge, undefined, new DataTransfer());
+    x = centerX(target);
+    fire('dragover', edgeY(), undefined, new DataTransfer());
     await pause();
     const foreign = scrollport.scrollTop;
-    fire('dragover', edge);
+    x = centerX(target);
+    const edge = edgeY();
+    const beforeHit = document.elementFromPoint(x, edge);
+    fire('dragover', edge, beforeHit);
     const first = marker();
     for (let i = 0; scrollport.scrollTop < 40 && i < 15; i++) await pause();
     const scrolled = scrollport.scrollTop;
@@ -251,13 +271,15 @@ async function checkScrollingDrag(ui, view, read, zoom) {
     const left = scrollport.scrollTop;
     const cleared = !marker();
     target.scrollIntoView({ block: 'center', inline: 'nearest' });
+    x = centerX(target);
     const rect = target.getBoundingClientRect();
     const y = (rect.top + rect.height * .85) * scaled;
     fire('dragover', y);
     const destination = marker();
     fire('drop', y);
     fire('dragend', y, source);
-    return { extent: scrollport.scrollHeight - scrollport.clientHeight, covered, foreign, scrolled, left, cleared, first, next, destination };
+    return { extent: scrollport.scrollHeight - scrollport.clientHeight, covered, foreign, scrolled, left, cleared, first, next, destination, edge,
+      hit: beforeHit?.closest('[data-element]')?.dataset.element, scrollport: scrollport.className };
   }, previewField);
   assert.deepEqual(result.covered, { hit: true, marker: ['201', 'before'] });
   assert.ok(result.extent > 500 && result.foreign === 0 && result.scrolled > 0 && result.left === result.scrolled && result.cleared, JSON.stringify(result));
