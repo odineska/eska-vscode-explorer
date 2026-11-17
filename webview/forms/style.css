@@ -489,7 +489,7 @@ button { cursor: default; }
 .taxi-table-search { display: flex; height: 23px; border: 1px solid #a0a0a0; border-radius: 2px; flex: 0 1 260px; min-width: 80px; }
 .taxi-table-search input { border: none; background: transparent; width: 0; min-width: 0; flex: 1; padding: 1px 2px; box-shadow: none; }
 .taxi-table-search input::placeholder { color: #ccc; opacity: 1; }
-.taxi-table-search > span { width: 21px; text-align: center; border-left: 1px solid; border-left-color: inherit; line-height: 21px; font-size: 11px; }
+.taxi-table-search > .taxi-search-clear { width: 21px; text-align: center; border-left: 1px solid; border-left-color: inherit; line-height: 21px; font-size: 11px; }
 .taxi-table-search-controls { display: flex; gap: 14px; height: 21px; margin-bottom: 9px; align-items: stretch; }
 .taxi-view-status-chip { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 1px 4px; border: 1px solid #cbc19f; border-block-color: #e4d9b2; border-radius: 3px; background: #fef2c7; box-shadow: 0 1px #dedcd3; white-space: nowrap; }
 /* The native chip paint includes its one-pixel shadow and preserves the text in the DOM. */
