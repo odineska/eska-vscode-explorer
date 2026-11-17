@@ -405,6 +405,42 @@
         "category": "ESKA",
         "icon": "$(trash)",
         "enablement": "isWorkspaceTrusted && eska.explorer.metadataObjects"
+      },
+      {
+        "command": "eska.explorer.scm.open",
+        "title": "%scmOpen%",
+        "category": "ESKA",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "eska.explorer.scm.diff",
+        "title": "%scmDiff%",
+        "category": "ESKA",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "eska.explorer.scm.stage",
+        "title": "%scmStage%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
+        "command": "eska.explorer.scm.unstage",
+        "title": "%scmUnstage%",
+        "category": "ESKA",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "eska.explorer.scm.discard",
+        "title": "%scmDiscard%",
+        "category": "ESKA",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "eska.explorer.scm.refresh",
+        "title": "%scmRefresh%",
+        "category": "ESKA",
+        "icon": "$(refresh)"
       }
     ],
     "views": {
@@ -420,6 +456,14 @@
         {
           "id": "eska.explorer.runDebug",
           "name": "%runDebugView%",
+          "when": "eska.hasProject",
+          "visibility": "visible"
+        }
+      ],
+      "scm": [
+        {
+          "id": "eska.explorer.scm",
+          "name": "%scmView%",
           "when": "eska.hasProject",
           "visibility": "visible"
         }
@@ -518,6 +562,11 @@
           "command": "eska.explorer.showDisabledProjects",
           "when": "view == eska.explorer.projects && eska.explorer.workspaceActivity && eska.explorer.hideDisabled",
           "group": "navigation@3"
+        },
+        {
+          "command": "eska.explorer.scm.refresh",
+          "when": "view == eska.explorer.scm",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -605,6 +654,31 @@
           "command": "eska.explorer.createMetadata",
           "when": "view == eska.explorer.projects && viewItem =~ /Creatable$/ && isWorkspaceTrusted && eska.explorer.metadataCreation && !eska.explorer.metadataObjects",
           "group": "navigation@4"
+        },
+        {
+          "command": "eska.explorer.scm.open",
+          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScmChange:/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "eska.explorer.scm.diff",
+          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScmChange:/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "eska.explorer.scm.stage",
+          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):(merge|working|untracked)$/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "eska.explorer.scm.unstage",
+          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):index$/",
+          "group": "navigation@4"
+        },
+        {
+          "command": "eska.explorer.scm.discard",
+          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):(working|untracked)$/",
+          "group": "navigation@5"
         }
       ],
       "commandPalette": [
@@ -691,6 +765,30 @@
         {
           "command": "eska.explorer.deleteObject",
           "when": "eska.explorer.metadataObjects"
+        },
+        {
+          "command": "eska.explorer.scm.open",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.diff",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.stage",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.unstage",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.discard",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.refresh",
+          "when": "eska.hasProject"
         }
       ],
       "editor/context": [
