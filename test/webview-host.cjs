@@ -236,13 +236,12 @@ async function frame(tab) {
       try {
         // The move command can resolve before the auxiliary workbench has painted.
         await send('Page.bringToFront',{},sessionId);
-        let editorTabs;
-        try { await until(async()=>{
-          const result=await send('Runtime.evaluate',{expression:"[...document.querySelectorAll('.tabs-container .tab')].map(tab=>tab.textContent)",returnByValue:true},sessionId);
-          editorTabs=result.result?.value;
-          return editorTabs?.includes(tab.state.title);
-        },'native floating editor identity'); }
-        catch(error){throw new Error(error.message+' '+JSON.stringify({expected:tab.state.title,actual:editorTabs}));}
+        const owner = await this.nativeWindow();
+        if (owner.targetId !== targetId) throw new Error('requested screenshot does not own this webview frame');
+        await until(async () => {
+          const result = await send('Runtime.evaluate', { expression: "!!document.querySelector('.part.editor')?.getBoundingClientRect().height", returnByValue: true }, sessionId);
+          return result.result?.value === true;
+        }, 'native floating editor painted');
         await send('Runtime.evaluate',{expression:'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',awaitPromise:true},sessionId);
         const result=await send('Page.captureScreenshot',{format:'png'},sessionId);
         if (process.env.ESKA_SCREENSHOT_DIR) await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,name),Buffer.from(result.data,'base64'));
@@ -282,9 +281,37 @@ async function frame(tab) {
     /** Enumerate only this isolated IDE process's native workbench targets, including floating windows. */
     async targets() { return (await send('Target.getTargets')).targetInfos; },
     /** Observe the native QuickPick outside the property iframe before sending keyboard commands. */
-    async workbench(expression) {
-      const result = await send('Runtime.evaluate', { expression, returnByValue: true });
-      return result.result?.value;
+    async workbench(expression, targetId) {
+      const session = targetId ? await send('Target.attachToTarget', { targetId, flatten: true }) : undefined;
+      try {
+        const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, session?.sessionId);
+        if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+        return result.result?.value;
+      } finally { if (session) await send('Target.detachFromTarget', { sessionId: session.sessionId }); }
+    },
+    /** Hover or click the actual control within this test's webview, including CSS hover states. */
+    async pointer(selector, click = false) {
+      const point = await this.evaluate(`(() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      })()`);
+      if (!point) throw new Error('missing pointer control: ' + selector);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, button: 'none' }, context.sessionId);
+      if (click) {
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, context.sessionId);
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, context.sessionId);
+      }
+    },
+    /** Deliver native key events to this webview without synthesizing DOM handlers. */
+    async key(key, code, virtualKey) {
+      const event = { key, code, windowsVirtualKeyCode: virtualKey, ...(key === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : {}) };
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', ...event }, context.sessionId);
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...event }, context.sessionId);
+    },
+    async touch(enabled) {
+      await send('Emulation.setTouchEmulationEnabled', { enabled, maxTouchPoints: 1 }, context.sessionId);
     },
     /** Monaco list selection listens to pointer input rather than an HTMLElement.click shortcut. */
     async clickWorkbench(selector) {

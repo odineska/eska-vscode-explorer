@@ -42,6 +42,7 @@ function debuggingEndpoint(t,{active='ready',title='Own preview',orphan=false,ma
     this.emit({method:'Runtime.executionContextCreated',sessionId,params:{context:{id:sessionId==='session-old'?6:7,auxData:{frameId:sessionId==='session-old'?'old-frame':'active-frame'}}}});
     }
    }else if(method==='Runtime.evaluate')result={result:{value:params.expression.includes("document.getElementById('title')")?params.contextId!==9&&params.expression.includes(JSON.stringify(title)):params.expression==='context-session'?sessionId:true}};
+   else if(method==='Page.captureScreenshot')result={data:'preview-image'};
    else if(method==='Page.getFrameTree'){
     const key=sessionId?.replace('session-','').replace(/#\d+$/,'')??'main';
     result={frameTree:key==='main'?{frame:{id:'main-root'},childFrames:[{frame:{id:'hidden-wrapper'}},...(mainClone?[{frame:{id:'old-wrapper'}}]:[])]}:key==='floating'?{frame:{id:'floating-root'},childFrames:[{frame:{id:'active-wrapper'},...(inProcess?{childFrames:[{frame:{id:'active-frame'}}]}:{})}]}:key==='old'?{frame:{id:'old-frame',parentId:'old-wrapper'}}:key==='hidden'?{frame:{id:'hidden-frame',parentId:'hidden-wrapper'}}:{frame:{id:'active-frame',parentId:orphan?'missing-parent':'active-wrapper'}}};
@@ -88,4 +89,22 @@ test('a replaced target session is reattached before selecting the floating cont
   assert.equal(commands.filter(row=>row.method==='Runtime.enable'&&row.sessionId?.startsWith('session-active#')).length,2);
   assert.equal((await ui.nativeWindow({detached:true})).targetId,'floating');
  }finally{ui.close();}
+});
+
+
+test('compact screenshots use exact frame ownership when editor tabs are hidden', async t => {
+ const commands = debuggingEndpoint(t), ui = await frame({ detached: true, state: { title: 'Own preview' } });
+ try {
+  assert.equal(await ui.captureTarget('floating', 'compact.png', true), 'preview-image');
+  assert.equal(commands.filter(command => command.method === 'Page.captureScreenshot' && command.sessionId === 'session-floating').length, 1);
+  assert.equal(commands.some(command => command.method === 'Runtime.evaluate' && command.params.expression.includes('.tabs-container')), false);
+ } finally { ui.close(); }
+});
+
+test('screenshot refuses a window which does not own the selected preview frame', async t => {
+ const commands = debuggingEndpoint(t), ui = await frame({ detached: true, state: { title: 'Own preview' } });
+ try {
+  await assert.rejects(() => ui.captureTarget('main', 'wrong.png', true), /does not own this webview frame/);
+  assert.equal(commands.some(command => command.method === 'Page.captureScreenshot'), false);
+ } finally { ui.close(); }
 });

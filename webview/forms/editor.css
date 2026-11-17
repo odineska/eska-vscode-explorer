@@ -164,3 +164,25 @@
 
 .form-property-control { display: flex; align-items: start; gap: 4px; min-width: 0; }
 .form-property-control > .form-inline-property { flex: 1; min-width: 0; }
+
+/* The preview window action is viewport-relative, independent of form scaling. */
+.form-preview-surface { display: flex; flex: 1; position: relative; min-width: 0; min-height: 96px; }
+.form-preview-window {
+  position: absolute; z-index: 5; top: 50%; right: calc(12px + var(--preview-scrollbar, 0px));
+  transform: translateY(-50%); display: grid; place-items: center; width: 40px; height: 40px;
+  padding: 0; border: 1px solid var(--vscode-widget-border, var(--inspector-border)); border-radius: 6px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-editorWidget-background, var(--inspector-surface));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow); cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+}
+.form-preview-window .form-icon { width: 22px; height: 22px; }
+.form-preview-surface:is(:hover, :focus-within) > .form-preview-window { opacity: 1; pointer-events: auto; }
+.form-preview-window:hover { background: var(--vscode-button-secondaryHoverBackground, var(--inspector-hover)); }
+.form-preview-window:focus-visible { outline: 2px solid var(--inspector-focus); outline-offset: 2px; }
+@media (hover: none), (pointer: coarse) {
+  .form-preview-window { opacity: 1; pointer-events: auto; width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .form-preview-window { transition: none; }
+}

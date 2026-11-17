@@ -1,13 +1,15 @@
 import { render } from 'solid-js/web';
 import { controller } from './controller.js';
 import { App } from './App.jsx';
+import { previewWindowFocus } from './window-focus.mjs';
 import { createNativeTextRuntime } from './native-text.js';
 import { createInputBorderPaintQueue } from './NativeInputBorder.jsx';
 import './style.css';
 import './inspector.css';
 import './editor.css';
 const c = controller(acquireVsCodeApi());
+const disposeWindowFocus = previewWindowFocus(c.post);
 c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src, () => c.state.ui.zoom);
 c.scheduleInputBorderPaint = createInputBorderPaintQueue();
 const dispose = render(() => <App controller={c}/>, document.getElementById('root'));
-window.addEventListener('unload', () => { dispose(); c.nativeText.dispose(); c.dispose(); }, { once: true });
+window.addEventListener('unload', () => { disposeWindowFocus(); dispose(); c.nativeText.dispose(); c.dispose(); }, { once: true });

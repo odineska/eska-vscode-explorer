@@ -33,14 +33,13 @@ export function FormToolbar(props) {
 
 export function PreviewToolbar(props) {
   const c = props.controller, state = c.state, s = state.strings;
-  const detached = () => state.role === 'preview';
   return <div class="form-preview-toolbar">
     <span>{s.preview}</span>
     <label class="form-zoom">{s.zoom}<select aria-label={s.zoom} value={state.ui.zoom}
       onChange={event => c.ui('zoom', Number(event.currentTarget.value))}>
       <For each={[50, 75, 100, 125, 150, 200]}>{value => <option value={value}>{value}%</option>}</For>
     </select></label>
-    <InspectorIconButton icon="pip" label={detached() ? s.dock : s.detach} action={detached() ? 'dockPreview' : 'detachPreview'}
-      onClick={() => c.post({ type: detached() ? 'dock' : 'detach' })}/>
+    <Show when={state.role === 'preview'}><InspectorIconButton icon="pip" label={s.dock} action="dockPreview"
+      onClick={() => c.post({ type: 'dock' })}/></Show>
   </div>;
 }
