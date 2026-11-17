@@ -78,11 +78,12 @@ function Mark(props) {
   const [painted, setPainted] = createSignal(false);
   const state = props.controller.state;
   const switcher = () => props.mode === 'Switcher';
-  createEffect(on(() => [state.os, state.modelSequence, props.mode, props.inactive, props.controller.nativeText?.pixelAligned()], () => {
-    if (state.os !== 'linux' || !props.controller.nativeText?.pixelAligned()) { setPainted(false); return; }
+  const scale = () => state.ui.zoom * props.controller.nativeText?.density() / 100;
+  createEffect(on(() => [state.os, state.modelSequence, props.mode, props.inactive, scale()], ([os, , mode, inactive, pixelScale]) => {
+    if (os !== 'linux' || !Number.isFinite(pixelScale) || pixelScale <= 0) { setPainted(false); return; }
     const draw = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(surface.parentElement);
-      const image = backdrop ? checkboxGlyph(props.mode, props.inactive, backdrop) : undefined;
+      const image = backdrop ? checkboxGlyph(mode, inactive, backdrop, pixelScale) : undefined;
       setPainted(paintCanvas(canvas, image));
     });
     onCleanup(() => cancelAnimationFrame(draw));

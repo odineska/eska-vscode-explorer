@@ -118,11 +118,12 @@ export function RadioChoices(props) {
 function RadioMark(props) {
   let mark, canvas;
   const [painted, setPainted] = createSignal(false);
-  createEffect(on(() => [props.state.os, props.state.modelSequence, props.selected, props.inactive, props.runtime?.pixelAligned()], () => {
-    if (props.state.os !== 'linux' || !props.runtime?.pixelAligned()) { setPainted(false); return; }
+  const scale = () => props.state.ui.zoom * props.runtime?.density() / 100;
+  createEffect(on(() => [props.state.os, props.state.modelSequence, props.selected, props.inactive, scale()], ([os, , selected, inactive, pixelScale]) => {
+    if (os !== 'linux' || !Number.isFinite(pixelScale) || pixelScale <= 0) { setPainted(false); return; }
     const frame = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(mark.parentElement);
-      const image = backdrop ? radioGlyph(props.selected, props.inactive, backdrop) : undefined;
+      const image = backdrop ? radioGlyph(selected, inactive, backdrop, pixelScale) : undefined;
       setPainted(paintCanvas(canvas, image));
     });
     onCleanup(() => cancelAnimationFrame(frame));

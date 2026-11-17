@@ -347,7 +347,7 @@ button { cursor: default; }
 .taxi-checkbox[data-inactive=true] { opacity: .5; }
 .taxi-checkbox-switch { display: inline-block; width: 34px; height: 20px; margin: 2px 2px 1px 1px; vertical-align: top; }
 .taxi-checkbox[data-native-mark=ready] { border: 0; background: transparent; opacity: 1; }
-.taxi-checkbox canvas, .taxi-checkbox-switch canvas { display: block; }
+.taxi-checkbox canvas, .taxi-checkbox-switch canvas { display: block; width: 100%; height: 100%; }
 .taxi-checkbox canvas[hidden], .taxi-checkbox-switch canvas[hidden] { display: none; }
 .taxi-checkbox-switch-track { fill: #b1b1b1; }
 .taxi-checkbox-switch-shadow { fill: #000; opacity: .2; }
@@ -374,7 +374,7 @@ button { cursor: default; }
 .taxi-radio.checked::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #009646; }
 .taxi-radio[data-native-radio=ready] { border: 0; background: transparent; }
 .taxi-radio.checked[data-native-radio=ready]::after { content: none; }
-.taxi-radio canvas { display: block; }
+.taxi-radio canvas { display: block; width: 100%; height: 100%; }
 .taxi-radio canvas[hidden] { display: none; }
 .taxi-radios[data-representation=segments] { gap: 0; padding-block: 1px; position: relative; }
 .taxi-radios[data-representation=segments]:not([data-rows="1"]) { padding-bottom: 2px; }
