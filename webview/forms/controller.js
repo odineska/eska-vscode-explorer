@@ -25,7 +25,7 @@ export function controller(api) {
     : actionNotice() || state.draftStatus?.notice || (dirty() ? 'editUnsaved' : '');
   const history = () => state.draftStatus ?? { undo: false, redo: false };
   const dirty = () => state.draftStatus?.dirty || fieldPending() + changing() > 0;
-  const writable = () => state.authoring && !replaying() && !state.draftStatus?.conflict && !state.draftStatus?.saving;
+  const writable = () => state.authoring && !replaying() && !state.draftStatus?.conflict;
   function draftAction(action, payload) {
     const id = ++draftId;
     setActionNotice('');
