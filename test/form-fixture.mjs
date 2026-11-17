@@ -575,12 +575,13 @@ export async function createPictureFormSource(fixture) {
   const bar = `<AutoCommandBar name="FormCommandBar" id="-1"><ChildItems>
     ${button('AutoIcon', 91, 'Auto')}
     ${button('TextIcon', 92, 'Text', 'Text command')}
-    ${button('MixedIcon', 93, 'PictureAndText', 'Mixed command')}
+    ${button('MixedIcon', 93, 'Auto', 'Mixed command', 'MixedIcon')}
     ${button('NoIcon', 94, 'Picture', '', 'NoIcon')}
     </ChildItems></AutoCommandBar>`;
   const localCommands = `<Commands><Command name="LocalIcon" id="101"><Title>Local icon</Title>${reference('Icon')}</Command>
     <Command name="NoIcon" id="102"><Title>No icon</Title></Command>
-    <Command name="LocalReceipt" id="103"><Title>Local receipt</Title></Command></Commands>`;
+    <Command name="LocalReceipt" id="103"><Title>Local receipt</Title></Command>
+    <Command name="MixedIcon" id="104"><Title>Mixed command</Title><Representation>TextPicture</Representation>${reference('Icon')}</Command></Commands>`;
   const commandInterface = `<CommandInterface><CommandBar><Item><Command>Form.Command.LocalReceipt</Command>
     <Type>Added</Type><CommandGroup>CommandGroup.PrintProbe</CommandGroup></Item></CommandBar></CommandInterface>`;
   await writeFile(form.path, form.text

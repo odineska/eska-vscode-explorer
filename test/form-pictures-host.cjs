@@ -40,9 +40,17 @@ async function exerciseRootMore(ui, view) {
   await until(() => ui.evaluate("globalThis.__generatedButton.getBoundingClientRect().width === 0"),
     'generated command moves out of the narrowed bar');
   await clickMore();
-  await until(() => ui.evaluate(`[...document.querySelectorAll(${JSON.stringify(rows)})]
-    .some(row => row.getAttribute('aria-label') === 'GeneratedIcon' && row.querySelector('img'))`),
-    'More includes the hidden generated command and its picture');
+  await until(() => ui.evaluate(`(() => {
+    const row = [...document.querySelectorAll(${JSON.stringify(rows)})]
+      .find(item => item.getAttribute('aria-label') === 'GeneratedIcon');
+    const inlineImage = globalThis.__generatedButton.querySelector('img');
+    const image = row?.querySelector('img');
+    if (!inlineImage || !image?.naturalWidth || image.src !== inlineImage.src) return false;
+    const caption = row.querySelector(':scope > [data-native-label]');
+    if (!caption) return row.innerText.trim() === 'GeneratedIcon';
+    const visible = element => element?.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility === 'visible';
+    return caption.textContent === 'GeneratedIcon' && (visible(caption) || visible(caption.nextElementSibling));
+  })()`), 'More displays the same icon with a visible caption for an icon-only command');
   await until(() => ui.evaluate(menuWithinWebview('[data-root-menu-level]')), 'floating More stays in the webview');
   await ui.evaluate(`(() => {
     const menu = document.querySelector('[data-root-menu-level]');
@@ -151,7 +159,7 @@ exports.run = async function() {
   await until(async () => (await groupItems()).length === 0, 'selecting an automatic menu item closes the menu');
   assert.deepEqual(view.selected, selection, 'preview menu does not execute a command');
   await exerciseRootMore(ui, view);
-  for (const zoom of [75, 150]) {
+  for (const zoom of [75, 125, 150]) {
     await ui.evaluate(`(() => {const select=document.querySelector('.form-zoom select');select.value='${zoom}';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     await until(() => ui.evaluate(`document.querySelector('.taxi-preview').style.zoom==='${zoom / 100}'`), 'picture form zoom applied');
     await allocateFormViewport(ui, [1160 * zoom / 100, 640]);

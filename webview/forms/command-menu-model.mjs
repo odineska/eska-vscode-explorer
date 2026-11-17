@@ -11,6 +11,10 @@ const standardPictures = new Map(Object.entries({
   Delete: 'DeleteListItemDirectly', Post: 'Post', UndoPosting: 'UndoPosting',
   ShowInList: 'ShowInList', ChangeHistory: 'ChangeHistory', CustomizeForm: 'CustomizeForm', Help: 'Help',
 }));
+const tableMovementPictures = new Map([
+  ['Table.StandardCommand.MoveUp', 'MoveUp'],
+  ['Table.StandardCommand.MoveDown', 'MoveDown'],
+]);
 export const menuSeparator = Symbol('menu separator');
 
 export function menuNode(item) {
@@ -31,7 +35,11 @@ export function menuCaption(item, state, rootMenu) {
 
 export function menuPicture(item, rootMenu) {
   const picture = item.presentation?.picture ?? item.picture;
-  if (picture || !rootMenu) return picture;
+  if (picture) return picture;
+  if (!rootMenu) {
+    const name = tableMovementPictures.get(item.key);
+    return name ? { kind: 'standard', name, variant: 'tableMovementMenu' } : undefined;
+  }
   const name = standardPictures.get(standardAction(item));
   return name ? { kind: 'standard', name } : undefined;
 }

@@ -1,13 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FORM_NS } from '../webview/forms/model.mjs';
-import { menuCaption, menuChildren, menuEnabled, menuSeparator, menuShortcut, tableCommandRows } from '../webview/forms/command-menu-model.mjs';
+import { menuCaption, menuChildren, menuEnabled, menuPicture, menuSeparator, menuShortcut, tableCommandRows } from '../webview/forms/command-menu-model.mjs';
 
 const property = (name, text) => ({key:{namespace:FORM_NS,name},value:{kind:'text',text}});
 const action = name => ({key:'Table.StandardCommand.'+name,caption:{kind:'standard',key:'command.'+name}});
 const keys = items => items.map(item=>item===menuSeparator?'separator':item.key);
 const button = (name, location='Auto') => ({key:'declared-'+name,kind:'Button',children:[],presentation:{displayed:true},
   properties:[property('CommandName','Form.Item.Rows.StandardCommand.'+name),property('LocationInCommandBar',location)]});
+
+test('table movement rows have a picture alongside their caption and honor an authored picture', () => {
+  const up = action('MoveUp'), down = action('MoveDown');
+  assert.deepEqual(menuPicture(up, false), {kind:'standard',name:'MoveUp',variant:'tableMovementMenu'});
+  assert.deepEqual(menuPicture(down, false), {kind:'standard',name:'MoveDown',variant:'tableMovementMenu'});
+  assert.equal(menuCaption(up, {locale:'ru-RU',strings:{'command.MoveUp':'Переместить вверх'}}, false), 'Переместить вверх');
+  const picture = {kind:'common',source:'custom'};
+  assert.equal(menuPicture({...up,picture}, false), picture);
+  assert.equal(menuPicture(action('Add'), false), undefined);
+});
 
 test('the list menu includes sections independently of the inline overflow', () => {
   const create=action('Create'), copy=action('Copy'), refresh=action('Refresh'), settings=action('ListSettings');

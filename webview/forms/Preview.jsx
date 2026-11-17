@@ -37,7 +37,7 @@ import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
-  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
+  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant === 'tableMovementMenu' ? 'tableMenu' : props.variant) : undefined);
   return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
     {image => <NativeStandardPicture image={image()} name={props.name} variant={props.variant}/>}
   </Show>;
@@ -735,7 +735,7 @@ function MenuLevel(props) {
           if (submenu()) enter();
           else props.dismiss();
         }}>
-        <Show when={picture()}><Picture node={node} picture={picture()} pictureVariant={props.tableMenu ? 'tableMenu' : undefined} controller={props.controller}/></Show>
+        <Show when={picture()}><Picture node={node} picture={picture()} pictureVariant={picture().variant ?? (props.tableMenu ? 'tableMenu' : undefined)} controller={props.controller}/></Show>
         <Show when={native()} fallback={label()}>
           <NativeLabel enabled placement="menuItem" text={label()} font={menuFont} runtime={props.controller.nativeText}/>
         </Show>
