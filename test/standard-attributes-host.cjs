@@ -22,7 +22,7 @@ exports.run = async function () {
   assert.ok(group, 'implicit standard attribute group exists');
   assert.equal(explorer.getTreeItem(group).label, 'Стандартные реквизиты');
   const attributes = await explorer.getChildren(group);
-  assert.deepEqual(attributes.map(entry => entry.node.id.name).sort(), ['DeletionMark', 'Predefined', 'Ref']);
+  assert.deepEqual(attributes.map(entry => entry.node.id.name).sort(), ['Code', 'DeletionMark', 'Description', 'IsFolder', 'Owner', 'Parent', 'Predefined', 'Ref']);
   const deletion = attributes.find(entry => entry.node.id.name === 'DeletionMark');
   const item = explorer.getTreeItem(deletion);
   assert.equal(item.label, 'Пометка удаления');
