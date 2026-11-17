@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
+import { scaleRaster } from '../webview/forms/raster-scale.mjs';
 import { selectStandardPictureVariant } from '../webview/forms/standard-picture-density.mjs';
+import { standardPicture, usesStandardPictureArtwork } from '../webview/forms/standard-pictures.mjs';
 
 const scales = [85, 100, 125, 150, 175, 200, 300, 400];
 const variants = scales.map(scale => ({ scale }));
@@ -22,6 +24,29 @@ test('standard pictures select density using form zoom and DPR', () => {
   }
   assert.equal(selectStandardPictureVariant(undefined, 125, 1), undefined);
   assert.equal(selectStandardPictureVariant(variants, 125, NaN), undefined);
+});
+
+test('coverage resampling preserves thin native strokes without blending transparent ink', () => {
+  const image = { width: 4, height: 1, rgba: Uint8ClampedArray.from([
+    255, 0, 0, 0, 0, 0, 255, 255, 0, 0, 255, 128, 255, 0, 0, 0,
+  ]) };
+  assert.equal(scaleRaster(image, 4, 1), image);
+  const resized = scaleRaster(image, 3, 1);
+  assert.deepEqual([...resized.rgba], [0, 0, 255, 64, 0, 0, 255, 192, 0, 0, 255, 32]);
+  const integer = scaleRaster(image, 8, 2);
+  assert.deepEqual([...integer.rgba.slice(8, 16)], [0, 0, 255, 255, 0, 0, 255, 255]);
+});
+
+test('table menus use regular web artwork only when there is no desktop menu override', () => {
+  for (const name of ['MarkObjectForDeletion', 'DeleteListItemDirectly', 'Refresh', 'Find', 'Post']) {
+    assert.equal(usesStandardPictureArtwork(`StdPicture.${name}`, 'tableMenu'), false);
+    assert.notDeepEqual(standardPicture(name, 'tableMenu'), standardPicture(name));
+  }
+  for (const name of ['OpenFile', 'CheckAll', 'ExchangePlan']) {
+    assert.equal(usesStandardPictureArtwork(`StdPicture.${name}`, 'tableMenu'), true);
+    assert.deepEqual(standardPicture(name, 'tableMenu'), standardPicture(name));
+  }
+  assert.equal(usesStandardPictureArtwork('MoveUp', 'tableCommand'), false);
 });
 
 test('the bundle includes only desktop-verified standard PNGs at their original densities', async () => {

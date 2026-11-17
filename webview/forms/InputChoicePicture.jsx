@@ -2,7 +2,8 @@ import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'sol
 import { standardPicture } from './standard-pictures.mjs';
 import { choicePictureBounds, inactiveChoicePicture } from './choice-picture-paint.mjs';
 import { paintCanvas } from './native-control-paint.js';
-import { useStandardPictureVariant } from './NativeStandardPicture.jsx';
+import { useStandardPicturePixelScale, useStandardPictureVariant } from './NativeStandardPicture.jsx';
+import { scaleRaster } from './raster-scale.mjs';
 
 function ChoicePictureRaster(props) {
   let canvas;
@@ -15,9 +16,11 @@ function ChoicePictureRaster(props) {
     return picture && { source: `data:${picture.mimeType};base64,${picture.data}`, isTemplate: picture.isTemplate };
   });
   const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
-  const variant = useStandardPictureVariant(() => props.picture.name, () => props.os === 'linux'
-    && !!standard() && !standard().isTemplate);
-  createEffect(on(() => variant()?.source, source => {
+  const scalable = () => props.os === 'linux' && !!standard() && !standard().isTemplate;
+  const variant = useStandardPictureVariant(() => props.picture.name, scalable);
+  const standardScale = useStandardPicturePixelScale();
+  const pixelScale = () => scalable() ? standardScale() : undefined;
+  createEffect(on(variant, source => {
     setVariantImage(undefined);
     if (!source) return;
     const image = new Image();
@@ -36,25 +39,22 @@ function ChoicePictureRaster(props) {
     onCleanup(() => { image.onload = null; });
   }));
   const logicalImage = () => standard() ?? common();
-  const scaled = createMemo(() => {
-    const loaded = variantImage(), selected = variant();
-    if (loaded && selected?.source === loaded.source) {
-      return { image: loaded.image, pixelScale: selected.pixelScale };
-    }
-  });
-  const source = () => scaled() ?? logicalImage();
   const bounds = createMemo(() => logicalImage() && choicePictureBounds(logicalImage(), props.height));
   createEffect(() => {
-    const image = source(), box = bounds();
-    if (!canvas || !box) return;
-    const width = Math.max(1, Math.round(box.width * (image.pixelScale ?? 1)));
-    const height = Math.max(1, Math.round(box.height * (image.pixelScale ?? 1)));
+    const image = logicalImage(), box = bounds();
+    if (!canvas || !box || !image) return;
+    const scale = pixelScale();
+    const width = Math.max(1, Math.round(box.width * (scale ?? 1)));
+    const height = Math.max(1, Math.round(box.height * (scale ?? 1)));
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) return;
-    if (image.rgba && image.width === width && image.height === height) {
-      paintCanvas(canvas, image);
+    const loaded = variantImage();
+    if (loaded && variant() === loaded.source) {
+      context.drawImage(loaded.image, 0, 0, width, height);
+    } else if (image.rgba && (scale || image.width === width && image.height === height)) {
+      paintCanvas(canvas, scaleRaster(image, width, height));
     } else {
       let source = image.image;
       if (image.rgba) {
@@ -79,8 +79,8 @@ function ChoicePictureRaster(props) {
       data-choice-picture-inactive={props.inactive ? '' : undefined}
       style={{
         left: `${box().x}px`, top: `${box().y}px`,
-        width: scaled() ? `${box().width}px` : undefined,
-        height: scaled() ? `${box().height}px` : undefined,
+        width: pixelScale() ? `${box().width}px` : undefined,
+        height: pixelScale() ? `${box().height}px` : undefined,
       }}/>}
   </Show>;
 }

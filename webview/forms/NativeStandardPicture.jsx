@@ -1,8 +1,19 @@
 import { Show, createContext, createEffect, createMemo, useContext } from 'solid-js';
-import { selectStandardPictureVariant } from './standard-picture-density.mjs';
+import { scaleRaster } from './raster-scale.mjs';
+import { selectStandardPictureVariant, standardPicturePixelScale } from './standard-picture-density.mjs';
+import { usesStandardPictureArtwork } from './standard-pictures.mjs';
 import { webStandardPictures } from './web-standard-pictures.mjs';
 
 export const StandardPictureScaleContext = createContext();
+
+export function useStandardPicturePixelScale() {
+  const scale = useContext(StandardPictureScaleContext);
+  return createMemo(() => {
+    if (!scale) return;
+    const { zoom, pixelRatio } = scale();
+    return standardPicturePixelScale(zoom, pixelRatio);
+  });
+}
 
 export function useStandardPictureVariant(name, enabled) {
   const scale = useContext(StandardPictureScaleContext);
@@ -12,7 +23,7 @@ export function useStandardPictureVariant(name, enabled) {
     if (!Object.hasOwn(webStandardPictures, key)) return;
     const { zoom, pixelRatio } = scale();
     const variant = selectStandardPictureVariant(webStandardPictures[key], zoom, pixelRatio);
-    if (variant) return { source: variant.source, pixelScale: zoom * pixelRatio / 100 };
+    if (variant) return variant.source;
   });
 }
 
@@ -40,8 +51,12 @@ function NativeTemplatePicture(props) {
 
 function NativePictureCanvas(props) {
   let canvas;
+  const pixelScale = useStandardPicturePixelScale();
   createEffect(() => {
-    if (!props.image.isTemplate) paint(canvas, props.image);
+    if (props.image.isTemplate) return;
+    const image = props.image, scale = pixelScale() ?? 1;
+    paint(canvas, scaleRaster(image, Math.max(1, Math.round(image.width * scale)),
+      Math.max(1, Math.round(image.height * scale))));
   });
   return <Show when={props.image.isTemplate} fallback={
     <canvas ref={canvas} class="taxi-icon" data-native-picture="ready" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>
@@ -50,9 +65,9 @@ function NativePictureCanvas(props) {
 
 export function NativeStandardPicture(props) {
   const variant = useStandardPictureVariant(() => props.name, () => !props.image.isTemplate
-    && (props.variant === undefined || props.variant === 'standard'));
+    && usesStandardPictureArtwork(props.name, props.variant));
   return <Show when={variant()} fallback={<NativePictureCanvas image={props.image}/>}>
-    {raster => <img class="taxi-icon" data-native-picture="ready" src={raster().source} alt=""
+    {source => <img class="taxi-icon" data-native-picture="ready" src={source()} alt=""
       draggable="false" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>}
   </Show>;
 }
