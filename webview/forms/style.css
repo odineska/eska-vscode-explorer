@@ -239,6 +239,18 @@ button { cursor: default; }
 .taxi-command-bar { min-width: 108px; align-items: flex-start; padding: 1px 0 2px; }
 .taxi-preview[data-os=linux] .taxi-command-bar { align-items: stretch; }
 .taxi-preview[data-os=linux] .taxi-command-bar > .taxi-element[data-kind=Button] { display: flex; }
+.taxi-preview[data-os=linux] .taxi-command-bar[data-horizontal-location]:has([data-command-group-representation=Compact]) {
+  & .taxi-command-bar[data-command-group-representation] { min-width: 0; }
+  & .taxi-command-bar[data-command-group-representation=Compact] { gap: 0; }
+  & > .taxi-element[data-kind=ButtonGroup]:not(:first-child),
+  & .taxi-command-bar[data-command-group-representation]:not([data-command-group-representation=Compact]) > .taxi-element[data-kind=ButtonGroup]:not(:first-child),
+  & .taxi-command-bar[data-command-group-representation]:not([data-command-group-representation=Compact]) > .taxi-element[data-kind=ButtonGroup] + .taxi-element {
+    margin-inline-start: 11px;
+  }
+}
+.taxi-command-bar[data-form-command-overflow] > :is([data-root-command], [data-root-command-tail]) { display: flex; flex: none; }
+.taxi-preview:not([data-form-layout=preferred]) .taxi-command-bar[data-form-command-overflow] > [data-root-command-hidden] { display: none; }
+.taxi-command-bar[data-form-command-overflow] > :is([data-root-command], [data-root-command-tail]) > .taxi-element > .taxi-command-bar,
 .taxi-command-bar > .taxi-element > .taxi-command-bar,
 .taxi-table-command-bar > .taxi-element > .taxi-command-bar { min-height: 0; padding: 0; }
 .taxi-popup { position: relative; width: max-content; }

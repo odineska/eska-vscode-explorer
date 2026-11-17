@@ -529,7 +529,7 @@ function Group(props) {
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
     <Match when={node().kind === 'CommandBar'}><CommandBar {...props}/></Match>
-    <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
+    <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar" data-command-group-representation={scalar(node(), 'Representation', 'Auto')}><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
     <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{
       'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation',
       'taxi-group--indented': indent(),
@@ -565,6 +565,7 @@ function CommandBar(props) {
   const source = () => commands().source;
   const formCommands = createMemo(() => commands().formSource && node().presentation.objectCommandMenu?.length
     ? formCommandPlacement(node(), node(), state) : undefined);
+  const adaptive = () => state.os === 'linux' && flag(node(), 'Autofill') && !!formCommands()?.more;
   const generated = createMemo(() => formCommands()?.inline.filter(item => !menuNode(item)) ?? []);
   const hasSearch = () => !!tableSearch(source());
   const additions = createMemo(() => {
@@ -584,21 +585,39 @@ function CommandBar(props) {
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
   return <div ref={bar} class="taxi-command-bar" style={{ '--taxi-command-minimum-width': minimum() === undefined ? undefined : `${minimum() + 33}px` }} data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
+    data-form-command-overflow={adaptive() ? '' : undefined} data-root-command-overflow={adaptive() ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
-    <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
-    <For each={generated()}>{(item, index) => <div data-root-command-section={
-      startsRootCommandSection(generated()[index() - 1], item) ? '' : undefined}
-      data-root-command-section-after={index() === generated().length - 1 && commands().inline.length
+    <Show when={adaptive()} fallback={<>
+      <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
+      <For each={generated()}>{(item, index) => <div data-root-command-section={
+        startsRootCommandSection(generated()[index() - 1], item) ? '' : undefined}
+        data-root-command-section-after={index() === generated().length - 1 && commands().inline.length
         && startsRootCommandSection(item, commands().inline[0]) ? '' : undefined}>
-      <GeneratedFormCommand item={item} controller={props.controller}/>
-    </div>}</For>
-    <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
-    <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
-      spacer={commands().spaceBeforeMore}/>
-    <Show when={menu().length} fallback={<Show when={source() || commands().formSource}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
-      <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} rootMenu={!!formCommands()} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+        <GeneratedFormCommand item={item} controller={props.controller}/>
+      </div>}</For>
+      <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
+      <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
+        spacer={commands().spaceBeforeMore}/>
+      <Show when={menu().length} fallback={<Show when={source() || commands().formSource}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
+        <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} rootMenu={!!formCommands()} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+      </Show>
+      <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
+    </>}>
+      <For each={formCommands()?.inline}>{(item, index) =>
+        <div data-root-command=""
+          data-root-command-required={scalar(item, 'LocationInCommandBar') === 'InCommandBar' ? '' : undefined}
+          data-root-command-section={startsRootCommandSection(formCommands().inline[index() - 1], item) ? '' : undefined}>
+          <Show when={menuNode(item)} fallback={<GeneratedFormCommand item={item} controller={props.controller}/>}>
+            {child => <Element node={child()} controller={props.controller}/>}
+          </Show>
+        </div>
+      }</For>
+      <div class="taxi-command-spacer"/>
+      <div data-root-command-tail=""><PopupMenu rootMenu rows={menu()} label={state.strings.more} controller={props.controller} nativeDropdown/></div>
+      <Show when={formCommands()?.help}>
+        <div data-root-command-tail=""><CommandButton controller={props.controller} node={formCommands().helpNode} label="?" help/></div>
+      </Show>
     </Show>
-    <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
 }
 export function PopupMenu(props) {
