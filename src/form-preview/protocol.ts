@@ -65,7 +65,7 @@ export interface FormPalette {
 export interface FormDefinition { name: string | null; origin: Origin; properties: FormProperty[]; valueType?: FieldType }
 export interface FormDataField { path: string[]; caption?: FormText; valueType: FieldType; type: PropertyField | null; origin: Origin | null }
 export interface FormDependency { id: string; root: WirePath; path: WirePath; snapshot: string; version: string | null; member: string | null; role: "form" | "metadata" | "picture" }
-export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; origin: Origin }
+export interface FormHandler { owner: { kind: "element"; identity: ElementIdentity } | { kind: "command"; name: string }; event: string; name: string; caption?: PaletteCaption | null; origin: Origin }
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
 export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; expandedData?: string[][]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
@@ -228,7 +228,7 @@ export function parseFormSnapshot(value: unknown): FormSnapshot {
   if (scriptVariant !== undefined && scriptVariant !== "russian" && scriptVariant !== "english") invalid();
   node(value.model.root, 0);
   if (value.model.handlers !== undefined && (!Array.isArray(value.model.handlers) || value.model.handlers.length > 16_384 || !value.model.handlers.every(handler =>
-    isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
+    isRecord(handler) && isRecord(handler.owner) && typeof handler.event === "string" && typeof handler.name === "string" && (handler.caption === null || caption(handler.caption)) && origin(handler.origin) && ids.has((handler.origin as unknown as Origin).source)
     && (handler.owner.kind === "element" && isIdentity(handler.owner.identity) && identities.has(identityKey(handler.owner.identity))
       || handler.owner.kind === "command" && typeof handler.owner.name === "string")))) invalid();
   for (const name of ["attributes", "commands", "parameters"]) if (!Array.isArray(value.model[name]) || !(value.model[name] as unknown[]).every(value => isRecord(value)

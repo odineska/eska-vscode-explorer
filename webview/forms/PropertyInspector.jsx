@@ -245,7 +245,7 @@ export function PropertyInspector(props) {
         <Show when={extraHandlers().length}><table class="form-properties"><tbody>
           <tr class="form-declared-category"><th colspan="2">{state.strings.events}</th></tr>
           <For each={extraHandlers()}>{entry =>
-            <tr class="form-event"><th>{entry.handler.event}</th><td><button class="form-handler" type="button"
+            <tr class="form-event"><th>{entry.handler.caption?.[locale()] ?? state.editSchema?.propertyCaptions?.[entry.handler.event]?.[locale()] ?? entry.handler.event}</th><td><button class="form-handler" type="button"
               onClick={() => openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
           }</For>
         </tbody></table></Show>
