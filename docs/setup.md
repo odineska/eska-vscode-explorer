@@ -89,7 +89,7 @@ show/hide inactive filter affects presentation independently.
 
 ## Run, apply and debug
 
-Open **Run and Debug** from the project tree. Switching between `test` and
+Right-click **Project Settings** and choose **Configure Project**. Switching between `test` and
 `prod` keeps separate drafts until the settings tab is closed. **Save Profile**
 and **Discard Changes** affect only the open profile. Clearing **Configure this
 profile** removes its local declaration when you save.
@@ -99,8 +99,8 @@ profile** removes its local declaration when you save.
 endpoints without opening a 1C session. The project settings file belongs in
 the local Git ignore.
 
-The project settings context menu starts a normal test client or previews the
-changes for a test infobase. Apply requires confirmation for the displayed base
+The **ESKA: Run 1C** section in the standard **Run and Debug** panel starts a
+normal test client or previews the changes for a test infobase. Apply requires confirmation for the displayed base
 and files. The first import and unsupported partial changes require a separate
 full-import preview. To update an installed `InfoBase` extension, open the ESKA
 workspace root and select the extension project. ESKA uses the main project's
@@ -184,14 +184,16 @@ no automatic undo yet. Editing form elements is outside this feature.
 
 ## Creating objects and forms
 
-Metadata API 1.49 adds **Create metadata object…**, **Copy metadata object…** and
-**Delete metadata object…** to the tree and command palette. Select a root,
-collection or owner, then choose an allowed kind and an existing template or
-an empty object. Whole-form creation and copying include the descriptor and
-payload. Managed-form structure can be edited through CLI `metadata form-edit`;
-a graphical element designer is not implemented yet.
+Choose **Add…** in a collection's context menu. The collection determines the
+kind and owner; enter a name and any required properties. The object opens in
+its property panel, or in the viewer for a form. Use **Copy metadata object…**
+to create from an existing object. Copy and delete operations show affected
+files and references for confirmation. These operations require Metadata API 1.49.
 
-Review affected files, UUID allocations and detected references before writing.
-Copying keeps the same owner and generates new owned UUIDs while preserving
-modules and resources. Cancelling and unsaved source buffers prevent publication.
-The infobase is not updated automatically. [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).
+Metadata API 1.50 adds missing modules for their owner. A document can have one
+object module and one manager module. Roles determine paths and filenames;
+existing BSL or binary modules cannot be replaced. A new module opens in the editor.
+Metadata API 1.53 enables editing form elements and conditional appearance from
+the main form tab. The same changes are available through CLI `metadata form-edit`.
+Apply infobase updates separately.
+[Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).

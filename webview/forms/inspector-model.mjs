@@ -60,7 +60,7 @@ export function indexInspector(model, locale, strings) {
     add(handlers, owner, { handler, index });
   }
 
-  function append(section, path, { definition, typeField, valueType, main, origin }) {
+  function append(section, path, { definition, typeField, valueType, main, origin, formColumn }) {
     const id = rowKey(section, path);
     if (byData.has(id)) return;
     const parts = segments(path);
@@ -68,7 +68,7 @@ export function indexInspector(model, locale, strings) {
     const parent = section === 'attributes' && parts.length > 1 ? rowKey(section, parts.slice(0, -1).join('.')) : '';
     const type = section === 'commands' ? undefined : inspectorType(typeField, valueType, locale, strings);
     const action = section === 'commands' ? scalar(definition, 'Action') : '';
-    const row = { id, section, path, name, label: name, parent, depth: Math.max(0, parts.length - 1), main, definition, typeField, valueType, type, action, origin };
+    const row = { id, section, path, name, label: name, parent, depth: Math.max(0, parts.length - 1), main, definition, typeField, valueType, type, action, origin, formColumn };
     byData.set(id, row);
     if (parent) add(children, parent, row);
     else definitions[section].push(row);
@@ -79,7 +79,7 @@ export function indexInspector(model, locale, strings) {
       if (!definition.name) continue;
       const main = section === 'attributes' && flag(definition, 'MainAttribute', false);
       append(section, definition.name, { definition, main, typeField: property(definition, 'Type'), valueType: definition.valueType });
-      if (section === 'attributes') formColumns(definition, definition.name, (path, typeField) => append(section, path, { typeField }));
+      if (section === 'attributes') formColumns(definition, definition.name, (path, typeField) => append(section, path, { typeField, formColumn: true }));
     }
   }
   for (const field of model.dataFields ?? []) {

@@ -1,5 +1,6 @@
+import type { TextDocument } from "vscode";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, normalize, relative, resolve, sep, toNamespacedPath } from "node:path";
 import { ExplorerError, isRecord, isWirePath, type WirePath } from "./protocol.js";
 import { MetadataTree, type TreeEntry } from "./tree.js";
 import { eventHandler, handlerRange } from "./event-handler.js";
@@ -31,20 +32,50 @@ export function nativePath(path: WirePath): string {
   } catch { throw new ExplorerError("unsupportedPath"); }
 }
 
+/** One lexical boundary for existing files and planned destinations from the backend. */
+export function resolveSourcePath(root: WirePath, path: WirePath): string {
+  const base = nativePath(root), child = nativePath(path);
+  if (!isAbsolute(base) || isAbsolute(child) || child.split(process.platform === "win32" ? /[\\/]/ : /\//).some(part => !part || part === "." || part === "..")
+    || (process.platform === "win32" && child.includes(":"))) throw new ExplorerError("protocolInvalid");
+  const result = resolve(base, child), inside = relative(base, result);
+  if (!inside || isAbsolute(inside) || inside.split(sep).includes("..")) throw new ExplorerError("protocolInvalid");
+  return result;
+}
+
+/** Share file identity across backend, watcher and editor spellings; Unix names remain case-sensitive. */
+export function sourceKey(path: string): string {
+  return process.platform === "win32" ? toNamespacedPath(path).toLowerCase() : normalize(path);
+}
+
+/** Dirty buffers may use a symlink or junction while the backend uses its canonical target. */
+export async function canonicalSourceKey(path: string): Promise<string> {
+  return sourceKey(await realpath(path).catch(() => path));
+}
+
+/** Resolve aliases only when a dirty native buffer can conflict with the operation. */
+export async function hasDirtySource(paths: Iterable<string>, documents: readonly TextDocument[]): Promise<boolean> {
+  if (!documents.some(document => document.uri.scheme === "file" && document.isDirty)) return false;
+  const inputs = new Set(await Promise.all([...paths].map(canonicalSourceKey)));
+  for (const document of documents) {
+    if (document.uri.scheme === "file" && document.isDirty && inputs.has(await canonicalSourceKey(document.uri.fsPath))) return true;
+  }
+  return false;
+}
+
 /** Check lexical components and real symlink targets before opening an existing regular file. */
 export async function existingSource(root: WirePath, path: WirePath): Promise<string> {
-  const base = nativePath(root);
-  const child = nativePath(path);
-  if (!isAbsolute(base) || isAbsolute(child) || child.split(process.platform === "win32" ? /[\\/]/ : /\//).some((part) => !part || part === "." || part === "..")
-    || (process.platform === "win32" && child.includes(":"))) throw new ExplorerError("sourceMissing");
   try {
-    const [canonicalBase, canonicalFile] = await Promise.all([realpath(base), realpath(resolve(base, child))]);
+    const file = resolveSourcePath(root, path);
+    const [canonicalBase, canonicalFile] = await Promise.all([realpath(nativePath(root)), realpath(file)]);
     const inside = relative(canonicalBase, canonicalFile);
     if (!inside || isAbsolute(inside) || inside.split(sep).includes("..") || !(await stat(canonicalFile)).isFile()) {
       throw new ExplorerError("sourceMissing");
     }
-    return resolve(base, child);
-  } catch { throw new ExplorerError("sourceMissing"); }
+    return file;
+  } catch (error) {
+    if (error instanceof ExplorerError && error.code === "unsupportedPath") throw error;
+    throw new ExplorerError("sourceMissing");
+  }
 }
 
 /** Translate backend UTF-8 offsets into VS Code UTF-16 offsets, excluding the editor's BOM. */

@@ -20,6 +20,12 @@ async function search(ui, value) {
 const click = (ui, selector) => ui.evaluate(`${lookup(selector)}.click()`);
 const activePage = ui => ui.evaluate("document.querySelector('.taxi-tabs [aria-selected=true]')?.textContent");
 const waitFor = (ui, selector) => until(() => ui.evaluate(`!!${lookup(selector)}`), selector);
+const result = key => '#form-search-results [data-result-key="' + key + '"]:not([data-result-property])';
+async function choose(ui, key) {
+  await waitFor(ui, result(key));
+  await click(ui, result(key));
+}
+
 
 async function themeChecks(ui, label) {
   const config = vscode.workspace.getConfiguration('workbench');
@@ -75,8 +81,8 @@ exports.run = async () => {
   const snapshot = view.snapshot;
   assert.ok(snapshot.model.dataFields?.some(row => row.path.join('.') === 'Object.Lines.Quantity'), 'unbound metadata child delivered');
   const dimensions = await ui.evaluate(`(() => {
-    const area=document.querySelector('.form-inspectors'), header=document.querySelector('.form-inspector-header');
-    return {mode:area.dataset.inspectorLayout,top:header.getBoundingClientRect().top,
+    const area=document.querySelector('.form-inspectors');
+    return {mode:area.dataset.inspectorLayout,
       topTabs:[...document.querySelectorAll('.form-pane .form-tabs')].every(tabs=>
         tabs.getBoundingClientRect().bottom<=tabs.parentElement.querySelector('.form-tree,.form-data-grid').getBoundingClientRect().top),
       theme:document.body.className};
@@ -97,9 +103,12 @@ exports.run = async () => {
   await waitFor(ui, field('Object.Amount'));
   assert.equal(view.inspectorState?.ui.dataFolded['attributes:Object'], undefined);
   await search(ui, 'Object.Lines.Quantity');
-  await waitFor(ui, field('Object.Lines.Quantity'));
+  await waitFor(ui, result('attributes:Object.Lines.Quantity'));
   await search(ui, '');
-  await until(async () => (await expanded(ui, 'Object')) === 'false', 'clear search restores collapsed groups');
+  assert.notEqual(view.inspectorState?.ui.dataFolded['attributes:Object'], false, 'search leaves the group preference unchanged');
+  assert.equal(await expanded(ui, 'Object'), 'true', 'search keeps the temporarily revealed group open');
+  await click(ui, expander('Object'));
+  await until(async () => await expanded(ui, 'Object') === 'false', 'explicit collapse closes the revealed group');
   await click(ui, expander('Object'));
   await waitFor(ui, field('Object.Amount'));
   assert.equal(await expanded(ui, 'Object.Lines'), 'false');
@@ -121,7 +130,7 @@ exports.run = async () => {
   assert.equal(await ui.evaluate(`${lookup(field('Date'))}.querySelector('.form-data-name > .form-truncate').textContent`), 'Date');
   if (ru && annotated) {
     await search(ui, 'Ссылка');
-    await waitFor(ui, field('Object.Ref'));
+    await waitFor(ui, result('attributes:Object.Ref'));
     await search(ui, '');
     await waitFor(ui, field('Object.Lines.Quantity'));
   }
@@ -131,13 +140,12 @@ exports.run = async () => {
     (ru ? 'ДокументСсылка' : 'DocumentRef') + '.InspectorReceipt');
   await search(ui, 'String 100');
   if (ru) await search(ui, 'Строка 100');
-  await waitFor(ui, field('Amount'));
-  assert.equal(await ui.evaluate(`!!${lookup(field('Object.Amount'))}`), false, 'same short name keeps separate search results');
+  await waitFor(ui, result('attributes:Amount'));
+  assert.equal(await ui.evaluate(`!!${lookup(result('attributes:Object.Amount'))}`), false, 'same short name keeps separate search results');
   await search(ui, 'Object.Amount');
-  await waitFor(ui, rowFor('2'));
-  await waitFor(ui, rowFor('8'));
+  const firstKey = await ui.evaluate(`${lookup(rowFor('2'))}.dataset.formTreeNode`);
+  await choose(ui, firstKey);
   assert.equal(await ui.evaluate(`!!${lookup(rowFor('1'))}`), true, 'element search retains its parent');
-  await click(ui, rowFor('2'));
   await until(() => view.selected?.key.value === '2', 'element selected');
   await waitFor(ui, field('Object.Amount') + '.related');
   assert.equal(await ui.evaluate(`${lookup(title)}.textContent`), 'Name');
@@ -165,7 +173,8 @@ exports.run = async () => {
   await waitFor(ui, '[data-palette-id="platform:HorizontalStretch"]');
   const automatic = await ui.evaluate(`(() => {
     const row = document.querySelector('[data-palette-id="platform:HorizontalStretch"]');
-    return row && [row.querySelector('td').textContent, !!row.querySelector('input')];
+    const choice = row?.querySelector('select');
+    return row && [choice?.selectedOptions[0]?.label ?? row.querySelector('td').textContent, !!row.querySelector('input')];
   })()`);
   assert.deepEqual(automatic, [ru ? 'Авто' : 'Default', false]);
   const initialPage = await activePage(ui);
@@ -209,24 +218,19 @@ exports.run = async () => {
   const themes = await themeChecks(ui, vscode.env.language);
 
   await ui.evaluate("document.querySelector('#root').style.width='530px'");
-  await until(() => ui.evaluate("document.querySelector('.form-inspectors').dataset.inspectorLayout==='compact'"), 'compact layout uses webview width');
-  await click(ui, '.form-inspector-header [role=tab]:last-child');
-  await until(() => ui.evaluate("!document.querySelector('.form-pane--data').hidden && document.querySelector('.form-pane--structure').hidden"), 'compact pane switch');
+  await until(() => ui.evaluate("document.querySelector('.form-inspectors').dataset.inspectorLayout==='columns'"), 'narrow docked editor retains three columns');
   await search(ui, 'Quantity');
-  await waitFor(ui, field('Object.Lines.Quantity'));
-  await click(ui, field('Object.Lines.Quantity'));
+  await choose(ui, 'attributes:Object.Lines.Quantity');
   await click(ui, '.form-property-actions button');
   await until(() => vscode.window.activeTextEditor?.document.uri.fsPath === form.owner
     && vscode.window.activeTextEditor.document.getText(vscode.window.activeTextEditor.selection).includes('<Name>Quantity</Name>'), 'unbound metadata field navigates to its declaration');
   main.panel.reveal();
   await service.receive(view, main, { type: 'detach' });
   await until(() => view.frames.get('preview')?.ready, 'native detached preview ready');
-  await until(() => ui.evaluate("document.querySelector('.form-inspectors').dataset.inspectorLayout==='columns' && !document.querySelector('.preview-scroll')"), 'detached inspection keeps three columns at the same narrow width');
+  await until(() => ui.evaluate("document.querySelector('.form-inspectors').dataset.inspectorLayout==='detached' && !document.querySelector('.preview-scroll')"), 'detached inspection reflows');
   const narrowColumns = await ui.evaluate(`(() => {
-    const panels = [...document.querySelectorAll('.form-inspectors > .form-pane')];
-    const areas = panels.map(panel => panel.getBoundingClientRect());
-    return areas.length === 3 && areas.every((area, index) => area.width > 0 && area.top === areas[0].top
-      && (!index || area.left >= areas[index - 1].right));
+    const [tree,data,props] = [...document.querySelectorAll('.form-inspectors > .form-pane')].map(panel => panel.getBoundingClientRect());
+    return tree.top===data.top && props.top>=tree.bottom && props.width>data.width;
   })()`);
   assert.equal(narrowColumns, true);
   assert.equal(await ui.evaluate(`${lookup(title)}.textContent`), 'Quantity');
@@ -247,11 +251,23 @@ exports.run = async () => {
   assert.equal(typeFit, true);
   await ui.evaluate("document.querySelector('#root').style.width='100%'");
   await ui.screenshot(`inspector-type-number-${vscode.env.language}.png`);
+  main.panel.reveal(undefined, false);
+  await ui.focusWorkbench();
   await search(ui, 'MixedType');
-  await waitFor(ui, field('MixedType'));
-  await click(ui, field('MixedType'));
-  await until(() => ui.evaluate("document.querySelectorAll('.form-type-member').length === 3"), 'composite type shows its three members');
-  const composite = await ui.evaluate(`Array.from(document.querySelectorAll('.form-type-member'), row => ({
+  await choose(ui, 'attributes:MixedType');
+  await until(() => ui.evaluate(`${lookup(title)}.textContent==='MixedType'`), 'composite type selected');
+  if (!await ui.evaluate("document.querySelector('.form-type-details').open")) await click(ui, '.form-type-details > summary');
+  try {
+    await until(() => ui.evaluate("document.querySelectorAll('.form-type-details .form-type-member').length === 3"), 'composite type shows its three members');
+  } catch (error) {
+    error.message += ' ' + JSON.stringify(await ui.evaluate(`({
+      details: document.querySelector('.form-type-details')?.outerHTML.slice(0, 2200),
+      facts: document.querySelector('.form-context-facts')?.textContent,
+      selected: document.querySelector('.form-data-row[aria-selected=true]')?.textContent
+    })`));
+    throw error;
+  }
+  const composite = await ui.evaluate(`Array.from(document.querySelectorAll('.form-type-details .form-type-member'), row => ({
     label: row.querySelector('strong').textContent,
     category: row.querySelector('small')?.textContent.replace(/\.$/, '') ?? null,
     values: Array.from(row.querySelectorAll('dd'), value => value.textContent),
@@ -266,8 +282,7 @@ exports.run = async () => {
   await search(ui, '');
   await ui.screenshot(`inspector-type-composite-${vscode.env.language}.png`);
   await search(ui, 'Quantity');
-  await waitFor(ui, field('Object.Lines.Quantity'));
-  await click(ui, field('Object.Lines.Quantity'));
+  await choose(ui, 'attributes:Object.Lines.Quantity');
   floating.close();
   await service.receive(view, view.frames.get('preview'), { type: 'dock' });
   await waitFor(ui, '.preview-scroll');
@@ -323,7 +338,8 @@ exports.run = async () => {
   assert.ok(mounted.every(count => count > 0 && count < 100), 'only visible rows are mounted');
   const largeRevision = large.view.snapshot.revision;
   await search(large.ui, 'DeepField2249');
-  await large.ui.evaluate(`document.querySelector('.form-tree').dispatchEvent(new KeyboardEvent('keydown', {key:'End',bubbles:true}))`);
+  await until(() => large.ui.evaluate("!!document.querySelector('#form-search-results [data-result-key$=\"current:3249\"]')"), 'deep search result');
+  await large.ui.evaluate("document.querySelector('#form-search-results [data-result-key$=\"current:3249\"]').click()");
   await waitFor(large.ui, rowFor('3249'));
   assert.equal(await large.ui.evaluate(`${lookup(rowFor('3249'))}.getAttribute('aria-level')`), '25');
   await click(large.ui, rowFor('3249'));
@@ -335,7 +351,7 @@ exports.run = async () => {
   assert.deepEqual(await fs.readFile(form.path), before);
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
     passed: true, locale: vscode.env.language, themes, dimensions, dimensionsBefore, uses,
-    compact: true, separatePreview: true, sameSnapshot: true, modelData: true, workspaceState: true, mounted,
+    narrowDocked: true, separatePreview: true, sameSnapshot: true, modelData: true, workspaceState: true, mounted,
     localizedStandardFields: annotated, threeLevelIndent: true, savedDataExpansion: true, typedProperties: true,
   }));
 };

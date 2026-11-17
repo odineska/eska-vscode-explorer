@@ -2,7 +2,7 @@ import { MetadataObjects } from "./metadata-objects.js";
 import type { ObjectOperation } from "./metadata-object-protocol.js";
 import { MetadataCreation } from "./metadata-creation.js";
 import { configuredReadOnly, configuredReadOnlyResource } from "./editor-policy.js";
-import { revealHit } from "./search.js";
+import { revealHit, revealNode } from "./search.js";
 import { FormPreviewService } from "./form-preview/service.js";
 import { FormattingService } from "./formatting/service.js";
 import { QueryDesigner } from "./query/designer.js";
@@ -42,12 +42,13 @@ import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
-import { runtimeGroup, runtimeCommands, runtimeLabel, type RuntimeEntry } from "./runtime-tree.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
 
+const collectionContexts = { metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
+
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
-type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup | RuntimeEntry;
+type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
 
 let active: Explorer | undefined;
 
@@ -404,10 +405,6 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
           if (!this.projectGroups?.contains(entry)) return [];
           return Promise.all(entry.projects.map(project => this.projectRoot(tree, project, entry)));
         }
-        if (entry && "runtimeKind" in entry) {
-          return entry.runtimeKind === "group" && tree.projects.includes(entry.project) && projectEnabled(entry.project.info)
-            && vscode.workspace.isTrusted ? runtimeCommands(entry) : [];
-        }
         if (entry && "queryKind" in entry) return entry.queryKind === "branch" ? [queryLeaf(entry)] : [];
         if (entry && "fileKind" in entry) {
           const children = await this.files?.children(entry) ?? [];
@@ -432,10 +429,6 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
           children.push("projectGroup" in row ? row : await this.projectRoot(tree, row));
         }
         if (!entry || !entry.node.parent) {
-          const project = entry?.project ?? tree.projects.find(project => project.info.scope.kind === "standalone");
-          const state = this.connection.state;
-          if (project && projectEnabled(project.info) && vscode.workspace.isTrusted && state.kind === "ready"
-            && state.target.backend === "project" && (!entry || project.info.scope.kind === "member")) children.push(runtimeGroup(project));
           children.push(...await this.files?.groups(entry?.project) ?? []);
         }
         return tree === this.tree ? children : [];
@@ -472,16 +465,6 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Native TreeItems inherit zoom, keyboard navigation, themes and accessible text from VS Code. */
   getTreeItem(entry: Element): vscode.TreeItem {
-    if ("runtimeKind" in entry) {
-      const label = runtimeLabel(entry, this.treeLanguage);
-      const item = new vscode.TreeItem(label, entry.runtimeKind === "command" ? vscode.TreeItemCollapsibleState.None
-        : this.expanded.get(entry.key) === false ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
-      item.id = entry.key;
-      item.contextValue = entry.runtimeKind === "group" ? "eskaRuntimeGroup" : "eskaRuntimeCommand";
-      item.iconPath = new vscode.ThemeIcon(entry.runtimeKind === "group" ? "debug-alt" : entry.icon);
-      if (entry.runtimeKind === "command") item.command = { command: entry.command, title: label, arguments: [entry] };
-      return item;
-    }
     if ("projectGroup" in entry) {
       const keys = { extension: "projectExtensions", report: "projectReports", processing: "projectProcessors" } as const;
       const item = new vscode.TreeItem(message(this.treeLanguage, keys[entry.projectGroup]), this.expanded.get(entry.key)
@@ -567,7 +550,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       ? supportsRootFilter(entry.project)
         ? this.hideEmptyGroups(entry.project) ? "eskaRootFiltered" : "eskaRootUnfiltered"
         : "eskaRoot"
-      : node.id.kind === "collection" ? "eskaMetadataGroup"
+      : node.id.kind === "collection" ? collectionContexts[node.id.collection.kind]
         : commonModule ? "eskaCommonModule" : directModuleRole(entry) ? "eskaModuleObject" : isForm(entry) ? "eskaForm" : "eskaMetadata";
     if (!node.parent && this.sorting.order(entry.project) === "alphabetical") item.contextValue += "Sorted";
     if (node.creationKinds?.length && this.connection.state.kind === "ready" && this.connection.state.metadataCreation) item.contextValue += "Creatable";
@@ -599,8 +582,6 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
 
   /** Native reveal uses backend-provided ancestry already present in the lazy tree. */
   getParent(entry: Element): Element | undefined {
-    if ("runtimeKind" in entry) return entry.runtimeKind === "command" ? entry.parent
-      : entry.project.info.scope.kind === "member" ? entry.project.root : undefined;
     if ("projectGroup" in entry) return undefined;
     if ("queryKind" in entry) return entry.queryKind === "query" ? entry.parent : entry.owner;
     if ("fileKind" in entry) {
@@ -968,13 +949,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   }
 
   private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {
-    const fromTree = entry && ("runtimeKind" in entry || "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings");
+    const fromTree = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings";
     if (fromTree) { if (!this.tree) await this.connect(false); }
     else if (!await this.runtimeWorkspace(root ?? folder)) return;
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
     let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "")
-      : entry && "runtimeKind" in entry ? entry.project
       : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
     if (root && !project) return undefined;
     if (!project) {
@@ -1029,15 +1009,19 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       entry = await tree.root(project);
     }
     if (!("node" in entry) || entry.node.id.kind === "module" || !tree.projects.includes(entry.project)) return;
-    const objectId = await this.metadataObjects.run(tree, entry, operation, () => this.tree, this.treeLanguage,
-      (owner, kind) => this.metadataCreation.run(tree, owner, () => this.tree, this.treeLanguage, kind));
-    if (!objectId || this.tree !== tree || this.disposed) return;
+    const node = await this.metadataObjects.run(tree, entry, operation, () => this.tree, this.treeLanguage);
+    if (!node || this.tree !== tree || this.disposed) return;
     try {
-      const created = await revealHit(tree, entry.project, { objectId, node: { kind: "object", objectId } });
+      const created = await revealNode(tree, entry.project, node);
+      const owner = node.kind === "module" ? entry.project.nodes.get(nodeKey({ kind: "object", objectId: node.owner })) : undefined;
+      const target: TreeEntry | FormSource = owner && isForm(owner) ? { owner, target: "form-module" }
+        : owner && directModuleRole(owner) ? owner : created;
       if (this.tree !== tree || this.disposed) return;
       await this.expandRootForReveal(tree, entry.project);
-      await this.revealInView(tree, created, { select: true, focus: true });
-      if (isForm(created)) await this.openForm(created); else await this.showProperties(created);
+      await this.revealInView(tree, target, { select: true, focus: true });
+      if ("owner" in target) await this.open(target.owner, target.target);
+      else if (node.kind === "module") await this.open(target);
+      else if (isForm(created)) await this.openForm(created); else await this.showProperties(created);
     } catch (error) {
       this.output.warn(JSON.stringify({ event: "object_reveal_failed", code: error instanceof ExplorerError ? error.code : "requestFailed" }));
     }

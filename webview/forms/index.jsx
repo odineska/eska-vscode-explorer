@@ -5,6 +5,7 @@ import { createNativeTextRuntime } from './native-text.js';
 import { createInputBorderPaintQueue } from './NativeInputBorder.jsx';
 import './style.css';
 import './inspector.css';
+import './editor.css';
 const c = controller(acquireVsCodeApi());
 c.nativeText = createNativeTextRuntime(document.getElementById('form-preview-script').src, () => c.state.ui.zoom);
 c.scheduleInputBorderPaint = createInputBorderPaintQueue();

@@ -953,7 +953,7 @@ exports.run = async () => {
       await ui.evaluate(`document.getElementById(${JSON.stringify('form-row-'+left)}).click()`);
       await until(() => ui.evaluate(`document.querySelector('[data-palette-id="platform:United"] input')?.checked===false`), 'false in property palette');
       const mainWindow = await ui.nativeWindow();
-      await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+      await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
       await until(() => view.frames.get('preview')?.ready,'detached view ready');
       const preview = view.frames.get('preview');
       const floating = await frame({detached:true,state:{title:preview.panel.title}});

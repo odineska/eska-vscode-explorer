@@ -1,9 +1,11 @@
+import { formEditorStrings } from "./editor-strings.js";
+
 const en = {
   "typeCount.one": "{0} type", "typeCount.few": "{0} types", "typeCount.many": "{0} types", "typeCount.other": "{0} types",
   "dataType.reference": "Reference", moreUses: "Show more uses",
   structure: "Structure",
   data: "Data",
-  inspectorSearch: "Find an element, attribute or type…",
+  inspectorSearch: "Find an element, data item, command or property…",
   inspectorViews: "Inspector views",
   clearSearch: "Clear search",
   noMatches: "No matches",
@@ -172,7 +174,7 @@ const ru: Record<keyof typeof en, string> = {
   "dataType.reference": "Ссылка", moreUses: "Показать ещё использования",
   structure: "Структура",
   data: "Данные",
-  inspectorSearch: "Найти элемент, реквизит или тип…",
+  inspectorSearch: "Найти элемент, реквизит, команду или свойство…",
   inspectorViews: "Панели инспектора",
   clearSearch: "Очистить поиск",
   noMatches: "Совпадений нет",
@@ -298,7 +300,7 @@ const ru: Record<keyof typeof en, string> = {
   stale: "Исходник пока некорректен. Показана последняя корректная форма.", disconnected: "Backend отключён. Показана последняя загруженная форма.",
   incomplete: "Часть входов формы или ссылок оформления не удалось разрешить.", unavailable: "Форма или её контекст приложения недоступны.",
   incompatible: "Для просмотра форм нужен eska-project с Metadata API 1.38.", notManaged: "Этот исходник не является управляемой формой Designer XML.",
-  detach: "Открепить просмотр", dock: "Вернуть просмотр", revealPreview: "Показать окно просмотра", floatFailed: "Просмотр открыт во вкладке. В её меню выберите перенос редактора в новое окно.",
+  detach: "Открепить предпросмотр", dock: "Вернуть предпросмотр", revealPreview: "Показать окно просмотра", floatFailed: "Просмотр открыт во вкладке. В её меню выберите перенос редактора в новое окно.",
   xml: "XML", refresh: "Обновить", zoom: "Масштаб", elements: "Элементы", commandInterface: "Командный интерфейс", attributes: "Реквизиты", commands: "Команды",
   parameters: "Параметры", properties: "Свойства", name: "Имя", kind: "Вид", type: "Тип", visible: "Видимость", source: "Перейти к XML", binding: "Перейти к реквизиту", details: "Подробности",
   expand: "Развернуть или свернуть", form: "Форма", more: "Еще", taxi: "Такси", unsupported: "Неподдерживаемый элемент", search: "Поиск", application: "Выберите контекст приложения формы",
@@ -336,4 +338,7 @@ const ru: Record<keyof typeof en, string> = {
   "command.SearchHistory": "История поиска",
   "command.OpenFromMainServer": "Открыть с основного сервера", "command.OpenFromStandaloneServer": "Открыть с автономного сервера",
 };
-export function formStrings(locale: string): Record<string, string> { return { ...(locale.toLowerCase().startsWith("ru") ? ru : en) }; }
+export function formStrings(locale: string): Record<string, string> {
+  const russian = locale.toLowerCase().startsWith("ru");
+  return { ...(russian ? ru : en), ...formEditorStrings(russian) };
+}

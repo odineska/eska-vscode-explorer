@@ -30,21 +30,48 @@
   background: var(--vscode-editorGroupHeader-tabsBackground, var(--inspector-surface));
   border-bottom: 1px solid var(--inspector-border);
 }
-.form-toolbar #title {
-  flex: 1 1 160px;
-  min-width: 0;
-  font-weight: 600;
+.form-toolbar[hidden] { display: none; }
+.form-preview-toolbar {
+  display: flex; align-items: center; flex: 0 0 auto; gap: 6px;
+  min-height: 29px; padding: 0 8px; border-bottom: 1px solid var(--inspector-border);
+  background: var(--inspector-header);
 }
-.form-toolbar-spacer { flex: 0 1 4px; }
-.form-toolbar > button {
-  padding: 3px 8px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 3px;
-  white-space: nowrap;
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  background: var(--vscode-button-secondaryBackground, var(--inspector-header));
+.form-preview-toolbar > span { flex: 1; font-weight: 600; }
+.form-menu-toggle { display: flex; gap: 4px; align-items: center; padding: 2px 5px; }
+.form-global-search { position: relative; flex: 1 1 164px; min-width: 0; }
+.form-search-results, .form-action-menu {
+  background: var(--vscode-menu-background, var(--inspector-surface));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--inspector-border));
+  box-shadow: 0 3px 10px var(--vscode-widget-shadow);
+  border-radius: 4px; z-index: 10;
 }
-.form-toolbar > button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--inspector-hover)); }
+.form-search-results {
+  position: absolute; inset: calc(100% + 2px) auto auto 0;
+  width: min(620px, calc(100vw - 16px)); max-height: min(360px, 55vh); overflow: auto;
+}
+.form-search-results [role=option] { display: grid; padding: 4px 8px; cursor: pointer; }
+.form-search-results [role=option] > span:last-child, .form-search-results small { color: var(--inspector-muted); }
+.form-search-results small { padding-right: 6px; }
+.form-search-results [role=option][aria-selected=true], .form-search-results [role=option]:hover {
+  background: var(--vscode-list-activeSelectionBackground, var(--inspector-hover));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+}
+.form-action-menu {
+  position: fixed; min-width: min(180px, calc(100vw - 8px));
+  max-width: min(330px, calc(100vw - 8px)); max-height: calc(100vh - 8px); overflow: auto; padding: 3px;
+}
+.form-menu-context { padding: 4px 8px; color: var(--inspector-muted); font-size: .9em; }
+.form-action-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: start;
+  padding: 4px 8px; border: 1px solid transparent; background: transparent; color: inherit; font: inherit;
+}
+.form-action-menu button:not(:disabled):is(:hover,:focus-visible) {
+  background: var(--vscode-menu-selectionBackground, var(--inspector-hover));
+  color: var(--vscode-menu-selectionForeground, var(--vscode-foreground));
+  border-color: var(--vscode-menu-selectionBorder, transparent);
+}
+.form-action-menu button:disabled { opacity: .5; }
 .form-zoom { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .form-zoom select {
   background: var(--vscode-dropdown-background, var(--inspector-surface));
@@ -66,23 +93,16 @@
 
 .form-inspectors {
   display: grid;
-  flex: 0 0 auto;
+  flex: 0 1 var(--form-attached-height);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 84px;
   min-width: 0;
-  grid-template-rows: auto minmax(0, 1fr);
   overflow: auto;
   isolation: isolate;
 }
-.form-inspectors[data-inspector-layout=compactStacked] { grid-template-rows: auto minmax(75px, 1fr) minmax(70px, 1fr); }
-.form-inspector-header {
-  grid-area: 1 / 1 / 2 / -1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--inspector-border);
+.form-inspectors[data-inspector-layout=detached] {
+  flex: 1 1 0;
+  grid-template-rows: clamp(84px, var(--form-detached-height), calc(100% - 89px)) 5px minmax(84px, 1fr);
 }
 .form-inspector-search {
   display: flex;
@@ -90,7 +110,6 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 560px;
   min-height: 26px;
   padding: 0 6px;
   border: 1px solid var(--vscode-input-border, var(--inspector-border));
@@ -119,18 +138,15 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  grid-row: 2;
+  grid-row: 1;
 }
 .form-pane--structure { grid-column: 1; }
 .form-pane--data { grid-column: 3; }
 .form-pane--properties { grid-column: 5; }
-.form-inspector-sash--structure { grid-area: 2 / 2; }
-.form-inspector-sash--properties { grid-area: 2 / 4; }
-.form-inspectors[data-inspector-layout=compact] .form-pane--data { grid-column: 1; }
-.form-inspectors[data-inspector-layout=compact] .form-pane--properties { grid-column: 3; }
-.form-inspectors[data-inspector-layout=compact] .form-inspector-sash--properties { grid-column: 2; }
-.form-inspectors[data-inspector-layout=compactStacked] > .form-pane { grid-column: 1; }
-.form-inspectors[data-inspector-layout=compactStacked] .form-pane--properties { grid-row: 3; border-top: 1px solid var(--inspector-border); }
+.form-inspector-sash--structure { grid-area: 1 / 2; }
+.form-inspector-sash--properties { grid-area: 1 / 4; }
+.form-inspector-sash--detached { grid-area: 2 / 1 / 3 / -1; }
+.form-inspectors[data-inspector-layout=detached] .form-pane--properties { grid-area: 3 / 1 / 4 / -1; }
 .form-inspectors [hidden] { display: none; }
 
 .form-pane-heading {
@@ -154,7 +170,6 @@
   padding-inline: 5px;
   border-bottom: 1px solid var(--inspector-border);
 }
-.form-inspector-header .form-tabs { border-bottom: 0; max-width: 100%; }
 .form-tabs button {
   min-height: 25px;
   padding: 2px 6px;

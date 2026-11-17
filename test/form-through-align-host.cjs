@@ -288,7 +288,7 @@ exports.run = async () => {
     assert.deepEqual(initial.map(box => [box.width, box.height]), [[191, 51], [191, 23], [191, 23], [191, 23]]);
   }
   const workbench = await ui.nativeWindow();
-  await ui.evaluate("document.querySelectorAll('.form-toolbar > button')[2].click()");
+  await ui.evaluate("document.querySelector('[data-edit-action=detachPreview]').click()");
   await until(() => view.frames.get('preview')?.ready, 'detached preview ready');
   const detached = view.frames.get('preview');
   const floating = await frame({ detached: true, state: { title: detached.panel.title } });

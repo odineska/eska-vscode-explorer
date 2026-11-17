@@ -81,6 +81,20 @@ export async function revealHit(tree: MetadataTree, project: ProjectTree, hit: P
   return entry;
 }
 
+/** Creation can reveal a module without treating its owner ID as the module's identity. */
+export async function revealNode(tree: MetadataTree, project: ProjectTree, node: NodeId): Promise<TreeEntry> {
+  if (node.kind === "collection") throw new ExplorerError("selectionInvalid");
+  const objectId = node.kind === "object" ? node.objectId : node.owner;
+  const owner = await revealHit(tree, project, { objectId, node: { kind: "object", objectId } });
+  if (node.kind === "object") return owner;
+  const children = await tree.children(owner);
+  const group = children.find(child => child.node.id.kind === "collection" && child.node.id.collection.kind === "modules");
+  const modules = group ? await tree.children(group) : children;
+  const found = modules.find(child => nodeKey(child.node.id) === nodeKey(node));
+  if (!found) throw new ExplorerError("sourceMissing");
+  return found;
+}
+
 /** One serial, cancellable search loop coalesces typing and progress without accumulating requests. */
 export class SearchSession {
   snapshot: SearchSnapshot;

@@ -2,7 +2,7 @@ import type { Connection } from "../connection.js";
 import { ExplorerError, isRecord, projectEnabled } from "../protocol.js";
 import type { MetadataTree, TreeEntry } from "../tree.js";
 import { withQueryText } from "../query/text-transfer.js";
-import { parseFormSnapshot, parseFormPreparation, parsePropertyPalette, parseLocation, parseHandlerSource, MAX_FORM_DEPENDENCIES, type FormHandlerSource, type FormInput, type FormPreparation, type FormLimits, type FormNode, type FormPalette, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
+import { isIdentity, parseFormSnapshot, parseFormPreparation, parsePropertyPalette, parseLocation, parseHandlerSource, MAX_FORM_DEPENDENCIES, type FormHandlerSource, type FormInput, type FormPreparation, type FormLimits, type FormNode, type FormPalette, type FormPropertyMatch, type FormSnapshot, type FormTarget, type Location } from "./protocol.js";
 
 function checkContext(connection: Connection, tree: MetadataTree, entry: TreeEntry, value: unknown, generation: string): void {
   const state = connection.state;
@@ -92,6 +92,18 @@ export class FormSession {
     this.check(value, generation);
     if (this.current !== snapshot) throw new ExplorerError("obsolete");
     return parsePropertyPalette(value, snapshot, node);
+  }
+  async searchProperties(snapshot: FormSnapshot, query: string, locale: string): Promise<FormPropertyMatch[]> {
+    await this.pending;
+    if (this.closed || this.current !== snapshot || !this.limits.propertySearch) return [];
+    const generation = this.entry.project.info.generation;
+    const value = await this.request("form/searchProperties", { formSessionId: snapshot.formSessionId, revision: snapshot.revision, query, locale }, generation);
+    this.check(value, generation);
+    if (this.current !== snapshot) return [];
+    if (!isRecord(value) || value.formSessionId !== snapshot.formSessionId || value.revision !== snapshot.revision || !Array.isArray(value.results) || value.results.length > 100
+      || !value.results.every(hit => isRecord(hit) && isIdentity(hit.identity) && typeof hit.id === "string"
+        && typeof hit.label === "string" && typeof hit.value === "string")) throw new ExplorerError("protocolInvalid");
+    return value.results;
   }
   async locate(snapshot: FormSnapshot, target: FormTarget): Promise<Location> {
     await this.pending;
