@@ -248,11 +248,12 @@ test('handler creation waits for automatic form writes and only binds after succ
   const c = module.exports.controller({ getState: () => undefined, setState: () => {},
     postMessage: value => messages.push(structuredClone(value)) });
   const receive = value => listeners.get('message')({ data: runInContext(`(${JSON.stringify(value)})`, context) });
-  receive({ type: 'state', sequence: 1, authoring: true, handlerAuthoring: true, formSessionId: 'form', draftStatus: { saving: true } });
+  receive({ type: 'state', sequence: 1, authoring: true, handlerAuthoring: true, formSessionId: 'form', draftStatus: { saving: true, undo: true, redo: true, dirty: true } });
   assert.equal(c.writable(), true, 'typing remains available while the previous change saves');
   const change = c.change([{ kind: 'addElement' }]), write = messages.at(-1);
   const open = c.editHandler({ kind: 'element', id: 10 }, 'OnChange');
   assert.equal(c.handlerBusy(), true); assert.equal(c.writable(), false);
+  await c.replayForm('undo'); await c.replayForm('redo'); c.save();
   assert.equal(messages.at(-1), write, 'code generation cannot overtake pending XML changes');
   receive({ type: 'formDraftResult', id: write.id });
   await change; await new Promise(resolve => setImmediate(resolve));

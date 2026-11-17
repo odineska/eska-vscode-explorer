@@ -16,18 +16,18 @@ export function FormToolbar(props) {
       { id: 'dock', label: s.dock, icon: 'pip', run: () => c.post({ type: 'dock' }) },
     );
     if (c.state.draftStatus?.dirty) actions.push({
-      id: 'discard', label: s.editDiscard, icon: 'clear', run: () => c.post({ type: 'confirmDiscard' }),
+      id: 'discard', label: s.editDiscard, icon: 'clear', disabled: c.handlerBusy(), run: () => c.post({ type: 'confirmDiscard' }),
     });
     c.menu.open({ anchor: event.currentTarget, label: s.form, actions });
   }
   return <>
     <FormSearch controller={c} index={props.index}/>
-    <InspectorIconButton icon="undo" label={s.editUndo} action="undo" disabled={!c.history().undo || c.replaying()} onClick={() => c.replayForm('undo')}/>
-    <InspectorIconButton icon="redo" label={s.editRedo} action="redo" disabled={!c.history().redo || c.replaying()} onClick={() => c.replayForm('redo')}/>
+    <InspectorIconButton icon="undo" label={s.editUndo} action="undo" disabled={!c.history().undo || c.replaying() || c.handlerBusy()} onClick={() => c.replayForm('undo')}/>
+    <InspectorIconButton icon="redo" label={s.editRedo} action="redo" disabled={!c.history().redo || c.replaying() || c.handlerBusy()} onClick={() => c.replayForm('redo')}/>
     <button type="button" class="form-menu-toggle" data-edit-action="formMenu" aria-haspopup="menu"
       aria-expanded={c.menu.menu()?.anchor.dataset.editAction === 'formMenu'} onClick={toggle}>{s.form}<InspectorIcon name="down"/></button>
     <Show when={c.state.draftStatus?.dirty && !c.state.draftStatus?.saving}><InspectorIconButton icon="save" label={s.editSave} action="save"
-      disabled={!c.dirty() || c.replaying() || c.state.draftStatus?.saving || c.state.draftStatus?.conflict} onClick={c.save}/></Show>
+      disabled={!c.dirty() || c.replaying() || c.handlerBusy() || c.state.draftStatus?.saving || c.state.draftStatus?.conflict} onClick={c.save}/></Show>
   </>;
 }
 

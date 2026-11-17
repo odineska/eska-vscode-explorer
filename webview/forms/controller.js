@@ -87,12 +87,12 @@ export function controller(api) {
     } finally { setHandlerBusy(false); }
   }
   function save() {
-    if (!dirty() || replaying() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
+    if (!dirty() || replaying() || handlerBusy() || state.draftStatus?.saving || state.draftStatus?.conflict) return;
     flushFields();
     void draftAction('save');
   }
   async function replayForm(action) {
-    if (edit() || replaying() || !history()[action] && !fieldPending()) return;
+    if (edit() || replaying() || handlerBusy() || !history()[action] && !fieldPending()) return;
     flushFields();
     setReplaying(true);
     try { await draftAction(action); }

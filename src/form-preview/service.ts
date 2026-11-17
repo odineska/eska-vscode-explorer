@@ -192,16 +192,16 @@ export class FormPreviewService implements vscode.Disposable {
     if (view.closed || this.disposed || !isRecord(value)) return;
     if (value.type === "formDraft" && view.frames.get(frame.role) === frame) {
       const action = value.action;
-      if (view.editor && (action === "discard" && frame.role === "main" ||
+      if (view.editor && !view.handlerEditing && (action === "discard" && frame.role === "main" ||
         this.canEdit(view) && (frame.role === "main" || action === "undo" || action === "redo" || action === "save")))
         await view.editor.receive(value, reply => { void frame.panel.webview.postMessage(reply); });
       else void frame.panel.webview.postMessage({ type: "formDraftResult", id: value.id, message: "editUnavailable" });
       return;
     }
-    if (value.type === "confirmDiscard" && frame.role === "main" && view.editor?.dirty) {
+    if (value.type === "confirmDiscard" && frame.role === "main" && view.editor?.dirty && !view.handlerEditing) {
       const s = this.strings(), discard = s.editDiscard!;
       if (await vscode.window.showWarningMessage(s.editDiscardQuestion!, { modal: true }, discard) === discard
-        && view.frames.get("main") === frame)
+        && view.frames.get("main") === frame && !view.handlerEditing)
         await view.editor.receive({ action: "discard", id: 1 }, () => {});
       return;
     }

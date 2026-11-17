@@ -58,6 +58,46 @@ exports.run = async () => {
   assert.equal(await fs.readFile(modulePath, 'utf8'), output);
   assert.equal(await fs.readFile(form.path, 'utf8'), boundBeforeLock);
   await config.update('readonlyInclude', undefined, vscode.ConfigurationTarget.Workspace);
+  // Undo from either window must not remove the handler target while its plan is in flight.
+  await service.receive(view, main, { type: 'detach' });
+  await until(() => view.frames.get('preview')?.ready, 'race preview consumer ready');
+  const preview = view.frames.get('preview'), client = view.client;
+  const plan = client.handlerEditPlan.bind(client), replies = [], posts = new Map();
+  let release, held = false;
+  const gate = new Promise(resolve => release = resolve);
+  client.handlerEditPlan = async (...args) => {
+    const result = await plan(...args);
+    if (!held) { held = true; await gate; }
+    return result;
+  };
+  for (const consumer of [main, preview]) {
+    const post = consumer.panel.webview.postMessage.bind(consumer.panel.webview);
+    posts.set(consumer, post);
+    consumer.panel.webview.postMessage = value => {
+      if (value.type === 'formDraftResult' && value.id >= 900001) replies.push({ role: consumer.role, ...value });
+      return post(value);
+    };
+  }
+  const beforeRace = await fs.readFile(form.path), moduleBeforeRace = await fs.readFile(modulePath);
+  try {
+    await click('OnCreateAtServer');
+    await until(() => held && view.handlerEditing, 'real handler edit plan held');
+    assert.equal(await ui.evaluate("document.querySelector('[data-edit-action=undo]').disabled"), true);
+    for (const [index, consumer] of [main, preview].entries())
+      await service.receive(view, consumer, { type: 'formDraft', id: 900001 + index, action: 'undo' });
+    assert.deepEqual(replies.map(({ role, message }) => ({ role, message })), [
+      { role: 'main', message: 'editUnavailable' }, { role: 'preview', message: 'editUnavailable' },
+    ]);
+    assert.deepEqual(await fs.readFile(form.path), beforeRace, 'blocked undo preserves the form');
+    assert.deepEqual(await fs.readFile(modulePath), moduleBeforeRace, 'the held plan has not written code yet');
+  } finally {
+    release(); client.handlerEditPlan = plan;
+    for (const [consumer, post] of posts) consumer.panel.webview.postMessage = post;
+  }
+  await until(async () => (await fs.readFile(form.path, 'utf8')).includes('<Event name="OnCreateAtServer">ПриСозданииНаСервере</Event>'), 'handler binds normally after releasing the plan');
+  assert.equal((await fs.readFile(modulePath, 'utf8')).match(/Процедура ПриСозданииНаСервере\(/g).length, 1);
+  await service.receive(view, preview, { type: 'dock' });
+  await until(() => ui.evaluate("!!document.querySelector('.taxi-input')"), 'attached form restored after race');
   main.panel.reveal();
   await ui.evaluate("document.querySelector('.taxi-input').click()");
   await click('OnChange');
@@ -74,5 +114,5 @@ exports.run = async () => {
   assert.ok(commandCode.includes('#Область ОбработчикиКомандФормы'));
   await ui.screenshot(`form-handler-authoring-${vscode.env.language}.png`);
   ui.close(); await explorer.shutdown();
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, scenario: 'form-handler-authoring', assertions: ['missing-module', 'missing-region', 'existing-region', 'idempotency', 'dirty-navigation', 'dirty-create-blocked', 'bind-after-save', 'actual-ui-button', 'read-only-module', 'field-handler', 'command-handler'] }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, scenario: 'form-handler-authoring', assertions: ['missing-module', 'missing-region', 'existing-region', 'idempotency', 'dirty-navigation', 'dirty-create-blocked', 'bind-after-save', 'actual-ui-button', 'read-only-module', 'field-handler', 'command-handler', 'undo-during-handler-blocked-in-both-windows'] }));
 };
