@@ -577,6 +577,9 @@ export async function createPictureFormSource(fixture) {
     ${button('TextIcon', 92, 'Text', 'Text command')}
     ${button('MixedIcon', 93, 'Auto', 'Mixed command', 'MixedIcon')}
     ${button('NoIcon', 94, 'Picture', '', 'NoIcon')}
+    <Button name="DisabledProbe" id="95"><Type>CommandBarButton</Type><Title>Disabled command</Title>
+    <CommandName>Form.Command.NoIcon</CommandName><Enabled>false</Enabled>
+    <LocationInCommandBar>InAdditionalSubmenu</LocationInCommandBar></Button>
     </ChildItems></AutoCommandBar>`;
   const localCommands = `<Commands><Command name="LocalIcon" id="101"><Title>Local icon</Title>${reference('Icon')}</Command>
     <Command name="NoIcon" id="102"><Title>No icon</Title></Command>

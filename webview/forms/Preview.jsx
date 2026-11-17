@@ -638,7 +638,7 @@ export function PopupMenu(props) {
 const menuFont = { points: 10, weight: 400 };
 
 function MenuLevel(props) {
-  const [active, setActive] = createSignal(0);
+  const [active, setActive] = createSignal();
   const [expanded, setExpanded] = createSignal();
   const [activeInk, setActiveInk] = createSignal();
   const floating = () => props.rootMenu || props.nested || props.floating;
@@ -665,7 +665,7 @@ function MenuLevel(props) {
       const items = [...menu.querySelectorAll(rowSelector)];
       const index = items.findIndex(item => Number(item.dataset.menuIndex) === active());
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-        : index + (event.key === 'ArrowDown' ? 1 : -1);
+        : event.key === 'ArrowDown' ? index + 1 : Math.max(0, index) - 1;
       focus(next);
     }
   };
@@ -716,10 +716,10 @@ function MenuLevel(props) {
         queueMicrotask(() => button?.nextElementSibling?.querySelector(rowSelector)?.focus());
       };
       const row = <button ref={button} type="button" role="menuitem" tabIndex={-1}
-        data-menu-index={index()} classList={{ active: active() === index() }}
+        data-menu-index={index()} classList={{ active: enabled() && active() === index() }}
         aria-label={label()}
         aria-disabled={!enabled()} aria-haspopup={submenu() ? 'menu' : undefined} aria-expanded={submenu() ? opened() : undefined}
-        onFocus={() => setActive(index())}
+        onFocus={() => { if (enabled()) setActive(index()); }}
         onMouseEnter={() => {
           if (!enabled()) return;
           setActive(index());

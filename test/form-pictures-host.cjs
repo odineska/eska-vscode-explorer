@@ -52,6 +52,18 @@ async function exerciseRootMore(ui, view) {
     return caption.textContent === 'GeneratedIcon' && (visible(caption) || visible(caption.nextElementSibling));
   })()`), 'More displays the same icon with a visible caption for an icon-only command');
   await until(() => ui.evaluate(menuWithinWebview('[data-root-menu-level]')), 'floating More stays in the webview');
+  const disabled = '[data-root-menu-level] [aria-label="Disabled command"]';
+  const focused = await ui.evaluate(`(() => {
+    const menu = document.querySelector('[data-root-menu-level]');
+    const button = menu.querySelector(${JSON.stringify(disabled)});
+    if (button?.getAttribute('aria-disabled') !== 'true') return null;
+    const active = menu.querySelector('.active');
+    button.focus({ preventScroll: true });
+    button.dispatchEvent(new MouseEvent('mouseenter'));
+    button.click();
+    return { inactive: !button.classList.contains('active'), retained: menu.querySelector('.active') === active };
+  })()`);
+  assert.deepEqual(focused, { inactive: true, retained: true }, 'focus, hover and activation keep disabled menu rows inactive');
   await ui.evaluate(`(() => {
     const menu = document.querySelector('[data-root-menu-level]');
     const button = [...menu.querySelectorAll('[role=menuitem]')].find(row => row.getAttribute('aria-label') === 'PrintProbe');
