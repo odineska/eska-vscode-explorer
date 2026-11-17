@@ -455,3 +455,19 @@ test('object review detects dirty dependencies opened through a symlink or junct
   api.workspace.textDocuments[0].isDirty = false;
   await verifyObjectSources(api, wire(root), planFor(request), () => false, () => {});
 });
+
+
+for (const operation of ["create", "copy", "delete"]) test(`standard attributes reject direct ${operation} commands before any prompts or requests`, async t => {
+  const root = await fixture(t);
+  for (const id of [
+    { kind: "standardAttribute", owner: "catalog:Goods", name: "Code" },
+    { kind: "collection", owner: "catalog:Goods", collection: { kind: "standardAttributes" } },
+  ]) {
+    const value = harness(root, { operation, entry: { project: { info: { root: { kind: "object", objectId: "root" }, type: "configuration", sourcePath: wire(root) } }, node: { id } } });
+    deferCleanup(t, () => value.ui.dispose());
+    assert.equal(await value.run(), undefined);
+    assert.deepEqual(value.calls, []);
+    assert.deepEqual(value.inputTitles, []);
+    assert.deepEqual(value.picks, []);
+  }
+});

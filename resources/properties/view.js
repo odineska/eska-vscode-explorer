@@ -227,7 +227,8 @@ function propertyView(property, path, query) {
     rename.addEventListener("click", () => vscode.postMessage({ type: "rename", revision }));
     title.append(document.createTextNode(" "), rename);
   }
-  head.append(title, button);
+  head.append(title);
+  if (snapshot.sourceAvailable !== false) head.append(button);
   card.append(head);
   if (editors.length && !directBoolean) {
     card.append(editorView(document, property, editors, snapshot, input => vscode.postMessage(input)));
@@ -264,10 +265,10 @@ function render() {
   const editing = snapshot.editing ?? {};
   const lock = document.getElementById("read-only");
   lock.textContent = `${editing.unlocked ? "🔓" : "🔒"} ${editing.unlocked ? labels.editing : labels.readOnly}`;
-  lock.title = editing.unlocked ? labels.lock : labels.unlock;
+  lock.title = snapshot.readOnly ? labels.readOnly : editing.unlocked ? labels.lock : labels.unlock;
   lock.setAttribute("aria-label", lock.title);
   lock.setAttribute("aria-pressed", String(Boolean(editing.unlocked)));
-  lock.disabled = snapshot.status !== "ready" || editing.busy;
+  lock.disabled = snapshot.status !== "ready" || editing.busy || snapshot.readOnly === true;
   for (const type of ["undo", "redo"]) {
     const button = document.getElementById(type);
     button.hidden = !editing.unlocked;

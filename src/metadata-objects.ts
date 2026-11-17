@@ -27,7 +27,8 @@ export class MetadataObjects implements vscode.Disposable {
   async run(tree: MetadataTree, entry: TreeEntry, operation: ObjectOperation, current: () => MetadataTree | undefined,
     language: Language): Promise<NodeId | undefined> {
     if (this.active) { void this.api.window.showInformationMessage(message(language, "creationBusy")); return; }
-    if (!this.api.workspace.isTrusted || entry.node.id.kind === "module") return;
+    if (!this.api.workspace.isTrusted || entry.node.id.kind === "module" || entry.node.id.kind === "standardAttribute"
+      || entry.node.id.kind === "collection" && entry.node.id.collection.kind === "standardAttributes") return;
     const scope = new this.api.CancellationTokenSource(); this.active = scope;
     const prompt: Prompt = { language, token: scope.token, check: () => {
       if (this.disposed || scope.token.isCancellationRequested || current() !== tree) throw new ExplorerError("cancelled");
@@ -130,7 +131,7 @@ export class MetadataObjects implements vscode.Disposable {
 
   private async createRequest(tree: MetadataTree, entry: TreeEntry, prompt: Prompt): Promise<ObjectRequest | undefined> {
     const id = entry.node.id;
-    if (id.kind === "module" || id.kind === "collection" && !["metadata", "modules"].includes(id.collection.kind)) return;
+    if (id.kind === "module" || id.kind === "standardAttribute" || id.kind === "collection" && !["metadata", "modules"].includes(id.collection.kind)) return;
     const owner = id.kind === "object" ? id.objectId : id.owner;
     const parent = this.metadataParent(entry, owner);
     const schema = await this.schema(tree, entry, parent, prompt);
@@ -173,7 +174,7 @@ export class MetadataObjects implements vscode.Disposable {
   private async correctionSchema(tree: MetadataTree, entry: TreeEntry, request: ObjectValues, prompt: Prompt): Promise<ObjectSchema> {
     if (request.operation === "create") return this.schema(tree, entry, request.parent, prompt, request.kind);
     const node = entry.node.parent;
-    if (!node || node.kind === "module") throw new ExplorerError("protocolInvalid");
+    if (!node || node.kind === "module" || node.kind === "standardAttribute") throw new ExplorerError("protocolInvalid");
     const parent = this.metadataParent(entry, node.kind === "object" ? node.objectId : node.owner);
     const schema = await this.schema(tree, entry, parent, prompt);
     const kind = schema.kindOptions.find(kind => kind.key === entry.node.metadataKind)?.value;

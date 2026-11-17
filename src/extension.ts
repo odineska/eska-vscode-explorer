@@ -47,7 +47,7 @@ import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
 
-const collectionContexts = { metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
+const collectionContexts = { standardAttributes: "eskaGroup", metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
 
 interface Notice { label: string; inactive?: boolean; loading?: boolean; supportFailure?: boolean; project?: ProjectTree; parent?: Element }
 type Element = TreeEntry | Notice | FormSource | WorkspaceEntry | QueryEntry | ProjectGroup;
@@ -564,7 +564,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         ? this.hideEmptyGroups(entry.project) ? "eskaRootFiltered" : "eskaRootUnfiltered"
         : "eskaRoot"
       : node.id.kind === "collection" ? collectionContexts[node.id.collection.kind]
-        : commonModule ? "eskaCommonModule" : directModuleRole(entry) ? "eskaModuleObject" : isForm(entry) ? "eskaForm" : "eskaMetadata";
+        : node.id.kind === "standardAttribute" ? "eskaStandardAttribute" : commonModule ? "eskaCommonModule" : directModuleRole(entry) ? "eskaModuleObject" : isForm(entry) ? "eskaForm" : "eskaMetadata";
     if (!node.parent && this.sorting.order(entry.project) === "alphabetical") item.contextValue += "Sorted";
     if (node.creationKinds?.length && this.connection.state.kind === "ready" && this.connection.state.metadataCreation) item.contextValue += "Creatable";
     else if (node.parent && node.objectCreation && this.connection.state.kind === "ready" && this.connection.state.metadataObjects) item.contextValue += "Parent";
@@ -572,7 +572,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     item.iconPath = node.state === "error" ? new vscode.ThemeIcon("warning") : this.metadataIcon(entry);
     if (!node.parent) item.description = entry.project.info.scope.kind === "member"
       ? `${entry.project.info.scope.name} · ${this.text(entry.project.info.type)}` : this.text(entry.project.info.type);
-    if (node.id.kind !== "collection") item.command = { command: "eska.explorer.openSource", title: this.text("openSource"), arguments: [entry] };
+    if (node.id.kind === "standardAttribute") item.command = { command: "eska.explorer.properties", title: this.text("properties"), arguments: [entry] };
+    else if (node.id.kind !== "collection") item.command = { command: "eska.explorer.openSource", title: this.text("openSource"), arguments: [entry] };
     return item;
   }
 
@@ -1064,7 +1065,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   /** Open a dedicated settings-style editor tab for this metadata object. */
   private async showProperties(entry: TreeEntry): Promise<void> {
     const tree = this.tree;
-    if (!tree || !entry || entry.node?.id.kind !== "object" || !tree.projects.includes(entry.project)) return;
+    if (!tree || !entry || !["object", "standardAttribute"].includes(entry.node?.id.kind) || !tree.projects.includes(entry.project)) return;
     // A context-menu or property-tab activation supersedes an earlier asynchronous source open.
     this.opening++;
     try {

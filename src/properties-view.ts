@@ -23,6 +23,8 @@ interface ViewState {
   path: string;
   status: "loading" | "ready" | "stale" | "error";
   notice: string;
+  readOnly: boolean;
+  sourceAvailable: boolean;
   labels: Record<string, string>;
   language: Language;
   icons: Record<string, Record<string, string>>;
@@ -140,12 +142,13 @@ class PropertyTab implements vscode.Disposable {
     this.publish();
     try {
       if (tree !== this.currentTree() || entry.project.nodes.get(nodeKey(entry.node.id)) !== entry
-        || entry.node.id.kind !== "object") throw new ExplorerError("obsolete");
-      if (this.editor.unlocked) {
+        || !["object", "standardAttribute"].includes(entry.node.id.kind)) throw new ExplorerError("obsolete");
+      if (this.editor.unlocked && entry.node.id.kind === "object") {
         this.editor.schema = editingSchema(await tree.request(entry.project, "metadata/propertyEditing", { objectId: entry.node.id.objectId }, controller.signal));
         if (controller.signal.aborted || this.disposed || revision !== this.revision) return;
       }
-      const result = await tree.request(entry.project, "metadata/properties", { objectId: entry.node.id.objectId }, controller.signal);
+      const result = await tree.request(entry.project, "metadata/properties", entry.node.id.kind === "object"
+        ? { objectId: entry.node.id.objectId } : { node: entry.node.id }, controller.signal);
       if (controller.signal.aborted || this.disposed || revision !== this.revision) return;
       if (tree !== this.currentTree() || entry.project.nodes.get(nodeKey(entry.node.id)) !== entry) throw new ExplorerError("obsolete");
       if (this.editor.unlocked) {
@@ -214,7 +217,7 @@ class PropertyTab implements vscode.Disposable {
       await this.followReference(input.target);
     } else if (input.type === "openXml" && input.revision === this.state.revision && Number.isSafeInteger(input.index)) {
       const choice = this.choices[input.index as number];
-      if (choice && this.state.status === "ready" && !this.editor.blocked && this.tree === this.currentTree()) {
+      if (choice && this.entry.node.id.kind === "object" && this.state.status === "ready" && !this.editor.blocked && this.tree === this.currentTree()) {
         await this.openXml(this.entry, choice);
       }
     }
@@ -602,6 +605,7 @@ class PropertyTab implements vscode.Disposable {
     const text = (key: Parameters<typeof message>[1], ...values: string[]): string => message(vscode.env.language, key, ...values);
     return {
       type: "state", revision: this.revision, title: heading.title, path: heading.path, status, notice,
+      readOnly: this.entry.node.id.kind !== "object", sourceAvailable: this.entry.node.id.kind === "object",
       language: this.language(), editing: { ...this.editor, busy: this.editor.busy || this.refreshing || this.checkingExternal,
         drafts: { ...this.editor.drafts }, draftTitles: { ...this.editor.draftTitles } },
       icons: this.icons(),
@@ -690,7 +694,7 @@ export class PropertyTabs implements vscode.Disposable {
     private readonly openXml: (entry: TreeEntry, choice: PropertyChoice) => Promise<void>) {}
 
   async show(tree: MetadataTree, entry: TreeEntry): Promise<void> {
-    if (entry.node.id.kind !== "object") return;
+    if (!["object", "standardAttribute"].includes(entry.node.id.kind)) return;
     let tab = [...this.tabs].find(tab => tab.matches(entry, true)) ?? [...this.tabs].find(tab => tab.matches(entry));
     if (tab) {
       await tab.show(tree, entry);

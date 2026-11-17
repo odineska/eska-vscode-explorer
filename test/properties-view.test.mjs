@@ -8,7 +8,8 @@ import { ExplorerError } from "../out/protocol.js";
 
 /** Exercise the real tab controller with deterministic visibility and delayed backend responses. */
 function fixture(t) {
-  const requests = [], opened = [];
+  const requests = [], opened = [], states = [];
+  let receive;
   const vscode = {
     workspace: { isTrusted: true, textDocuments: [] },
     env: { language: "ru-RU" }, ViewColumn: { Active: -1 },
@@ -17,7 +18,7 @@ function fixture(t) {
       let viewChanged, closed;
       return {
         visible: true, title: "", viewColumn: 1,
-        webview: { cspSource: "local:", asWebviewUri: value => value, onDidReceiveMessage() {}, postMessage() {} },
+        webview: { cspSource: "local:", asWebviewUri: value => value, onDidReceiveMessage(listener) { receive = listener; }, postMessage(value) { states.push(value); } },
         onDidChangeViewState(listener) { viewChanged = listener; },
         onDidDispose(listener) { closed = listener; },
         reveal() { this.setVisible(true); },
@@ -55,7 +56,7 @@ function fixture(t) {
     project.info.eventSequence = String(Number(project.info.eventSequence) + 1);
     tabs.changed(tree, entries);
   }
-  return { tabs, tree, root, object, sibling, requests, opened, change, vscode,
+  return { tabs, tree, root, object, sibling, requests, opened, states, change, vscode, receive: value => receive(value),
     replaceTree(value) { currentTree = value; } };
 }
 
@@ -560,4 +561,29 @@ for (const kind of ['types', 'references']) test(`${kind} collection uses checke
     : {kind,values:['Catalog.Customer','Catalog.Contract']});
   f.requests[3].resolve({...response(),editing:{...schema,snapshot:'b'.repeat(64)}}); await picking;
   assert.equal(Object.keys(tab.state.editing.drafts).length,0);
+});
+
+
+test("standard attribute tabs retain project identity and cannot unlock or open XML", async t => {
+  const f = fixture(t);
+  f.object.project.nodes.delete(nodeKey(f.object.node.id));
+  f.object.node.id = { kind: "standardAttribute", owner: "object", name: "Code" };
+  f.object.node.label = { kind: "key", key: "platform-value-StandardAttribute-Code", translations: { "ru-RU": "Код", "en-US": "Code" } };
+  f.object.project.nodes.set(nodeKey(f.object.node.id), f.object);
+  const opening = f.tabs.show(f.tree, f.object);
+  assert.equal(f.requests[0].method, "metadata/properties");
+  assert.equal(f.requests[0].project, f.object.project);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.requests[0].params)), { node: f.object.node.id });
+  f.requests[0].resolve({ ...response(), readOnly: true, sourceAvailable: false });
+  await opening;
+  await f.receive({ type: "ready" });
+  const state = f.states.at(-1);
+  assert.equal(state.status, "ready");
+  assert.equal(state.readOnly, true);
+  assert.equal(state.sourceAvailable, false);
+  assert.equal(state.editing.unlocked, false);
+  await f.receive({ type: "toggleLock", revision: state.revision });
+  await f.receive({ type: "openXml", revision: state.revision, index: 0 });
+  assert.equal(f.requests.length, 1);
+  assert.deepEqual(f.opened, []);
 });

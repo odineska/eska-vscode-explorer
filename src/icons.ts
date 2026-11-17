@@ -149,10 +149,12 @@ export function iconName(node: MetadataNode, projectType?: ProjectInfo["type"], 
   if (id.kind === "object" && node.parent === null && projectType) {
     return Object.hasOwn(projectIcons, projectType) ? projectIcons[projectType] : "unknown";
   }
+  if (id.kind === "standardAttribute") return "attribute";
   if (id.kind === "module") return Object.hasOwn(moduleIcons, id.role) ? moduleIcons[id.role]! : "unknown";
   if (id.kind === "collection") {
     if (id.collection.kind === "common") return "common";
     if (id.collection.kind === "modules") return "modules";
+    if (id.collection.kind === "standardAttributes") return "attributes";
     if (id.collection.kind === "metadata") {
       const kind = id.collection.metadataKind;
       return Object.hasOwn(collectionIcons, kind) ? collectionIcons[kind]! : knownKind(kind);
