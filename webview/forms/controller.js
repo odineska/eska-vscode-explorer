@@ -102,13 +102,19 @@ export function controller(api) {
     if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.isComposing) return;
     if (event.code === 'KeyS' && dirty()) {
       event.preventDefault();
+      event.stopPropagation();
       save();
       return;
     }
     if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
     const action = event.code === 'KeyZ' ? (event.shiftKey ? 'redo' : 'undo')
       : event.code === 'KeyY' ? 'redo' : undefined;
-    if (action && (history()[action] || fieldPending())) { event.preventDefault(); void replayForm(action); }
+    if (action && (history()[action] || fieldPending())) {
+      event.preventDefault();
+      // VS Code forwards window-level webview shortcuts back to the workbench.
+      event.stopPropagation();
+      void replayForm(action);
+    }
   }
   function openEditor(intent, target, section, placement) {
     if (!writable() || edit() || replaying()) return;
