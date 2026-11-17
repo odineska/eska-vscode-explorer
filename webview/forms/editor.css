@@ -126,13 +126,20 @@
 .form-tree-row:not(.selected):not(:hover):not(:focus-within) .form-tree-actions { opacity: .55; }
 
 .form-property-groups {
+  --form-property-row: 4px;
+  --form-property-gap: 8px;
   display: grid;
-  gap: 8px;
+  gap: var(--form-property-gap);
   padding: 0 6px 6px;
   align-items: start;
   grid-template-columns: minmax(0, 1fr);
 }
 .form-property-groups--wide { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+.form-property-groups--wide[data-property-layout=packed] {
+  grid-auto-flow: row dense;
+  grid-auto-rows: var(--form-property-row);
+  row-gap: 0;
+}
 .form-property-groups > table { min-width: 0; }
 .form-inline-property { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; }
 .form-inline-property > :is(input, select, div, details):not([type=checkbox]) { flex: 1 1 80px; min-width: 0; }

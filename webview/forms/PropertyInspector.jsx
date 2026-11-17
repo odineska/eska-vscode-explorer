@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { PropertyPalette } from './PropertyPalette.jsx';
+import { PropertyGroups } from './PropertyGroups.jsx';
 import { PropertyValue } from './PropertyValue.jsx';
 import { FormPropertyChoices, InlineFormProperty, canEditFormProperty, declaredFormProperty, editCategories, formPropertyLabel } from './FormEditorFields.jsx';
 import { formCatalogue, formEditIndex, targetKey } from './editor-model.mjs';
@@ -243,7 +244,7 @@ export function PropertyInspector(props) {
         </Show>
       </section></Show>
       <Show when={data()?.id ?? node().key} keyed>{() =>
-      <div classList={{ 'form-property-groups': true, 'form-property-groups--wide': props.detached }}>
+      <PropertyGroups wide={props.detached}>
         <Show when={!data() && palette()?.rows} fallback={<>
           <Show when={data() || palette() || !state.authoring}>{sidebarForm()}</Show>
           <DeclaredProperties fields={(data() ? contextFields() : node().properties).filter(field => !fields().has(field.key.name))}
@@ -261,7 +262,7 @@ export function PropertyInspector(props) {
               onClick={() => canAuthorExtra(entry) ? c.editHandler(editNode().target, entry.handler.event) : openHandler(entry.index)}>{entry.handler.name}</button></td></tr>
           }</For>
         </tbody></table></Show>
-      </div>
+      </PropertyGroups>
       }</Show>
       <Show when={state.authoring && schema()}><FormPropertyChoices schema={schema()} paths={dataPaths()}/></Show>
     </div>
