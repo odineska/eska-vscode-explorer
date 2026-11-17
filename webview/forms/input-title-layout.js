@@ -11,16 +11,18 @@ import { pageScrollbar } from './page-scrollbar.js';
 const total = widths => widths.reduce((sum, width) => sum + width, 0);
 const kinds = new Set(['number', 'date', 'reference']);
 
-function inputTitleField(node, { targets, scale, os }, minimumCaptions, page) {
+function inputTitleField(node, { targets, scale, os }, minimumCaptions,
+    { page = false, allowFixedText = false, referenceLane = false } = {}) {
   const element = targets.elements.get(node.key);
   const kind = node.presentation.valueType.kind;
   const location = node.presentation.titleLocation;
-  const pageText = page && textInputWidthBounds(node, os);
-  if ((!kinds.has(kind) && !pageText) || inputRows(node) > 1 || !['Left', 'Top', 'None'].includes(location)
+  const text = (page || allowFixedText) && textInputWidthBounds(node, os);
+  const pageText = page && text;
+  if ((!kinds.has(kind) && !(text && (page || !text.stretch))) || inputRows(node) > 1 || !['Left', 'Top', 'None'].includes(location)
       || minimumCaptions.has(node.key)) return;
   const flexible = element.dataset.stretchX === 'true';
-  const cap = flexible ? horizontalInputMaximum(node, os) : undefined;
   const bounds = flexible ? laneInputBounds(node, os) : undefined;
+  const cap = flexible ? horizontalInputMaximum(node, os) ?? (referenceLane ? bounds?.maximum : undefined) : undefined;
   if (flexible && (!bounds || !pageText && (kind !== 'reference' || cap === undefined))) return;
   const row = element.querySelector(':scope > .taxi-field-row');
   const control = row?.querySelector(':scope > .taxi-field-control > .taxi-input');
@@ -37,10 +39,17 @@ function inputTitleField(node, { targets, scale, os }, minimumCaptions, page) {
   const sideValue = pageText ? minimum : bounds?.preferred ?? preferred;
   const side = location === 'Left' && !!title;
   const gap = side ? pixels(getComputedStyle(row).columnGap) : 0;
-  const sideMinimum = side ? caption.minimum + inputCaptionInset + gap : 0;
+  // Mixed fixed rows already have a measured title box, including its native inset.
+  const captionInset = allowFixedText && !flexible && side
+    ? Math.max(0, borderBoxSize(label, scale).width - caption.preferred) : inputCaptionInset;
+  const sideMinimum = side ? caption.minimum + captionInset + gap : 0;
   const automatic = side && scalar(node, 'TitleLocation', 'Auto') === 'Auto';
   const lineHeight = fontLineHeight(node.presentation.titleFont);
-  return { key: node.key, kind, element, row, control, caption, lineHeight, location, side, automatic, gap, sideMinimum, minimum, preferred, maximum, sideValue, flexible };
+  return { key: node.key, kind, element, row, control, caption, captionInset, lineHeight, location, side, automatic, gap, sideMinimum, minimum, preferred, maximum, sideValue, flexible };
+}
+
+function columnWidth({ fields, fixedWidth }, measure) {
+  return fixedWidth ?? Math.max(...fields.map(measure));
 }
 
 function sideWidth(fields, above) {
@@ -48,7 +57,7 @@ function sideWidth(fields, above) {
 }
 
 function widthFor(field, value, above, captionWidth, topWidth = field.caption.minimum) {
-  if (field.side && !above.has(field.key)) return value + captionWidth + inputCaptionInset + field.gap;
+  if (field.side && !above.has(field.key)) return value + captionWidth + field.captionInset + field.gap;
   return Math.max(value, topWidth);
 }
 
@@ -142,8 +151,8 @@ function placements(columns) {
   for (let step = 0; step <= steps; step++) {
     // Each column can release its widest side title before trying a smaller one.
     const captionWidths = columns.map(({fields}) => sideWidth(fields, above));
-    const width = total(columns.map(({fields}, index) => Math.max(...fields.map(field =>
-      widthFor(field, field.side && !above.has(field.key) ? field.sideValue : field.minimum, above, captionWidths[index])))));
+    const width = total(columns.map((column, index) => columnWidth(column, field =>
+      widthFor(field, field.side && !above.has(field.key) ? field.sideValue : field.minimum, above, captionWidths[index]))));
     plans.push({above, width, captionWidths});
     above = new Set(above);
     for (const fields of candidates) if (fields[step]) above.add(fields[step].key);
@@ -173,8 +182,8 @@ function alignFirstControls(items, fields, top) {
 /** Keep the minimum width independent of the active caption position. */
 export function inputTitleLayout(model, context, minimumCaptions) {
   const { targets, alignment, os, scale } = context;
-  const minimumRows = new Map(), captionFields = new Set(), rows = [], stacks = [];
-  function visit(node) {
+  const minimumRows = new Map(), captionFields = new Set(), rows = [], stacks = [], linkStacks = [];
+  function visit(node, parent) {
     const items = targets.containers.get(node.key);
     const children = targets.children(node);
     const page = node.kind === 'Page' && children.every(child => child.kind === 'InputField')
@@ -191,12 +200,38 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         && !items.hasAttribute('data-united-horizontal-lane')) register(node, items, children, page, authoredTop, tabs, fixed);
     else if (fixed && tabs && items?.classList.contains('taxi-items--vertical') && number(node, 'Width') <= 0) {
       registerStack(items, children, tabs);
+    } else if (os === 'linux' && items && ordinaryGroup(node) && grouping === 'Vertical' && number(node, 'Width') <= 0
+        && parent?.presentation.grouping === 'Horizontal' && children.length > 1) {
+      registerLinkStack(items, children);
     }
-    for (const child of node.children) visit(child);
+    for (const child of node.children) visit(child, node);
+  }
+
+  function registerLinkStack(items, [input, ...children]) {
+    if (input.kind !== 'InputField' || input.presentation.valueType.kind !== 'reference'
+        || children.some(child => child.kind !== 'Button' || scalar(child, 'Type') !== 'Hyperlink' || number(child, 'Width') > 0)) return;
+    const field = inputTitleField(input, context, minimumCaptions, { referenceLane: true });
+    if (!field?.automatic || !field.flexible) return;
+    const links = children.map(node => {
+      const button = targets.elements.get(node.key).querySelector(':scope > .taxi-button--link:not(.taxi-button--icon-only)');
+      if (!button || button.querySelector('.taxi-icon, img')) return;
+      const caption = fieldCaptionProfile(button.getAttribute('aria-label'), node.presentation.font);
+      if (!caption) return;
+      return { key: node.key, caption, insets: boxInsets(getComputedStyle(button)).width };
+    });
+    if (links.some(link => !link)) return;
+    // The adjacent horizontal column can contract to the input and the longest link word.
+    minimumRows.set(items, Math.max(field.minimum, field.caption.minimum,
+      ...links.map(link => link.caption.minimum + link.insets)));
+    captionFields.add(field.key);
+    alignment.style(field.element, '--taxi-lane-input-min-width', `${field.minimum}px`);
+    alignment.style(field.element, '--taxi-field-caption-width', '');
+    alignment.style(field.element, '--taxi-field-columns', '');
+    linkStacks.push({ items, field, links });
   }
 
   function registerStack(items, children, tabs) {
-    const fields = children.map(child => inputTitleField(child, context, minimumCaptions, true));
+    const fields = children.map(child => inputTitleField(child, context, minimumCaptions, { page: true }));
     if (fields.some(field => !field?.side)) return;
     const reserve = Math.max(...fields.map(field => field.preferred + field.gap)) + inputCaptionInset;
     const minimum = Math.max(...fields.map(field => field.caption.minimum));
@@ -217,12 +252,20 @@ export function inputTitleLayout(model, context, minimumCaptions) {
   }
 
   function register(node, items, children, page, authoredTop, tabs, fixed) {
+    const fixedPicture = child => !page && child.kind === 'PictureField'
+      && child.presentation.titleLocation === 'None' && number(child, 'Width') > 0
+      && targets.elements.get(child.key).dataset.stretchX === 'false';
+    const mixed = os === 'linux' && !page && children.every(child => child.kind === 'InputField' || fixedPicture(child))
+      && children.some(child => fixedPicture(child) || child.presentation.valueType.kind === 'string');
     const columns = children.map(child => {
+      const element = targets.elements.get(child.key);
+      // A fixed picture occupies its own column while the neighboring input titles can move above.
+      if (mixed && fixedPicture(child)) return { element, fields: [], fixedWidth: borderBoxSize(element, scale).width };
       const nodes = inputLaneFields(child, targets);
       if (!nodes?.length) return;
-      const fields = nodes.map(field => inputTitleField(field, context, minimumCaptions, page));
+      const fields = nodes.map(field => inputTitleField(field, context, minimumCaptions, { page, allowFixedText: mixed }));
       if (fields.some(field => !field)) return;
-      return { element: targets.elements.get(child.key), fields };
+      return { element, fields };
     });
     if (columns.some(column => !column)) return;
     const fields = columns.flatMap(column => column.fields);
@@ -231,12 +274,15 @@ export function inputTitleLayout(model, context, minimumCaptions) {
       ? fields : undefined;
     if (top) alignment.mark(items, 'data-authored-top-row');
 
-    const gap = !page && automaticHorizontalSpacing(node) ? 11 : pixels(getComputedStyle(items).columnGap);
+    const preferredGap = pixels(getComputedStyle(items).columnGap);
+    const gap = !page && !mixed && automaticHorizontalSpacing(node) ? 11 : preferredGap;
     const spacing = gap * (columns.length - 1);
+    const naturalWidth = mixed ? total(columns.map(({element}) => borderBoxSize(element, scale).width))
+      + preferredGap * (columns.length - 1) : undefined;
     const plans = placements(columns);
-    const preferred = total(columns.map(({fields}) => Math.max(...fields.map(field => field.side
-      ? field.preferred + field.caption.preferred + inputCaptionInset + field.gap
-      : Math.max(field.preferred, field.caption.preferred))))) + spacing;
+    const preferred = total(columns.map(column => columnWidth(column, field => field.side
+      ? field.preferred + field.caption.preferred + field.captionInset + field.gap
+      : Math.max(field.preferred, field.caption.preferred)))) + spacing;
     minimumRows.set(items, plans.at(-1).width + spacing);
     for (const name of ['--taxi-input-title-columns', '--taxi-input-title-gap']) alignment.style(items, name, '');
     alignment.mark(items, 'data-input-title-reflow', 'false');
@@ -251,7 +297,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         }
       }
     }
-    const first = columns.map(({fields}) => fields[0]);
+    const first = columns.flatMap(({fields}) => fields.slice(0, 1));
     const align = children.every(child => scalar(child, 'GroupVerticalAlign', 'Auto') === 'Auto')
       && first.every(field => !field.element.dataset.groupVerticalAlign || field.element.dataset.groupVerticalAlign === 'Auto');
     if (align) for (const field of first) alignment.style(field.element, '--taxi-input-title-offset', '');
@@ -274,7 +320,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
       text: fields[0].kind === 'string' ? 0 : 1, fields, heights: unwrappedTopHeights(fields, scale),
     } : undefined;
     if (fixedTop) alignment.style(items, '--taxi-page-title-minimum', '');
-    rows.push({ owner: node.key, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top,
+    rows.push({ owner: node.key, items, columns, gap, spacing, preferred, naturalWidth, plans, page, pair, tabs, top,
       fixed, fixedTop, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first: align ? first : [] });
   }
 
@@ -284,6 +330,20 @@ export function inputTitleLayout(model, context, minimumCaptions) {
     allocate(captions, resolveDivider, frameOverflow) {
       const above = new Set();
       let heightChanged = false, overflowWidth;
+      for (const { items, field, links } of linkStacks) {
+        const available = rowFitWidth(items, scale);
+        const move = available + .5 < field.minimum + field.sideMinimum;
+        const width = move ? available
+          : isolatedInputCaptionWidth(field.caption, available, field.gap, field.minimum, field.preferred);
+        if (move) above.add(field.key);
+        allocateFieldCaption(captions, field, width, move ? 0 : inputCaptionInset);
+        updateStyle(field.element, '--taxi-field-columns', move || width === undefined ? ''
+          : 'var(--taxi-field-caption-width) minmax(0, 1fr)');
+        for (const link of links) {
+          const lines = fieldCaptionLines(link.caption, Math.floor(available - link.insets));
+          if (lines.length > 1) captions.set(link.key, lines.join('\n'));
+        }
+      }
       for (const {items, fields, tabs, reserve, minimum, preferred, heights, height, pageHeight, viewport} of stacks) {
         const available = rowFitWidth(items, scale), rail = sideTabWidths(tabs, scale);
         const width = Math.max(minimum, Math.min(preferred, available - reserve));
@@ -300,7 +360,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         }
       }
       for (const row of rows) {
-        const {owner, items, columns, gap, spacing, preferred, plans, page, pair, tabs, top,
+        const {owner, items, columns, gap, spacing, preferred, naturalWidth, plans, page, pair, tabs, top,
           fixed, fixedTop, viewport, scrollHeight, pageHeight, sideTracks, unwrappedMinimum, topAlternative, first} = row;
         const available = rowFitWidth(items, scale);
         const rail = sideTabWidths(tabs, scale);
@@ -313,7 +373,8 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         const retainedSide = retainText && topAlternative ? text.caption.preferred - text.caption.minimum : 0;
         const fit = plans.find((plan, index) => plan.width + spacing + (index === 0 ? retainedSide : 0) <= placementWidth + .5)
           ?? plans.at(-1);
-        const plan = top || fit.above.size || available + .5 < preferred ? fit : undefined;
+        const keepsNatural = naturalWidth !== undefined && available + .5 >= naturalWidth;
+        const plan = !keepsNatural && (top || fit.above.size || available + .5 < preferred) ? fit : undefined;
         const movedTop = topAlternative && fit.above.size === topAlternative.fields.length ? topAlternative : undefined;
         if (topAlternative) {
           const maximum = movedTop && !tabs.parentElement.hasAttribute('data-authored-side-stretch') ? `${movedTop.width}px` : '';
@@ -324,10 +385,10 @@ export function inputTitleLayout(model, context, minimumCaptions) {
         // The rail's nominal width decides whether captions fit on one line. The actual
         // width left after painting the tabs can be smaller; shrink the value boxes first.
         const keepSideTitles = rail && !abovePage && fitWidth + .5 >= preferred && available + .5 >= unwrappedMinimum;
-        const lanes = plan && columns.map(({fields}, index) => {
-          const width = (bound, captionMetric) => Math.max(...fields.map(field => widthFor(field, field[bound], plan.above,
+        const lanes = plan && columns.map((column, index) => {
+          const width = (bound, captionMetric) => columnWidth(column, field => widthFor(field, field[bound], plan.above,
             page ? field.caption[captionMetric] : plan.captionWidths[index],
-            page ? field.caption[captionMetric] : field.caption.minimum)));
+            page ? field.caption[captionMetric] : field.caption.minimum));
           const minimum = width('minimum', keepSideTitles ? 'preferred' : 'minimum');
           const preferred = width('preferred', 'preferred');
           // Once a page moves its titles above, distribute space from the compact column widths.
@@ -385,7 +446,7 @@ export function inputTitleLayout(model, context, minimumCaptions) {
             if (side) captionWidth = page ? sideSizes?.[index].caption ?? pageSideCaption(field, width, keepSideTitles)
               : plan.captionWidths[index];
             else if (plan && (moves || field.location === 'Top')) captionWidth = width;
-            if (plan) allocateFieldCaption(captions, field, captionWidth, side ? inputCaptionInset : 0);
+            if (plan) allocateFieldCaption(captions, field, captionWidth, side ? field.captionInset : 0);
             else updateStyle(field.element, '--taxi-field-caption-width', naturalSideCaption(field, page));
             updateStyle(field.element, '--taxi-field-columns', side ? 'var(--taxi-field-caption-width) minmax(0, 1fr)' : '');
             updateStyle(field.element, '--taxi-input-title-value-min', plan && field.flexible ? `${field.minimum}px` : '');

@@ -284,6 +284,24 @@
       "caseSelection": "whole-suite-with-existing-transitions"
     },
     {
+      "id": "header-layout",
+      "driver": "test/form-header-layout-host.cjs",
+      "mode": "installed",
+      "locales": [
+        "en",
+        "ru"
+      ],
+      "fixtureEnv": {},
+      "environment": {},
+      "dependencies": [
+        "backend",
+        "single-built-vsix",
+        "isolated-profile",
+        "native-display"
+      ],
+      "caseSelection": "whole-suite-with-existing-transitions"
+    },
+    {
       "id": "handlers",
       "driver": "test/form-handlers-host.cjs",
       "mode": "installed",
