@@ -88,3 +88,53 @@ test('authored standard actions retain the projected caption and submenu until e
   assert.equal(menuCaption(tableCommandRows(table,[declared])[0],state,false),'Custom');
   assert.equal(menuEnabled({...projectedFind,enabled:false}),false);
 });
+
+test('ordinary table menu preserves authored groups and native pictures without duplicating pinned standard commands', () => {
+  const standard = name => ({...action(name),picture:{kind:'standard',name}});
+  const add=standard('Add'), edit=standard('Change'), find=standard('Find'), output=standard('OutputList');
+  const table={kind:'Table',name:'Rows',presentation:{tableCommandMenu:[[add,edit,find],[output]]}};
+  const customPicture={kind:'common',source:'configured'};
+  const declaredEdit=button('Change','InCommandBarAndInAdditionalSubmenu');
+  declaredEdit.presentation.picture=customPicture;
+  const popup={...button('Options'),kind:'Popup',children:[
+    button('First'),{...button('Group'),kind:'ButtonGroup',children:[button('Second')]},button('Third')]};
+  const rows=tableCommandRows(table,[button('Add','InCommandBar'),declaredEdit,{
+    ...button('FillGroup'),kind:'ButtonGroup',children:[button('Fill'),button('Refresh')]
+  },popup,button('Hidden','InCommandBar')]);
+  assert.deepEqual(keys(rows),[
+    find.key,'separator',output.key,'separator',declaredEdit.key,'separator','declared-Fill','declared-Refresh','separator',popup.key
+  ]);
+  assert.equal(menuPicture(rows[4],false),customPicture);
+  assert.deepEqual(menuPicture(rows[0],false),{kind:'standard',name:'AdvancedSearch',variant:'tableActionMenu'});
+  assert.deepEqual(menuPicture(rows[2],false),{kind:'standard',name:'OutputList',variant:'tableActionMenu'});
+  assert.deepEqual(keys(menuChildren(rows.at(-1),{})),['declared-First','separator','declared-Second','separator','declared-Third']);
+  assert.equal(table.presentation.tableCommandMenu[0][2].picture.name,'Find');
+});
+
+test('a manual ordinary menu preserves authored order and inherits pictures and shortcuts without autofilling', () => {
+  const find={...action('Find'),shortcut:'Alt+F',picture:{kind:'standard',name:'Find'}};
+  const finish={...action('EndEdit'),shortcut:'Shift+F2',picture:{kind:'standard',name:'EndEdit'}};
+  const table={kind:'Table',name:'Rows',presentation:{tableCommandMenu:[[action('Add'),finish,find]]}};
+  const rows=tableCommandRows(table,[button('Find','InAdditionalSubmenu'),button('EndEdit')],[],undefined,{authoredOnly:true});
+  assert.deepEqual(keys(rows),['declared-Find','declared-EndEdit']);
+  assert.deepEqual(rows.map(menuShortcut),['Alt+F','Shift+F2']);
+  assert.deepEqual(rows.map(item=>menuPicture(item,false).name),['AdvancedSearch','EndEdit']);
+});
+
+test('a dynamic list keeps its own menu artwork and appended authored rows', () => {
+  const copy={...action('Copy'),picture:{kind:'standard',name:'CloneListItem'}};
+  const table={kind:'Table',name:'Rows',presentation:{tableCommandMenu:[[copy]],valueType:{
+    types:[{namespace:'http://v8.1c.ru/8.1/data/enterprise/current-config',name:'DynamicList'}]
+  }}};
+  const rows=tableCommandRows(table,[button('Other')]);
+  assert.deepEqual(keys(rows),[copy.key,'declared-Other']);
+  assert.equal(menuPicture(rows[0],false),copy.picture);
+});
+
+test('ordinary sort rows use the native alphabet in both preview locales', () => {
+  const sort = ['SortListAsc','SortListDesc'].map(name => ({...action(name),picture:{kind:'standard',name}}));
+  const table={kind:'Table',name:'Rows',presentation:{tableCommandMenu:[sort]}};
+  const rows=tableCommandRows(table,[]);
+  assert.deepEqual(rows.map(item=>menuPicture(item,false,'ru-RU').name),['SortListAsc','SortListDesc']);
+  assert.deepEqual(rows.map(item=>menuPicture(item,false,'en-US').name),['SortListAscEn','SortListDescEn']);
+});

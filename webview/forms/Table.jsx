@@ -94,12 +94,12 @@ export function TableCommandActions(props) {
     <For each={props.commands.filter(item => !isMovement(item))}>{item => {
       const copy = item.key.endsWith('.Copy');
       return <CommandButton controller={props.controller} command={item} label={label(item)}
-        iconOnly={copy} picture={copy ? 'StdPicture.CloneListItem' : undefined}/>;
+        enabled={props.enabled} iconOnly={copy} picture={copy ? 'StdPicture.CloneListItem' : undefined}/>;
     }}</For>
     <Show when={movement().length}>
       <span ref={movementGroup} class="taxi-table-move">
         <For each={movement()}>{item => <CommandButton controller={props.controller} label={label(item)}
-          picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For>
+          enabled={props.enabled} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For>
         <NativeTableMovement element={() => movementGroup} commands={movement()} controller={props.controller}/>
       </span>
     </Show>
@@ -142,10 +142,12 @@ export function Table(props) {
   const border = () => inactive() && !property(node(), 'BorderColor') ? '#e8e8e8' : color(node().presentation.border);
   const lookup = () => layout().commands.some(item => /\.(Find|CancelSearch)$/.test(item.key));
   const menu = createMemo(() => {
-    if (!layout().foldableToolbar && !node().presentation.tableCommandMenu) return [];
-    return tableCommandRows(node(), layout().bar?.children.filter(item => item.presentation.displayed) ?? [], layout().commands);
+    if (!layout().more || layout().dynamic && !layout().foldableToolbar && !node().presentation.tableCommandMenu) return [];
+    return tableCommandRows(node(), layout().menuAuthored, layout().commands, undefined,
+      { authoredOnly: !layout().autofill });
   });
-  const moreButton = () => <CommandButton controller={props.controller} label={state.strings.more} dropdown nativeDropdown/>;
+  const moreEnabled = () => layout().dynamic || enabled();
+  const moreButton = () => <CommandButton controller={props.controller} label={state.strings.more} enabled={moreEnabled()} dropdown nativeDropdown/>;
   const title = () => layout().nativeDynamicList && scalar(node(), 'TitleLocation') === 'Top' && caption(node(), state);
   const compressedHeight = () => layout().nativeDynamicList ? layout().groupMinimumHeight
     : Math.min(layout().height, layout().header + (layout().footer ? layout().footer + 1 : 0) + 25);
@@ -175,12 +177,12 @@ export function Table(props) {
       data-adaptive-table-toolbar={layout().adaptiveToolbar ? '' : undefined}
       data-adaptive-authored-toolbar={layout().adaptiveAuthoredToolbar ? '' : undefined}
       data-foldable-table-toolbar={layout().foldableToolbar ? '' : undefined} data-table-lookup={lookup() ? '' : undefined}>
-      <TableCommandActions commands={layout().commands} controller={props.controller}/>
-      <For each={layout().bar?.children ?? []}>{item => <Element node={item} controller={props.controller}/>}</For>
+      <TableCommandActions commands={layout().commands} enabled={moreEnabled()} controller={props.controller}/>
+      <For each={layout().inlineAuthored}>{item => <Element node={item} controller={props.controller}/>}</For>
       <TableToolbarSearch search={layout().search} control={layout().searchControl} controller={props.controller} spacer/>
       <Show when={layout().more}>
         <Show when={menu().length} fallback={layout().foldableToolbar ? <span data-table-more="">{moreButton()}</span> : moreButton()}>
-          <PopupMenu controller={props.controller} label={state.strings.more} rows={menu()} tableBar tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+          <PopupMenu controller={props.controller} label={state.strings.more} enabled={moreEnabled()} rows={menu()} tableBar tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
         </Show>
       </Show>
     </div></Show>

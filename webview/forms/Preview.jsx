@@ -117,8 +117,8 @@ export function CommandButton(props) {
     && (primary() || flag(props.node, 'Enabled') || props.standaloneSearch);
   const background = () => props.controller.state.os === 'linux' && primary()
     ? props.controller.state.model.importantColor : props.node?.presentation.background;
-  const foreground = () => automaticForeground() ?? color(props.node?.presentation.foreground);
-  const standaloneInactive = () => props.standaloneSearch && !flag(props.node, 'Enabled');
+  const foreground = () => props.enabled === false ? '#a0a0a0' : automaticForeground() ?? color(props.node?.presentation.foreground);
+  const standaloneInactive = () => props.enabled === false || props.standaloneSearch && !flag(props.node, 'Enabled');
   const standaloneBorder = () => standaloneInactive() ? '#d0d0d0'
     : props.standaloneSearch && property(props.node, 'BorderColor') ? color(props.node.presentation.border) : undefined;
   createEffect(on(() => [plain(), primary(), !!property(props.node, 'TextColor'), JSON.stringify(background()), JSON.stringify(props.node?.presentation.foreground), JSON.stringify(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font)], ([enabled]) => {
@@ -184,7 +184,7 @@ export function CommandButton(props) {
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), 'border-top-color': standaloneBorder(), 'border-left-color': standaloneBorder(), 'border-right-color': standaloneBorder(), 'border-bottom-color': borderPaint() ? undefined : standaloneBorder(), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, '--taxi-button-height': authoredHeight(), width: authoredWidth() > 0 ? `${props.controller.state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
-    aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
+    disabled={props.enabled === false} aria-disabled={props.enabled === false || props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
     <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') || props.standaloneSearch ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show>
     <Show when={!iconOnly()}>
       <Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}>
@@ -628,6 +628,7 @@ export function PopupMenu(props) {
     setOpen(false);
     trigger()?.focus({ preventScroll: true });
   };
+  createEffect(() => { if (props.enabled === false) setOpen(false); });
   createEffect(() => {
     if (!open()) return;
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
@@ -647,14 +648,14 @@ export function PopupMenu(props) {
     data-command-group={props.command?.key} data-root-menu={props.rootMenu ? '' : undefined}
     data-table-more={props.tableBar ? '' : undefined}
     ref={container} onKeyDown={event => {
-      if (event.target !== container && event.target !== trigger()) return;
+      if (props.enabled === false || event.target !== container && event.target !== trigger()) return;
       if (open()) handleMenuKey?.(event);
       else if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
         event.preventDefault();
         setOpen(true);
       }
     }}>
-    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
+    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} enabled={props.enabled} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
       onClick={() => setOpen(!open())}/>
     <Show when={open()}>
       <MenuLevel rows={children()} anchor={trigger} close={close} dismiss={close} controller={props.controller}
@@ -735,7 +736,7 @@ function MenuLevel(props) {
       if (item === menuSeparator) return <div class="taxi-menu-divider" role="separator"/>;
       const node = menuNode(item), children = createMemo(() => menuChildren(item, state));
       const submenu = () => children().length > 0, opened = () => expanded() === item.key;
-      const picture = () => menuPicture(item, props.rootMenu);
+      const picture = () => menuPicture(item, props.rootMenu, state.locale);
       const enabled = () => menuEnabled(item);
       const label = () => menuCaption(item, state, props.rootMenu);
       let button;

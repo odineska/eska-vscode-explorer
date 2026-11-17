@@ -11,6 +11,25 @@ function fixture() {
   return { key: 'table', kind: 'Table', children: nodes, properties: [], auxiliary: [], presentation: { autoCommandItems: ['Add', 'MoveUp', 'MoveDown'].map(key => ({ key })) } };
 }
 
+test('an ordinary manual bar places explicit additional commands only in the menu', () => {
+  const table = fixture();
+  table.name = 'Rows';
+  table.presentation.autoCommandItems = [];
+  const button = (name, where) => ({ ...field(name, 'Button'), properties: [prop('LocationInCommandBar', where)] });
+  const inline = button('Inline', 'InCommandBar'), auto = button('Auto', 'Auto');
+  const menu = button('Menu', 'InAdditionalSubmenu'), both = button('Both', 'InCommandBarAndInAdditionalSubmenu');
+  const standard = {...button('Finish','Auto'),properties:[prop('CommandName','Form.Item.Rows.StandardCommand.EndEdit')]};
+  const group = { ...field('Group', 'ButtonGroup'), children: [menu, both, standard] };
+  table.auxiliary.push({ ...field('Bar', 'AutoCommandBar'), properties: [prop('Autofill', false)], children: [inline, auto, group] });
+  const layout = tableLayout(table, { os: 'linux' });
+  assert.equal(layout.more, true);
+  assert.equal(layout.foldableToolbar, false);
+  assert.deepEqual(layout.inlineAuthored.map(item => item.key), [inline.key, auto.key, group.key]);
+  assert.deepEqual(layout.inlineAuthored.at(-1).children, [both]);
+  assert.deepEqual(layout.menuAuthored[0].children, [menu, both, standard]);
+  assert.deepEqual(group.children, [menu, both, standard]);
+});
+
 test('table headers follow native Horizontal, Vertical, InCell and ShowInHeader geometry', () => {
   const root = fixture(), [text, amount, active] = root.children;
   const group = { ...field('Group', 'ColumnGroup', 'unknown'), children: [text, amount], properties: [prop('Group', 'Horizontal')] };
