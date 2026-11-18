@@ -2,14 +2,14 @@
 
 After opening the folder containing `eska.toml`, drag **ESKA: 1C Explorer** to
 the top of the Explorer sidebar and collapse the other sections. Then expand
-the metadata tree. [Silent setup screencast (Russian UI)](https://odineska.github.io/eska/docs/#demo-setup).
+the metadata tree. [Silent setup screencast (Russian UI)](https://odineska.tech/eska/docs/#demo-setup).
 
 ## Install components
 
 Install the VSIX through **Extensions → Install from VSIX…**. Its extension ID is
 `1c-tooling.eska-explorer`; the minimum VS Code API version is **1.109.0**.
 The project repositories and downloads belong to **odineska**.
-[Packaging](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [ESKA installation](https://odineska.github.io/eska/).
+[Packaging](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [ESKA installation](https://odineska.tech/eska/).
 
 The default backend is `eska-project serve --stdio`. The tree needs only Explorer
 and `eska-project`. Git, the full facade, the 1C platform and Analyzer are optional.
@@ -48,7 +48,7 @@ extension, processing and report; the root XML normally determines the type.
 This init command does not initialize Git, start 1C or generate XML/forms.
 Do not run it over an existing manifest. For an external report/data processor,
 `eska add ssl_3_1` links BSP; its user-wide installation lives in `~/.eska/lib`.
-[Projects and applications](https://odineska.github.io/eska/docs/#workspace).
+[Projects and applications](https://odineska.tech/eska/docs/#workspace).
 
 Open the manifest folder and expand **ESKA: 1C Explorer**. With multiple independent
 folders, use **Select Project and Connect**. Restart the connection after changing
@@ -64,7 +64,7 @@ while keeping the tree. Resolve conflicts with other BSL extensions explicitly.
 Use Format Document / Format Selection and ESKA as the formatter. Configure style
 in `[format]` in `eska.toml`; editor indentation does not override it.
 `eska.explorer.formatOnSave` is disabled by default. A missing `eska-fmt` is never
-replaced with Analyzer formatting. [All options](https://odineska.github.io/eska/docs/formatting/).
+replaced with Analyzer formatting. [All options](https://odineska.tech/eska/docs/formatting/).
 
 API 1.34 aligns multiline string argument continuations using the editor font
 for related parameter labels and transparent offsets. Independent single-line

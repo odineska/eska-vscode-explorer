@@ -58,7 +58,7 @@ manifest проекта и его родителей проверяются ра
 
 Скринкаст показывает расположение панели в открытом проекте.
 
-[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-setup.gif)](https://odineska.github.io/eska/docs/#demo-setup)
+[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-setup.gif)](https://odineska.tech/eska/docs/#demo-setup)
 
 ## Создание, копирование и удаление объектов
 
@@ -118,7 +118,7 @@ manifest проекта и его родителей проверяются ра
 
 ## Дерево и исходники
 
-[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-tree.gif)](https://odineska.github.io/eska/docs/#demo-tree)
+[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-tree.gif)](https://odineska.tech/eska/docs/#demo-tree)
 
 Порядок и подписи групп задаёт backend по типу проекта: конфигурация,
 расширение, внешний отчёт или обработка. Ветки загружаются при раскрытии;
@@ -295,7 +295,7 @@ backend и повторного чтения метаданных; выделе�
 Нажатие на объект с модулями открывает свойства. Поиск отбирает свойства по имени
 или значению; **Открыть XML** переводит к исходному диапазону выбранного свойства.
 
-[![Посмотреть свойства — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-properties.gif)](https://odineska.github.io/eska/docs/#demo-properties)
+[![Посмотреть свойства — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
 
 ## Поиск
 
@@ -379,7 +379,7 @@ HEAD и индекс, а в группе рабочих изменений — �
 же модель, что и `eska diff`. Запрашиваются только изменённые пути. Со старым
 компонентом список показывает имена файлов.
 
-[![Сравнить изменения модулей по именам объектов — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-scm.gif)](https://odineska.github.io/eska/docs/#demo-scm)
+[![Сравнить изменения модулей по именам объектов — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
 
 ## Диагностика подключения
 
