@@ -24,7 +24,7 @@
 
 ## Запросы, BSL и рабочая область
 
-- Отдельные SDBL-вкладки для запросов XML и BSL, восстановление черновиков, визуальный конструктор с таблицами, соединениями, условиями, группировками, UNION, пакетами и итогами. [Работа с запросами](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md)
+- Отдельные SDBL-вкладки для запросов XML и BSL с сохранением в исходник через **Ctrl+S**, визуальный конструктор с таблицами, соединениями, условиями, группировками, UNION, пакетами и итогами. [Работа с запросами](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md)
 - Автодополнение, диагностика, переходы, ссылки, подсказки параметров, переименование и текстовые правки через BSL Analyzer. Форматирование BSL и SDBL выполняет `eska-fmt` по настройкам `eska.toml`. [Языковой сервис](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) · [Форматирование](https://odineska.github.io/eska/docs/formatting/)
 - Выбор приложения для анализа, подключение БСП и отключение подпроектов. Источники под поддержкой открываются с учётом прав на изменение. [Рабочая область](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md) · [Правила поддержки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md)
 
@@ -75,9 +75,9 @@
 </details>
 
 <details>
-<summary>Добавить поле в запрос и применить его к BSL</summary>
+<summary>Изменить запрос и сохранить через Ctrl+S</summary>
 
-[![Добавить поле в запрос и применить его к BSL — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-query.gif)](https://odineska.github.io/eska/docs/#demo-query)
+[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.github.io/eska/docs/#demo-query)
 
 </details>
 
