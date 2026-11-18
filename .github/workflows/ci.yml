@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   check:
@@ -16,24 +17,37 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 3
+      - name: Check for a generated release-only change
+        id: release-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: python3 scripts/release-pr-check.py >> "$GITHUB_OUTPUT"
       - name: Install Bun and Knope
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bash scripts/install-tools.sh release
       - name: Install locked dependencies
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Check and compile
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: |
           bun run --bun check
           bun run --bun compile
       - name: Fetch published backend release metadata
+        if: steps.release-pr.outputs.metadata_only != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-release-metadata.sh
       - name: Install released backends into a clean prefix
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: |
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
       - name: Restore the pinned VS Code archive
+        if: steps.release-pr.outputs.metadata_only != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         continue-on-error: true
         env:
@@ -42,8 +56,10 @@ jobs:
           path: ${{ runner.temp }}/eska-test-editor/editor.tar.gz
           key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
       - name: Test the client and install the test editor
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bash scripts/test-with-editor.sh
       - name: Check the packaged extension with real Metadata API and LSP
+        if: steps.release-pr.outputs.metadata_only != 'true'
         env:
           ESKA_HOST_SUPPORT_DISABLED: '1'
         run: |

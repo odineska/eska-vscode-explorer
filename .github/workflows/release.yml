@@ -24,19 +24,33 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
           fetch-depth: 0
       - name: Configure release author
         run: |
+          git switch -C main "$GITHUB_SHA"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-      - name: Install Bun and Knope
-        run: bash scripts/install-tools.sh release
+      - name: Select release work
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release-plan.py >> "$GITHUB_OUTPUT"
+      - name: Install release tools
+        env:
+          BUILD: ${{ steps.plan.outputs.build }}
+        run: |
+          if [[ "$BUILD" == true ]]; then
+            bash scripts/install-tools.sh release
+          else
+            bash scripts/install-tools.sh prepare
+          fi
       - name: Fetch published backend release metadata
+        if: steps.plan.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-release-metadata.sh
       - name: Validate before publishing
+        if: steps.plan.outputs.build == 'true'
         run: |
           bun install --frozen-lockfile --ignore-scripts
           bun run --bun check
@@ -45,6 +59,7 @@ jobs:
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
       - name: Cache the pinned VS Code archive
+        if: steps.plan.outputs.build == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         continue-on-error: true
         env:
@@ -53,12 +68,17 @@ jobs:
           path: ${{ runner.temp }}/eska-test-editor/editor.tar.gz
           key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
       - name: Test the client and install the test editor
+        if: steps.plan.outputs.build == 'true'
         run: bash scripts/test-with-editor.sh --release
       - name: Validate the packaged VSIX
+        if: steps.plan.outputs.build == 'true'
         run: |
           bun run --bun package:compiled
-          python3 scripts/check-vsix.py "eska-explorer-$(node -p 'require("./package.json").version').vsix"
+          vsix="eska-explorer-$(node -p 'require("./package.json").version').vsix"
+          python3 scripts/check-vsix.py "$vsix"
+          sha256sum "$vsix" > "$RUNNER_TEMP/tested-vsix.sha256"
       - name: Запуск установленного VSIX
+        if: steps.plan.outputs.build == 'true'
         env:
           ESKA_HOST_SUPPORT_DISABLED: '1'
         run: |
@@ -66,13 +86,15 @@ jobs:
           timeout 180s xvfb-run -a node test/run-host.mjs test/language-host.cjs
       - name: Publish the prepared version
         id: publish
+        if: steps.plan.outputs.version != ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          version: ${{ steps.plan.outputs.version }}
+          build: ${{ steps.plan.outputs.build }}
         run: |
-          version="$(python3 scripts/release-version.py)"
-          if [[ -z "$version" ]]; then
-            exit 0
+          if [[ "$build" == true ]]; then
+            sha256sum --check "$RUNNER_TEMP/tested-vsix.sha256"
           fi
           if git show-ref --verify --quiet "refs/tags/v$version"; then
             # An existing tag must have a published release; API failures are not ignored.
@@ -81,13 +103,19 @@ jobs:
             knope release
             git fetch origin --tags
           fi
-          python3 scripts/release-vsix.py "$version"
+          if [[ "$build" == true ]]; then
+            python3 scripts/release-vsix.py "$version" --verified-vsix "eska-explorer-$version.vsix"
+          fi
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Prepare the next release PR
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/prepare-release.py
+        run: |
+          git fetch origin main
+          if [[ "$(git rev-parse HEAD)" == "$(git rev-parse FETCH_HEAD)" ]]; then
+            python3 scripts/prepare-release.py
+          fi
 
   openvsx:
     needs: release

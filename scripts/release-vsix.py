@@ -34,7 +34,7 @@ def stage_tag(version, destination):
     return source
 
 
-def publish(version):
+def publish(version, verified_vsix=None):
     """Build missing assets from the immutable tag; reruns preserve published packages."""
     if not re.fullmatch(r"\d+\.\d+\.\d+", version) or version == "0.0.0":
         raise ValueError("Expected a released three-part version")
@@ -48,6 +48,15 @@ def publish(version):
         if existing.get("state") != "uploaded" or existing.get("size", 0) <= 0:
             raise RuntimeError("Existing VSIX asset is incomplete; inspect it before retrying")
         print(f"Already attached: {filename}")
+        return
+    if verified_vsix is not None:
+        tag_tree = run("git", "rev-parse", f"refs/tags/v{version}^{{tree}}")
+        if run("git", "rev-parse", "HEAD^{tree}") != tag_tree or run("git", "status", "--porcelain"):
+            raise RuntimeError("Verified VSIX must come from the clean release tag tree")
+        if verified_vsix.name != filename or not verified_vsix.is_file() or verified_vsix.is_symlink():
+            raise RuntimeError("Expected the VSIX verified on this runner")
+        run("gh", "release", "upload", f"v{version}", str(verified_vsix), "--repo", REPOSITORY)
+        print(f"Attached: {filename}")
         return
     with tempfile.TemporaryDirectory(prefix="eska-release-vsix-", dir=os.environ.get("RUNNER_TEMP")) as directory:
         source = stage_tag(version, Path(directory))
@@ -63,4 +72,6 @@ def publish(version):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
-    publish(parser.parse_args().version)
+    parser.add_argument("--verified-vsix", type=Path)
+    args = parser.parse_args()
+    publish(args.version, args.verified_vsix)

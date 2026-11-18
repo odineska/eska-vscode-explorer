@@ -47,6 +47,35 @@ class ReleaseTests(unittest.TestCase):
         (self.root / "CHANGELOG.md").write_text("## 0.1.0 (2026-09-18)\n")
         self.assertEqual(module.release_version(self.root), "0.1.0")
 
+    def test_release_plan_checks_only_new_or_unfinished_release_tree(self):
+        """Ordinary main updates never rebuild an existing release."""
+        module = load("release-plan")
+        answers = {
+            ("python3", "scripts/release-version.py"): "0.1.0",
+            ("git", "tag", "--list", "v0.1.0"): "v0.1.0",
+            ("git", "rev-parse", "HEAD^{tree}"): "release-tree",
+            ("git", "rev-parse", "refs/tags/v0.1.0^{tree}"): "release-tree",
+        }
+        release_call = ("gh", "release", "view", "v0.1.0", "--json", "isDraft,assets")
+        asset = {"name": "eska-explorer-0.1.0.vsix", "state": "uploaded", "size": 9}
+        answers[release_call] = json.dumps({"isDraft": False, "assets": [asset]})
+        with patch.object(module, "run", side_effect=lambda *args: answers[args]):
+            self.assertEqual(module.plan(), ("0.1.0", False))
+            answers[("git", "rev-parse", "HEAD^{tree}")] = "later-tree"
+            self.assertEqual(module.plan(), ("", False))
+            answers[release_call] = json.dumps({"isDraft": False, "assets": []})
+            with self.assertRaisesRegex(RuntimeError, "commit tagged v0.1.0"):
+                module.plan()
+            answers[("git", "rev-parse", "HEAD^{tree}")] = "release-tree"
+            self.assertEqual(module.plan(), ("0.1.0", True))
+            answers[("git", "tag", "--list", "v0.1.0")] = ""
+            answers[("git", "rev-list", "--parents", "-n", "1", "HEAD")] = "first-release parent"
+            answers[("git", "show", "HEAD^1:package.json")] = '{"version":"0.0.0"}'
+            self.assertEqual(module.plan(), ("0.1.0", True))
+            answers[("git", "show", "HEAD^1:package.json")] = '{"version":"0.1.0"}'
+            with self.assertRaisesRegex(RuntimeError, "commit introducing v0.1.0"):
+                module.plan()
+
     def test_local_execution_cannot_publish(self):
         """A local check must not accidentally open PRs or push branches."""
         module = load("prepare-release")
@@ -118,6 +147,29 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(sum(call[1:3] == ("pr", "create") for call in calls), 1)
                 self.assertTrue(any(call[1:3] == ("workflow", "run") for call in calls))
                 self.assertTrue(any(call[1:4] == ("pr", "close", "9") for call in calls))
+                check = load("release-pr-check")
+                head = git("rev-parse", "HEAD")
+                pull = {"author": {"is_bot": True, "login": "app/github-actions"}, "headRefOid": head,
+                        "headRepositoryOwner": {"login": "odineska"}, "isCrossRepository": False}
+
+                def read_release_pr(*args):
+                    return json.dumps([pull]) if args[0] == "gh" else original_run(*args)
+
+                with patch.dict(os.environ, {"RELEASE_HEAD_REF": branch, "GITHUB_EVENT_NAME": "workflow_dispatch"}), \
+                        patch.object(check, "run", side_effect=read_release_pr):
+                    self.assertTrue(check.generated_release_pr())
+                    pull["isCrossRepository"] = True
+                    self.assertFalse(check.generated_release_pr())
+                    pull["isCrossRepository"] = False
+                    pull["author"]["is_bot"] = False
+                    self.assertFalse(check.generated_release_pr())
+                    pull["author"]["is_bot"] = True
+                    git("switch", "main")
+                    git("merge", "--no-ff", "-m", "Synthetic PR merge", branch)
+                    with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}):
+                        self.assertTrue(check.generated_release_pr())
+                        pull["headRefOid"] = "0" * 40
+                        self.assertFalse(check.generated_release_pr())
                 pull_requests[:] = [{"number": 10, "headRefName": branch}]
                 second = self.root / "second"
                 git("clone", "-q", "--branch", "main", str(origin), str(second))
@@ -173,6 +225,33 @@ class ReleaseTests(unittest.TestCase):
 
 
 class VsixReleaseTests(unittest.TestCase):
+    def test_verified_vsix_upload_requires_exact_tag_tree(self):
+        module = load("release-vsix")
+        with tempfile.TemporaryDirectory(dir=ROOT.parent / "eska-playground") as directory:
+            candidate = Path(directory) / "eska-explorer-0.1.0.vsix"
+            candidate.write_bytes(b"already tested")
+            calls = []
+
+            def run(*args):
+                calls.append(args)
+                if args[:3] == ("gh", "release", "view"):
+                    return json.dumps({"isDraft": False, "assets": []})
+                if args == ("git", "rev-parse", "refs/tags/v0.1.0^{tree}"):
+                    return "tag-tree"
+                if args == ("git", "rev-parse", "HEAD^{tree}"):
+                    return tree
+                return ""
+
+            with patch.object(module, "run", side_effect=run):
+                tree = "different-tree"
+                with self.assertRaisesRegex(RuntimeError, "clean release tag tree"):
+                    module.publish("0.1.0", candidate)
+                tree = "tag-tree"
+                module.publish("0.1.0", candidate)
+            self.assertEqual(calls[-1][0:5], ("gh", "release", "upload", "v0.1.0", str(candidate)))
+            self.assertFalse(any(call[0] == "bun" for call in calls))
+
+
     """Exercise tag provenance, retries and failure ordering without publishing fixtures."""
 
     def setUp(self):

@@ -77,4 +77,5 @@ if (process.env.GITHUB_ENV) {
     await appendFile(process.env.GITHUB_ENV, `${name}=${value}\n`);
   }
 }
-console.log(JSON.stringify({ root, project: project.version, analyzer: analyzer.version, references, environment }));
+console.log(JSON.stringify({ root, project: project.version, analyzer: analyzer.version,
+  projectSha256: projectRelease.asset.sha256, analyzerSha256: analyzerRelease.asset.sha256, references, environment }));
