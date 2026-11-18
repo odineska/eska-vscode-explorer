@@ -164,3 +164,53 @@ test("a query action failure closes its document and never replays the action", 
   }), { code: "sourceChanged" });
   assert.equal(actions, 1); assert.equal(value.opened.length, 1); assert.equal(value.closed.length, 1);
 });
+
+function ownedTabFixture({ refuseClose = false, redirectFocus = false } = {}) {
+  const uri = { toString: () => "eska-query:/draft.sdbl" };
+  const other = { toString: () => "file:///other.bsl" };
+  class TabInputText {
+    constructor(uri) { this.uri = uri; }
+  }
+  const groups = [uri, uri, other].map((path, index) => {
+    const group = { viewColumn: index + 1, tabs: [] };
+    group.activeTab = { group, input: new TabInputText(path), isPreview: index === 0 };
+    group.tabs.push(group.activeTab);
+    return group;
+  });
+  const foreign = groups[2].activeTab;
+  const tabGroups = { all: groups, activeTabGroup: groups[1] };
+  const shown = [], closed = [];
+  const vscode = { TabInputText, window: { tabGroups, async showTextDocument(path, options) {
+    shown.push(options);
+    const next = groups.find(group => group.viewColumn === options.viewColumn);
+    assert.equal(next.activeTab.input.uri, path);
+    tabGroups.activeTabGroup = redirectFocus ? foreign.group : next;
+  } }, commands: { async executeCommand(command) {
+    assert.equal(command, "workbench.action.revertAndCloseActiveEditor");
+    closed.push(tabGroups.activeTabGroup.activeTab);
+    if (refuseClose) return;
+    groups.splice(groups.indexOf(tabGroups.activeTabGroup), 1);
+    for (const [index, group] of groups.entries()) group.viewColumn = index + 1;
+  } } };
+  return { uri, foreign, groups, shown, closed, hideOwnedQuery: nativeAdapters(vscode)("modal-parent").hideOwnedQuery };
+}
+
+test("closing owned query splits follows live columns and preserves unrelated tabs", async () => {
+  const value = ownedTabFixture();
+  await value.hideOwnedQuery(value.uri);
+  assert.deepEqual(value.shown.map(options => [options.viewColumn, options.preview]), [[1, true], [1, false]]);
+  assert.equal(value.closed.length, 2);
+  assert.equal(value.groups.length, 1);
+  assert.equal(value.groups[0].activeTab, value.foreign);
+});
+
+test("closing an owned query stops if the editor refuses to close or focus is redirected", async () => {
+  for (const options of [{ refuseClose: true }, { redirectFocus: true }]) {
+    const value = ownedTabFixture(options);
+    await assert.rejects(value.hideOwnedQuery(value.uri), { code: "sourceChanged" });
+    assert.equal(value.shown.length, 1);
+    assert.equal(value.closed.length, options.refuseClose ? 1 : 0);
+    assert.equal(value.groups.length, 3);
+    assert.equal(value.groups[2].activeTab, value.foreign);
+  }
+});
