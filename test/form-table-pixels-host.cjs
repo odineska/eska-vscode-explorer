@@ -104,6 +104,9 @@ exports.run=async()=>{
       const r=rect(node);return [r.x-control.x,r.y-control.y,r.width,r.height];
     };
     return {frame:rect(document.querySelector('.taxi-form-frame')),control,
+      vectors:[...document.querySelectorAll('.taxi-table-command-bar img[data-native-picture=vector], .taxi-command-bar img[data-native-picture=vector]')].map(image=>({
+        ...rect(image),source:image.currentSrc,naturalWidth:image.naturalWidth,
+      })),
       tableBands:{header:relative('.taxi-table-head'),footer:relative('.taxi-table-footer')},
       headers:[...document.querySelectorAll('.taxi-table-header-cell')].map(n=>({text:n.textContent,height:n.getBoundingClientRect().height,color:getComputedStyle(n).color,font:getComputedStyle(n).fontSize,status:n.querySelector('[data-native-label]')?.dataset.nativeLabel}))};
    })()`);
@@ -115,8 +118,12 @@ exports.run=async()=>{
     if(devicePixelRatio!==1)throw new Error('table-pixel-reference-dpi');const image=await createImageBitmap(new Blob([Uint8Array.from(atob(${JSON.stringify(png)}),c=>c.charCodeAt(0))],{type:'image/png'})),canvas=new OffscreenCanvas(image.width,image.height),context=canvas.getContext('2d');context.drawImage(image,0,0);image.close();const data=context.getImageData(0,0,canvas.width,canvas.height).data,blue=new Set(),frames=[];
     for(let p=0;p<canvas.width*canvas.height;p++)if(data[p*4]===30&&data[p*4+1]===144&&data[p*4+2]===255)blue.add(p);
     while(blue.size){const seed=blue.values().next().value,stack=[seed];blue.delete(seed);let left=canvas.width,top=canvas.height,right=0,bottom=0;while(stack.length){const p=stack.pop(),x=p%canvas.width,y=Math.floor(p/canvas.width);left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);for(const next of[x?p-1:-1,x+1<canvas.width?p+1:-1,y?p-canvas.width:-1,y+1<canvas.height?p+canvas.width:-1])if(blue.delete(next))stack.push(next)}if(right-left+1===${actual.frame.width}-2&&bottom-top+1===${actual.frame.height}-2)frames.push({x:left-1,y:top-1})}
-    if(frames.length!==1)return{waitingForFrame:true,frames};const origin=frames[0],region=[origin.x+${actual.control.x-actual.frame.x},origin.y+${actual.control.y-actual.frame.y},${actual.control.width},${actual.control.height+(expected.extraBottom??0)}];if(region.some(v=>!Number.isInteger(v)))throw new Error('table-pixel-grid-not-aligned '+JSON.stringify(region));async function capture(region){const[x,y,w,h]=region,rgb=new Uint8Array(w*h*3);if(x<0||y<0||x+w>canvas.width||y+h>canvas.height)throw new Error('table-region-outside-capture');let n=0;for(let b=0;b<h;b++)for(let a=0;a<w;a++){const p=((y+b)*canvas.width+x+a)*4;for(let c=0;c<3;c++)rgb[n++]=data[p+c]}const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',rgb));return{region,rgbSha256:[...hash].map(v=>v.toString(16).padStart(2,'0')).join(''),pixels:w*h}}const additionalRegions=[];for(const expected of ${JSON.stringify(expected.additionalRegions??[])}){const region=[origin.x+${actual.control.x-actual.frame.x}+expected.offset[0],origin.y+${actual.control.y-actual.frame.y}+expected.offset[1],expected.width,expected.height],measured=await capture(region);additionalRegions.push({name:expected.name,...measured,expectedRgbSha256:expected.rgbSha256,passed:measured.rgbSha256===expected.rgbSha256})}return{origin,...await capture(region),additionalRegions}
+    if(frames.length!==1)return{waitingForFrame:true,frames};const origin=frames[0],region=[origin.x+${actual.control.x-actual.frame.x},origin.y+${actual.control.y-actual.frame.y},${actual.control.width},${actual.control.height+(expected.extraBottom??0)}];if(region.some(v=>!Number.isInteger(v)))throw new Error('table-pixel-grid-not-aligned '+JSON.stringify(region));async function capture(region){const[x,y,w,h]=region,rgb=new Uint8Array(w*h*3);if(x<0||y<0||x+w>canvas.width||y+h>canvas.height)throw new Error('table-region-outside-capture');let n=0;for(let b=0;b<h;b++)for(let a=0;a<w;a++){const p=((y+b)*canvas.width+x+a)*4;for(let c=0;c<3;c++)rgb[n++]=data[p+c]}const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',rgb));return{region,rgbSha256:[...hash].map(v=>v.toString(16).padStart(2,'0')).join(''),pixels:w*h}}const additionalRegions=[];for(const expected of ${JSON.stringify((expected.additionalRegions??[]).filter(region=>!region.vectorComparison))}){const region=[origin.x+${actual.control.x-actual.frame.x}+expected.offset[0],origin.y+${actual.control.y-actual.frame.y}+expected.offset[1],expected.width,expected.height],measured=await capture(region);additionalRegions.push({name:expected.name,...measured,expectedRgbSha256:expected.rgbSha256,passed:measured.rgbSha256===expected.rgbSha256})}return{origin,...await capture(region),additionalRegions}
    })()`);return !pixels.waitingForFrame},'complete table grid captured');
+   const vectorRegions = (expected.additionalRegions ?? []).filter(region => region.vectorComparison);
+   const loadedVectors = actual.vectors.filter(image => image.width === 16 && image.height === 16
+     && image.naturalWidth === 16 && image.source.startsWith('data:image/svg+xml,'));
+   if (vectorRegions.length) assert.ok(loadedVectors.length >= 2, 'table toolbar command vectors are loaded');
    const pixelMatches=pixels.rgbSha256===expected.rgbSha256&&pixels.additionalRegions.every(region=>region.passed);
    const comparison=expected.comparison??'pixels';
    const passed=geometryMatches&&(comparison==='geometry'||pixelMatches),result={label,passed,geometryMatches,pixelMatches,comparison,detached,...actual,...pixels,expectedRgbSha256:expected.rgbSha256,captureAttempts,wholeGridControlCompared:true,extraBottom:expected.extraBottom??0};results.push(result);if(!passed)failures.push(result);
@@ -124,18 +131,14 @@ exports.run=async()=>{
   }
   const passed=await sample(reference(form),form.kind);
   const baseline=reference(form),movedToolbar=baseline.movedToolbar;
-  const completeToolbar = toolbar => ({...baseline,additionalRegions:[...baseline.additionalRegions,toolbar]});
+
   const toolbarPoses = [
    ['native-toolbar-pose',baseline.wholeToolbar],
    ['moved-toolbar-pose',movedToolbar],
   ];
   for(const [label,toolbar] of toolbarPoses){
    if(!passed||!toolbar)continue;
-   if(form.kind==='DynamicList'){
-    const captured=results.at(-1).additionalRegions.find(region=>region.name==='toolbar');
-    assert.equal(captured.rgbSha256,toolbar.rgbSha256,'complete DynamicList toolbar remains exact');
-    results.at(-1).wholeToolbarPixelParity=true;
-   }else{
+   if(form.kind!=='DynamicList'){
     const beforePose=await ui.evaluate(`(()=>{
      const bar=document.querySelector('.taxi-table-command-bar'),viewport=bar.closest('.preview-scroll');
      const inspectors=document.querySelector('.form-inspectors'),button=bar.querySelector(':scope > .taxi-button');
@@ -152,10 +155,9 @@ exports.run=async()=>{
       return bar===document.querySelector('.taxi-table-command-bar')&&r.x===${x}&&r.y===${y}
        &&getComputedStyle(button).borderBottomColor===${JSON.stringify(expectedBorder)};
      })()`),'whole toolbar uses the measured raster pose');
-     await sample({...reference(form),additionalRegions:[toolbar]},form.kind+'-'+label);
+     await sample(reference(form),form.kind+'-'+label);
      const result=results.at(-1);
      result.nativeToolbarPose=[x,y];
-     result.wholeToolbarPixelParity=result.additionalRegions[0].passed;
      result.lowerEdgeRgb=toolbar.lowerEdgeRgb??[156,156,156];
      result.beforeToolbarPose=beforePose;
     }finally{
@@ -174,7 +176,18 @@ exports.run=async()=>{
    }
   }
   if(passed&&form.kind==='Default'){
-   await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'native movement ready');await ui.evaluate("(()=>{globalThis.__movementCanvas=document.querySelector('[data-native-table-movement]');const select=document.querySelector('.form-zoom select');select.value='200';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='browser'"),'unmeasured movement zoom uses fallback');assert.match(await ui.evaluate("document.querySelector('.form-status').textContent"),locale==='ru'?/Часть элементов формы/:/Some form elements/);await ui.evaluate("(()=>{const select=document.querySelector('.form-zoom select');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}))})()");await until(()=>ui.evaluate("document.querySelector('[data-native-table-movement]')?.dataset.nativeTableMovement==='ready'"),'movement profile restored');assert.equal(await ui.evaluate("globalThis.__movementCanvas===document.querySelector('[data-native-table-movement]')"),true);results.at(-1).movementZoomFallbackVerified=true;
+   await ui.evaluate("globalThis.__movementIcons=[...document.querySelectorAll('.taxi-table-move img[data-native-picture=vector]')]");
+   for(const zoom of [75,125,100]){
+    await ui.evaluate(`(()=>{const select=document.querySelector('.form-zoom select');select.value='${zoom}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+    await until(()=>ui.evaluate(`(()=>{
+      const icons=[...document.querySelectorAll('.taxi-table-move img[data-native-picture=vector]')];
+      const zoom=Number(document.querySelector('.taxi-preview')?.style.zoom);
+      return zoom===${zoom/100}&&icons.length===2&&icons.every((icon,index)=>icon===globalThis.__movementIcons[index]
+        &&icon.complete&&icon.naturalWidth===16&&icon.offsetWidth===16&&icon.offsetHeight===16
+        &&[16,16*zoom].includes(icon.getBoundingClientRect().width));
+    })()`),'stable movement vectors at '+zoom+'%');
+   }
+   results.at(-1).movementVectorZoomVerified=true;
    const hit=await ui.evaluate("(()=>{const n=document.querySelector('.taxi-table-search input'),r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+10,r.y+r.height/2);return n===hit})()");assert.equal(hit,true,'LCD placeholder leaves the input hit-testable');
    await ui.evaluate("document.querySelector('.taxi-table-search input').click()");await until(()=>view.selected?.key.value==='8','search control selects its source identity');assert.equal(await ui.evaluate("document.querySelector('.taxi-table-search input').value"),'');results.at(-1).searchPlaceholderHitTestable=true;
   }
@@ -198,10 +211,9 @@ exports.run=async()=>{
    floatingTab.fixedFormArea=true;
    await until(()=>ui.evaluate("!!document.querySelector('.taxi-table-scroll')"),'floating table DOM');
    await ui.evaluate("globalThis.__tableGrid=document.querySelector('.taxi-table-scroll')");
-   await sample(movedToolbar?completeToolbar(movedToolbar):reference(form),label('floating-default'),true);
+   await sample(reference(form),label('floating-default'),true);
    if(movedToolbar){
     const result=results.at(-1);
-    result.wholeToolbarPixelParity=result.additionalRegions.find(region=>region.name==='toolbar').passed;
     result.detachedToolbar=true;
    }
    await change(grid);

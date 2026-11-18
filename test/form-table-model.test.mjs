@@ -11,6 +11,25 @@ function fixture() {
   return { key: 'table', kind: 'Table', children: nodes, properties: [], auxiliary: [], presentation: { autoCommandItems: ['Add', 'MoveUp', 'MoveDown'].map(key => ({ key })) } };
 }
 
+test('an ordinary manual bar places explicit additional commands only in the menu', () => {
+  const table = fixture();
+  table.name = 'Rows';
+  table.presentation.autoCommandItems = [];
+  const button = (name, where) => ({ ...field(name, 'Button'), properties: [prop('LocationInCommandBar', where)] });
+  const inline = button('Inline', 'InCommandBar'), auto = button('Auto', 'Auto');
+  const menu = button('Menu', 'InAdditionalSubmenu'), both = button('Both', 'InCommandBarAndInAdditionalSubmenu');
+  const standard = {...button('Finish','Auto'),properties:[prop('CommandName','Form.Item.ROWS.StandardCommand.EndEdit')]};
+  const group = { ...field('Group', 'ButtonGroup'), children: [menu, both, standard] };
+  table.auxiliary.push({ ...field('Bar', 'AutoCommandBar'), properties: [prop('Autofill', false)], children: [inline, auto, group] });
+  const layout = tableLayout(table, { os: 'linux' });
+  assert.equal(layout.more, true);
+  assert.equal(layout.foldableToolbar, false);
+  assert.deepEqual(layout.inlineAuthored.map(item => item.key), [inline.key, auto.key, group.key]);
+  assert.deepEqual(layout.inlineAuthored.at(-1).children, [both]);
+  assert.deepEqual(layout.menuAuthored[0].children, [menu, both, standard]);
+  assert.deepEqual(group.children, [menu, both, standard]);
+});
+
 test('table headers follow native Horizontal, Vertical, InCell and ShowInHeader geometry', () => {
   const root = fixture(), [text, amount, active] = root.children;
   const group = { ...field('Group', 'ColumnGroup', 'unknown'), children: [text, amount], properties: [prop('Group', 'Horizontal')] };
@@ -127,6 +146,26 @@ test('an automatic dynamic toolbar can be wider than its fixed grid', () => {
   assert.deepEqual(dimensions(), [240, 240, true]);
   table.properties.push(prop('CommandBarLocation', 'None'));
   assert.deepEqual(dimensions(), [240, 240, false]);
+});
+
+test('an automatic-width static table can fold its authored commands while retaining required toolbar commands', () => {
+  const table = fixture(), state = { os: 'linux', locale: 'ru' };
+  const command = field('Custom', 'Button', 'unknown');
+  const bar = { ...field('Commands', 'AutoCommandBar', 'unknown'), children: [command] };
+  table.auxiliary.push(bar, field('Search', 'SearchStringAddition', 'unknown'));
+  const adaptive = () => {
+    const { adaptiveToolbar, adaptiveAuthoredToolbar } = tableLayout(table, state);
+    return [adaptiveToolbar, adaptiveAuthoredToolbar];
+  };
+  assert.deepEqual(adaptive(), [true, true]);
+  table.properties.push(prop('Width', 40));
+  assert.deepEqual(adaptive(), [true, false]);
+  table.properties.pop();
+  command.properties.push(prop('LocationInCommandBar', 'InCommandBar'));
+  assert.deepEqual(adaptive(), [false, false]);
+  command.properties.pop();
+  command.presentation.displayed = false;
+  assert.deepEqual(adaptive(), [false, false]);
 });
 
 test('a static table uses independent Linux sizes for the grid and the command and filter bands', () => {

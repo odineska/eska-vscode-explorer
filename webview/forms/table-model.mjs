@@ -95,9 +95,19 @@ function findTable(node, name) {
   }
 }
 
-export function tableSearchReference(command) {
-  const match = /^Form\.Item\.(.+)\.StandardCommand\.(Find|CancelSearch)$/.exec(command);
+function tableCommandReference(command) {
+  const match = /^Form\.Item\.(.+?)\.StandardCommand\.(.+)$/.exec(command);
   return match ? { table: match[1], action: match[2] } : undefined;
+}
+
+export function tableStandardAction(table, command) {
+  const reference = tableCommandReference(command);
+  if (reference && reference.table.toLowerCase() === table.name?.toLowerCase()) return reference.action;
+}
+
+export function tableSearchReference(command) {
+  const reference = tableCommandReference(command);
+  if (reference && ['Find', 'CancelSearch'].includes(reference.action)) return reference;
 }
 
 export function availableTableSearchCommand(root, reference) {
@@ -116,9 +126,29 @@ export function tableSearch(table) {
   return table.auxiliary.find(node => node.kind === 'SearchStringAddition' && visibleAddition(node));
 }
 
-function isDynamicList(table) {
+export function isDynamicList(table) {
   return table.presentation.valueType?.types?.some(type =>
     type.namespace === 'http://v8.1c.ru/8.1/data/enterprise/current-config' && type.name === 'DynamicList') ?? false;
+}
+
+function hasAuthoredPlacement(items, matches) {
+  return items.some(item => item.presentation.displayed && (matches(item)
+    || item.kind === 'ButtonGroup' && hasAuthoredPlacement(item.children, matches)));
+}
+
+const isExplicitAdditional = where => ['InAdditionalSubmenu', 'InCommandBarAndInAdditionalSubmenu'].includes(where);
+const ordinaryMenuOnly = new Set(['Copy', 'Change', 'Delete', 'EndEdit', 'FindByCurrentValue', 'Find',
+  'CancelSearch', 'SortListAsc', 'SortListDesc', 'OutputList']);
+
+function tableCommandItems(items, includes) {
+  return items.flatMap(item => {
+    if (!item.presentation.displayed) return [];
+    if (item.kind !== 'ButtonGroup') return includes(item) ? [item] : [];
+    const children = tableCommandItems(item.children, includes);
+    if (!children.length) return [];
+    return children.length === item.children.length && children.every((child, index) => child === item.children[index])
+      ? [item] : [{ ...item, children }];
+  });
 }
 
 function tableSearchControl(table) {
@@ -276,14 +306,26 @@ export function tableLayout(table, state = {}, additions) {
   const children = table.children.filter(visible).map(visit), columns = children.flatMap(child => child.columns);
   const depth = Math.max(1, ...children.map(child => child.depth));
   const bar = commandBar(table);
-  const commands = table.presentation.autoCommandItems ?? [];
-  const authoredCommands = bar?.children.some(child => child.presentation.displayed);
+  const authored = bar?.children ?? [];
+  const authoredCommands = authored.some(child => child.presentation.displayed);
+  const autofill = flag(bar, 'Autofill');
+  const standardAction = item => tableStandardAction(table, scalar(item, 'CommandName'));
+  const automatic = table.presentation.autoCommandItems ?? [];
+  const commands = dynamic ? automatic : automatic.filter(item =>
+    !hasAuthoredPlacement(authored, button => `Table.StandardCommand.${standardAction(button)}` === item.key));
+  const autoAdditional = item => scalar(item, 'LocationInCommandBar', 'Auto') === 'Auto'
+    && ordinaryMenuOnly.has(standardAction(item));
+  const inlineAuthored = dynamic ? authored : tableCommandItems(authored,
+    item => scalar(item, 'LocationInCommandBar') !== 'InAdditionalSubmenu' && !autoAdditional(item));
+  const menuAuthored = autofill || dynamic ? authored.filter(child => child.presentation.displayed)
+    : tableCommandItems(authored, item => isExplicitAdditional(scalar(item, 'LocationInCommandBar')) || autoAdditional(item));
   const toolbar = scalar(table, 'CommandBarLocation') !== 'None'
     && (commands.length > 0 || authoredCommands || (table.presentation.tableCommandMenu?.some(group => group.length) ?? false));
-  const more = flag(bar, 'Autofill');
+  const more = autofill || !dynamic && menuAuthored.length > 0;
   const searchField = tableSearch(table);
   const topSearch = scalar(table, 'SearchStringLocation') === 'Top' ? searchField : undefined;
-  const search = additions?.search || topSearch ? undefined : searchField;
+  const autoManualSearch = !dynamic && !autofill && scalar(table, 'SearchStringLocation', 'Auto') === 'Auto';
+  const search = additions?.search || topSearch || autoManualSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
   let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
@@ -313,10 +355,13 @@ export function tableLayout(table, state = {}, additions) {
   const searchReserve = linux && searchWidth > 0 ? searchWidth * 10 + 22 - 172 : 0;
   const toolbarMinimum = Math.max(400, toolbar && search ? toolbarWidth + searchReserve : 0);
   const nativeWidth = linux && explicit > 0 ? explicit * 10 : 0;
-  const forcedCommands = bar?.children.some(child => child.presentation.displayed &&
-    ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(child, 'LocationInCommandBar')));
-  const foldableToolbar = linux && !!toolbar && more && !!(nativeWidth || search) && !forcedCommands;
-  const adaptiveToolbar = foldableToolbar && (nativeDynamicList || nativeWidth > 0);
+  const isPinned = item => ['InCommandBar', 'InCommandBarAndInAdditionalSubmenu'].includes(scalar(item, 'LocationInCommandBar'));
+  const forcedCommands = dynamic ? authored.some(child => child.presentation.displayed && isPinned(child))
+    : hasAuthoredPlacement(authored, isPinned);
+  const foldableToolbar = linux && !!toolbar && autofill && !!(nativeWidth || search) && !forcedCommands;
+  // Authored commands can overflow a static table even when the XML leaves its width automatic.
+  const adaptiveAuthoredToolbar = foldableToolbar && nativeColumns && nativeWidth === 0 && authoredCommands;
+  const adaptiveToolbar = adaptiveAuthoredToolbar || (foldableToolbar && (nativeDynamicList || nativeWidth > 0));
   const viewStatusMinimum = chips && (nativeColumns || adaptiveToolbar) ? viewStatusBandMinimum : 0;
   const controlMinWidth = nativeWidth
     ? Math.max(viewStatusMinimum, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
@@ -331,7 +376,7 @@ export function tableLayout(table, state = {}, additions) {
   const flexible = columns.some(column => column.growthWeight);
   const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, foldableToolbar, commands, bar, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, autofill, inlineAuthored, menuAuthored, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

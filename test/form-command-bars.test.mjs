@@ -172,3 +172,29 @@ test('command frame references retain locale minima and ignored XML widths', asy
   assert.deepEqual(popup.locales.ru.frame, [111, 79]);
   assert.deepEqual(popup.locales.en.frame, [142, 79]);
 });
+
+test('nested menu-only commands do not widen the bar or remove their source groups', () => {
+  const direct = node('Button', { CommandName: 'Form.Command.Run' });
+  const additional = node('Button', { CommandName: 'Form.Command.Other', LocationInCommandBar: 'InAdditionalSubmenu' });
+  const inner = node('ButtonGroup', {}, [additional]);
+  const group = node('ButtonGroup', {}, [direct, inner]);
+  const bar = node('CommandBar', {}, [group]);
+  const content = commandBarContent(bar, bar);
+  assert.deepEqual(content.inline, [{ ...group, children: [direct] }]);
+  assert.deepEqual(content.more, [additional]);
+  assert.deepEqual(group.children, [direct, inner]);
+});
+
+test('a sibling right-hand menu retains the authored counterpart of an inline duplicate', () => {
+  const command = 'Form.Command.Run';
+  const direct = node('Button', { CommandName: command, LocationInCommandBar: 'InCommandBarAndInAdditionalSubmenu' });
+  const counterpart = node('Button', { CommandName: command });
+  const primary = node('CommandBar', {}, [node('ButtonGroup', {}, [direct])]);
+  const right = node('CommandBar', { HorizontalLocation: 'Right' }, [counterpart]);
+  const parent = node('UsualGroup', { Group: 'Horizontal' }, [primary, right]);
+  const root = node('Form', {}, [parent]);
+  assert.deepEqual(commandBarContent(root, primary).more, []);
+  assert.deepEqual(commandBarContent(root, primary).inline[0].children, [direct]);
+  assert.deepEqual(commandBarContent(root, right).inline, []);
+  assert.deepEqual(commandBarContent(root, right).more, [counterpart]);
+});

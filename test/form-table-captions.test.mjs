@@ -7,7 +7,6 @@ import {createFontRaster} from '../webview/forms/font-raster.mjs';
 import {buttonCaptionPixels,buttonArrowPixels} from '../webview/forms/button-caption.mjs';
 import {inputBorderPixels} from '../webview/forms/input-border.mjs';
 import {searchClearPixels} from '../webview/forms/search-control.mjs';
-import {tableMovementRgba} from '../webview/forms/table-movement.mjs';
 import {lcdCaptionPixels} from '../webview/forms/lcd-caption.mjs';
 import {controlCaptionOptions,designTextAdvances,segmentedTextAdvances} from '../webview/forms/font-metrics.mjs';
 import {tableScrollbarGrays,tablePaginationGlyphs} from '../webview/forms/table-scrollbar.mjs';
@@ -72,27 +71,6 @@ test('native search fields reuse choice-input corners and preserve the clear gly
  const rgb=Buffer.from(searchClearPixels([77,77,77],[255,255,255]).flat());assert.equal(createHash('sha256').update(rgb).digest('hex'),reference.clearStencil.rgbSha256);
  for(const row of reference.rows)for(const entry of Object.values(row.locales))assert.equal(entry.clearRgbSha256,reference.clearStencil.rgbSha256);
  assert.equal(corners.nativeImagesVerified,8);assert.equal(reference.pixelTolerance,0);assert.deepEqual(reference.comparisonMasks,[]);
-});
-
-test('native automatic movement preserves all 25920 group pixels in sixteen native references',async()=>{
- const matrix=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-table-movement/metrics.json',formReferenceRoot))),rgba=tableMovementRgba(),rgb=Buffer.from([...rgba].filter((value,index)=>index%4!==3));let compared=0;
- for(const row of matrix.rows)for(const [locale,expected]of Object.entries(row.locales)){
-  assert.equal(createHash('sha256').update(rgb).digest('hex'),expected.rgbSha256,row.name+'/'+locale);compared+=60*27;
- }
- assert.equal(compared,25920);assert.equal(matrix.pixelTolerance,0);assert.deepEqual(matrix.comparisonMasks,[]);
-});
-
-test('table movement uses the same border sampler at both native poses', () => {
- const poses = [
-  {position:{x:349,y:268,width:60},sha256:'262596e50156d05e5bd41d59d269e2c15d0dd061bb4115555b86e8c93490a4d3'},
-  {position:{x:383,y:268,width:60},sha256:'262596e50156d05e5bd41d59d269e2c15d0dd061bb4115555b86e8c93490a4d3'},
-  {position:{x:349,y:546,width:60},sha256:'3f0df263dd722b7fd45383166532394cf48c2725c499042a891943c220b02643'},
-  {position:{x:383,y:546,width:60},sha256:'3f0df263dd722b7fd45383166532394cf48c2725c499042a891943c220b02643'},
- ];
- for (const {position,sha256} of poses) {
-  const rgb=tableMovementRgba(position).filter((_,index)=>index%4!==3);
-  assert.equal(createHash('sha256').update(rgb).digest('hex'),sha256,`${position.x},${position.y}`);
- }
 });
 
 test('native list menus preserve all 8355 caption and shortcut pixels', async () => {

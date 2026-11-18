@@ -17,7 +17,7 @@ function reserveWidth(value, width, fullWidth = width) {
 
 /** Measure logical flow boxes, excluding absolute native borders, shadows and selection overlays. */
 export function minimumFormLayout(root, scale, {
-  minimumCaptions, minimumInputs, commandWidth, minimumRows, widthFloors, fixedThroughWidths,
+  minimumCaptions, minimumInputs, commandWidth, commandBarWidths, minimumRows, widthFloors, fixedThroughWidths,
   headingHeights, captionHeightReserves, available, conditionalWidth,
 }) {
   const minima = new Map(), headingFloors = new Map();
@@ -93,6 +93,7 @@ export function minimumFormLayout(root, scale, {
   function item(element) {
     const field = element.querySelector(':scope > .taxi-field-row'), group = element.querySelector(':scope > .taxi-group');
     const pages = element.querySelector(':scope > .taxi-pages'), table = element.querySelector(':scope > .taxi-table-field');
+    const bar = commandBarWidths?.size ? element.querySelector(':scope > .taxi-command-bar[data-form-command-overflow]') : null;
     let value, maximumHeight;
     if (field) {
       const label = field.querySelector(':scope > .taxi-field-label'), control = field.querySelector(':scope > .taxi-field-control');
@@ -141,6 +142,9 @@ export function minimumFormLayout(root, scale, {
         : Math.max(controlWidth, ...children.map(value => value.width + spacing.width));
       value = { width,
         height: children.reduce((sum, value) => sum + value.height, spacing.height) };
+    } else if (bar && commandBarWidths.has(bar)) {
+      value = { ...marginBox(bar), width: commandBarWidths.get(bar) };
+      reserveWidth(value, pixels(element.style.getPropertyValue('--taxi-group-width')));
     } else if (group) {
       value = items(group.querySelector(':scope > .taxi-items'));
       if (value.captionHeight > value.height && element.dataset.stretchY === 'true'

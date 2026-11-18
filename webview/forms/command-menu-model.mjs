@@ -1,4 +1,5 @@
 import { automaticCommands, caption, flag, orderedCommands, property, scalar, text } from './model.mjs';
+import { isDynamicList, tableStandardAction } from './table-model.mjs';
 
 const formCommand = 'Form.StandardCommand.';
 const standardItem = name => ({ key: formCommand + name, caption: { kind: 'standard', key: 'command.' + name } });
@@ -11,6 +12,16 @@ const standardPictures = new Map(Object.entries({
   Delete: 'DeleteListItemDirectly', Post: 'Post', UndoPosting: 'UndoPosting',
   ShowInList: 'ShowInList', ChangeHistory: 'ChangeHistory', CustomizeForm: 'CustomizeForm', Help: 'Help',
 }));
+const tableMenuPictures = new Map([
+  ['Table.StandardCommand.Add', 'Add'],
+  ['Table.StandardCommand.MoveUp', 'MoveUp'],
+  ['Table.StandardCommand.MoveDown', 'MoveDown'],
+]);
+const ordinaryPictures = new Map([
+  ...['Add', 'Copy', 'Change', 'Delete', 'EndEdit', 'CancelSearch', 'MoveUp', 'MoveDown',
+    'SortListAsc', 'SortListDesc', 'OutputList'].map(name => [name, name]),
+  ['Find', 'AdvancedSearch'],
+]);
 export const menuSeparator = Symbol('menu separator');
 
 export function menuNode(item) {
@@ -29,9 +40,17 @@ export function menuCaption(item, state, rootMenu) {
   return text(item.caption, state.locale, state.strings);
 }
 
-export function menuPicture(item, rootMenu) {
+export function menuPicture(item, rootMenu, locale) {
   const picture = item.presentation?.picture ?? item.picture;
-  if (picture || !rootMenu) return picture;
+  if (picture?.variant === 'tableActionMenu' && locale?.startsWith('en')
+      && ['SortListAsc', 'SortListDesc'].includes(picture.name)) {
+    return { ...picture, name: picture.name + 'En' };
+  }
+  if (picture) return picture;
+  if (!rootMenu) {
+    const name = tableMenuPictures.get(item.key);
+    return name ? { kind: 'standard', name, variant: 'tableActionMenu' } : undefined;
+  }
   const name = standardPictures.get(standardAction(item));
   return name ? { kind: 'standard', name } : undefined;
 }
@@ -51,9 +70,9 @@ export function menuItems(items) {
 }
 
 export function menuChildren(item, state) {
-  return item.presentation && item.kind === 'Popup'
-    ? menuItems(item.children.filter(child => child.presentation.displayed))
-    : menuItems(orderedCommands(item.items ?? [], state));
+  if (!item.presentation || item.kind !== 'Popup') return menuItems(orderedCommands(item.items ?? [], state));
+  const children = item.children.filter(child => child.presentation.displayed);
+  return item.ordinaryTableMenu ? sectionItems(ordinaryAuthoredGroups(children)) : menuItems(children);
 }
 
 export function menuEnabled(item) {
@@ -64,23 +83,64 @@ function sectionItems(sections) {
   return sections.filter(group => group.length).flatMap((group, index) => index ? [menuSeparator, ...group] : group);
 }
 
-export function tableCommandRows(table, authored, fallback = [], sections = table.presentation.tableCommandMenu) {
-  const declared = menuItems(authored).filter(item => item !== menuSeparator);
-  const prefix = `Form.Item.${table.name}.StandardCommand.`;
-  const generated = new Map(declared.map(item => {
+function ordinaryAuthoredGroups(items) {
+  const groups = [];
+  let group = [];
+  function finishGroup() {
+    if (group.length) groups.push(group);
+    group = [];
+  }
+  for (const item of items) {
+    if (!item.presentation.displayed || location(item) === 'InCommandBar') continue;
+    if (item.kind === 'ButtonGroup') {
+      const children = ordinaryAuthoredGroups(item.children);
+      if (children.length) {
+        finishGroup();
+        groups.push(...children);
+      }
+    } else {
+      group.push(item.kind === 'Popup' ? { ...item, ordinaryTableMenu: true } : item);
+    }
+  }
+  finishGroup();
+  return groups;
+}
+
+export function tableCommandRows(table, authored, fallback = [], sections = table.presentation.tableCommandMenu, { authoredOnly = false } = {}) {
+  const ordinary = table.kind === 'Table' && !isDynamicList(table);
+  const commandKey = item => {
     const reference = scalar(item, 'CommandName');
-    return [reference.startsWith(prefix) ? 'Table.StandardCommand.' + reference.slice(prefix.length) : reference, item];
-  }));
+    const action = tableStandardAction(table, reference);
+    return action ? 'Table.StandardCommand.' + action : reference;
+  };
+  const generated = sections ?? [fallback];
+  const declared = menuItems(authored).filter(item => item !== menuSeparator);
+  const overrides = new Map(declared.map(item => [commandKey(item), item]));
+  if (ordinary) {
+    const project = item => {
+      const picture = ordinaryPictures.get(item.picture?.name);
+      return picture ? { ...item, picture: { kind: 'standard', name: picture, variant: 'tableActionMenu' } } : item;
+    };
+    const standards = new Map(generated.flat().map(item => [item.key, project(item)]));
+    const groups = authoredOnly ? [] : generated.map(group =>
+      group.filter(item => !overrides.has(item.key)).map(item => standards.get(item.key)));
+    groups.push(...ordinaryAuthoredGroups(authored).map(group =>
+      group.map(item => ({ ...standards.get(commandKey(item)), ...item }))));
+    return sectionItems(groups);
+  }
   const used = new Set();
-  const groups = (sections ?? [fallback]).map(group => group.flatMap(item => {
-    const override = generated.get(item.key);
+  const groups = generated.map(group => group.flatMap(item => {
+    const override = overrides.get(item.key);
     if (!override) return [item];
     used.add(override.key);
     return location(override) === 'InCommandBar' ? [] : [{ ...item, ...override }];
   }));
-  const extra = declared.filter(item => !used.has(item.key) && location(item) !== 'InCommandBar');
-  if (groups.length) groups.at(-1).push(...extra);
-  else groups.push(extra);
+  const extra = item => !used.has(item.key) && location(item) !== 'InCommandBar';
+  if (groups.length) {
+    groups.at(-1).push(...declared.filter(extra));
+  } else {
+    groups.push(declared.filter(extra));
+  }
   return sectionItems(groups);
 }
 

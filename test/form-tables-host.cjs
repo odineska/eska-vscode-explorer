@@ -52,7 +52,7 @@ async function checkSourceBar(ui, view, document, english) {
     const tableOffset = "document.querySelector('.taxi-table-scroll').getBoundingClientRect().y - document.querySelector('.taxi-form-frame').getBoundingClientRect().y";
     await until(() => ui.evaluate(tableOffset + ' === 75'), 'table starts at the native offset below its separate command bar');
   }
-  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] svg')"), true);
+  assert.equal(await ui.evaluate("!!document.querySelector('.taxi-command-bar .taxi-button--icon-only[aria-label=" + JSON.stringify(cancel) + "] img[data-native-picture=vector]')"), true);
   await ui.evaluate("globalThis.__tableSourceBar = document.querySelector('.taxi-command-bar'); true");
   const empty = '<ColumnGroup name="EmptyColumns" id="1000"><Group>Horizontal</Group><ChildItems/></ColumnGroup>';
   await change(withColumn.replace(input, input + empty).replace(/<Table\b[^>]*\bname="Rows"[^>]*>/, '$&<Footer>true</Footer>'));
@@ -211,6 +211,46 @@ exports.run = async function () {
       })()`);
       assert.equal(wide.search, 260, 'search stays bounded in a wide table '+JSON.stringify(wide));
       await until(async () => await ui.evaluate(searchWidth)===initialSearchWidth, 'restored table search width');
+      const trigger = "document.querySelector('.taxi-table-command-bar .taxi-popup[data-table-more] > button')";
+      const setZoom = zoom => ui.evaluate(`(() => {
+        const select = document.querySelector('.form-zoom select');
+        select.value = '${zoom}';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      try {
+        for (const zoom of [75, 100, 125]) {
+          await setZoom(zoom);
+          await until(() => ui.evaluate(`!!${trigger} && ${trigger}.getBoundingClientRect().width > 0`), 'table menu trigger');
+          await ui.evaluate(`${trigger}.click()`);
+          let menuState;
+          await until(async () => {
+            menuState = await ui.evaluate(`({
+              zoom:document.querySelector('.taxi-preview')?.style.zoom,
+              select:document.querySelector('.form-zoom select')?.value,
+              dpr:devicePixelRatio,
+              menuCount:document.querySelectorAll('.taxi-menu').length,
+              icons:[...document.querySelectorAll('.taxi-menu[data-table-menu-level] img[data-native-picture=vector]')].map(icon => ({
+                width:icon.getBoundingClientRect().width,
+                slotWidth:icon.offsetWidth,
+                slotHeight:icon.offsetHeight,
+                naturalWidth:icon.naturalWidth,
+                complete:icon.complete,
+                source:icon.currentSrc.split(',')[0],
+              })),
+            })`);
+            // The installed and current Chromium versions can report different descendant DOMRect units.
+            return Number(menuState.zoom) === zoom / 100 && menuState.icons.length > 0
+              && menuState.icons.every(icon => icon.complete && icon.naturalWidth === 16
+                && icon.source === 'data:image/svg+xml' && icon.slotWidth === 16 && icon.slotHeight === 16
+                && [16, 16 * zoom / 100].includes(icon.width));
+          }, 'loaded ordinary table menu vectors at ' + zoom + '%').catch(error => {
+            throw new Error(error.message + ' ' + JSON.stringify(menuState), { cause:error });
+          });
+          await ui.evaluate(`${trigger}.click()`);
+        }
+      } finally {
+        await setZoom(100);
+      }
     }
     await ui.screenshot(`table-${form.kind}-${vscode.env.language}.png`);
     if (form.kind === 'TableButtonGroup') {

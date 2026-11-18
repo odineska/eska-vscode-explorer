@@ -1,18 +1,19 @@
 import checkboxes from './checkbox-raster.json' with { type: 'json' };
 import radios from './radio-raster.json' with { type: 'json' };
+import { scaleRaster } from './raster-scale.mjs';
 
-export function checkboxGlyph(mode, inactive, backdrop) {
+export function checkboxGlyph(mode, inactive, backdrop, scale = 1) {
   const shape = checkboxes[mode];
-  return glyph(shape, inactive ? shape.inactive : shape.active, backdrop);
+  return glyph(shape, inactive ? shape.inactive : shape.active, backdrop, scale);
 }
 
-export function radioGlyph(selected, inactive, backdrop) {
+export function radioGlyph(selected, inactive, backdrop, scale = 1) {
   const shape = selected ? radios.selected : radios.unselected;
-  return glyph(radios, inactive ? shape.inactive : shape.active, backdrop);
+  return glyph(radios, inactive ? shape.inactive : shape.active, backdrop, scale);
 }
 
 /** The black and white 96-DPI measurements give each pixel's contribution over a solid surface. */
-function glyph({ width, height }, { palette, rows }, backdrop) {
+function glyph({ width, height }, { palette, rows }, backdrop, scale) {
   const colors = palette.map(sample => [
     ...backdrop.map((channel, index) => sample[index] + Math.round(channel * (sample[index + 3] - sample[index]) / 255)),
     255,
@@ -27,5 +28,6 @@ function glyph({ width, height }, { palette, rows }, backdrop) {
       }
     }
   }
-  return { width, height, rgba };
+  return scaleRaster({ width, height, rgba }, Math.max(1, Math.round(width * scale)),
+    Math.max(1, Math.round(height * scale)));
 }

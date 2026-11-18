@@ -32,7 +32,7 @@ function geometryExpression(keys, form, locale) {
       const content={};
       for(const name of Object.keys(${JSON.stringify(expected.buttonContent ?? {})})) {
         const button=control(name),image=button?.querySelector('[data-native-picture]');
-        if(!button||image&&(image.dataset.nativePicture!=='ready'
+        if(!button||image&&(image.dataset.nativePicture!=='vector'
           ||image.tagName==='IMG'&&(!image.complete||image.naturalWidth!==16)))return null;
         const imageBox=image&&(image.closest('.taxi-picture-template')??image).getBoundingClientRect();
         content[name]={text:button.textContent,picture:!!image,pictureInset:imageBox?imageBox.x-button.getBoundingClientRect().x:null};

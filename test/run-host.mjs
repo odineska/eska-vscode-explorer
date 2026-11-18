@@ -82,6 +82,7 @@ try {
   }
   if (["form-editor-host.cjs", "form-preview-window-host.cjs", "form-handler-authoring-host.cjs", "form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs", "form-detached-space-host.cjs", "form-property-catalogue-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
   if (basename(suite) === "form-inspectors-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormInspectorSource(fixture);
+  if (basename(suite) === "form-header-layout-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createHeaderLayoutSource(fixture);
   if (basename(suite) === "form-inspector-navigation-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createInspectorNavigationSource(fixture);
   if (basename(suite) === "form-handlers-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormHandlerSource(fixture);
   if (basename(suite) === "form-renderer-host.cjs") fixture.formGallery = await (await import("./form-fixture.mjs")).createFormGallery(fixture);
