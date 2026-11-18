@@ -413,6 +413,11 @@
         "icon": "$(discard)"
       },
       {
+        "command": "eska.explorer.scm.compareRevisions",
+        "title": "%scmCompareRevisions%",
+        "category": "ESKA"
+      },
+      {
         "command": "eska.explorer.scm.refresh",
         "title": "%scmRefresh%",
         "category": "ESKA",
@@ -573,6 +578,11 @@
       ],
       "view/title": [
         {
+          "command": "eska.explorer.scm.compareRevisions",
+          "when": "view == eska.explorer.scm",
+          "group": "versions@1"
+        },
+        {
           "command": "eska.explorer.applyApplicationTest",
           "when": "view == eska.explorer.projects && eska.explorer.workspaceApplication && isWorkspaceTrusted",
           "group": "runtime@1"
@@ -726,6 +736,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "eska.explorer.scm.compareRevisions",
+          "when": "eska.hasProject"
+        },
         {
           "command": "eska.explorer.openQuery",
           "when": "false"

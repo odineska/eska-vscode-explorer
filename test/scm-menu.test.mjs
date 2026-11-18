@@ -51,7 +51,7 @@ test("1C changes retain their SCM view identity and use native webview menus", a
   const palette = contributes.menus.commandPalette.filter(scmItem);
   assert.equal(palette.length, scmCommands.length);
   for (const { command } of scmCommands) {
-    const when = command === commandId("refresh") ? "eska.hasProject" : "false";
+    const when = [commandId("refresh"), commandId("compareRevisions")].includes(command) ? "eska.hasProject" : "false";
     assert.deepEqual(palette.filter(item => item.command === command), [{ command, when }]);
   }
   assert.ok(contributes.menus["view/title"].some(entry =>
