@@ -1,54 +1,51 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { standardPicture } from './standard-pictures.mjs';
 import { choicePictureBounds, inactiveChoicePicture } from './choice-picture-paint.mjs';
-import { paintCanvas } from './native-control-paint.js';
+import { useStandardPicturePixelScale } from './NativeStandardPicture.jsx';
 
 function ChoicePictureRaster(props) {
   let canvas;
-  const [common, setCommon] = createSignal();
+  const [loaded, setLoaded] = createSignal();
+  const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
   const asset = createMemo(() => {
+    if (standard()) return standard();
     if (props.picture.kind !== 'common') return;
     const picture = props.assets.find(asset => asset.id === props.picture.source)?.picture;
     // Reconciliation preserves the resource identity when an external file changes.
     return picture && { source: `data:${picture.mimeType};base64,${picture.data}`, isTemplate: picture.isTemplate };
   });
-  const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
+  const standardScale = useStandardPicturePixelScale();
+  const pixelScale = () => props.os === 'linux' && standard() && !standard().isTemplate ? standardScale() : undefined;
   createEffect(on(asset, value => {
-    setCommon(undefined);
+    setLoaded(undefined);
     if (!value) return;
     const image = new Image();
-    image.onload = () => setCommon({
+    image.onload = () => setLoaded({
       image, width: image.naturalWidth, height: image.naturalHeight, isTemplate: value.isTemplate,
     });
     image.src = value.source;
     onCleanup(() => { image.onload = null; });
   }));
-  const source = () => standard() ?? common();
-  const bounds = createMemo(() => source() && choicePictureBounds(source(), props.height));
+  const logicalImage = loaded;
+  const bounds = createMemo(() => logicalImage() && choicePictureBounds(logicalImage(), props.height));
   createEffect(() => {
-    const image = source(), box = bounds();
-    if (!canvas || !box) return;
-    canvas.width = box.width;
-    canvas.height = box.height;
+    const image = logicalImage(), box = bounds();
+    if (!canvas || !box || !image) return;
+    const scale = pixelScale();
+    const width = Math.max(1, Math.round(box.width * (scale ?? 1)));
+    const height = Math.max(1, Math.round(box.height * (scale ?? 1)));
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) return;
-    if (image.rgba && image.width === box.width && image.height === box.height) {
-      paintCanvas(canvas, image);
-    } else {
-      let source = image.image;
-      if (image.rgba) {
-        source = document.createElement('canvas');
-        paintCanvas(source, image);
-      }
-      context.drawImage(source, 0, 0, box.width, box.height);
-    }
+    context.drawImage(image.image, 0, 0, width, height);
     if (image.isTemplate) {
       context.globalCompositeOperation = 'source-in';
       context.fillStyle = getComputedStyle(canvas).color;
-      context.fillRect(0, 0, box.width, box.height);
+      context.fillRect(0, 0, width, height);
     }
     if (props.inactive && props.os === 'linux') {
-      const pixels = context.getImageData(0, 0, box.width, box.height);
+      const pixels = context.getImageData(0, 0, width, height);
       inactiveChoicePicture(pixels.data);
       context.putImageData(pixels, 0, 0);
     }
@@ -56,7 +53,11 @@ function ChoicePictureRaster(props) {
   return <Show when={bounds()} fallback={props.fallback}>
     {box => <canvas ref={canvas} class="taxi-input-choice-picture" aria-hidden="true"
       data-choice-picture-inactive={props.inactive ? '' : undefined}
-      style={{ left: `${box().x}px`, top: `${box().y}px` }}/>}
+      style={{
+        left: `${box().x}px`, top: `${box().y}px`,
+        width: pixelScale() ? `${box().width}px` : undefined,
+        height: pixelScale() ? `${box().height}px` : undefined,
+      }}/>}
   </Show>;
 }
 

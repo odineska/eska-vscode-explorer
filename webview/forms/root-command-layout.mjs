@@ -28,7 +28,9 @@ export function measureRootCommands(bar, scale) {
   const centered = bar.dataset.rootCommandAlignment === 'Center';
   const usedWidth = count => widths.slice(0, count).reduce((sum, width) => sum + width,
     tail + Math.max(0, count - (tail ? 0 : 1)) * gap);
-  const minimumWidth = collapses ? tail : usedWidth(widths.length);
+  // The standalone bar cannot send an explicitly inline-only command to its menu.
+  const requiredPrefix = entries.findLastIndex(entry => entry.hasAttribute('data-root-command-required')) + 1;
+  const minimumWidth = usedWidth(collapses ? requiredPrefix : widths.length);
   return {
     minimumWidth,
     allocate() {
@@ -39,7 +41,8 @@ export function measureRootCommands(bar, scale) {
       const style = getComputedStyle(bar);
       // Centering adds an inset after fitting. Always fit against the entire command area.
       const available = borderBoxSize(bar, scale).width - boxInsets(style).width + pixels(style.paddingInlineStart);
-      const visible = collapses ? fitCommandPrefix(widths, available, tail, gap) : widths.length;
+      const visible = collapses
+        ? Math.max(requiredPrefix, fitCommandPrefix(widths, available, tail, gap)) : widths.length;
       if (collapses) entries.forEach((entry, index) => entry.toggleAttribute('data-root-command-hidden', index >= visible));
       if (centered) {
         const offset = Math.max(0, Math.floor((available - usedWidth(visible)) / 2));

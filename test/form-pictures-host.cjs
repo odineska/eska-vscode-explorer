@@ -12,6 +12,18 @@ async function editText(document, from, to) {
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
 
+const menuWithinWebview = selector => `(() => {
+  const menu = document.querySelector(${JSON.stringify(selector)});
+  if (!menu) return false;
+  const raw = menu.getBoundingClientRect(), css = getComputedStyle(menu);
+  const zoom = Number(document.querySelector('.form-zoom select').value) / 100;
+  const logicalWidth = parseFloat(css.width) + (css.boxSizing === 'border-box' ? 0
+    : parseFloat(css.paddingLeft) + parseFloat(css.paddingRight) + parseFloat(css.borderLeftWidth) + parseFloat(css.borderRightWidth));
+  const factor = zoom * logicalWidth / raw.width;
+  return raw.left * factor >= 0 && raw.right * factor <= innerWidth
+    && raw.top * factor >= 0 && raw.bottom * factor <= innerHeight;
+})()`;
+
 async function exerciseRootMore(ui, view) {
   const more = '.taxi-root-commands [data-root-menu] > button';
   const rows = '.taxi-root-commands [data-root-menu] [role=menuitem]';
@@ -20,28 +32,49 @@ async function exerciseRootMore(ui, view) {
     const surface = document.querySelector('.preview-scroll');
     const style = surface.style.cssText;
     globalThis.__generatedButton = document.querySelector('[data-command-key$="/command:GeneratedIcon"]');
-    surface.style.width = '320px';
+    const zoom = Number(document.querySelector('.form-zoom select').value) / 100;
+    surface.style.width = (320 * zoom) + 'px';
     return style;
   })()`);
   const snapshot = view.snapshot, selected = view.selected;
   await until(() => ui.evaluate("globalThis.__generatedButton.getBoundingClientRect().width === 0"),
     'generated command moves out of the narrowed bar');
   await clickMore();
-  await until(() => ui.evaluate(`[...document.querySelectorAll(${JSON.stringify(rows)})]
-    .some(row => row.getAttribute('aria-label') === 'GeneratedIcon' && row.querySelector('img'))`),
-    'More includes the hidden generated command and its picture');
-  const rendered = await ui.evaluate(`(() => {
+  await until(() => ui.evaluate(`(() => {
+    const row = [...document.querySelectorAll(${JSON.stringify(rows)})]
+      .find(item => item.getAttribute('aria-label') === 'GeneratedIcon');
+    const inlineImage = globalThis.__generatedButton.querySelector('img');
+    const image = row?.querySelector('img');
+    if (!inlineImage || !image?.naturalWidth || image.src !== inlineImage.src) return false;
+    const caption = row.querySelector(':scope > [data-native-label]');
+    if (!caption) return row.innerText.trim() === 'GeneratedIcon';
+    const visible = element => element?.getBoundingClientRect().width > 0 && getComputedStyle(element).visibility === 'visible';
+    return caption.textContent === 'GeneratedIcon' && (visible(caption) || visible(caption.nextElementSibling));
+  })()`), 'More displays the same icon with a visible caption for an icon-only command');
+  await until(() => ui.evaluate(menuWithinWebview('[data-root-menu-level]')), 'floating More stays in the webview');
+  const disabled = '[data-root-menu-level] [aria-label="Disabled command"]';
+  const focused = await ui.evaluate(`(() => {
     const menu = document.querySelector('[data-root-menu-level]');
-    const rect = menu.getBoundingClientRect();
+    const button = menu.querySelector(${JSON.stringify(disabled)});
+    if (button?.getAttribute('aria-disabled') !== 'true') return null;
+    const active = menu.querySelector('.active');
+    button.focus({ preventScroll: true });
+    button.dispatchEvent(new MouseEvent('mouseenter'));
+    button.click();
+    return { inactive: !button.classList.contains('active'), retained: menu.querySelector('.active') === active };
+  })()`);
+  assert.deepEqual(focused, { inactive: true, retained: true }, 'focus, hover and activation keep disabled menu rows inactive');
+  await ui.evaluate(`(() => {
+    const menu = document.querySelector('[data-root-menu-level]');
     const button = [...menu.querySelectorAll('[role=menuitem]')].find(row => row.getAttribute('aria-label') === 'PrintProbe');
     button.focus();
     button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
   })()`);
-  assert.equal(rendered, true, 'floating More stays in the webview');
   await until(() => ui.evaluate(`[...document.querySelectorAll('[data-root-menu-level] [data-root-menu-level] [role=menuitem]')]
     .map(row => row.getAttribute('aria-label')).join('|') === 'Invoice|Local receipt'`),
     'keyboard opens the nested metadata group');
+  await until(() => ui.evaluate(menuWithinWebview('[data-root-menu-level] [data-root-menu-level]')),
+    'floating submenu stays in the webview');
   await ui.evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   await until(() => ui.evaluate("document.activeElement?.getAttribute('aria-label') === 'PrintProbe'"),
     'Escape returns focus to the group row');
@@ -138,6 +171,15 @@ exports.run = async function() {
   await until(async () => (await groupItems()).length === 0, 'selecting an automatic menu item closes the menu');
   assert.deepEqual(view.selected, selection, 'preview menu does not execute a command');
   await exerciseRootMore(ui, view);
+  for (const zoom of [75, 125, 150]) {
+    await ui.evaluate(`(() => {const select=document.querySelector('.form-zoom select');select.value='${zoom}';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await until(() => ui.evaluate(`document.querySelector('.taxi-preview').style.zoom==='${zoom / 100}'`), 'picture form zoom applied');
+    await allocateFormViewport(ui, [1160 * zoom / 100, 640]);
+    await exerciseRootMore(ui, view);
+  }
+  await ui.evaluate(`(() => {const select=document.querySelector('.form-zoom select');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await until(() => ui.evaluate("document.querySelector('.taxi-preview').style.zoom==='1'"), 'picture form zoom restored');
+  await allocateFormViewport(ui, [1160, 640]);
 
   await fs.writeFile(form.one, original.replace('red', 'green'));
   const saved = await dataUrl(form.one);

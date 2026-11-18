@@ -44,7 +44,7 @@ exports.run=async(options={})=>{
       const links = [...document.querySelectorAll('.taxi-button--link')];
       const ordinary = links.filter(button => button.dataset.buttonType === 'Hyperlink');
       const commandBar = links.filter(button => button.dataset.buttonType === 'CommandBarHyperlink');
-      return links.length === 4 && links.every(button => button.querySelector('[data-native-picture=ready]'))
+      return links.length === 4 && links.every(button => button.querySelector('[data-native-picture=vector]'))
         && ordinary.length === 2 && ordinary.every(button => button.textContent && button.querySelector('[data-native-link=browser]'))
         && commandBar.length === 2 && commandBar.every(button => !button.textContent && button.getAttribute('aria-label'));
     })()`), 'ordinary links show text and pictures, command bar links show accessible icon-only buttons');

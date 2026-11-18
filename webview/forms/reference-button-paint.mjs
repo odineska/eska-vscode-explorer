@@ -1,65 +1,15 @@
-import { referenceButtonSlotWidth } from './model.mjs';
-import { searchClearPixels } from './search-control.mjs';
-
-function image(rows) {
-  const inks = new Map();
-  for (const [y, row] of rows.entries()) {
-    for (const [x, gray] of row.entries()) {
-      if (gray === 255) continue;
-      inks.set(gray, (inks.get(gray) ?? '') + `M${x} ${y}h1v1h-1z`);
-    }
-  }
-  const paths = [...inks].map(([gray, d]) => `<path d="${d}" fill="rgb(${gray},${gray},${gray})"/>`).join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${rows[0].length}" height="${rows.length}" shape-rendering="crispEdges">${paths}</svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-}
-
-const clearRows = inactive => {
-  const pixels = searchClearPixels([77, 77, 77], [255, 255, 255], inactive);
-  return Array.from({ length: 7 }, (_, row) => pixels.slice(row * 7, (row + 1) * 7).map(([gray]) => gray));
+const glyphs = {
+  dropdown: { width: 7, height: 5, fill: 'M0 0.75h7L3.5 4.5z' },
+  choice: { width: 9, height: 3, fill: 'M0 1h2v2H0z M3.5 1h2v2h-2z M7 1h2v2H7z' },
+  clear: { width: 9, height: 9, stroke: 'M1.5 1.5l6 6m0-6-6 6' },
+  open: { width: 11, height: 11, stroke: 'M3.5 3.5v-3h7v7h-3 M0.5 3.5h7v7h-7z' },
+  calendar: { width: 11, height: 11, stroke: 'M1 2.5h9v8H1z M1 5h9 M3.5 0.75V3.5 M7.5 0.75V3.5', fill: 'M3 7h1.5v1.5H3z M6.5 7H8v1.5H6.5z' },
+  calculator: { width: 9, height: 11, stroke: 'M1 0.75h7v9.5H1z M1 4h7', fill: 'M2.5 5.25H4v1.5H2.5z M5 5.25h1.5v1.5H5z M2.5 7.75H4v1.5H2.5z M5 7.75h1.5v1.5H5z' },
+  'spin-up': { width: 5, height: 3, fill: 'M0 3L2.5 0l2.5 3z' },
+  'spin-down': { width: 5, height: 3, fill: 'M0 0h5L2.5 3z' },
 };
 
-const openRows = [
-  '...xxxxxx', '...x....x', '...x....x',
-  'xx.x....x', 'x..x....x', 'x..xxxxxx',
-  'x........', 'x....x...', 'xxxxxx...',
-];
-
-// Offsets are measured inside the slot, after its left divider and top border.
-const stencils = {
-  dropdown: {
-    x: 7, y: 8,
-    images: [
-      image([[109, 77, 77, 77, 108], [250, 89, 77, 89, 250], [255, 234, 91, 234, 255]]),
-      image([[180, 164, 164, 164, 180], [252, 170, 164, 170, 252], [255, 244, 171, 244, 255]]),
-    ],
-  },
-  choice: { x: 6, y: 13, images: [77, 164].map(gray => image([[gray, 255, 255, gray, 255, 255, gray]])) },
-  clear: { x: 6, y: 6, images: [false, true].map(inactive => image(clearRows(inactive))) },
-  open: {
-    x: 6, y: 5,
-    images: [77, 164].map(gray => image(openRows.map(row => [...row].map(pixel => pixel === 'x' ? gray : 255)))),
-  },
-};
-const spinUp = [image([[239, 96, 241], [101, 77, 104]]), image([[247, 173, 247], [176, 164, 177]])];
-const spinDown = [image([[103, 77, 100], [241, 96, 239]]), image([[177, 164, 175], [247, 173, 247]])];
-
-function at(imageUrl, x, y) {
-  return `${imageUrl} ${x}px ${y}px no-repeat`;
-}
-
-/** Shared image sources keep the repeated glyphs out of the form's DOM tree. */
-export function referenceButtonBackground(kind, height, inactive) {
-  const variant = Number(inactive);
-  if (kind === 'spin') {
-    const middle = Math.floor(height / 2);
-    const border = 'var(--taxi-input-button-border, #a0a0a0)';
-    return [
-      at(spinUp[variant], 8, Math.max(5, Math.floor((middle - 1) / 2)) - 1),
-      at(spinDown[variant], 8, Math.floor((height + middle - 4) / 2) - 1),
-      `linear-gradient(${border}, ${border}) 0 ${middle - 1}px / ${referenceButtonSlotWidth - 1}px 1px no-repeat`,
-    ].join(', ');
-  }
-  const { x, y, images } = stencils[kind];
-  return at(images[variant], x, y + Math.round((height - 23) / 2));
+export function inputButtonGlyphs(kind) {
+  const roles = kind === 'spin' ? ['spin-up', 'spin-down'] : [kind];
+  return roles.map(role => ({ role, ...glyphs[role] }));
 }

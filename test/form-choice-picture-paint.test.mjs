@@ -24,7 +24,7 @@ test('inactive artwork keeps alpha and matches native opaque sample colors', () 
   assert.deepEqual([...pixels], [144, 144, 144, 255, 207, 207, 207, 255, 180, 162, 162, 255, 0, 0, 0, 0]);
   for (const name of ['StdPicture.MoveLeft', 'StdPicture.OpenFile']) {
     const picture = standardPicture(name);
-    assert.equal(picture.rgba.length, 16 * 16 * 4);
-    assert.ok(picture.rgba.some(value => value === 255));
+    assert.deepEqual(choicePictureBounds(picture, 23), { x: 2, y: 2, width: 16, height: 16 });
+    assert.match(picture.source, /^data:image\/svg\+xml,/);
   }
 });

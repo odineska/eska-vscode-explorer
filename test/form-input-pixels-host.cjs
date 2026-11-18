@@ -18,7 +18,20 @@ exports.runGallery=async(options)=>{
     await until(()=>ui.evaluate("!document.querySelector('[data-native-label=pending]')"),'input labels settled');
     await options.beforeSample?.({ui,expected,label});
     await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
-    const geometry=await ui.evaluate(`(() => {const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};return {frame:rect(document.querySelector('.taxi-form-frame')),inputs:[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden').map(input=>({...rect(input),outset:Number(input.dataset.nativeOutset),buttons:[...input.querySelectorAll('.taxi-input-button')].map(button=>button.dataset.referenceButton??null)}))};})()`);
+    const geometry=await ui.evaluate(`(() => {
+      const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+      const inputs=[...document.querySelectorAll('.taxi-input')].filter(input=>getComputedStyle(input).visibility!=='hidden');
+      return {
+        frame:rect(document.querySelector('.taxi-form-frame')),
+        inputs:inputs.map(input=>({
+          ...rect(input),outset:Number(input.dataset.nativeOutset),
+          buttons:[...input.querySelectorAll('.taxi-input-button')].map(button=>button.dataset.referenceButton??null),
+          glyphs:[...input.querySelectorAll('svg[data-input-glyph]')].map(glyph=>({
+            ...rect(glyph),role:glyph.dataset.inputGlyph,slot:rect(glyph.closest('.taxi-input-button')),
+          })),
+        })),
+      };
+    })()`);
     const regions=[],geometryIssues=[];
     if(options.verifyFrame&&(geometry.frame.width!==expected.frame[0]||geometry.frame.height!==expected.frame[1]))geometryIssues.push({frame:geometry.frame,expected:expected.frame});
     for(const [index,input] of geometry.inputs.entries()){
@@ -26,9 +39,26 @@ exports.runGallery=async(options)=>{
       const expectedButtons=field.buttons??(field.choice?[null]:[]);
       if(JSON.stringify([x,y,w,h])!==JSON.stringify(field.rect)||JSON.stringify(input.buttons)!==JSON.stringify(expectedButtons))geometryIssues.push({name:field.name,actual:[x,y,w,h],expected:field.rect,buttons:input.buttons,expectedButtons});
       if(field.cornersRgb)for(const [corner,cx,cy] of [['topLeft',x,y],['topRight',x+w-3,y],['bottomLeft',x,y+h-3],['bottomRight',x+w-3,y+h-3]])regions.push({name:field.name+' '+corner,x:cx,y:cy,width:3,height:3,hex:field.cornersRgb[corner]});
-      if(field.wholeInputRgbSha256&&(options.verifyDates||field.type?.kind!=='date'))regions.push({name:field.name+' whole',x,y,width:w,height:h,sha:field.wholeInputRgbSha256});
-      for(const {name,rect:[left,top,width,height],rgbSha256} of field.paintAreas??[])regions.push({name:field.name+' '+name,x:x+left,y:y+top,width,height,sha:rgbSha256});
-      if(['calculator','calendar'].includes(field.button?.kind)){const [bx,by,bw,bh]=field.button.rect;regions.push({name:field.name+' '+field.button.kind,x:bx+x-field.rect[0],y:by+y-field.rect[1],width:bw,height:bh,sha:field.button.rgbSha256});}
+      if(!input.glyphs.length&&field.wholeInputRgbSha256&&(options.verifyDates||field.type?.kind!=='date'))regions.push({name:field.name+' whole',x,y,width:w,height:h,sha:field.wholeInputRgbSha256});
+      for(const {name,rect:[left,top,width,height],rgbSha256} of field.paintAreas??[]){
+        const gx=input.x+left,gy=input.y+top;
+        const overlapsGlyph=input.glyphs.some(glyph=>glyph.x<gx+width&&glyph.x+glyph.width>gx
+          &&glyph.y<gy+height&&glyph.y+glyph.height>gy);
+        if(!overlapsGlyph)regions.push({name:field.name+' '+name,x:x+left,y:y+top,width,height,sha:rgbSha256});
+      }
+      if(options.verifyReferenceGlyphs){
+        const actual=input.glyphs.map(glyph=>glyph.role);
+        const roles=expectedButtons.flatMap(role=>role==='spin'?['spin-up','spin-down']:role?[role]:[]);
+        if(JSON.stringify(actual)!==JSON.stringify(roles))geometryIssues.push({name:field.name,glyphs:actual,expectedGlyphs:roles});
+      }
+      if(['calculator','calendar'].includes(field.button?.kind)){
+        const glyph=input.glyphs.find(glyph=>glyph.role===field.button.kind);
+        const width=field.button.kind==='calculator'?9:11;
+        if(!glyph||glyph.width!==width||glyph.height!==Math.min(11,glyph.slot.height)||glyph.x<glyph.slot.x||glyph.y<glyph.slot.y
+          ||glyph.x+glyph.width>glyph.slot.x+glyph.slot.width||glyph.y+glyph.height>glyph.slot.y+glyph.slot.height){
+          geometryIssues.push({name:field.name,expectedGlyph:field.button.kind,glyph});
+        }
+      }
     }
     if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${options.prefix}-geometry-${label}-${vscode.env.language}.json`),JSON.stringify(geometry));
     const filename=`${options.prefix}-${label}-${vscode.env.language}.png`;let pixels,captureAttempts=0;
@@ -58,7 +88,7 @@ exports.runGallery=async(options)=>{
     const mismatches=[];
     for(const [index,actual] of pixels.results.entries()){const target=regions[index];if(target.hex?actual.hex!==target.hex:actual.sha!==target.sha)mismatches.push({actual,target});}
     if(mismatches.length||geometryIssues.length){failures.push({label,mismatches,geometryIssues});if(process.env.ESKA_SCREENSHOT_DIR)await fs.writeFile(path.join(process.env.ESKA_SCREENSHOT_DIR,`${options.prefix}-failure-${vscode.env.language}.json`),JSON.stringify(failures,null,2));}
-    return {name:label,geometry,captureAttempts,cornerPixelsCompared:regions.filter(r=>r.hex).reduce((v,r)=>v+r.width*r.height,0),wholeWidgetPixelsCompared:regions.filter(r=>r.name.endsWith(' whole')).reduce((v,r)=>v+r.width*r.height,0),calculatorPixelsCompared:regions.filter(r=>r.name.endsWith(' calculator')).reduce((v,r)=>v+r.width*r.height,0),calendarPixelsCompared:regions.filter(r=>r.name.endsWith(' calendar')).reduce((v,r)=>v+r.width*r.height,0),pixelsCompared:pixels.results.reduce((v,r)=>v+r.pixels,0)};
+    return {name:label,geometry,captureAttempts,cornerPixelsCompared:regions.filter(r=>r.hex).reduce((v,r)=>v+r.width*r.height,0),wholeWidgetPixelsCompared:regions.filter(r=>r.name.endsWith(' whole')).reduce((v,r)=>v+r.width*r.height,0),pixelsCompared:pixels.results.reduce((v,r)=>v+r.pixels,0)};
   }
   for(const form of gallery.forms){
     const before=await fs.readFile(form.path),document=await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));await vscode.window.showTextDocument(document,{preview:false});await vscode.commands.executeCommand('eska.explorer.previewForm');

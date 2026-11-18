@@ -208,8 +208,12 @@ async function frame(tab) {
         const element = document.querySelector(${JSON.stringify(selector)});
         if (!element) return;
         const rect = element.getBoundingClientRect();
-        const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + Math.min(8, rect.height / 2));
-        if (document.elementFromPoint(x, y) === element) return {x,y};
+        const zoom = Number(element.closest('.taxi-preview')?.style.zoom) || 1;
+        for (const scale of new Set([1, zoom])) {
+          const x = Math.round((rect.x + rect.width / 2) * scale);
+          const y = Math.round((rect.y + Math.min(8, rect.height / 2)) * scale);
+          if (element.contains(document.elementFromPoint(x, y))) return {x, y};
+        }
       })()`, returnByValue:true}, context.sessionId);
       if (!result.value) throw new Error('Drag target is outside the webview: ' + selector);
       const {x,y} = result.value, target = {x:x+distance,y};
@@ -290,12 +294,19 @@ async function frame(tab) {
       } finally { if (session) await send('Target.detachFromTarget', { sessionId: session.sessionId }); }
     },
     /** Hover or click the actual control within this test's webview, including CSS hover states. */
-    async pointer(selector, click = false) {
+    async pointer(selector, click = false, position = { x: 0.5, y: 0.5 }) {
       const point = await this.evaluate(`(() => {
         const element = document.querySelector(${JSON.stringify(selector)});
         if (!element) return;
         const rect = element.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        const position = ${JSON.stringify(position)};
+        const point = { x: rect.x + rect.width * position.x, y: rect.y + rect.height * position.y };
+        const zoom = Number(element.closest('.taxi-preview')?.style.zoom) || 1;
+        for (const scale of new Set([1, zoom])) {
+          const x = point.x * scale, y = point.y * scale;
+          if (element.contains(document.elementFromPoint(x, y))) return {x, y};
+        }
+        return point;
       })()`);
       if (!point) throw new Error('missing pointer control: ' + selector);
       await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, button: 'none' }, context.sessionId);

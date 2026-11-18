@@ -71,7 +71,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
   const [aboveTitles, setAboveTitles] = createSignal(new Set());
   const [decorations, setDecorations] = createSignal(new Map());
   let active = true, mounted = false, scheduled, needsPreferred = true, needsMinimum = true;
-  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, throughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, allocateCommandBars, decorationsLayout;
+  let unitedRows, unitedColumns, numericRows, adaptiveTitles, checkboxes, dateBlocks, minimumRows, minimumCaptions, throughCaptions, rootCommands, allocateGroupRows, allocateTableCommands, commandBars, decorationsLayout;
   let allocateInlineRows, pageFits, natural, referenceFrame, needsNatural = true, referencePending = true;
   let headingTitles = [];
   const headingHeights = new Map();
@@ -190,7 +190,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         minimumRows = new Map([...unitedColumns.minimumRows, ...adaptiveTitles.minimumRows, ...checkboxes.minimumRows, ...dateBlocks.minimumRows]);
         unitedRows.capturePreferredColumns(dateBlocks.titleFloors, unitedColumns.fixedThroughWidths);
         allocateGroupRows = boundedGroupRows(root, scale, alignment);
-        allocateCommandBars = commandBarLayout(root, context);
+        commandBars = commandBarLayout(root, context);
       }
       const stacked = rows.filter(items => activeWrap.has(items.dataset.layoutOwner));
       if (needsNatural && stacked.length) {
@@ -230,7 +230,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         : size().width > 0 ? size().width / (state.ui.zoom / 100) - 8 : Infinity;
       const measured = minimumFormLayout(root, boundingScale(root), {
         minimumCaptions, minimumInputs: throughCaptions.minimumInputs,
-        commandWidth: rootCommands?.minimumWidth, minimumRows, widthFloors: unitedColumns.widthFloors,
+        commandWidth: rootCommands?.minimumWidth, commandBarWidths: commandBars.minima, minimumRows, widthFloors: unitedColumns.widthFloors,
         fixedThroughWidths: unitedColumns.fixedThroughWidths, headingHeights, captionHeightReserves, available, conditionalWidth: state.os === 'linux',
       });
       setGeometry(measured);
@@ -297,7 +297,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       schedule();
     }
     allocateGroupRows(geometry().minima);
-    allocateCommandBars(geometry().minima);
+    commandBars.allocate(geometry().minima);
     for (const title of headingTitles) {
       const bounds = rect(title);
       if (bounds.height <= 0) continue;

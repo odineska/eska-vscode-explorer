@@ -102,13 +102,19 @@ export function controller(api) {
     if ((!event.ctrlKey && !event.metaKey) || event.altKey || event.isComposing) return;
     if (event.code === 'KeyS' && dirty()) {
       event.preventDefault();
+      event.stopPropagation();
       save();
       return;
     }
     if (event.target?.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
     const action = event.code === 'KeyZ' ? (event.shiftKey ? 'redo' : 'undo')
       : event.code === 'KeyY' ? 'redo' : undefined;
-    if (action && (history()[action] || fieldPending())) { event.preventDefault(); void replayForm(action); }
+    if (action && (history()[action] || fieldPending())) {
+      event.preventDefault();
+      // VS Code forwards window-level webview shortcuts back to the workbench.
+      event.stopPropagation();
+      void replayForm(action);
+    }
   }
   function openEditor(intent, target, section, placement) {
     if (!writable() || edit() || replaying()) return;
@@ -126,6 +132,7 @@ export function controller(api) {
   }
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
   const [previewReveal, setPreviewReveal] = createSignal('', { equals: false });
+  const [treeReveal, setTreeReveal] = createSignal('', { equals: false });
   // Store proxies cannot cross VS Code's structured-clone message boundary.
   const post = value => api.postMessage(unwrap(value));
   const navigationState = () => ({pages:unwrap(state.ui.pages),collapsed:unwrap(state.ui.collapsed)});
@@ -203,8 +210,7 @@ export function controller(api) {
       if (value.type === 'selection') {
         if (value.identity) {
           selectIdentity(value.identity, value.external === true);
-          if (value.external) revealInInspector(value.identity);
-          persist();
+          persist(value.external && revealInInspector(value.identity));
         }
         return;
       }
@@ -248,22 +254,30 @@ export function controller(api) {
   }
   window.addEventListener('message', receive);
   function revealInInspector(identity) {
-    if (state.role !== 'main') return;
-    const path = formElementPath(state.model?.root, key({ identity }));
-    if (!path.length) return;
-    const folded = { ...state.ui.folded };
-    for (const ancestor of path.slice(0, -1)) delete folded[ancestor.key];
-    set('ui', 'folded', folded);
+    if (state.role !== 'main') return false;
+    const selected = key({ identity });
+    const path = formElementPath(state.model?.root, selected);
+    if (!path.length) return false;
+    const folds = path.slice(0, -1).filter(node => state.ui.folded[node.key]);
+    const changed = folds.length > 0 || state.ui.treeTab !== 'elements';
+    if (folds.length) {
+      const folded = { ...state.ui.folded };
+      for (const ancestor of folds) delete folded[ancestor.key];
+      set('ui', 'folded', reconcile(folded));
+    }
     set('ui', 'treeTab', 'elements');
     set('ui', 'inspectedData', '');
+    setTreeReveal(selected);
+    return changed;
   }
   const select = (node, reveal = false) => {
+    let changed = false;
     batch(() => {
       selectIdentity(node.identity, true);
-      if (reveal) revealInInspector(node.identity);
+      if (reveal) changed = revealInInspector(node.identity);
     });
     post({ type: 'select', identity: node.identity });
-    persist();
+    persist(changed);
   };
   const showOnForm = node => {
     select(node);
@@ -274,13 +288,13 @@ export function controller(api) {
     post({ type: 'copyInspectorType', value });
   };
   const ui = (name, value) => {
-    set('ui', name, value);
+    set('ui', name, name === 'folded' ? reconcile(value) : value);
     const shared = name === 'pages' || name === 'collapsed';
     if (shared) shareNavigation();
     persist(!shared);
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });
-  return { state, selection, select, ui, post, previewReveal, showOnForm, copyType, openEditor, edit, editStatus, closeEditor,
+  return { state, selection, select, ui, post, previewReveal, treeReveal, showOnForm, copyType, openEditor, edit, editStatus, closeEditor,
     history, replaying, replayForm, historyKey, draftAction, change, save, dirty, writable, editHandler, handlerBusy, propertyReveal, revealProperty, dataReveal, revealData,
     fieldPending, scheduleField, flushField, discardField, nextFieldId: () => fieldPrefix + ++fieldId,
     dispose: () => {

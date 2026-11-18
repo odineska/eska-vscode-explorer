@@ -20,7 +20,6 @@ export function Inspector(props) {
   const pluralRules = createMemo(() => new Intl.PluralRules(state.locale));
   const detached = () => props.layout.mode === 'detached';
   const [dataReveal, setDataReveal] = createSignal('', { equals: false });
-  const [treeReveal, setTreeReveal] = createSignal('', { equals: false });
   createEffect(on(c.dataReveal, setDataReveal));
   const selectData = row => c.ui('inspectedData', row.id);
 
@@ -39,16 +38,7 @@ export function Inspector(props) {
       setDataReveal(row.id);
     });
   }
-  function showElement(row) {
-    batch(() => {
-      const folds = { ...state.ui.folded }, nodes = index().nodes;
-      for (let parent = nodes.get(row.parent); parent; parent = nodes.get(parent.parent)) delete folds[parent.key];
-      c.ui('folded', folds);
-      c.ui('treeTab', 'elements');
-      c.select(row.node);
-      setTreeReveal(row.key);
-    });
-  }
+  const showElement = row => c.select(row.node, true);
   function dataTarget(row) {
     if (row.definition) return { kind: 'definition', section: row.section, name: row.definition.name };
     if (row.origin) return { kind: 'dataPath', path: row.path.split('.') };
@@ -64,7 +54,7 @@ export function Inspector(props) {
     style={{ 'grid-template-columns': props.layout.tracks, '--form-attached-height': state.ui.upper + 'px',
       '--form-detached-height': state.ui.detachedUpper + 'px' }}>
     <StructurePane controller={c} index={index()} terms={terms} activeData={activeData()}
-      reveal={treeReveal()} selectData={selectData}/>
+      selectData={selectData}/>
     <Splitter vertical class="form-splitter form-splitter--vertical form-inspector-sash--structure"
       label={state.strings.resizeStructure} range={{ minimum: props.layout.leftMinimum, maximum: props.layout.leftMaximum }}
       value={() => props.layout.left} factor={() => 100 / props.layout.width}

@@ -1,0 +1,231 @@
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  background: var(--vscode-sideBar-background);
+  font: var(--vscode-font-weight) var(--vscode-font-size)/1.4 var(--vscode-font-family);
+}
+
+.scm-repository + .scm-repository {
+  margin-top: 8px;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.scm-heading, .scm-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 22px;
+  gap: 4px;
+  padding-inline: 8px 10px;
+  box-sizing: border-box;
+}
+
+.scm-repo-heading, .scm-group-heading {
+  color: var(--vscode-sideBarSectionHeader-foreground, inherit);
+  background: var(--vscode-sideBarSectionHeader-background);
+  font-weight: 600;
+}
+
+.scm-repo-heading {
+  min-height: 26px;
+  padding-left: 12px;
+}
+
+.scm-label, .scm-description, .scm-branch > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scm-branch, .scm-description {
+  color: var(--vscode-descriptionForeground);
+  font-size: .92em;
+}
+
+.scm-branch {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  font-weight: normal;
+}
+
+.scm-editor {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+}
+
+.scm-editor textarea {
+  box-sizing: border-box;
+  min-height: 42px;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.scm-editor textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.eska-button {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.eska-button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.eska-button:focus-visible, .scm-editor textarea:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.scm-commit {
+  justify-content: center;
+  min-height: 25px;
+  gap: 5px;
+  border-color: var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.scm-commit:hover:enabled {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.scm-toggle, .scm-row-target {
+  flex: 1;
+  min-width: 0;
+  min-height: 22px;
+  text-align: left;
+  gap: 4px;
+}
+
+.scm-toggle > span:first-child {
+  display: inline-flex;
+}
+
+.scm-chevron-open {
+  transform: rotate(90deg);
+}
+
+.scm-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scm-actions {
+  display: flex;
+  align-items: center;
+  margin-inline-start: auto;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scm-heading:hover .scm-actions, .scm-heading:focus-within .scm-actions,
+.scm-row:hover .scm-actions, .scm-row:focus-within .scm-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (any-pointer: coarse) {
+  .scm-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.scm-icon-button {
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.scm-icon-button:hover:enabled {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.scm-count {
+  padding: 0 5px;
+  border-radius: 8px;
+  font: normal 11px/16px var(--vscode-font-family);
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.scm-rows {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.scm-row {
+  padding-inline-start: 22px;
+}
+
+.scm-row:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-list-hoverForeground, inherit);
+}
+
+.scm-row.scm-selected {
+  background: var(--vscode-list-inactiveSelectionBackground);
+  color: var(--vscode-list-inactiveSelectionForeground, inherit);
+}
+
+.scm-row.scm-selected:focus-within {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
+.scm-row.scm-selected:focus-within .scm-description {
+  color: inherit;
+}
+
+.scm-status {
+  min-width: 11px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.scm-empty, .scm-notice {
+  padding: 6px 12px;
+  overflow-wrap: anywhere;
+}
+
+.scm-empty {
+  color: var(--vscode-descriptionForeground);
+}
+
+.scm-row-target .scm-label {
+  flex: 0 0 auto;
+  max-width: calc(100% - 20px);
+}
+
+.scm-row-target .scm-description {
+  min-width: 0;
+}

@@ -19,6 +19,38 @@ export async function createFormSource(fixture) {
   return { path: join(fixture.source, 'CommonForms', 'Preview', 'Ext', 'Form.xml'), second: join(fixture.source, 'CommonForms', 'Second', 'Ext', 'Form.xml'), text };
 }
 
+export async function createHeaderLayoutSource(fixture) {
+  const form = await createFormSource(fixture);
+  const title = (ru, en) => `<Title>${[['ru', ru], ['en', en]].map(([language, caption]) =>
+    `<v8:item><v8:lang>${language}</v8:lang><v8:content>${caption}</v8:content></v8:item>`).join('')}</Title>`;
+  const input = (name, id, caption, properties = '') => `<InputField name="${name}" id="${id}">${caption}
+    <DataPath>${name}</DataPath>${properties}</InputField>`;
+  const group = (name, id, grouping, children) => `<UsualGroup name="${name}" id="${id}"><Group>${grouping}</Group>
+    <ShowTitle>false</ShowTitle><ChildItems>${children}</ChildItems></UsualGroup>`;
+  const textType = `<v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>9</v8:Length>
+    <v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>`;
+  const dateType = `<v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers>`;
+  const referenceType = '<v8:Type>cfg:CatalogRef.Товары</v8:Type>';
+  const attributes = [['Number', textType], ['Date', dateType], ['Status', '<v8:Type>xs:decimal</v8:Type>'],
+    ['Imported', dateType], ['Organization', referenceType], ['Reason', referenceType]];
+  const fields = input('Number', 4, title('Номер', 'Number')) + input('Date', 5, title('Дата', 'Date'))
+    + `<PictureField name="Status" id="6"><DataPath>Status</DataPath><TitleLocation>None</TitleLocation>
+      <Width>2</Width><Height>1</Height><HorizontalStretch>false</HorizontalStretch><VerticalStretch>false</VerticalStretch></PictureField>`
+    + input('Imported', 7, title('Дата загрузки', 'Imported at'), '<ReadOnly>true</ReadOnly>');
+  const left = group('Values', 2, 'Vertical', group('DateRow', 3, 'AlwaysHorizontal', fields)
+    + input('Organization', 8, title('Организация', 'Organization')));
+  const right = group('Details', 9, 'Vertical', input('Reason', 10, title('Причина закрытия займа', 'Reason for closing the loan'))
+    + `<Button name="OpenLink" id="11"><Type>Hyperlink</Type><CommandName>Form.StandardCommand.Close</CommandName>
+      ${title('Открыть во внешней системе', 'Open in the external system')}</Button>`);
+  const xml = `<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core"
+    xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config">
+    <CommandBarLocation>None</CommandBarLocation><ChildItems>${group('Header', 1, 'AlwaysHorizontal', left + right)}</ChildItems>
+    <Attributes>${attributes.map(([name, type], index) => `<Attribute name="${name}" id="${index + 1}"><Type>${type}</Type></Attribute>`).join('')}</Attributes>
+    </Form>`;
+  await writeFile(form.path, xml);
+  return { path: form.path, text: xml };
+}
+
 export async function createFormGallery(fixture) {
   const kinds = ['InputField', 'CheckBoxField', 'CalendarField', 'ChartField', 'FormattedDocumentField', 'HTMLDocumentField', 'LabelField',
     'ProgressBarField', 'TrackBarField', 'RadioButtonField', 'PictureField', 'SpreadSheetDocumentField', 'PlannerField',
@@ -575,12 +607,16 @@ export async function createPictureFormSource(fixture) {
   const bar = `<AutoCommandBar name="FormCommandBar" id="-1"><ChildItems>
     ${button('AutoIcon', 91, 'Auto')}
     ${button('TextIcon', 92, 'Text', 'Text command')}
-    ${button('MixedIcon', 93, 'PictureAndText', 'Mixed command')}
+    ${button('MixedIcon', 93, 'Auto', 'Mixed command', 'MixedIcon')}
     ${button('NoIcon', 94, 'Picture', '', 'NoIcon')}
+    <Button name="DisabledProbe" id="95"><Type>CommandBarButton</Type><Title>Disabled command</Title>
+    <CommandName>Form.Command.NoIcon</CommandName><Enabled>false</Enabled>
+    <LocationInCommandBar>InAdditionalSubmenu</LocationInCommandBar></Button>
     </ChildItems></AutoCommandBar>`;
   const localCommands = `<Commands><Command name="LocalIcon" id="101"><Title>Local icon</Title>${reference('Icon')}</Command>
     <Command name="NoIcon" id="102"><Title>No icon</Title></Command>
-    <Command name="LocalReceipt" id="103"><Title>Local receipt</Title></Command></Commands>`;
+    <Command name="LocalReceipt" id="103"><Title>Local receipt</Title></Command>
+    <Command name="MixedIcon" id="104"><Title>Mixed command</Title><Representation>TextPicture</Representation>${reference('Icon')}</Command></Commands>`;
   const commandInterface = `<CommandInterface><CommandBar><Item><Command>Form.Command.LocalReceipt</Command>
     <Type>Added</Type><CommandGroup>CommandGroup.PrintProbe</CommandGroup></Item></CommandBar></CommandInterface>`;
   await writeFile(form.path, form.text
@@ -731,22 +767,20 @@ export async function createTablePixelsGallery(fixture) {
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native pictures ${table.name}.`);
       for(const [locale,pictures]of Object.entries(table.locales)){
-        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(...pictures,table.toolbar[locale]);
+        const expected=row.locales[locale];expected.additionalRegions??=[];
+        expected.additionalRegions.push(...pictures.map(region=>({...region,vectorComparison:true})));
       }
     }
   }
   const movement=process.env.ESKA_FORM_TABLE_MOVEMENT_PIXELS;
   if(movement){
     if(!isAbsolute(movement))throw new Error('ESKA_FORM_TABLE_MOVEMENT_PIXELS must be absolute.');
-    const defaultTable=reference.rows.find(row=>row.name==='Default');
     for(const table of JSON.parse(await readFile(join(movement,'metrics.json'),'utf8')).rows){
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native movement ${table.name}.`);
       for(const [locale,region]of Object.entries(table.locales)){
         const expected=row.locales[locale];expected.additionalRegions??=[];
-        // These default and detached poses use the moved group measurements.
-        const moved=defaultTable?.locales[locale]?.movedToolbar;
-        expected.additionalRegions.push(moved?{...region,rgbSha256:moved.movementRgbSha256}:region);
+        expected.additionalRegions.push({...region,vectorComparison:true});
       }
     }
   }

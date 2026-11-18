@@ -65,6 +65,14 @@ exports.run = async function () {
     await action('stage', otherRow);
     await until(() => otherRepo.state.indexChanges.some(change => change.uri.fsPath === second.module), 'secondary project stage');
     assert.ok(!repo.state.indexChanges.some(change => change.uri.fsPath === fixture.module), 'first repository remains unstaged');
+    const firstHead = (await git(fixture.root, 'rev-parse', 'HEAD')).stdout.trim();
+    repo.inputBox.value = 'Keep the first repository draft';
+    otherRepo.inputBox.value = 'Commit only the second repository';
+    const secondRoot = await until(async () => (await provider.getChildren()).find(root => root.repository.rootUri.fsPath === second.root), 'secondary repository entry');
+    await action('commit', secondRoot);
+    await until(async () => (await git(second.root, 'log', '-1', '--format=%s')).stdout.trim() === 'Commit only the second repository', 'commit selected repository without editor focus');
+    assert.equal((await git(fixture.root, 'rev-parse', 'HEAD')).stdout.trim(), firstHead);
+    assert.equal(repo.inputBox.value, 'Keep the first repository draft');
   }
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   await git(fixture.root, 'add', '.'); await git(fixture.root, 'commit', '-m', 'test modifications');
@@ -80,5 +88,6 @@ exports.run = async function () {
   const progress = await explorer.tree.request(project, 'metadata/index', { action: 'status' });
   assert.equal(progress.progress.state, 'not_started', 'semantic SCM does not start a full index');
   await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, vscode: vscode.version,
-    semanticLabels: true, diffIndexWorktree: true, rename: true, deleted: true, untracked: true, stageUnstage: true, multiRoot: !!second, fullIndexStarted: false }));
+    semanticLabels: true, diffIndexWorktree: true, rename: true, deleted: true, untracked: true, stageUnstage: true,
+    multiRoot: !!second, selectedRepositoryCommit: !!second, fullIndexStarted: false }));
 };

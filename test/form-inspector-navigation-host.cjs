@@ -64,6 +64,10 @@ exports.run = async () => {
   const before = await fs.readFile(form.path);
   const explorer = await vscode.extensions.all.find(ext => ext.packageJSON.name === 'eska-explorer').activate();
   const service = explorer.formPreview, ru = vscode.env.language.startsWith('ru');
+  const treeCommand = label => '.form-pane--structure .form-pane-tools button[aria-label=' + JSON.stringify(label) + ']';
+  const collapseTree = treeCommand(ru ? 'Свернуть все' : 'Collapse all');
+  const expandTree = treeCommand(ru ? 'Раскрыть все' : 'Expand all');
+  const previewNode = id => `.taxi-element[data-element$=":current:${id}"]`;
   await vscode.commands.executeCommand('eska.explorer.connect');
   await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar');
   const document = await vscode.workspace.openTextDocument(vscode.Uri.file(form.path));
@@ -213,7 +217,14 @@ exports.run = async () => {
     return field?.classList.contains('taxi-selected');
   })()`);
   assert.equal(exactVisual, true);
-  await ui.evaluate("document.querySelector('.taxi-element[data-element$=\":current:2\"]').click()");
+  await click(ui, collapseTree);
+  await until(() => ui.evaluate(`!${lookup(rowFor('2'))}`), 'attached tree collapsed');
+  await click(ui, previewNode('2'));
+  await waitFor(ui, rowFor('2') + '[aria-selected=true]');
+  assert.equal(await ui.evaluate(`${lookup(rowFor('1'))}.getAttribute('aria-expanded')`), 'true',
+    'an attached field click opens its parent group');
+  assert.equal(await ui.evaluate(`${lookup(rowFor('4'))}.getAttribute('aria-expanded')`), 'false',
+    'the unrelated pages branch stays collapsed');
   await until(() => view.selected?.key.value === '2', 'visual selection updates the tree');
   const themes = await themeChecks(ui, vscode.env.language);
 
@@ -238,11 +249,26 @@ exports.run = async () => {
   const floating = await frame({ detached: true, state: { title: view.frames.get('preview').panel.title } });
   await waitFor(floating, '.taxi-preview');
   assert.equal(await floating.evaluate("!!document.querySelector('.form-inspectors')"), false);
-  await floating.evaluate(`document.querySelector('.taxi-element[data-element$=":current:2"]').click()`);
+  await search(ui, '');
+  await until(() => ui.evaluate(`!${lookup(collapseTree)}.disabled`), 'detached inspector tree commands ready');
+  await click(ui, collapseTree);
+  await until(() => ui.evaluate(`!${lookup(rowFor('1'))}`), 'detached tree collapsed');
+  await click(floating, previewNode('1') + ' > .taxi-group > .taxi-group-title');
+  await waitFor(ui, rowFor('1') + '[aria-selected=true]');
+  assert.equal(await ui.evaluate(`${lookup(rowFor('1'))}.getAttribute('aria-expanded')`), 'false',
+    'a detached group click reveals the group without opening its children');
+  assert.equal(await ui.evaluate(`${lookup(rowFor('4'))}.getAttribute('aria-expanded')`), 'false',
+    'a detached group click leaves the unrelated branch collapsed');
+  await click(floating, previewNode('2'));
+  await waitFor(ui, rowFor('2') + '[aria-selected=true]');
+  assert.equal(await ui.evaluate(`${lookup(rowFor('4'))}.getAttribute('aria-expanded')`), 'false',
+    'a detached field click leaves the unrelated branch collapsed');
   await until(() => view.selected?.key.value === '2' && ui.evaluate(`${lookup(title)}.textContent==='Name'`), 'selection from the separate form updates the inspector');
   await search(ui, 'Object.Amount');
   await waitFor(ui, field('Object.Amount'));
   await click(ui, field('Object.Amount'));
+  await waitFor(ui, '.form-type-details');
+  if (!await ui.evaluate("document.querySelector('.form-type-details').open")) await click(ui, '.form-type-details > summary');
   await waitFor(ui, '.form-type-facts');
   const typeFit = await ui.evaluate(`(() => {
     const props = document.querySelector('.form-property-scroll');
@@ -344,6 +370,14 @@ exports.run = async () => {
   assert.equal(await large.ui.evaluate(`${lookup(rowFor('3249'))}.getAttribute('aria-level')`), '25');
   await click(large.ui, rowFor('3249'));
   await until(() => large.view.selected?.key.value === '3249', 'deep element selected');
+  await search(large.ui, '');
+  await until(() => large.ui.evaluate(`!${lookup(collapseTree)}.disabled`), 'tree commands available after search');
+  await click(large.ui, collapseTree);
+  await until(() => large.ui.evaluate(`!${lookup(rowFor('3249'))}`), 'collapse all hides the nested item');
+  assert.equal(large.view.selected?.key.value, '3249');
+  await click(large.ui, expandTree);
+  await waitFor(large.ui, rowFor('3249') + '[aria-selected=true]');
+  assert.equal(large.view.selected?.key.value, '3249', 'expand all reveals and retains the nested selection');
   assert.equal(large.view.snapshot.revision, largeRevision);
   assert.deepEqual(large.ui.scriptErrors(), []);
   large.ui.close();

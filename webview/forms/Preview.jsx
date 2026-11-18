@@ -17,11 +17,9 @@ import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
 import { sideTabRepresentation, tabMetrics, tabPictureLayout } from './tab-metrics.mjs';
-import { NativeInputCalculator } from './NativeInputCalculator.jsx';
-import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { InputChoicePicture } from './InputChoicePicture.jsx';
-import { referenceButtonBackground } from './reference-button-paint.mjs';
+import { inputButtonGlyphs } from './reference-button-paint.mjs';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
@@ -29,14 +27,14 @@ import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
 import { pageInputTitlePair, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
-import { NativeStandardPicture, TemplatePicture } from './NativeStandardPicture.jsx';
+import { NativeStandardPicture, StandardPictureScaleContext, TemplatePicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
-  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
+  const drawing = createMemo(() => standardPicture(props.name, props.variant));
   return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
     {image => <NativeStandardPicture image={image()}/>}
   </Show>;
@@ -71,7 +69,7 @@ function CommonPicture(props) {
 function Picture(props) {
   const picture = () => props.picture ?? props.node?.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
-  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
+  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} variant={props.pictureVariant}/></Match>
     <Match when={picture()?.kind === 'common' && image()}>{asset => <CommonPicture image={asset()}/>}</Match>
   </Switch>;
 }
@@ -83,6 +81,7 @@ export function CommandButton(props) {
   const [borderPaint, setBorderPaint] = createSignal();
   const label = () => props.label ?? caption(props.node, props.controller.state);
   const link = () => props.node?.kind === 'Button' && ['Hyperlink', 'CommandBarHyperlink'].includes(scalar(props.node, 'Type'));
+  const wrappedLink = () => link() && formLayout?.captionFor(props.node);
   const sourcePicture = () => props.node?.presentation.picture ?? props.command?.picture;
   const declaredMode = () => scalar(props.node, 'Representation', 'Auto');
   const cancelSearchPicture = () => declaredMode() === 'Picture' && !sourcePicture()
@@ -106,7 +105,7 @@ export function CommandButton(props) {
     if (!iconOnly()) return false;
     const value = picture();
     if (!value) return true;
-    if (typeof value === 'string') return !!standardPicture(value, props.pictureVariant);
+    if (typeof value === 'string') return props.pictureVariant !== 'tableCommand' && !!standardPicture(value, props.pictureVariant);
     return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
   });
   const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
@@ -114,8 +113,8 @@ export function CommandButton(props) {
     && (primary() || flag(props.node, 'Enabled') || props.standaloneSearch);
   const background = () => props.controller.state.os === 'linux' && primary()
     ? props.controller.state.model.importantColor : props.node?.presentation.background;
-  const foreground = () => automaticForeground() ?? color(props.node?.presentation.foreground);
-  const standaloneInactive = () => props.standaloneSearch && !flag(props.node, 'Enabled');
+  const foreground = () => props.enabled === false ? '#a0a0a0' : automaticForeground() ?? color(props.node?.presentation.foreground);
+  const standaloneInactive = () => props.enabled === false || props.standaloneSearch && !flag(props.node, 'Enabled');
   const standaloneBorder = () => standaloneInactive() ? '#d0d0d0'
     : props.standaloneSearch && property(props.node, 'BorderColor') ? color(props.node.presentation.border) : undefined;
   createEffect(on(() => [plain(), primary(), !!property(props.node, 'TextColor'), JSON.stringify(background()), JSON.stringify(props.node?.presentation.foreground), JSON.stringify(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font)], ([enabled]) => {
@@ -175,14 +174,21 @@ export function CommandButton(props) {
     report(value ? parseFloat(value) : undefined);
     onCleanup(() => report(undefined));
   });
-  return <button ref={button} type="button" data-command-key={props.command?.key}
+  return <button ref={button} type="button" data-command-key={props.command?.key} data-wrapped-link={wrappedLink() ? '' : undefined}
     data-table-search-control={props.node?.kind === 'SearchControlAddition' ? '' : undefined} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} classList={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), 'border-top-color': standaloneBorder(), 'border-left-color': standaloneBorder(), 'border-right-color': standaloneBorder(), 'border-bottom-color': borderPaint() ? undefined : standaloneBorder(), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, '--taxi-button-height': authoredHeight(), width: authoredWidth() > 0 ? `${props.controller.state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
-    aria-disabled={props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
-    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') || props.standaloneSearch ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show><Show when={!iconOnly()}><Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}><NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/></Show></Show>
+    disabled={props.enabled === false} aria-disabled={props.enabled === false || props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
+    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show>
+    <Show when={!iconOnly()}>
+      <Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}>
+        <Show when={wrappedLink()} fallback={<NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/>}>
+          {text => <span>{text()}</span>}
+        </Show>
+      </Show>
+    </Show>
     <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={standaloneInactive() ? '#a0a0a0' : props.standaloneSearch ? foreground() : color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} stroke={standaloneBorder()} inactive={standaloneInactive()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
@@ -239,7 +245,11 @@ export function Preview(props) {
     '--taxi-form-items-min-height': layout.nativeFormScroll() ? `${layout.itemsMinimumHeight()}px` : undefined,
     'min-width': '28px',
   });
-  return <FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
+  const pictureScale = () => ({
+    zoom: state.ui.zoom,
+    pixelRatio: props.controller.nativeText?.density?.() ?? window.devicePixelRatio,
+  });
+  return <StandardPictureScaleContext.Provider value={pictureScale}><FormLayoutContext.Provider value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined}
       data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} class="taxi-form-frame" data-form-drop-root={root().key} classList={{ 'taxi-selected': state.selected === root().key }}
@@ -258,7 +268,7 @@ export function Preview(props) {
         </div>
       </div>
     </div>
-  </div></FormLayoutContext.Provider>;
+  </div></FormLayoutContext.Provider></StandardPictureScaleContext.Provider>;
 }
 function updatePageScrollButtons(event) {
   const items = event.currentTarget;
@@ -515,7 +525,7 @@ function Group(props) {
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
     <Match when={node().kind === 'CommandBar'}><CommandBar {...props}/></Match>
-    <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar"><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
+    <Match when={node().kind === 'ButtonGroup'}><div class="taxi-command-bar" data-command-group-representation={scalar(node(), 'Representation', 'Auto')}><For each={node().children}>{child => <Element node={child} controller={props.controller}/>}</For></div></Match>
     <Match when={true}><div ref={container} class="taxi-group" data-native-group-background={outside()?'ready':undefined} classList={{
       'taxi-group--strong': scalar(node(), 'Representation') === 'StrongSeparation',
       'taxi-group--indented': indent(),
@@ -551,6 +561,7 @@ function CommandBar(props) {
   const source = () => commands().source;
   const formCommands = createMemo(() => commands().formSource && node().presentation.objectCommandMenu?.length
     ? formCommandPlacement(node(), node(), state) : undefined);
+  const adaptive = () => state.os === 'linux' && flag(node(), 'Autofill') && !!formCommands()?.more;
   const generated = createMemo(() => formCommands()?.inline.filter(item => !menuNode(item)) ?? []);
   const hasSearch = () => !!tableSearch(source());
   const additions = createMemo(() => {
@@ -570,21 +581,39 @@ function CommandBar(props) {
       ? state.strings['command.AdvancedSearch'] : undefined;
   };
   return <div ref={bar} class="taxi-command-bar" style={{ '--taxi-command-minimum-width': minimum() === undefined ? undefined : `${minimum() + 33}px` }} data-horizontal-location={scalar(node(), 'HorizontalLocation', 'Left')} data-table-commands={commands().tableCommands ? '' : undefined}
+    data-form-command-overflow={adaptive() ? '' : undefined} data-root-command-overflow={adaptive() ? '' : undefined}
     data-advanced-search={commands().advancedSearch ? '' : undefined}>
-    <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
-    <For each={generated()}>{(item, index) => <div data-root-command-section={
-      startsRootCommandSection(generated()[index() - 1], item) ? '' : undefined}
-      data-root-command-section-after={index() === generated().length - 1 && commands().inline.length
+    <Show when={adaptive()} fallback={<>
+      <Show when={source()}><TableCommandActions commands={automaticCommands(node())} controller={props.controller}/></Show>
+      <For each={generated()}>{(item, index) => <div data-root-command-section={
+        startsRootCommandSection(generated()[index() - 1], item) ? '' : undefined}
+        data-root-command-section-after={index() === generated().length - 1 && commands().inline.length
         && startsRootCommandSection(item, commands().inline[0]) ? '' : undefined}>
-      <GeneratedFormCommand item={item} controller={props.controller}/>
-    </div>}</For>
-    <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
-    <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
-      spacer={commands().spaceBeforeMore}/>
-    <Show when={menu().length} fallback={<Show when={source() || commands().formSource}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
-      <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} rootMenu={!!formCommands()} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+        <GeneratedFormCommand item={item} controller={props.controller}/>
+      </div>}</For>
+      <For each={commands().inline}>{child => <Element node={child} controller={props.controller} buttonLabel={commandLabel(child)}/>}</For>
+      <TableToolbarSearch search={additions()?.search} control={additions()?.control} controller={props.controller}
+        spacer={commands().spaceBeforeMore}/>
+      <Show when={menu().length} fallback={<Show when={source() || commands().formSource}><CommandButton label={state.strings.more} controller={props.controller} dropdown nativeDropdown/></Show>}>
+        <PopupMenu rows={menu()} label={state.strings.more} controller={props.controller} rootMenu={!!formCommands()} tableBar={!!source()} tableMenu={!!node().presentation.tableCommandMenu} nativeDropdown/>
+      </Show>
+      <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
+    </>}>
+      <For each={formCommands()?.inline}>{(item, index) =>
+        <div data-root-command=""
+          data-root-command-required={scalar(item, 'LocationInCommandBar') === 'InCommandBar' ? '' : undefined}
+          data-root-command-section={startsRootCommandSection(formCommands().inline[index() - 1], item) ? '' : undefined}>
+          <Show when={menuNode(item)} fallback={<GeneratedFormCommand item={item} controller={props.controller}/>}>
+            {child => <Element node={child()} controller={props.controller}/>}
+          </Show>
+        </div>
+      }</For>
+      <div class="taxi-command-spacer"/>
+      <div data-root-command-tail=""><PopupMenu rootMenu rows={menu()} label={state.strings.more} controller={props.controller} nativeDropdown/></div>
+      <Show when={formCommands()?.help}>
+        <div data-root-command-tail=""><CommandButton controller={props.controller} node={formCommands().helpNode} label="?" help/></div>
+      </Show>
     </Show>
-    <For each={commands().trailing}>{child => <Element node={child} controller={props.controller}/>}</For>
   </div>;
 }
 export function PopupMenu(props) {
@@ -595,6 +624,7 @@ export function PopupMenu(props) {
     setOpen(false);
     trigger()?.focus({ preventScroll: true });
   };
+  createEffect(() => { if (props.enabled === false) setOpen(false); });
   createEffect(() => {
     if (!open()) return;
     const outside = event => { if (!container.contains(event.target)) setOpen(false); };
@@ -614,14 +644,14 @@ export function PopupMenu(props) {
     data-command-group={props.command?.key} data-root-menu={props.rootMenu ? '' : undefined}
     data-table-more={props.tableBar ? '' : undefined}
     ref={container} onKeyDown={event => {
-      if (event.target !== container && event.target !== trigger()) return;
+      if (props.enabled === false || event.target !== container && event.target !== trigger()) return;
       if (open()) handleMenuKey?.(event);
       else if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
         event.preventDefault();
         setOpen(true);
       }
     }}>
-    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
+    <CommandButton node={props.node} command={props.command} label={props.label} controller={props.controller} enabled={props.enabled} dropdown nativeDropdown={props.nativeDropdown} menu expanded={open()}
       onClick={() => setOpen(!open())}/>
     <Show when={open()}>
       <MenuLevel rows={children()} anchor={trigger} close={close} dismiss={close} controller={props.controller}
@@ -633,7 +663,7 @@ export function PopupMenu(props) {
 const menuFont = { points: 10, weight: 400 };
 
 function MenuLevel(props) {
-  const [active, setActive] = createSignal(0);
+  const [active, setActive] = createSignal();
   const [expanded, setExpanded] = createSignal();
   const [activeInk, setActiveInk] = createSignal();
   const floating = () => props.rootMenu || props.nested || props.floating;
@@ -660,7 +690,7 @@ function MenuLevel(props) {
       const items = [...menu.querySelectorAll(rowSelector)];
       const index = items.findIndex(item => Number(item.dataset.menuIndex) === active());
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-        : index + (event.key === 'ArrowDown' ? 1 : -1);
+        : event.key === 'ArrowDown' ? index + 1 : Math.max(0, index) - 1;
       focus(next);
     }
   };
@@ -702,7 +732,7 @@ function MenuLevel(props) {
       if (item === menuSeparator) return <div class="taxi-menu-divider" role="separator"/>;
       const node = menuNode(item), children = createMemo(() => menuChildren(item, state));
       const submenu = () => children().length > 0, opened = () => expanded() === item.key;
-      const picture = () => menuPicture(item, props.rootMenu);
+      const picture = () => menuPicture(item, props.rootMenu, state.locale);
       const enabled = () => menuEnabled(item);
       const label = () => menuCaption(item, state, props.rootMenu);
       let button;
@@ -711,10 +741,10 @@ function MenuLevel(props) {
         queueMicrotask(() => button?.nextElementSibling?.querySelector(rowSelector)?.focus());
       };
       const row = <button ref={button} type="button" role="menuitem" tabIndex={-1}
-        data-menu-index={index()} classList={{ active: active() === index() }}
+        data-menu-index={index()} classList={{ active: enabled() && active() === index() }}
         aria-label={label()}
         aria-disabled={!enabled()} aria-haspopup={submenu() ? 'menu' : undefined} aria-expanded={submenu() ? opened() : undefined}
-        onFocus={() => setActive(index())}
+        onFocus={() => { if (enabled()) setActive(index()); }}
         onMouseEnter={() => {
           if (!enabled()) return;
           setActive(index());
@@ -730,7 +760,7 @@ function MenuLevel(props) {
           if (submenu()) enter();
           else props.dismiss();
         }}>
-        <Show when={picture()}><Picture node={node} picture={picture()} pictureVariant={props.tableMenu ? 'tableMenu' : undefined} controller={props.controller}/></Show>
+        <Show when={picture()}><Picture node={node} picture={picture()} pictureVariant={picture().variant ?? (props.tableMenu ? 'tableMenu' : undefined)} controller={props.controller}/></Show>
         <Show when={native()} fallback={label()}>
           <NativeLabel enabled placement="menuItem" text={label()} font={menuFont} runtime={props.controller.nativeText}/>
         </Show>
@@ -754,20 +784,17 @@ function MenuLevel(props) {
     }}</For>
   </div>;
 }
-function PrimitiveChoiceGlyph(props) {
-  return <Switch fallback="...">
-    <Match when={props.kind === 'calendar'}>
-      <Show when={props.os === 'linux'} fallback={<Icon name="Calendar"/>}>
-        <NativeInputCalendar height={props.height} inactive={props.inactive} fallback={<Icon name="Calendar"/>}/>
-      </Show>
-    </Match>
-    <Match when={props.kind === 'calculator'}>
-      <Show when={props.os === 'linux'} fallback={<Icon name="Calculator"/>}>
-        <NativeInputCalculator height={props.height} inactive={props.inactive}/>
-      </Show>
-    </Match>
-    <Match when={props.kind === 'list'}>▾</Match>
-  </Switch>;
+function InputButtonGlyph(props) {
+  return <span class="taxi-input-glyphs" aria-hidden="true" data-inactive={props.inactive ? '' : undefined}
+    data-spin={props.kind === 'spin' ? '' : undefined}>
+    <For each={inputButtonGlyphs(props.kind)}>{glyph =>
+      <svg class="taxi-input-glyph" data-input-glyph={glyph.role} width={glyph.width} height={glyph.height}
+        viewBox={`0 0 ${glyph.width} ${glyph.height}`}>
+        <Show when={glyph.fill}><path d={glyph.fill} fill="currentColor"/></Show>
+        <Show when={glyph.stroke}><path d={glyph.stroke} fill="none" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round"/></Show>
+      </svg>
+    }</For>
+  </span>;
 }
 
 function Input(props) {
@@ -835,31 +862,41 @@ function Input(props) {
     </Switch>
     <Show when={referenceButtons()} fallback={<>
       <Show when={choice() && primitiveSelection()?.includes('dropdown')}>
-        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list"
-          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive())}, #fff` }}/>
+        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list">
+          <InputButtonGlyph kind="dropdown" inactive={inactive()}/>
+        </span>
       </Show>
       <Show when={choice() && (primitiveSelection()?.includes('choice') ?? true)}>
         <span class="taxi-input-button taxi-input-button--choice" data-choice-kind={choiceKind()}
           classList={{ 'taxi-input-button--number': choiceKind() === 'calculator' }}>
           <InputChoicePicture picture={choiceKind() === 'list' ? undefined : choicePicture()} assets={state.model.assets}
             os={state.os} height={controlHeight()} inactive={inactive()}
-            fallback={<PrimitiveChoiceGlyph kind={choiceKind()} os={state.os} height={controlHeight()} inactive={inactive()}/>}/>
+            fallback={<InputButtonGlyph kind={choiceKind() === 'list' ? 'dropdown' : choiceKind()} inactive={inactive()}/>}/>
         </span>
       </Show>
-      <Show when={inputOpenButton(node(), state.os)}><span class="taxi-input-button taxi-input-button--open"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
-      <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
-      <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
-    </>}>{buttons => <For each={buttons()}>{kind => <span class="taxi-input-button" data-reference-button={kind}
-      data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
-      classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
-      data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
-      aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(),
-        disabled() || readOnly() && kind !== 'open') }}>
-        <Show when={kind === 'choice' && choicePicture()}>
+      <Show when={inputOpenButton(node(), state.os)}>
+        <span class="taxi-input-button taxi-input-button--open"><InputButtonGlyph kind="open" inactive={disabled()}/></span>
+      </Show>
+      <Show when={flag(node(), 'ClearButton', false)}>
+        <span class="taxi-input-button"><InputButtonGlyph kind="clear" inactive={inactive()}/></span>
+      </Show>
+      <Show when={flag(node(), 'SpinButton', false)}>
+        <span class="taxi-input-button"><InputButtonGlyph kind="spin" inactive={inactive()}/></span>
+      </Show>
+    </>}>{buttons => <For each={buttons()}>{kind => {
+      const inactiveButton = () => disabled() || readOnly() && kind !== 'open';
+      return <span class="taxi-input-button" data-reference-button={kind}
+        data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
+        classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
+        data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
+        aria-hidden="true">
+        <Show when={kind === 'choice'} fallback={<InputButtonGlyph kind={kind} inactive={inactiveButton()}/>}>
           <InputChoicePicture picture={choicePicture()} assets={state.model.assets} os={state.os}
-            height={referenceButtonHeight()} inactive={inactive()}/>
+            height={referenceButtonHeight()} inactive={inactive()}
+            fallback={<InputButtonGlyph kind={kind} inactive={inactiveButton()}/>}/>
         </Show>
-      </span>}</For>}</Show>
+      </span>;
+    }}</For>}</Show>
   </div>;
 }
 function Field(props) {

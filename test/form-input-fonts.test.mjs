@@ -15,16 +15,3 @@ test('line allocations match thirty-four native font cases, including thirteen i
   }
   assert.equal(fields,136);assert.equal(independent,52);
 });
-
-test('small calculator raster variants match native RGB samples before SVG rendering',async()=>{
-  const {calculatorImage}=await import('../webview/forms/input-calculator.mjs');
-  const {createHash}=await import('node:crypto');
-  const reference=JSON.parse(await readFile(new URL('tests/fixtures/forms/native-input-fonts/calculator-images.json',formReferenceRoot)));
-  for(const sample of reference.images){
-    const drawing=calculatorImage(sample.size+2,sample.inactive),rgb=Buffer.alloc(sample.size*sample.size*3,255);
-    assert.equal(drawing.width,sample.size);assert.equal(drawing.height,sample.size);
-    for(const [x,y,w,h,fill]of drawing.rects){const color=fill.slice(1).match(/../g).map(v=>parseInt(v,16));for(let dy=0;dy<h;dy++)for(let dx=0;dx<w;dx++)rgb.set(color,((y+dy)*sample.size+x+dx)*3);}
-    assert.equal(createHash('sha256').update(rgb).digest('hex'),sample.rgbSha256,sample.name);
-  }
-  assert.equal(reference.images.length,5);
-});

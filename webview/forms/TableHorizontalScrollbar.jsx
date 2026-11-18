@@ -1,12 +1,13 @@
 import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import { paintCanvas } from './native-control-paint.js';
 import { horizontalScrollbarGeometry, scrollTableByColumn, tableHorizontalPaint } from './table-scrollbar.mjs';
+import { previewClientRect } from './preview-coordinates.mjs';
 
 function ScrollFragment(props) {
   let canvas;
   const image = createMemo(() => props.image);
   createEffect(() => { paintCanvas(canvas, image()); });
-  return <canvas ref={canvas} width={image().width} height={image().height} style={{ left: `${props.x}px`, top: `${props.y}px` }} aria-hidden="true"/>;
+  return <canvas ref={canvas} data-scroll-arrow={props.arrow} width={image().width} height={image().height} style={{ left: `${props.x}px`, top: `${props.y}px` }} aria-hidden="true"/>;
 }
 
 /** The DOM remains the scroll owner. This strip renders its range and provides the Taxi controls. */
@@ -47,7 +48,7 @@ export function TableHorizontalScrollbar(props) {
     scrollTo(scrollTableByColumn(props.columns, props.viewport, props.target.scrollLeft, direction));
   }
   function pointerPosition(event) {
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = previewClientRect(event.currentTarget);
     return (event.clientX - rect.left) * event.currentTarget.clientWidth / rect.width;
   }
   function press(event) {
@@ -112,7 +113,7 @@ export function TableHorizontalScrollbar(props) {
       'background-color': `rgb(${thumbPaint().gray}, ${thumbPaint().gray}, ${thumbPaint().gray})` }}/>
     <ScrollFragment image={startCap()} x={geometry().thumbLeft} y={3}/>
     <ScrollFragment image={endCap()} x={geometry().thumbRight - 4} y={3}/>
-    <ScrollFragment image={leftArrow()} x={9} y={4}/>
-    <ScrollFragment image={rightArrow()} x={railWidth() - 13} y={4}/>
+    <ScrollFragment arrow="left" image={leftArrow()} x={9} y={4}/>
+    <ScrollFragment arrow="right" image={rightArrow()} x={railWidth() - 13} y={4}/>
   </div>;
 }
