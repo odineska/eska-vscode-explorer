@@ -31,6 +31,59 @@ const fill = (ui, name, value, select = false) => ui.evaluate(`(() => {
   control.dispatchEvent(new Event(${JSON.stringify(select ? "change" : "input")}, { bubbles: true }));
 })()`);
 
+async function launcherLists(fixture) {
+  const binary = process.env.ESKA_TEST_DEBUG_BINARY;
+  assert.ok(binary && path.isAbsolute(binary));
+  const directory = path.join(path.dirname(fixture.root), "launcher-lists");
+  const config = path.join(directory, "config");
+  const fileBase = "/srv/1c/Демо база";
+  const shared = `[Демо из списка]\nConnect=File="${fileBase}";\n`;
+  for (const [name, contents] of [
+    ["host", shared],
+    ["default-box", shared + '[Демо из Distrobox]\nConnect=Srvr="default.invalid";Ref="Demo";\n'],
+    ["profile-box", '[База профиля]\nConnect=Srvr="profile.invalid:1541";Ref="Profile";\n'],
+  ]) {
+    const startup = path.join(directory, name, ".1C", "1cestart");
+    await fs.mkdir(startup, { recursive: true });
+    await fs.writeFile(path.join(startup, "ibases.v8i"), contents);
+  }
+  await fs.mkdir(config);
+  await fs.writeFile(path.join(config, "config.toml"), '[build]\nrunner="distrobox"\ncontainer="default-box"\n');
+  // Execute the real launcher's container command against a separate fixture home.
+  await fs.writeFile(path.join(directory, "distrobox"), `#!/usr/bin/env node
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+const end = args.indexOf("--");
+if (args[0] !== "enter" || args[1] !== "--name" || !["default-box", "profile-box"].includes(args[2])
+    || !args.includes("--no-tty") || end < 0) process.exit(1);
+const env = { ...process.env, HOME: require("node:path").join(__dirname, args[2]) };
+process.exit(spawnSync(args[end + 1], args.slice(end + 2), { env, stdio: "inherit" }).status ?? 1);
+`, { mode: 0o755 });
+  const executable = path.join(directory, "eska-debug");
+  await fs.writeFile(executable, `#!/usr/bin/env node
+const env = { ...process.env, HOME: ${JSON.stringify(path.join(directory, "host"))},
+  ESKA_CONFIG_DIR: ${JSON.stringify(config)}, PATH: __dirname + ":" + process.env.PATH };
+delete env.ESKA_DISTROBOX;
+process.exit(require("node:child_process").spawnSync(${JSON.stringify(binary)}, process.argv.slice(2),
+  { env, stdio: "inherit" }).status ?? 1);
+`, { mode: 0o755 });
+  return { executable, fileBase };
+}
+
+const launcherRows = ".quick-input-widget:not([style*='display: none']) .quick-input-list .monaco-list-row";
+const rows = workbench => workbench.evaluate(`[...document.querySelectorAll(${JSON.stringify(launcherRows)})].map(row => row.textContent)`);
+
+async function acceptRegisteredBase(workbench, name) {
+  await until(() => workbench.evaluate(`(() => {
+    const row = [...document.querySelectorAll(${JSON.stringify(launcherRows)})]
+      .find(item => item.textContent.includes(${JSON.stringify(name)}));
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`), "registered infobase visible");
+  await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+}
+
 async function checkLayout(ui, workbench, language) {
   const configuration = vscode.workspace.getConfiguration("workbench");
   const previous = configuration.get("colorTheme");
@@ -253,7 +306,9 @@ exports.run = async function () {
   const processing = process.env.ESKA_HOST_PROJECT_TYPE === "processing";
   const russian = vscode.env.language.startsWith("ru");
   const text = (en, ru) => russian ? ru : en;
-  const picker = process.env.ESKA_HOST_PICKER_BINARY;
+  const launcher = process.platform === "linux" && process.env.ESKA_HOST_PICKER_DISTROBOX === "1"
+    ? await launcherLists(fixture) : undefined;
+  const picker = launcher?.executable ?? process.env.ESKA_HOST_PICKER_BINARY;
   const platform = process.env.ESKA_HOST_PROBE_IBCMD;
   const epfUrl = "file:///Развёртывание/" + "a".repeat(64) + "/Демо.epf";
   const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(fixture.root));
@@ -290,17 +345,49 @@ exports.run = async function () {
 
     if (picker) {
       await click(first, ".settings-import");
-      await until(async () => {
-        const clicked = await workbench.evaluate(`(() => {
-          const row = [...document.querySelectorAll(".quick-input-list .monaco-list-row")]
-            .find(item => item.textContent.includes("Демо из списка"));
-          if (!row) return false;
-          row.click();
-          return true;
-        })()`);
-        if (clicked) await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
-        return await fieldValue(first, "path") === process.env.ESKA_HOST_PICKER_PATH;
-      }, "registered file infobase copied to the draft");
+      if (launcher) {
+        const visible = await until(async () => {
+          const visible = await rows(workbench);
+          return visible.length === 2 && visible;
+        }, "host and default Distrobox lists combined");
+        assert.ok(visible.some(row => row.includes("Демо из списка") && row.includes(launcher.fileBase)
+          && row.includes(text("Host", "Хост")) && row.includes("Distrobox (default-box)")));
+        assert.ok(visible.some(row => row.includes("Демо из Distrobox") && row.includes("Distrobox (default-box)")
+          && row.includes("default.invalid")));
+        const directory = process.env.ESKA_HOST_DOM_ARTIFACTS;
+        if (directory) {
+          await fs.mkdir(directory, { recursive: true });
+          await workbench.screenshot(path.join(directory, `registered-infobases-${vscode.env.language}.png`));
+        }
+      }
+      await acceptRegisteredBase(workbench, "Демо из списка");
+      await until(() => fieldValue(first, "path").then(value => value === (launcher?.fileBase ?? process.env.ESKA_HOST_PICKER_PATH)),
+        "registered file infobase copied to the draft");
+      if (launcher) {
+        await fill(first, "runner", "distrobox", true);
+        await fill(first, "container", "profile-box");
+        await click(first, ".settings-import");
+        const selected = await until(async () => (await rows(workbench)).find(row => row.includes("База профиля")),
+          "unsaved profile container used");
+        assert.ok(selected.includes("Distrobox (profile-box)") && selected.includes("profile.invalid:1541"));
+        await acceptRegisteredBase(workbench, "База профиля");
+        await until(() => first.evaluate(`${input("host")}?.value === "profile.invalid:1541"`), "cluster copied to the draft");
+        assert.equal(await fieldValue(first, "name"), "Profile");
+        assert.equal(await fieldValue(first, "runner"), "distrobox");
+        assert.equal(await fieldValue(first, "container"), "profile-box");
+        await assert.rejects(fs.access(file));
+
+        await fill(first, "container", "missing-box");
+        await click(first, ".settings-import");
+        await until(async () => (await rows(workbench)).some(row => row.includes("Демо из списка")),
+          "host list available when Distrobox cannot be read");
+        const unavailable = text("Distrobox launcher list unavailable", "Список запуска в Distrobox недоступен");
+        await until(() => workbench.evaluate(`document.querySelector('.quick-input-widget input')?.placeholder
+          .includes(${JSON.stringify(unavailable + " (missing-box)")})`), "partial lookup message localized");
+        await acceptRegisteredBase(workbench, "Демо из списка");
+        await until(() => first.evaluate(`${input("path")}?.value === ${JSON.stringify(launcher.fileBase)}`), "host still selectable");
+        await fill(first, "runner", "local", true);
+      }
     }
     await fill(first, "path", base);
     if (platform) {
@@ -409,6 +496,7 @@ exports.run = async function () {
     passed: true, suite: "project-settings", vscode: vscode.version, locale: vscode.env.language,
     shared_settings: sharedSettings, shared_analyzer: sharedSettings && !!process.env.ESKA_TEST_ANALYZER_BINARY,
     independent_drafts: true, keyboard_save: true, disk_conflict: true, draft_probe: !!platform,
-    registered_infobase: !!picker, narrow_layout: true, themes: themes.map(([, kind]) => kind), epf: processing,
+    registered_infobase: !!picker, distrobox_infobases: !!launcher, narrow_layout: true,
+    themes: themes.map(([, kind]) => kind), epf: processing,
   }));
 };

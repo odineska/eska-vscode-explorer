@@ -90,6 +90,7 @@ export function settingsController(api) {
 
   function edit(field, value) {
     if (field === "enabled" && !value) cancelPick();
+    if ((field === "runner" || field === "container") && current().draft[field] !== value) cancelPick();
     editFields(active(), { [field]: value });
   }
 
@@ -140,11 +141,13 @@ export function settingsController(api) {
   }
 
   function pickInfobase() {
-    if (!loaded() || !current().draft.enabled || picker()) return;
+    const { enabled, runner, container } = current().draft;
+    if (!loaded() || !enabled || picker()) return;
     const request = newRequest("pickInfobase");
     setPicker(request);
     set(profiles => { profiles[request.profile].notice = null; });
-    api.postMessage(request);
+    const box = runner === "distrobox" ? container.trim() : "";
+    api.postMessage(box ? { ...request, container: box } : request);
   }
 
   function acceptSettings(data, pending) {

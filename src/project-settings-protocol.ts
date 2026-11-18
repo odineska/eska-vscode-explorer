@@ -31,7 +31,8 @@ export type SettingsRequest = Operation & (
   | { type: "load" }
   | { type: "save"; value: Record<string, unknown> | null }
   | { type: "probe"; value: Record<string, unknown> }
-  | { type: "pickInfobase" | "cancelPick" }
+  | { type: "pickInfobase"; container?: string }
+  | { type: "cancelPick" }
 );
 
 export type SettingsResponse = Operation & (
@@ -47,9 +48,13 @@ export function settingsRequest(value: unknown): SettingsRequest | undefined {
   const { id, profile } = value;
   switch (value.type) {
     case "load":
-    case "pickInfobase":
     case "cancelPick":
       return { type: value.type, id, profile };
+    case "pickInfobase": {
+      if (value.container !== undefined && typeof value.container !== "string") return;
+      const container = value.container?.trim();
+      return { type: value.type, id, profile, ...(container ? { container } : {}) };
+    }
     case "save":
       if (value.value === null || isRecord(value.value)) return { type: value.type, id, profile, value: value.value };
       return;

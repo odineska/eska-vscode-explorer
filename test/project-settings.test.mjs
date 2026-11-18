@@ -239,4 +239,35 @@ test("settings messages accept only known operations and profiles", () => {
   assert.equal(settingsRequest({ type: "save", id, profile: "extra", value: {} }), undefined);
   assert.equal(settingsRequest({ type: "probe", id, profile: "test", value: null }), undefined);
   assert.equal(settingsRequest({ type: "load", id: 1, profile: "test" }), undefined);
+  const pick = { type: "pickInfobase", id, profile: "test" };
+  assert.deepEqual(settingsRequest({ ...pick, container: " dev-box " }), { ...pick, container: "dev-box" });
+  assert.deepEqual(settingsRequest({ ...pick, container: " " }), pick);
+  assert.equal(settingsRequest({ ...pick, container: ["dev-box"] }), undefined);
+});
+
+test("launcher lookup uses the draft container and updates only the infobase", async t => {
+  const h = await open(t);
+  h.reply(h.load, original);
+  h.model.edit("runner", "distrobox");
+  h.model.pickInfobase();
+  const automatic = h.last();
+  assert.equal(automatic.container, undefined);
+  h.model.edit("container", "dev-box");
+  assert.equal(h.last().type, "cancelPick");
+  h.model.pickInfobase();
+  const explicit = h.last();
+  assert.equal(explicit.container, "dev-box");
+  h.receive({ type: "infobase", id: automatic.id, profile: "test", infobase: { kind: "file", path: "stale" } });
+  assert.equal(h.model.current().draft.path, "test-base");
+  h.receive({ type: "infobase", id: explicit.id, profile: "test",
+    infobase: { kind: "cluster", host: "demo.invalid:1541", name: "Demo" } });
+  const profile = h.model.current().draft;
+  assert.equal(profile.kind, "cluster");
+  assert.equal(profile.host, "demo.invalid:1541");
+  assert.equal(profile.name, "Demo");
+  assert.equal(profile.runner, "distrobox");
+  assert.equal(profile.container, "dev-box");
+  h.model.edit("runner", "local");
+  h.model.pickInfobase();
+  assert.equal(h.last().container, undefined);
 });

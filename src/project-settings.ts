@@ -111,8 +111,12 @@ export class ProjectSettings implements vscode.Disposable {
         cancelPick();
         const operation = { id, profile, cancellation: new vscode.CancellationTokenSource() };
         picker = operation;
+        const token = operation.cancellation.token;
+        const lookup = new AbortController();
+        const cancellation = token.onCancellationRequested(() => lookup.abort());
         try {
-          const infobase = await pickInfobase(root, executable, language, abort.signal, operation.cancellation.token)
+          const infobase = await pickInfobase(root, executable, language, request.container,
+            AbortSignal.any([abort.signal, lookup.signal]), token)
             .catch(() => null);
           if (picker !== operation) return;
           if (infobase) await post({ type: "infobase", id, profile, infobase });
@@ -120,6 +124,7 @@ export class ProjectSettings implements vscode.Disposable {
             ...(infobase === null ? { detail: text("runtimeRegisteredInfobasesUnavailable") } : {}) });
         } finally {
           if (picker === operation) picker = undefined;
+          cancellation.dispose();
           operation.cancellation.dispose();
         }
         return;
@@ -252,30 +257,58 @@ async function probeProfile(root: string, executable: string, language: string,
   return { ready: false, detail: text(key) };
 }
 
-async function pickInfobase(root: string, executable: string, language: string, signal: AbortSignal,
+function registeredInfobases(value: unknown): { entries: unknown[]; sources: unknown } | undefined {
+  if (isRecord(value) && value.schema_version === 1 && value.kind === "registered-infobases" && Array.isArray(value.entries)) {
+    return { entries: value.entries, sources: value.sources };
+  }
+}
+
+async function pickInfobase(root: string, executable: string, language: string, container: string | undefined, signal: AbortSignal,
   token: vscode.CancellationToken) {
   const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("debugExecutable", "eska-debug");
   const binary = await findTool(configured, "eska-debug", dirname(executable)).catch(() => undefined);
   if (!binary) return null;
   if (signal.aborted || token.isCancellationRequested) return;
-  const result = await runtimeJson(binary, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US", "infobases"],
-    { signal, timeout: 10_000 });
-  if (signal.aborted || token.isCancellationRequested) return;
-  if (!isRecord(result) || result.schema_version !== 1 || result.kind !== "registered-infobases"
-    || !Array.isArray(result.entries)) return null;
-  const choices = result.entries.flatMap<{ label: string; infobase: Exclude<Infobase, { kind: "standalone" }> }>(entry => {
-    if (!isRecord(entry) || typeof entry.name !== "string" || !isRecord(entry.infobase)) return [];
+  const args = ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US", "infobases"];
+  const options = { signal, timeout: 12_000 };
+  const result = await runtimeJson(binary, [...args, "--include-distrobox", ...(container ? [`--distrobox=${container}`] : [])],
+    options);
+  if (signal.aborted) return;
+  // Previously installed debuggers only understand the local list command.
+  const lists = registeredInfobases(result) ?? registeredInfobases(await runtimeJson(binary, args, options));
+  if (signal.aborted) return;
+  if (!lists) return null;
+  const text = (key: MessageKey, ...values: string[]) => message(language, key, ...values);
+  const choices = new Map<string, { label: string; detail: string;
+    infobase: Exclude<Infobase, { kind: "standalone" }>; sources: Set<string> }>();
+  for (const entry of lists.entries) {
+    if (!isRecord(entry) || typeof entry.name !== "string" || !isRecord(entry.infobase)) continue;
     const base = entry.infobase;
-    if (base.kind === "file" && typeof base.path === "string") {
-      return [{ label: entry.name, infobase: { kind: "file", path: base.path } }];
+    const infobase: Exclude<Infobase, { kind: "standalone" }> | undefined =
+      base.kind === "file" && typeof base.path === "string" ? { kind: base.kind, path: base.path }
+      : base.kind === "cluster" && typeof base.host === "string" && typeof base.name === "string"
+        ? { kind: base.kind, host: base.host, name: base.name } : undefined;
+    if (!infobase) continue;
+    const origin = entry.source;
+    const source = isRecord(origin) && origin.kind === "distrobox" && typeof origin.container === "string"
+      ? `${text("runtimeDistrobox")} (${origin.container})` : text("runtimeRegisteredInfobaseHost");
+    const key = JSON.stringify([entry.name, infobase]);
+    const previous = choices.get(key);
+    if (previous) previous.sources.add(source);
+    else choices.set(key, { label: entry.name, infobase, sources: new Set([source]),
+      detail: infobase.kind === "file" ? infobase.path : `${infobase.host} / ${infobase.name}` });
+  }
+  if (!choices.size) return null;
+  let placeHolder = text("runtimeRegisteredInfobase");
+  if (isRecord(lists.sources)) {
+    const box = lists.sources.distrobox;
+    if (lists.sources.host === "unavailable") placeHolder = text("runtimeRegisteredInfobaseHostUnavailable");
+    if (isRecord(box) && box.status === "unavailable" && typeof box.container === "string") {
+      placeHolder = text("runtimeRegisteredInfobaseDistroboxUnavailable", box.container);
     }
-    if (base.kind === "cluster" && typeof base.host === "string" && typeof base.name === "string") {
-      return [{ label: entry.name, infobase: { kind: "cluster", host: base.host, name: base.name } }];
-    }
-    return [];
-  });
-  if (!choices.length) return null;
-  return (await vscode.window.showQuickPick(choices, {
-    placeHolder: message(language, "runtimeRegisteredInfobase"),
+  }
+  const items = [...choices.values()].map(({ sources, ...choice }) => ({ ...choice, description: [...sources].join(" · ") }));
+  return (await vscode.window.showQuickPick(items, {
+    placeHolder, matchOnDescription: true, matchOnDetail: true,
   }, token))?.infobase;
 }
