@@ -1,5 +1,5 @@
 import { automaticCommands, caption, flag, orderedCommands, property, scalar, text } from './model.mjs';
-import { isDynamicList } from './table-model.mjs';
+import { isDynamicList, tableStandardAction } from './table-model.mjs';
 
 const formCommand = 'Form.StandardCommand.';
 const standardItem = name => ({ key: formCommand + name, caption: { kind: 'standard', key: 'command.' + name } });
@@ -108,10 +108,10 @@ function ordinaryAuthoredGroups(items) {
 
 export function tableCommandRows(table, authored, fallback = [], sections = table.presentation.tableCommandMenu, { authoredOnly = false } = {}) {
   const ordinary = table.kind === 'Table' && !isDynamicList(table);
-  const prefix = `Form.Item.${table.name}.StandardCommand.`;
   const commandKey = item => {
     const reference = scalar(item, 'CommandName');
-    return reference.startsWith(prefix) ? 'Table.StandardCommand.' + reference.slice(prefix.length) : reference;
+    const action = tableStandardAction(table, reference);
+    return action ? 'Table.StandardCommand.' + action : reference;
   };
   const generated = sections ?? [fallback];
   const declared = menuItems(authored).filter(item => item !== menuSeparator);

@@ -115,7 +115,9 @@ test('a manual ordinary menu preserves authored order and inherits pictures and 
   const find={...action('Find'),shortcut:'Alt+F',picture:{kind:'standard',name:'Find'}};
   const finish={...action('EndEdit'),shortcut:'Shift+F2',picture:{kind:'standard',name:'EndEdit'}};
   const table={kind:'Table',name:'Rows',presentation:{tableCommandMenu:[[action('Add'),finish,find]]}};
-  const rows=tableCommandRows(table,[button('Find','InAdditionalSubmenu'),button('EndEdit')],[],undefined,{authoredOnly:true});
+  const findButton=button('Find','InAdditionalSubmenu');
+  findButton.properties[0]=property('CommandName','Form.Item.ROWS.StandardCommand.Find');
+  const rows=tableCommandRows(table,[findButton,button('EndEdit')],[],undefined,{authoredOnly:true});
   assert.deepEqual(keys(rows),['declared-Find','declared-EndEdit']);
   assert.deepEqual(rows.map(menuShortcut),['Alt+F','Shift+F2']);
   assert.deepEqual(rows.map(item=>menuPicture(item,false).name),['AdvancedSearch','EndEdit']);

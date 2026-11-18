@@ -95,9 +95,19 @@ function findTable(node, name) {
   }
 }
 
-export function tableSearchReference(command) {
-  const match = /^Form\.Item\.(.+)\.StandardCommand\.(Find|CancelSearch)$/.exec(command);
+function tableCommandReference(command) {
+  const match = /^Form\.Item\.(.+?)\.StandardCommand\.(.+)$/.exec(command);
   return match ? { table: match[1], action: match[2] } : undefined;
+}
+
+export function tableStandardAction(table, command) {
+  const reference = tableCommandReference(command);
+  if (reference && reference.table.toLowerCase() === table.name?.toLowerCase()) return reference.action;
+}
+
+export function tableSearchReference(command) {
+  const reference = tableCommandReference(command);
+  if (reference && ['Find', 'CancelSearch'].includes(reference.action)) return reference;
 }
 
 export function availableTableSearchCommand(root, reference) {
@@ -299,11 +309,7 @@ export function tableLayout(table, state = {}, additions) {
   const authored = bar?.children ?? [];
   const authoredCommands = authored.some(child => child.presentation.displayed);
   const autofill = flag(bar, 'Autofill');
-  const prefix = `Form.Item.${table.name}.StandardCommand.`;
-  const standardAction = item => {
-    const reference = scalar(item, 'CommandName');
-    if (reference.startsWith(prefix)) return reference.slice(prefix.length);
-  };
+  const standardAction = item => tableStandardAction(table, scalar(item, 'CommandName'));
   const automatic = table.presentation.autoCommandItems ?? [];
   const commands = dynamic ? automatic : automatic.filter(item =>
     !hasAuthoredPlacement(authored, button => `Table.StandardCommand.${standardAction(button)}` === item.key));
