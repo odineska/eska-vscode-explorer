@@ -3,6 +3,7 @@ import { basename, dirname } from "node:path";
 import * as vscode from "vscode";
 import { formatPreviewRequest, handleFormatPreview, type FormatPreviewHost } from "./format-preview.js";
 import { message, type MessageKey } from "./messages.js";
+import { diagnoseProject, type ProjectCheck, type ProjectCheckResult } from "./project-check.js";
 import { handleProjectFile, projectFileRequest, type AnalyzerSettingsHost } from "./project-file-settings.js";
 import { isRecord } from "./protocol.js";
 import { settingsRequest, type Infobase, type LocalSettings, type ProfileName, type SettingsResponse } from "./project-settings-protocol.js";
@@ -62,7 +63,7 @@ export class ProjectSettings implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly analyzer: AnalyzerSettingsHost,
-    private readonly formatting: FormatPreviewHost) {}
+    private readonly check: ProjectCheck, private readonly formatting: FormatPreviewHost) {}
 
   show(root: string, executable: string, externalProcessing: boolean, scope: "project" | "workspace" | "member" = "project"): void {
     const existing = this.panels.get(root);
@@ -79,6 +80,7 @@ export class ProjectSettings implements vscode.Disposable {
     let snapshot: Snapshot | undefined;
     let pendingWrite = false;
     const pendingFiles = new Set<string>();
+    const pendingActions = new Set<string>();
     let formatPreview: AbortController | undefined;
     const probes: Partial<Record<ProfileName, AbortController>> = {};
     let picker: { id: string; profile: ProfileName; cancellation: vscode.CancellationTokenSource } | undefined;
@@ -103,6 +105,30 @@ export class ProjectSettings implements vscode.Disposable {
         } finally {
           if (formatPreview === operation) formatPreview = undefined;
         }
+        return;
+      }
+      if (isRecord(value) && value.type === "project-action" && typeof value.id === "string" && /^[0-9a-f-]{36}$/.test(value.id)
+        && (value.action === "doctor" || value.action === "check" && scope !== "member")) {
+        const { action, id } = value;
+        if (pendingActions.has(action)) {
+          await panel.webview.postMessage({ type: "project-action-result", action, id, text: text("projectActionBusy") });
+          return;
+        }
+        pendingActions.add(action);
+        const target = { root, executable, workspace: scope === "workspace" };
+        try {
+          let report: ProjectCheckResult | undefined;
+          if (action === "doctor") {
+            const diagnosis = await diagnoseProject(target, abort.signal);
+            report = diagnosis ? { text: diagnosis } : { text: text("projectDoctorFailed"), error: true };
+          } else {
+            report = await this.check.run(target, abort.signal) ?? { text: text("projectActionCancelled") };
+          }
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "project-action-result", action, id, ...report });
+        } catch {
+          const failed = action === "doctor" ? "projectDoctorFailed" : "projectCheckFailed";
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "project-action-result", action, id, text: text(failed), error: true });
+        } finally { pendingActions.delete(action); }
         return;
       }
       const shared = projectFileRequest(value);

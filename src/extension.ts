@@ -43,6 +43,7 @@ import { basename, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
+import { ProjectCheck } from "./project-check.js";
 import type { AnalyzerSettingsHost } from "./project-file-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
@@ -84,6 +85,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly queryDesigner: QueryDesigner;
   private readonly formPreview: FormPreviewService;
   private readonly projectSettings: ProjectSettings;
+  private readonly projectCheck: ProjectCheck;
   private readonly projectRuntime: ProjectRuntime;
   private readonly projects = new WorkspaceProjects();
   private readonly runDebug = new RunDebugView(this.projects);
@@ -194,7 +196,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       },
       release: root => this.language.releaseForSettings(root),
     };
-    this.projectSettings = new ProjectSettings(context, analyzerHost, {
+    this.projectCheck = new ProjectCheck(analyzerHost);
+    this.projectSettings = new ProjectSettings(context, analyzerHost, this.projectCheck, {
       formatter: async (root, signal) => {
         const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get("formatterExecutable", "eska-fmt");
         return (await this.tooling.ensureFormatter(signal, true, configured))?.path;
@@ -203,6 +206,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
+    this.disposables.push(this.projectCheck,
+      vscode.commands.registerCommand("eska.explorer.checkProject", (entry?: Element) => this.checkProject(entry)));
     for (const [name, action] of [
       ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
       ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
@@ -973,14 +978,23 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     }
   }
 
+  private async checkProject(entry?: Element): Promise<void> {
+    const target = await this.runtimeProject(entry);
+    if (!target) return;
+    const result = await this.projectCheck.run(target);
+    if (result?.error) void vscode.window.showErrorMessage(result.text);
+    else if (result) void vscode.window.showInformationMessage(result.text);
+  }
+
   private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {
-    const fromTree = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings";
+    const explicit = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project
+      : entry && "node" in entry && !entry.node.parent ? entry.project : undefined;
+    const fromTree = explicit || entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings";
     if (fromTree) { if (!this.tree) await this.connect(false); }
     else if (!await this.runtimeWorkspace(root ?? folder)) return;
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
-    let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "")
-      : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
+    let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "") : explicit;
     if (root && !project) return undefined;
     if (!project) {
       const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info) && (!type || item.info.type === type)

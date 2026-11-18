@@ -43,6 +43,7 @@
   "languageFeatures": "Run Explorer’s own BSL language client for the selected ESKA application. Grammar remains available when disabled.",
   "restartLanguage": "Restart BSL Analyzer and Reanalyze",
   "configureProject": "Configure Project",
+  "checkProject": "Check Project",
   "runTest": "Run Test Infobase",
   "applyTest": "Update Test Infobase",
   "installExtensionTest": "Install Extension in Test Infobase",

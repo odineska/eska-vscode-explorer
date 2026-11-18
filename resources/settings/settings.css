@@ -219,6 +219,17 @@
 .settings-result[data-result="success"] strong { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
 .settings-result[data-result="stale"] { color: var(--settings-muted); }
 
+.settings-command-report {
+  margin: 8px 0 0;
+  padding: 10px;
+  background: var(--settings-panel);
+  border: 1px solid var(--settings-border);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-editor-font-family);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .settings-footer {
   position: sticky;
   bottom: 0;

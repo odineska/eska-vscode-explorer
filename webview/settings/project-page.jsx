@@ -4,6 +4,7 @@ import { AnalyzerSettings } from "./analyzer-settings.jsx";
 import { FormatSettings } from "./format-settings.jsx";
 import { GitFileEditor } from "./git-settings.jsx";
 import { gitRules } from "./git-rules.mjs";
+import { ProjectAction } from "./project-action.jsx";
 import { caption, field, SettingsFields, SettingsGroup, word } from "./project-controls.jsx";
 
 export const settingsSections = [
@@ -285,7 +286,12 @@ export function ProjectPage(props) {
                 }</For>
               </SettingsGroup>
             </Match>
-            <Match when={props.section === "general"}><ProjectAndBuild locale={locale} model={model} member={props.member}/></Match>
+            <Match when={props.section === "general"}>
+              <ProjectAndBuild locale={locale} model={model} member={props.member}/>
+              <SettingsGroup title={word(locale, "Диагностика окружения", "Environment Diagnostics")} icon="service">
+                <ProjectAction api={props.api} locale={locale} action="doctor"/>
+              </SettingsGroup>
+            </Match>
             <Match when={props.section === "format"}><FormatSettings locale={locale} model={model} metadata={read().snapshot.metadata} snapshot={read().snapshot} api={props.api}/></Match>
             <Match when={props.section === "analyzer"}><AnalyzerSettings locale={locale} model={model} version={read().snapshot.metadata?.analyzerVersion}/></Match>
             <Match when={props.section === "check"}>
@@ -293,6 +299,7 @@ export function ProjectPage(props) {
                 <p class="settings-hint">{word(locale, "Пустое поле оставляет значение по умолчанию. Число 0 запрещает сообщения этого уровня.",
                   "An empty field inherits the default. Zero allows no messages of that severity.")}</p>
                 <div class="settings-option-grid"><SettingsFields locale={locale} fields={checkFields} model={model}/></div>
+                <ProjectAction api={props.api} locale={locale} action="check"/>
               </SettingsGroup>
             </Match>
             <Match when={props.section === "git"}><Workflow locale={locale} model={model}/></Match>

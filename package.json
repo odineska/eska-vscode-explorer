@@ -214,6 +214,12 @@
         "category": "ESKA Explorer"
       },
       {
+        "command": "eska.explorer.checkProject",
+        "title": "%checkProject%",
+        "category": "ESKA Explorer",
+        "icon": "$(check)"
+      },
+      {
         "command": "eska.explorer.runTest",
         "title": "%runTest%",
         "category": "ESKA Explorer"
@@ -649,6 +655,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "eska.explorer.checkProject",
+          "when": "view == eska.explorer.projects && viewItem =~ /^eskaRoot/ && isWorkspaceTrusted",
+          "group": "project@1"
+        },
         {
           "command": "eska.explorer.configureProject",
           "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
