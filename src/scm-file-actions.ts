@@ -232,6 +232,18 @@ function diffUris(entry: ScmFileEntry, { api, repository }: ScmFileActionsContex
   return { right };
 }
 
+function headUri(entry: ScmFileEntry, { api, repository }: ScmFileActionsContext): vscode.Uri | undefined {
+  if (!repository.state.HEAD?.commit || entry.group === "untracked") return;
+  const { change } = entry;
+  const path = sourceKey(change.uri.fsPath);
+  const staged = entry.group === "working" ? repository.state.indexChanges.find(item =>
+    sourceKey((item.renameUri ?? item.uri).fsPath) === path || sourceKey(item.uri.fsPath) === path) : undefined;
+  const tracked = staged ?? change;
+  if ([Status.IndexAdded, Status.IndexCopied, Status.IntentToAdd, Status.Untracked, Status.Ignored]
+    .some(status => status === tracked.status)) return;
+  return api.toGitUri(tracked.originalUri, "HEAD");
+}
+
 async function open(action: "open" | "diff" | "head" | "revealOs" | "revealExplorer" | "compareWorkspace",
   entry: ScmFileEntry, context: ScmFileActionsContext): Promise<void> {
   const { uri, status } = entry.change;
@@ -239,21 +251,20 @@ async function open(action: "open" | "diff" | "head" | "revealOs" | "revealExplo
     await vscode.commands.executeCommand(action === "revealOs" ? "revealFileInOS" : "revealInExplorer", uri);
     return;
   }
-  if (action === "open") {
-    if (status !== Status.IndexDeleted && status !== Status.Deleted) {
-      await vscode.commands.executeCommand("vscode.open", uri, {
-        preserveFocus: true, preview: false, viewColumn: vscode.ViewColumn.Active,
-        ...(status === Status.BothModified ? { override: false } : {}),
-      });
-    }
-    return;
-  }
-  let { left, right } = diffUris(entry, context);
-  if (action === "head") {
-    if (left) await vscode.commands.executeCommand("vscode.open", left, { preview: false }, `${entry.label} (HEAD)`);
+  if (action === "head" || action === "open" && (status === Status.IndexDeleted || status === Status.Deleted)) {
+    const target = headUri(entry, context);
+    if (target) await vscode.commands.executeCommand("vscode.open", target, { preview: false }, `${entry.label} (HEAD)`);
     else void vscode.window.showWarningMessage(context.text("scmHeadUnavailable", entry.label));
     return;
   }
+  if (action === "open") {
+    await vscode.commands.executeCommand("vscode.open", uri, {
+      preserveFocus: true, preview: false, viewColumn: vscode.ViewColumn.Active,
+      ...(status === Status.BothModified ? { override: false } : {}),
+    });
+    return;
+  }
+  let { left, right } = diffUris(entry, context);
   if (action === "compareWorkspace") {
     const main = context.repository.state.worktrees?.find(worktree => worktree.main);
     const path = relativeFile(context.repository.rootUri.fsPath, uri.fsPath);

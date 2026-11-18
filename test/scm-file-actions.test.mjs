@@ -77,6 +77,34 @@ test("the staged and working rows independently select HEAD, index, and working 
   assert.deepEqual(setup.calls, [["revert", staged.change.originalUri.fsPath, staged.change.uri.fsPath]]);
 });
 
+test("HEAD ignores staged content and resolves deleted and renamed paths", async () => {
+  const modified = entry("working", 5, "modified.bsl");
+  const removed = entry("working", 6, "removed.bsl");
+  const renamed = entry("working", 5, "new.bsl");
+  const stagedRemoved = entry("index", 2, "gone.bsl");
+  const setup = fixture([modified, removed, renamed, stagedRemoved]);
+  const stagedRename = entry("index", 3, "new.bsl", "old.bsl");
+  setup.context.repository.state.indexChanges = [entry("index", 0, "modified.bsl").change, stagedRename.change];
+  await setup.execute("head");
+  assert.deepEqual(setup.calls.map(([command, target]) => [command, target.ref, target.fsPath]), [
+    ["vscode.open", "HEAD", join(root, "modified.bsl")],
+    ["vscode.open", "HEAD", join(root, "removed.bsl")],
+    ["vscode.open", "HEAD", join(root, "old.bsl")],
+    ["vscode.open", "HEAD", join(root, "gone.bsl")],
+  ]);
+});
+
+test("HEAD warns for both rows of a newly staged file", async () => {
+  const staged = entry("index", 1, "new.bsl"), working = entry("working", 5, "new.bsl");
+  const setup = fixture([staged, working]);
+  setup.context.repository.state.indexChanges = [staged.change];
+  const warnings = [];
+  setup.setWarning(async key => { warnings.push(key); });
+  await setup.execute("head");
+  assert.deepEqual(setup.calls, []);
+  assert.deepEqual(warnings, ["scmHeadUnavailable", "scmHeadUnavailable"]);
+});
+
 test("discard revalidates after confirmation and rejects an externally changed file", async () => {
   const setup = fixture([entry("working", 5, "a.xml")]);
   let validations = 0;

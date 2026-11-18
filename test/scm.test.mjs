@@ -116,6 +116,23 @@ test('semantic labels leave file identities intact and keep index and worktree c
   assert.equal(h.invoked[2][0], 'vscode.open'); assert.equal(h.invoked[2][1].fsPath, join(source, 'notes.txt'));
 });
 
+test('clicking a deleted row with openDiffOnClick disabled opens the committed path', async t => {
+  const repo = repository(root, [change(file, 6)]);
+  const h = setup([repo]); t.after(() => h.provider.dispose());
+  h.vscode.workspace.getConfiguration = () => ({
+    get: (name, fallback) => name === 'openDiffOnClick' ? false : fallback,
+  });
+  await h.ready();
+  const [row] = h.rows();
+  await h.send({ type: 'action', action: 'openChange', key: row.key, revision: h.snapshot().revision });
+  assert.equal(h.errors.length, 0);
+  assert.equal(h.invoked.length, 1);
+  const [action, target] = h.invoked[0];
+  assert.equal(action, 'vscode.open');
+  assert.equal(target.ref, 'HEAD');
+  assert.equal(target.fsPath, join(source, file));
+});
+
 test('renamed captions and unstage address both real paths', async t => {
   const repo = repository(root, []); repo.state.indexChanges = [change('renamed name.bsl', 3, 'old name.bsl')];
   const h = setup([repo]); t.after(() => h.provider.dispose());

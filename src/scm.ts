@@ -351,12 +351,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
         return;
       }
       let fileAction: FileAction;
-      if (action === "openChange") {
-        fileAction = this.options(root).openDiff ? "diff" : "open";
-        if (fileAction === "open" && (entry.change.status === 2 || entry.change.status === 6)) {
-          this.validate(entry); await vscode.commands.executeCommand("vscode.open", entry.change.uri); return;
-        }
-      }
+      if (action === "openChange") fileAction = this.options(root).openDiff ? "diff" : "open";
       else if (isFileAction(action)) fileAction = action;
       else throw new Error(this.text("scmChanged"));
       const provided = isRecord(value) ? value.eskaScmSelection : undefined;
