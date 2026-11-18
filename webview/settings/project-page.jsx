@@ -286,7 +286,7 @@ export function ProjectPage(props) {
               </SettingsGroup>
             </Match>
             <Match when={props.section === "general"}><ProjectAndBuild locale={locale} model={model} member={props.member}/></Match>
-            <Match when={props.section === "format"}><FormatSettings locale={locale} model={model} metadata={read().snapshot.metadata}/></Match>
+            <Match when={props.section === "format"}><FormatSettings locale={locale} model={model} metadata={read().snapshot.metadata} snapshot={read().snapshot} api={props.api}/></Match>
             <Match when={props.section === "analyzer"}><AnalyzerSettings locale={locale} model={model} version={read().snapshot.metadata?.analyzerVersion}/></Match>
             <Match when={props.section === "check"}>
               <SettingsGroup title={word(locale, "Пороги проверки BSL", "BSL check thresholds")} icon="check">

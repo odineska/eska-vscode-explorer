@@ -43,6 +43,7 @@ import { basename, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
+import type { AnalyzerSettingsHost } from "./project-file-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
@@ -183,7 +184,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       () => this.connection.disconnect(), () => this.connect(false));
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
-    this.projectSettings = new ProjectSettings(context, {
+    const analyzerHost: AnalyzerSettingsHost = {
       executable: () => this.tooling.findAnalyzerExecutable(),
       application: root => {
         const state = this.connection.state;
@@ -192,6 +193,12 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         }
       },
       release: root => this.language.releaseForSettings(root),
+    };
+    this.projectSettings = new ProjectSettings(context, analyzerHost, {
+      formatter: async (root, signal) => {
+        const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get("formatterExecutable", "eska-fmt");
+        return (await this.tooling.ensureFormatter(signal, true, configured))?.path;
+      },
     });
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",

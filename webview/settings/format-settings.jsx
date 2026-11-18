@@ -1,7 +1,7 @@
-import { createMemo, createSignal, For, Match, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import { Button } from "../ui/controls.jsx";
 import { caption, childModel, field, SettingsFields, SettingsGroup, word } from "./project-controls.jsx";
-import { at } from "./project-draft.mjs";
+import { at, manifestEdits } from "./project-draft.mjs";
 
 const optionNames = {
   indent_style: caption("Символ отступа", "Indent character"),
@@ -104,6 +104,65 @@ function profileValue(name, language, key, configs, presets, visited = new Set()
   return explicit ?? profileValue(base, language, key, configs, presets, visited);
 }
 
+function FormattingExample(props) {
+  const [example, setExample] = createSignal();
+  const [pending, setPending] = createSignal();
+  const [error, setError] = createSignal(false);
+  let timer, submitted;
+  function request(pick = false) {
+    clearTimeout(timer);
+    submitted = JSON.stringify([props.snapshot.revision, props.model.value()]);
+    const id = crypto.randomUUID();
+    setPending(id); setError(false);
+    props.api?.postMessage({ type: "format-preview", id, revision: props.snapshot.revision,
+      edits: manifestEdits(props.snapshot.value, props.model.value()),
+      ...(!pick && example()?.source ? { source: example().source } : {}),
+    });
+  }
+  function receive(event) {
+    const data = event.data;
+    if (data?.type !== "format-preview" || data.id !== pending()) return;
+    setPending();
+    if (data.error) setError(data.error.code ?? "unavailable");
+    else if (!data.cancelled && typeof data.before === "string" && typeof data.after === "string") {
+      setExample(data);
+      if (submitted !== JSON.stringify([props.snapshot.revision, props.model.value()])) request();
+    }
+  }
+  window.addEventListener("message", receive);
+  onCleanup(() => { clearTimeout(timer); window.removeEventListener("message", receive); });
+  createEffect(() => [JSON.stringify(props.model.value()), props.snapshot.revision], () => {
+    clearTimeout(timer);
+    if (untrack(example)?.source) {
+      // Invalidate old replies immediately, including while the debounce is pending.
+      setPending();
+      timer = setTimeout(() => request(), 300);
+    }
+  });
+  return <SettingsGroup title={word(props.locale, "Пример форматирования", "Formatting example")} icon="module">
+    <Button type="button" disabled={!!pending()} onClick={() => request(true)}>
+      {word(props.locale, "Показать на примере", "Show an example")}
+    </Button>
+    <Show when={pending()}><p role="status">{word(props.locale, "Обновление примера…", "Updating example…")}</p></Show>
+    <Show when={error()}><p role="alert">{error() === "invalid_scope" || error() === "unsupported_source"
+      ? word(props.locale, "Выберите BSL-модуль этого проекта или workspace.", "Choose a BSL module from this project or workspace.")
+      : error() === "incompatible"
+      ? word(props.locale, "Обновите ESKA для предпросмотра настроек форматирования.", "Update ESKA to preview formatting settings.")
+      : error() === "source_conflict" || error() === "config_conflict"
+      ? word(props.locale, "Исходник или настройки изменились. Повторите просмотр примера.", "Source or settings changed. Show the example again.")
+      : word(props.locale, "Не удалось обновить пример. Проверьте модуль, черновик и установленный форматтер.",
+        "Could not update the example. Check the module, draft settings and installed formatter.")}</p></Show>
+    <Show when={example()}>{value => <>
+      <p class="settings-hint">{word(props.locale, "Пример по черновику. Исходник и настройки не изменяются.",
+        "Example from the draft. Source and settings stay unchanged.")} <code>{value().source}</code></p>
+      <div class="settings-option-grid settings-diff" data-format-preview aria-busy={!!pending()}>
+        <div><span class="settings-label">{word(props.locale, "До", "Before")}</span><pre>{value().before}</pre></div>
+        <div><span class="settings-label">{word(props.locale, "После", "After")}</span><pre>{value().after}</pre></div>
+      </div>
+    </>}</Show>
+  </SettingsGroup>;
+}
+
 export function FormatSettings(props) {
   const locale = props.locale;
   const [scope, setScope] = createSignal("bsl");
@@ -165,6 +224,7 @@ export function FormatSettings(props) {
     return childModel(format, [language], { inherited: path => inherited(language, path) });
   });
   return <>
+    <FormattingExample {...props}/>
     <SettingsGroup title={word(locale, "Стиль форматирования", "Formatting style")} icon="configuration">
       <SettingsFields model={format} fields={selectedFields()} locale={locale}/>
       <nav class="settings-profiles" aria-label={word(locale, "Область форматирования", "Formatting scope")}>

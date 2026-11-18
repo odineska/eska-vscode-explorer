@@ -5,8 +5,8 @@ import { withQueryText, type QueryTextInput } from "../query/text-transfer.js";
 
 export const FORMAT_API_VERSION = { major: 1, minor: 33 } as const;
 
-export type FormatMethod = "format/document" | "format/query" | "format/bufferBegin" | "format/bufferAppend" | "format/bufferClose";
-export interface FormatLimits { maxTextBytes: number; maxInlineBytes: number }
+export type FormatMethod = "format/document" | "format/settingsPreview" | "format/query" | "format/bufferBegin" | "format/bufferAppend" | "format/bufferClose";
+export interface FormatLimits { maxTextBytes: number; maxInlineBytes: number; settingsPreview?: boolean }
 export interface FormatEndpoint {
   readonly limits: FormatLimits;
   request(method: FormatMethod, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
@@ -23,7 +23,7 @@ export function formatCapabilities(hello: unknown): FormatLimits | undefined {
     || value.planOnly !== true || value.writesOwner !== false || value.document !== true || value.range !== true || value.queryDraft !== true
     || value.formatOnSave !== "opt_in" || !Array.isArray(value.languages) || !value.languages.includes("bsl") || !value.languages.includes("sdbl")
     || !unsigned(value.maxTextBytes) || value.maxTextBytes === 0 || !unsigned(value.maxInlineBytes) || value.maxInlineBytes === 0) invalid();
-  return { maxTextBytes: Math.min(value.maxTextBytes, 4_194_304), maxInlineBytes: Math.min(value.maxInlineBytes, 131_072) };
+  return { maxTextBytes: Math.min(value.maxTextBytes, 4_194_304), maxInlineBytes: Math.min(value.maxInlineBytes, 131_072), ...(value.settingsPreview === true ? { settingsPreview: true } : {}) };
 }
 
 /** Reuse the existing bounded UTF-8 transfer; allocation replies precede cancellation and cleanup. */

@@ -306,7 +306,7 @@ function App() {
     </nav>
     <Show when={section() === "run"} fallback={
       <ProjectPage section={section()} file={file()} openGitFile={setGitFile} member={scope === "member"}
-        controller={shared} locale={locale}/>
+        controller={shared} locale={locale} api={api}/>
     }><RunSettings model={local}/></Show>
   </article>;
 }

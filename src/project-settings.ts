@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import * as vscode from "vscode";
+import { formatPreviewRequest, handleFormatPreview, type FormatPreviewHost } from "./format-preview.js";
 import { message, type MessageKey } from "./messages.js";
 import { handleProjectFile, projectFileRequest, type AnalyzerSettingsHost } from "./project-file-settings.js";
 import { isRecord } from "./protocol.js";
@@ -60,7 +61,8 @@ interface Snapshot {
 export class ProjectSettings implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
 
-  constructor(private readonly context: vscode.ExtensionContext, private readonly analyzer: AnalyzerSettingsHost) {}
+  constructor(private readonly context: vscode.ExtensionContext, private readonly analyzer: AnalyzerSettingsHost,
+    private readonly formatting: FormatPreviewHost) {}
 
   show(root: string, executable: string, externalProcessing: boolean, scope: "project" | "workspace" | "member" = "project"): void {
     const existing = this.panels.get(root);
@@ -77,6 +79,7 @@ export class ProjectSettings implements vscode.Disposable {
     let snapshot: Snapshot | undefined;
     let pendingWrite = false;
     const pendingFiles = new Set<string>();
+    let formatPreview: AbortController | undefined;
     const probes: Partial<Record<ProfileName, AbortController>> = {};
     let picker: { id: string; profile: ProfileName; cancellation: vscode.CancellationTokenSource } | undefined;
     const post = (response: SettingsResponse) => {
@@ -88,6 +91,20 @@ export class ProjectSettings implements vscode.Disposable {
     };
     const incoming = panel.webview.onDidReceiveMessage(async (value: unknown) => {
       if (abort.signal.aborted || !vscode.workspace.isTrusted) return;
+      const preview = formatPreviewRequest(value);
+      if (preview) {
+        formatPreview?.abort();
+        const operation = new AbortController();
+        formatPreview = operation;
+        try {
+          const result = await handleFormatPreview(preview, root, executable, language, String(this.context.extension.packageJSON.version),
+            this.formatting, AbortSignal.any([abort.signal, operation.signal]));
+          if (result && !abort.signal.aborted && formatPreview === operation) await panel.webview.postMessage(result);
+        } finally {
+          if (formatPreview === operation) formatPreview = undefined;
+        }
+        return;
+      }
       const shared = projectFileRequest(value);
       if (shared) {
         if (pendingFiles.has(shared.file)) return;
