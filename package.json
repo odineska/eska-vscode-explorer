@@ -292,35 +292,9 @@
         "category": "ESKA Explorer"
       },
       {
-        "command": "eska.explorer.resumeQuery",
-        "title": "%queryResume%",
-        "category": "ESKA Explorer",
-        "icon": "$(debug-continue)"
-      },
-      {
-        "command": "eska.explorer.compareQueryOwner",
-        "title": "%queryCompare%",
-        "category": "ESKA Explorer",
-        "icon": "$(diff)"
-      },
-      {
         "command": "eska.explorer.editBslQuery",
         "title": "%queryEditBsl%",
         "category": "ESKA Explorer"
-      },
-      {
-        "command": "eska.explorer.applyQuery",
-        "title": "%queryApply%",
-        "category": "ESKA Explorer",
-        "icon": "$(check)",
-        "enablement": "eska.queryBsl"
-      },
-      {
-        "command": "eska.explorer.cancelQuery",
-        "title": "%queryCancel%",
-        "category": "ESKA Explorer",
-        "icon": "$(close)",
-        "enablement": "eska.queryBsl"
       },
       {
         "command": "eska.explorer.queryConstructor",
@@ -586,26 +560,6 @@
     "menus": {
       "editor/title": [
         {
-          "command": "eska.explorer.resumeQuery",
-          "when": "resourceScheme == eska-query",
-          "group": "navigation@1"
-        },
-        {
-          "command": "eska.explorer.compareQueryOwner",
-          "when": "resourceScheme == eska-query",
-          "group": "navigation@2"
-        },
-        {
-          "command": "eska.explorer.applyQuery",
-          "when": "resourceScheme == eska-query && eska.queryBsl",
-          "group": "navigation@0"
-        },
-        {
-          "command": "eska.explorer.cancelQuery",
-          "when": "resourceScheme == eska-query && eska.queryBsl",
-          "group": "navigation@3"
-        },
-        {
           "command": "eska.explorer.queryConstructor",
           "when": "resourceScheme == eska-query && resourceExtname == .sdbl",
           "group": "navigation@5"
@@ -774,14 +728,6 @@
         {
           "command": "eska.explorer.openQuery",
           "when": "false"
-        },
-        {
-          "command": "eska.explorer.resumeQuery",
-          "when": "resourceScheme == eska-query"
-        },
-        {
-          "command": "eska.explorer.compareQueryOwner",
-          "when": "resourceScheme == eska-query"
         },
         {
           "command": "eska.explorer.properties",

@@ -22,61 +22,87 @@ function nativeAdapters(vscode) {
   return name => load(fileURLToPath(new URL(`../out/query/${name}.js`, import.meta.url)));
 }
 
-/** Native focus can retain a dirty parent's TextEditor while its child webview is already foreground. */
-function guardFixture({ dirty = true, close = () => true } = {}) {
-  const owner = { toString: () => "file:///owner.xml" }, draft = { toString: () => "eska-query:///draft.sdbl" };
-  const parentTabs = [{ isDirty: dirty }], errors = [], closed = [];
-  let focused = 0;
-  const vscode = { window: { activeTextEditor: { document: { uri: owner } }, tabGroups: {
-    all: [], async close(tabs) { closed.push(tabs); return close(parentTabs, tabs); },
-  } } };
-  const { QueryTabs } = nativeAdapters(vscode)("tabs");
-  const session = { record: { id: "session" }, design: { parentLocked: true },
-    parent: { active: true, tabs: () => parentTabs, contains: uri => uri === owner } };
-  const adapter = Object.assign(Object.create(QueryTabs.prototype), {
-    sessions: new Map([[session.record.id, session]]), currentTree: () => undefined, uri: () => draft,
-    async focus() { if (++focused > 3) throw new Error("focus feedback loop"); },
-    failure(error) { errors.push(error); },
-  });
-  return { adapter, session, parentTabs, errors, closed, focused: () => focused };
-}
-
-/** Let the entire guarded promise/finally chain settle; the fail-safe bounds a regressed microtask loop. */
-async function settled(value) {
-  value.adapter.guardParents();
+/** VS Code may emit a second tab event before the first close has finished. */
+test("constructor closes only its clean query splits and leaves the dirty parent alone", async () => {
+  class TabInputText { constructor(uri) { this.uri = uri; } }
+  const query = { toString: () => "eska-query:/session/query.sdbl" };
+  const owner = { toString: () => "file:///owner.bsl" };
+  const tabs = [
+    { input: new TabInputText(owner), isDirty: true },
+    { input: new TabInputText(query), isDirty: false },
+    { input: new TabInputText(query), isDirty: true },
+  ];
+  const closed = [];
+  let reveals = 0;
+  const { QueryTabs } = nativeAdapters({ TabInputText, window: { tabGroups: {
+    all: [{ tabs }], async close(items) { closed.push(...items); return false; },
+  } } })("tabs");
+  const session = { record: {}, design: { parentLocked: true, reveal() { reveals++; } } };
+  const adapter = Object.assign(Object.create(QueryTabs.prototype), { uri: () => query, sessions: new Map([["id", session]]) });
+  adapter.guardConstructorTabs();
+  adapter.guardConstructorTabs();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(value.session.guarding, undefined);
-  assert.deepEqual(value.errors, []);
-}
-
-test("dirty XML parent behind a constructor does not schedule a focus feedback loop", async () => {
-  const value = guardFixture();
-  await settled(value);
-  assert.equal(value.focused(), 1);
-  assert.equal(value.closed.length, 0);
-  assert.equal(value.parentTabs[0].isDirty, true);
-  assert.equal(value.session.parent.active, true);
+  assert.equal(reveals, 1);
+  assert.deepEqual(closed, [tabs[1]]);
+  assert.equal(session.guarding, undefined);
 });
 
-test("refused native close does not retry without a new parent event", async () => {
-  const value = guardFixture({ dirty: false, close: () => false });
-  await settled(value);
-  assert.equal(value.focused(), 1);
-  assert.equal(value.closed.length, 1);
-  assert.equal(value.parentTabs.length, 1);
+test("native dirty owner remains open when editing its query", async () => {
+  const uri = { scheme: "file", toString: () => "file:///owner.bsl" };
+  const calls = [];
+  const { QueryModalParent } = nativeAdapters({ workspace: { textDocuments: [{ uri, isDirty: true }] },
+    window: { tabGroups: { async close(tabs) { calls.push(tabs); return true; } } } })("modal-parent");
+  const parent = new QueryModalParent(uri);
+  parent.tabs = () => [{ isDirty: false }];
+  assert.equal(await parent.hide(), true);
+  assert.equal(calls.length, 0);
 });
 
-test("a completed close rechecks a late parent tab and preserves its dirty buffer", async () => {
-  let closes = 0;
-  const value = guardFixture({ dirty: false, close(tabs) {
-    tabs.splice(0, tabs.length, { isDirty: ++closes === 2 });
-    return true;
-  } });
-  await settled(value);
-  assert.equal(value.closed.length, 2);
-  assert.ok(value.focused() <= 3);
-  assert.equal(value.parentTabs[0].isDirty, true);
-  assert.equal(value.session.parent.active, true);
+test("immediate reopen waits for the previous query to finish returning to its owner", async () => {
+  const { QueryTabs } = nativeAdapters({ FileChangeType: { Deleted: 3 }, window: { tabGroups: { all: [] } } })("tabs");
+  const session = { record: { id: "query" } }, sessions = new Map([["query", session]]);
+  let returning, restored;
+  const started = new Promise(resolve => { returning = resolve; });
+  const finish = new Promise(resolve => { restored = resolve; });
+  const adapter = Object.assign(Object.create(QueryTabs.prototype), { sessions, removals: new Set(),
+    session: () => session, uri: () => "query", isOwnerSnapshot: () => false, closeSource: async () => {},
+    languageEvents: { fire() {} }, events: { fire() {} }, returnParent: async () => { returning(); await finish; } });
+  const closing = adapter.closeView("query");
+  await started;
+  let complete = false;
+  const reopen = adapter.existingSession(() => true).then(record => { complete = true; return record; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(complete, false);
+  restored();
+  await closing;
+  assert.equal(await reopen, undefined);
+});
+
+test("native Save can stat the query and its parents without treating the pending draft as saved", async () => {
+  class Uri {
+    constructor({ scheme, path }) { this.scheme = scheme; this.path = path; }
+    static from(parts) { return new Uri(parts); }
+    with(change) { return new Uri({ ...this, ...change }); }
+    toString() { return `${this.scheme}:${this.path}`; }
+  }
+  const FileType = { File: 1, Directory: 2 };
+  const { QueryTabs } = nativeAdapters({ Uri, FileType, FilePermission: { Readonly: 1 },
+    FileSystemError: { FileNotFound: uri => Error(`Missing ${uri.path}`) } })("tabs");
+  const record = { id: "document", identity: { kind: "bslLiteral" }, base: "SELECT 1", draft: "SELECT 123", writable: true };
+  const session = { record, mtime: 10 };
+  const adapter = Object.assign(Object.create(QueryTabs.prototype), { sessions: new Map([[record.id, session]]) });
+  const file = adapter.uri(record), root = file.with({ path: "/" }), directory = file.with({ path: "/document" });
+  assert.equal((await adapter.stat(root)).type, FileType.Directory);
+  assert.equal((await adapter.stat(directory)).type, FileType.Directory);
+  assert.equal((await adapter.readDirectory(root))[0][0], "document");
+  assert.equal((await adapter.readDirectory(directory))[0][0], "query.sdbl");
+  assert.equal((await adapter.stat(file)).size, Buffer.byteLength(record.base));
+  assert.equal((await adapter.readFile(file)).toString(), record.base);
+  await assert.rejects(adapter.stat(file.with({ path: "/missing/query.sdbl" })), /Missing/);
+  await assert.rejects(adapter.readDirectory(file), /Missing/);
+  session.design = { before: record.draft };
+  assert.equal((await adapter.readFile(file)).toString(), record.draft);
+  assert.equal((await adapter.stat(file)).permissions, undefined);
 });
 
 test("constructor reveal is idempotent when the panel is already active", async () => {
@@ -97,7 +123,7 @@ test("constructor reveal is idempotent when the panel is already active", async 
   reveal(); assert.equal(focused, 1);
 });
 
-test("applying a BSL owner preserves the draft file version while owner snapshots advance", () => {
+test("saving BSL and XML updates the virtual file version after the owner receipt", () => {
   for (const kind of ["bslLiteral", "dataSet"]) {
     const { QueryTabs } = nativeAdapters({ FileChangeType: { Changed: 1 } })("tabs");
     const endpoint = {}, changed = [], language = [];
@@ -107,7 +133,7 @@ test("applying a BSL owner preserves the draft file version while owner snapshot
       uri: () => "draft", ownerUri: () => "owner", events: { fire: value => changed.push(value) },
       languageEvents: { fire: value => language.push(value) } });
     adapter.accept(session, source, true);
-    assert.equal(session.mtime, kind === "bslLiteral" ? 100 : 101);
+    assert.ok(session.mtime > 100);
     assert.ok(session.ownerMtime > 100, "the changed owner snapshot still gets its own version");
     assert.equal(changed[0][0].uri, "owner");
     assert.equal(language.length, 1);

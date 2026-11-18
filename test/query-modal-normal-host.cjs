@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
-const {until,replace,parentTabs,returned,dirtyOpening}=require('./query-modal-host.cjs');
+const {until,replace,parentTabs,returned,dialogButton,closeQueryTabs}=require('./query-modal-host.cjs');
 
 /** Real normal windows show native save prompts; a test/development host cannot validate those decisions. */
 exports.run=async function(){
@@ -14,32 +14,66 @@ exports.run=async function(){
     const uri=vscode.Uri.file(fixture.module),disk=await fs.readFile(fixture.module);
     let owner=await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(owner,{preview:false});await replace(owner,'Other = 42','Other = 43');
-    await dirtyOpening(uri,'^Cancel$|^Отмена$');
-    assert.equal(owner.isDirty,true);assert.equal(vscode.window.activeTextEditor.document.uri.toString(),uri.toString());
+    const baseline=owner.getText();
+    const openDirty=async()=>{
+      const editor=await vscode.window.showTextDocument(owner,{preview:false});
+      const at=owner.positionAt(owner.getText().indexOf('SELECT ')+3);editor.selection=new vscode.Selection(at,at);
+      await vscode.commands.executeCommand('eska.explorer.editBslQuery');
+      return until(()=>vscode.window.activeTextEditor?.document.uri.scheme==='eska-query'&&vscode.window.activeTextEditor.document,'dirty owner opens native query without a prompt');
+    };
+    let draft=await openDirty();
+    assert.equal(owner.isDirty,true);assert.equal(parentTabs(uri).length,1);
+    assert.equal(owner.getText(),baseline);assert.deepEqual(await fs.readFile(fixture.module),disk);
+    accepted.push('opening_query_preserves_dirty_parent_without_a_prompt');
+    await replace(draft,'SELECT 1','SELECT 2');
+    assert.equal(draft.isDirty,true,'editing the writable query must mark its native tab dirty');
+    const closeWith=async label=>{
+      const tab=vscode.window.tabGroups.all.flatMap(group=>group.tabs).find(tab=>tab.input instanceof vscode.TabInputText&&tab.input.uri.toString()===draft.uri.toString());
+      assert.ok(tab);
+      const closed=vscode.window.tabGroups.close(tab);
+      await dialogButton(label);
+      return closed;
+    };
+    assert.equal(await closeWith('^Cancel$|^Отмена$'),false);
+    assert.equal(vscode.window.activeTextEditor?.document,draft);assert.equal(draft.isDirty,true);
+    assert.equal(owner.getText(),baseline);
+    accepted.push('native_close_cancel_retains_dirty_query');
+    assert.equal(await closeWith("^Don't Save$|^Не сохранять$"),true);
+    owner=await returned(uri);assert.equal(owner.getText(),baseline);
     assert.deepEqual(await fs.readFile(fixture.module),disk);
-    assert.ok(!vscode.window.tabGroups.all.some(group=>group.tabs.some(tab=>tab.input instanceof vscode.TabInputText&&tab.input.uri.scheme==='eska-query')));
-    accepted.push('native_cancel_preserves_dirty_parent_without_opening_child');
-    await dirtyOpening(uri,'^Save$|^Сохранить$');
-    await until(()=>vscode.window.activeTextEditor?.document.uri.scheme==='eska-query','explicit native Save opens child');
-    assert.equal(parentTabs(uri).length,0);
-    assert.equal((await fs.readFile(fixture.module)).toString('utf8').includes('Other = 43'),true);
-    await vscode.commands.executeCommand('eska.explorer.cancelQuery');owner=await returned(uri);
-    assert.equal(owner.isDirty,false);assert.ok(owner.getText().includes('Other = 43'));
-    accepted.push('explicit_native_save_precedes_source_capture_and_return');
-    await replace(owner,'Other = 43','Other = 44');
-    await dirtyOpening(uri,"^Don't Save$|^Не сохранять$");
-    await until(()=>vscode.window.activeTextEditor?.document.uri.scheme==='eska-query','explicit native discard opens child');
-    await vscode.commands.executeCommand('eska.explorer.cancelQuery');owner=await returned(uri);
-    assert.ok(owner.getText().includes('Other = 43'));assert.equal(owner.isDirty,false);
-    accepted.push('only_explicit_native_discard_can_revert_unsaved_parent');
+    accepted.push('native_close_discard_preserves_dirty_owner');
+    draft=await openDirty();await replace(draft,'SELECT 1','SELECT 3');
+    assert.equal(await closeWith('^Save$|^Сохранить$'),true);
+    owner=await returned(uri);
+    assert.equal(owner.getText(),baseline.replace('SELECT 1','SELECT 3'));
+    assert.equal(owner.isDirty,true);assert.deepEqual(await fs.readFile(fixture.module),disk);
+    assert.equal(await owner.save(),true);
+    assert.ok((await fs.readFile(fixture.module,'utf8')).includes('Other = 43'));
+    accepted.push('native_close_save_updates_dirty_owner_only_until_its_own_save');
+    const files = vscode.workspace.getConfiguration('files', uri);
+    await files.update('readonlyInclude', { '**/ObjectModule.bsl': true }, vscode.ConfigurationTarget.Workspace);
+    try {
+      draft = await openDirty();
+      assert.equal((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
+      const beforeDraft = draft.getText();
+      await vscode.commands.executeCommand('type', { text: 'must not alter query' });
+      assert.equal(draft.getText(), beforeDraft);
+      await closeQueryTabs(draft);
+      owner = await returned(uri);
+    } finally {
+      await files.update('readonlyInclude', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+    accepted.push('query_inherits_configured_readonly_source');
+
     await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
-    const editor=vscode.window.activeTextEditor,at=owner.positionAt(owner.getText().indexOf('SELECT ')+3);editor.selection=new vscode.Selection(at,at);
-    await vscode.commands.executeCommand('eska.explorer.editBslQuery');
-    await until(()=>vscode.window.activeTextEditor?.document.uri.scheme==='eska-query','readonly parent child');
-    await vscode.commands.executeCommand('eska.explorer.cancelQuery');owner=await returned(uri);
-    const before=owner.getText();await vscode.commands.executeCommand('type',{text:'must not alter parent'});assert.equal(owner.getText(),before);
+    draft = await openDirty();
+    await closeQueryTabs(draft);
+    owner = await returned(uri);
+    const before = owner.getText();
+    await vscode.commands.executeCommand('type', { text: 'must not alter parent' });
+    assert.equal(owner.getText(), before);
     await vscode.commands.executeCommand('workbench.action.files.resetActiveEditorReadonlyInSession');
-    accepted.push('native_readonly_override_survives_modal_roundtrip');
+    accepted.push('native_readonly_override_survives_query_roundtrip');
     await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,suite:'query-modal-normal',locale:vscode.env.language,accepted}));
   }catch(error){
     const logs=[];

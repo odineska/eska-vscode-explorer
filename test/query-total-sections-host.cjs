@@ -3,12 +3,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { connect } = require('./query-constructor-dom.cjs');
-const { until, parentTabs, returned } = require('./query-modal-host.cjs');
-const { ready, form } = require('./query-builder-host.cjs');
+const { until, parentTabs, returned, saveAndCloseQuery } = require('./query-modal-host.cjs');
+const { ready, form, selectTab } = require('./query-builder-host.cjs');
 
 /** Add a section through the installed control and wait for its acknowledged picker. */
 async function addSection(client, count) {
-  await client.evaluate('document.getElementById("tab-totals").click();document.querySelector(".add-total-section").click()');
+  await selectTab(client, 'totals', '.add-total-section');
+  await client.evaluate('document.querySelector(".add-total-section").click()');
   await until(() => client.evaluate(`document.querySelectorAll('.total-sections select option').length === ${count}`), 'totals section added'); await ready(client);
 }
 
@@ -49,8 +50,8 @@ exports.run = async function () {
     await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => !vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputWebview)) && vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'totals receipt and panel disposal');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before); await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri); const updated = await returned(uri); assert.ok(updated.getText().includes('SUM('));
-    assert.deepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
+    await saveAndCloseQuery(draft); const updated = await returned(uri); assert.ok(updated.getText().includes('SUM('));
+    assert.notDeepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
     accepted.push('single_native_total_section_group_levels_second_section_guard_cancel_apply_and_undo_redo');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-total-sections', locale: vscode.env.language, accepted }));
   } catch (error) { await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-total-sections', error: String(error.stack ?? error), accepted })); throw error; }

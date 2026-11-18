@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
+const { closeQueryTabs, returned, waitForQueryCheckpoint } = require('./query-modal-host.cjs');
 
 /** Observe real normal-workbench restoration; no development or test mode grants access to private adapter objects. */
 async function until(predicate, message) {
@@ -22,7 +23,7 @@ async function replace(document, before, after) {
   assert.equal(await vscode.workspace.applyEdit(edit), true);
 }
 
-/** Two fully installed IDE processes retain both drafts, then require explicit resume and Apply through public commands. */
+/** Two installed workbenches retain the dirty query and owner without writing until native Save. */
 exports.run = async function () {
   assert.ok(process.env.ESKA_HOST_RESTART && process.env.ESKA_TEST_VSIX);
   assert.equal(vscode.env.language, process.env.ESKA_HOST_LOCALE ?? 'en');
@@ -39,7 +40,7 @@ exports.run = async function () {
     const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query'
       && vscode.window.activeTextEditor.document, 'public command opened query');
     await replace(draft, 'SELECT 1', 'SELECT 6');
-    assert.equal(await draft.save(), true);
+    await waitForQueryCheckpoint(fixture, draft);
     assert.deepEqual(await fs.readFile(fixture.module), disk);
     await fs.writeFile(marker, JSON.stringify({ owner: owner.getText(), draft: draft.getText(), uri: draft.uri.toString(), disk: disk.toString('hex') }));
   } else {
@@ -49,11 +50,12 @@ exports.run = async function () {
     assert.equal(editor.document.getText(), checkpoint.draft);
     const owner = await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module));
     assert.equal(owner.getText(), checkpoint.owner, 'Native hot exit restored the dirty parent');
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', editor.document.uri);
-    assert.equal(owner.getText(), checkpoint.owner, 'restoration never resumes or applies automatically');
-    await vscode.commands.executeCommand('eska.explorer.resumeQuery');
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', editor.document.uri);
-    await until(() => owner.getText() === checkpoint.owner.replace('SELECT 1', 'SELECT 6'), 'explicit resumed Apply updates the native model');
+    assert.equal(owner.getText(), checkpoint.owner, 'restoration does not write the source');
+    assert.equal(await editor.document.save(), true, 'native Save revalidates the recovered query');
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), checkpoint.uri);
+    await until(() => owner.getText() === checkpoint.owner.replace('SELECT 1', 'SELECT 6'), 'Save updates the native model');
+    await closeQueryTabs(editor.document);
+    await returned(owner.uri);
     assert.equal((await fs.readFile(fixture.module)).toString('hex'), checkpoint.disk);
     await vscode.window.showTextDocument(owner, { preview: false });
     await vscode.commands.executeCommand('undo');

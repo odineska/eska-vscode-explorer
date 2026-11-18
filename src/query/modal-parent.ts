@@ -28,9 +28,10 @@ export class QueryModalParent {
     });
   }
 
-  /** Native close owns dirty-file decisions; cancellation leaves the parent available and never opens a child. */
+  /** Keep unsaved owner buffers and hide their clean views without asking for an unrelated save. */
   async hide(): Promise<boolean> {
-    const tabs = this.tabs();
+    const dirty = vscode.workspace.textDocuments.some(doc => this.contains(doc.uri) && doc.isDirty);
+    const tabs = dirty ? [] : this.tabs().filter(tab => !tab.isDirty);
     return !tabs.length || vscode.window.tabGroups.close(tabs, true);
   }
 

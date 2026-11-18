@@ -3,7 +3,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const vscode=require('vscode');
 const {connect}=require('./query-constructor-dom.cjs');
-const {until,openQuery}=require('./query-modal-host.cjs');
+const {until,openQuery, closeQueryTabs }=require('./query-modal-host.cjs');
 const {ready,form,editFirstField}=require('./query-builder-host.cjs');
 
 /** A real large application remains editable through core metadata when its optional analyzer is unavailable. */
@@ -27,7 +27,7 @@ exports.run=async function(){
     assert.equal(vscode.window.activeTextEditor.document.getText(),before);assert.notEqual(changed,before);assert.deepEqual(await fs.readFile(module),disk);
     assert.equal(vscode.workspace.getConfiguration('eska.explorer').get('languageFeatures'),true);
     await assert.rejects(fs.stat(vscode.workspace.getConfiguration('eska.explorer').get('analyzerExecutable')),{code:'ENOENT'});
-    await vscode.commands.executeCommand('eska.explorer.cancelQuery',draft.uri);
+    await closeQueryTabs(draft, true);
     await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,suite:'query-buhmfo-constructor',locale:vscode.env.language,analyzer:'configured-but-unavailable',accepted:['large-application-and-five-extensions','inherited-field-ui','core-field-edit','opening-diff','cancel-owner-unchanged']}));
   }finally{client?.close();}
 };

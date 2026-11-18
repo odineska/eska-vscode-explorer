@@ -1,8 +1,6 @@
 {
   "runDebugView": "ESKA: запуск 1С",
   "queryOpen": "Открыть запрос",
-  "queryResume": "Продолжить черновик запроса",
-  "queryCompare": "Сравнить исходник владельца",
   "hideEmptyGroups": "Скрывать пустые группы",
   "showEmptyGroups": "Показывать пустые группы",
   "resetRootFilter": "Использовать фильтр по умолчанию",
@@ -61,8 +59,6 @@
   "debugExecutable": "Путь или имя команды опционального eska-debug.",
   "selectAnalysisContext": "Выбрать приложение для анализа",
   "queryEditBsl": "Редактировать запрос отдельно",
-  "queryApply": "Применить запрос к модулю",
-  "queryCancel": "Отменить редактирование запроса",
   "command.queryConstructor": "Конструктор запросов",
   "command.placeQueryComments": "Назначить позиции исходных комментариев",
   "formatterExecutable": "Путь к eska-fmt. Значение eska-fmt включает поиск стандартного компонента.",

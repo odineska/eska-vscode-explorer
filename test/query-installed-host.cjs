@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
+const { saveAndCloseQuery } = require('./query-modal-host.cjs');
 const { connect, connectWorkbench } = require('./query-constructor-dom.cjs');
 
 /** Both empty results and a stalled native provider share the same bounded acceptance deadline. */
@@ -55,14 +56,15 @@ exports.run = async function () {
         && document;
     }, 'same draft acknowledged and returned');
     assert.equal(changed.uri.toString(), draft.uri.toString()); assert.ok(changed.getText().includes('99 AS InstalledField'));
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', changed.uri);
+    await saveAndCloseQuery(changed);
     owner = await vscode.workspace.openTextDocument(vscode.Uri.file(input.module));
-    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), owner.uri.toString(), 'Apply returns the parent');
-    assert.ok(owner.getText().includes('99 AS InstalledField')); assert.equal(owner.isDirty, true); assert.deepEqual(await fs.readFile(input.module), disk);
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), owner.uri.toString(), 'Closing the saved query returns the parent');
+    assert.ok(owner.getText().includes('99 AS InstalledField')); assert.equal(owner.isDirty, false); assert.notDeepEqual(await fs.readFile(input.module), disk);
     await vscode.window.showTextDocument(owner); await vscode.commands.executeCommand('undo'); assert.equal(owner.getText(), original);
+    assert.equal(await owner.save(), true); assert.deepEqual(await fs.readFile(input.module), disk);
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-installed-normal', locale: vscode.env.language,
       runtime: extension.extensionPath, privateApiExported: false, actualDomActions: true, analyzerMetadataCompletion: true,
-      sameDraft: true, singleQueryView: true, parentReturned: true, unsavedModuleSingleUndo: true, diskUnchanged: true }));
+      sameDraft: true, singleQueryView: true, parentReturned: true, savedModuleSingleUndo: true, diskRestoredAfterUndo: true }));
   } catch (error) {
     const ui = await workbench?.evaluate('({status:[...document.querySelectorAll(".statusbar-item")].filter(node=>/eska/i.test(node.id)).map(node=>node.textContent),notifications:[...document.querySelectorAll(".notification-message")].map(node=>node.textContent)})').catch(() => undefined);
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-installed-normal', error: String(error.stack ?? error),

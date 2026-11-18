@@ -3,12 +3,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { connect } = require('./query-constructor-dom.cjs');
-const { until, parentTabs, returned } = require('./query-modal-host.cjs');
-const { ready, form } = require('./query-builder-host.cjs');
+const { until, parentTabs, returned, saveAndCloseQuery } = require('./query-modal-host.cjs');
+const { ready, form, selectTab } = require('./query-builder-host.cjs');
 
 /** Type only a field value; ESKA owns braces, keywords and alias validation. */
 async function addProjection(client) {
-  await client.evaluate("document.getElementById('tab-settings').click();document.querySelector('.query-dcs-settings').open=true;document.querySelector('.dcs-add-select').click()");
+  await selectTab(client, 'settings', '.query-dcs-settings');
+  await client.evaluate("document.querySelector('.query-dcs-settings').open=true;document.querySelector('.dcs-add-select').click()");
   await form(client, { expression: 'Value' });
 }
 
@@ -55,10 +56,10 @@ exports.run = async function () {
     const session = [...explorer.queries.sessions.values()].find(session => explorer.queries.uri(session.record).toString() === draft.uri.toString());
     const prepare = session.source.prepare.bind(session.source);
     session.source.prepare = async (...args) => { applyPlan = await prepare(...args); return applyPlan; };
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri); const updated = await returned(uri);
-    assert.ok(updated.getText().includes('{SELECT Value}')); assert.deepEqual(await fs.readFile(fixture.module), disk);
+    await saveAndCloseQuery(draft); const updated = await returned(uri);
+    assert.ok(updated.getText().includes('{SELECT Value}')); assert.notDeepEqual(await fs.readFile(fixture.module), disk);
     await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
-    accepted.push('typed_dcs_lists_cancel_apply_undo_redo_and_unchanged_owner_bytes');
+    accepted.push('typed_dcs_lists_cancel_apply_undo_redo_and_save_clean_owner');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-dcs', locale: vscode.env.language, accepted }));
   } catch (error) { await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-dcs', error: String(error.stack ?? error), accepted,
     expectedPreview,actualDraft:draft?.getText(),draftEol:draft?.eol,active:vscode.window.activeTextEditor?.document.uri.toString(),failures,applyPlan,

@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { closeQueryTabs, saveAndCloseQuery } = require('./query-modal-host.cjs');
 
 /** Every native transition has an exact predicate and a bounded deadline. */
 async function until(action, label) {
@@ -83,10 +84,9 @@ async function xmlConstructor(explorer, fixture, accepted) {
     };
     phase='place-comments';
     await vscode.commands.executeCommand("eska.explorer.placeQueryComments"); assert.equal(choices, 1);
-    phase='resume';
-    await vscode.commands.executeCommand("eska.explorer.resumeQuery");
     phase='final-query-save';
     assert.equal(await draft.save(), true);
+    await closeQueryTabs(draft);
     phase='inspect-saved-owner';
     xml = await vscode.workspace.openTextDocument(xml.uri);
     assert.ok(xml.getText().includes("SELECT 2 AS Edited<!--source 😀-->")); assert.ok(xml.getText().includes("<other>prior input 😀</other>"));
@@ -112,7 +112,7 @@ async function clauseAndReadonly(explorer, owner, accepted) {
   assert.deepEqual(new Set(model.statements[1].clauses.map(value => value.kind)), new Set(["fields", "sources", "joins", "conditions", "group", "order"]));
   await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: "apply" }); draft = vscode.window.activeTextEditor.document;
   assert.equal(draft.getText(), model.text); await vscode.commands.executeCommand("undo"); assert.equal(draft.getText(), text);
-  await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
+  await closeQueryTabs(draft, true);
   const files = vscode.workspace.getConfiguration("files", owner.uri);
   await files.update("readonlyInclude", { "**/ObjectModule.bsl": true }, vscode.ConfigurationTarget.Workspace);
   try {
@@ -122,7 +122,7 @@ async function clauseAndReadonly(explorer, owner, accepted) {
     await assert.rejects(view.binding.core.action({ kind: "append", statement: 0, clause: "fields", text: "9" }), error => error.details?.reason === "user_read_only");
     await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: "apply" }); draft = vscode.window.activeTextEditor.document;
     assert.equal(draft.getText(), before); assert.equal((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
+    await closeQueryTabs(draft, true);
   } finally { await files.update("readonlyInclude", undefined, vscode.ConfigurationTarget.Workspace); }
   accepted.push("six_clause_operations_preserve_opaque_package_and_readonly_constructor_cannot_grant_write_access");
 }
@@ -141,9 +141,16 @@ async function interrupted(explorer, owner, accepted) {
   await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: "cancel" });
   draft = vscode.window.activeTextEditor.document; assert.equal(draft.getText(), checkpoint); assert.equal(draft.getText().includes("Unaccepted"), false);
   assert.equal(explorer.queries.sessions.get(id).resumed, false);
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery"); assert.equal(explorer.queries.sessions.get(id).resumed, true);
-  await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
-  accepted.push("backend_crash_retains_checkpoint_discards_unaccepted_model_and_requires_explicit_resume");
+  const originalOwner = (await vscode.workspace.openTextDocument(owner.uri)).getText();
+  assert.equal(await draft.save(), true);
+  owner = await vscode.workspace.openTextDocument(owner.uri);
+  assert.ok(owner.getText().includes("ORDER BY A"));
+  assert.equal(vscode.window.activeTextEditor?.document, draft);
+  await closeQueryTabs(draft);
+  await vscode.window.showTextDocument(owner);
+  await vscode.commands.executeCommand("undo"); assert.equal(owner.getText(), originalOwner);
+  assert.equal(await owner.save(), true);
+  accepted.push("backend_crash_retains_checkpoint_discards_unaccepted_model_and_revalidates_on_save");
 }
 
 /** Markup-like query strings are rendered literally in the real installed webview. */
@@ -155,13 +162,13 @@ async function visualDom(explorer, owner, accepted) {
   const view = await openConstructor(explorer, draft);
   accepted.push(await require('./query-constructor-dom.cjs').exercise({ explorer, view, until, locale: vscode.env.language }));
   draft = vscode.window.activeTextEditor.document; assert.equal(draft.getText(), text);
-  await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
+  await closeQueryTabs(draft, true);
 }
 
 /** Constructor isolation starts after the modal owner's native close decision; apply remains one undoable draft edit. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [], errors = [];
-  let explorer;
+  let explorer, phase = "bsl-initial";
   try {
     assert.equal(vscode.env.language, process.env.ESKA_HOST_LOCALE ?? "en");
     explorer = await vscode.extensions.all.find(value => value.packageJSON.name === "eska-explorer").activate();
@@ -176,7 +183,7 @@ exports.run = async function () {
     const view = await openConstructor(explorer, draft);
     assert.equal(view.binding.core.model.text, before);
     assert.equal(vscode.window.tabGroups.all.some(group => group.tabs.some(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uri.toString())), false);
-    assert.equal((await vscode.workspace.fs.stat(uri)).permissions, vscode.FilePermission.Readonly);
+    assert.equal(view.binding.core.model.writable, true);
     assert.equal(owner.version, ownerVersion); assert.equal(owner.getText(), capturedOwner);
     accepted.push("all_editable_splits_replaced_by_constructor_and_core_draft_lock");
     const displayedRevision = view.binding.core.model.revision;
@@ -201,30 +208,33 @@ exports.run = async function () {
     await vscode.commands.executeCommand("undo"); assert.equal(draft.getText(), before, "one native undo returns the pre-constructor draft");
     await vscode.commands.executeCommand("redo"); assert.equal(draft.getText(), working);
     accepted.push("comments_follow_nodes_explicit_keep_and_same_draft_single_undo_redo");
-    await vscode.commands.executeCommand("eska.explorer.applyQuery", uri);
+    await saveAndCloseQuery(draft);
     owner = await vscode.workspace.openTextDocument(owner.uri);
-    assert.ok(owner.getText().includes("3 AS C")); assert.ok(owner.getText().includes("Other = 42")); assert.equal(owner.isDirty, true);
-    assert.deepEqual(await fs.readFile(fixture.module), disk);
+    assert.ok(owner.getText().includes("3 AS C")); assert.ok(owner.getText().includes("Other = 42")); assert.equal(owner.isDirty, false);
+    assert.notDeepEqual(await fs.readFile(fixture.module), disk);
     await vscode.window.showTextDocument(owner); await vscode.commands.executeCommand("undo"); assert.equal(owner.getText(), capturedOwner);
-    accepted.push("constructor_result_uses_existing_explicit_bsl_apply_without_disk_save");
+    assert.equal(await owner.save(), true); assert.deepEqual(await fs.readFile(fixture.module), disk);
+    accepted.push("constructor_result_uses_native_save_and_preserves_owner_undo");
+    phase = "bsl-constructor-noop";
     draft = await openQuery(owner); const unchanged = draft.getText();
     let next = await openConstructor(explorer, draft);
     await explorer.queryDesigner.receive(next, { revision: next.binding.core.model.revision, type: "apply" });
     draft = vscode.window.activeTextEditor.document; assert.equal(draft.getText(), unchanged); assert.equal(owner.getText(), capturedOwner);
     accepted.push("opening_and_applying_without_operations_preserves_exact_draft_and_owner");
+    phase = "bsl-constructor-reopen";
     next = await openConstructor(explorer, draft);
     await explorer.queryDesigner.receive(next, { revision: next.binding.core.model.revision, type: "action", action: { kind: "append", statement: 0, clause: "order", text: "A" } });
     await explorer.queryDesigner.receive(next, { revision: next.binding.core.model.revision, type: "cancel" });
     draft = vscode.window.activeTextEditor.document; assert.equal(draft.getText(), unchanged); assert.equal(owner.getText(), capturedOwner);
     assert.notEqual((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
     accepted.push("cancel_discards_only_unaccepted_constructor_operations_and_releases_its_lock");
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
+    await closeQueryTabs(draft, true);
     await clauseAndReadonly(explorer, owner, accepted);
     await visualDom(explorer, owner, accepted);
     await interrupted(explorer, owner, accepted);
     await xmlConstructor(explorer, fixture, accepted);
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: true, suite: "query-constructor", accepted, errors, locale: vscode.env.language }));
   } catch (error) {
-    await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: false, suite: "query-constructor", accepted, errors, error: String(error.stack ?? error)+" "+JSON.stringify({details:error.details,phase:error.testPhase,accepted,errors}) })); throw error;
+    await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: false, suite: "query-constructor", accepted, errors, error: String(error.stack ?? error), details: error.details, phase: error.testPhase ?? phase })); throw error;
   }
 };

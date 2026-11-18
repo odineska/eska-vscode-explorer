@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { connect } = require('./query-constructor-dom.cjs');
-const { until, parentTabs, returned } = require('./query-modal-host.cjs');
+const { until, parentTabs, returned, saveAndCloseQuery } = require('./query-modal-host.cjs');
 
 /** Native model publications acknowledge asynchronous DOM intentions before the next user action. */
 async function ready(client) {
@@ -20,6 +20,11 @@ async function form(client, values) {
 }
 exports.ready = ready;
 exports.form = form;
+
+exports.selectTab = async function(client, tab, selector) {
+  await client.evaluate(`document.getElementById(${JSON.stringify('tab-' + tab)}).click()`);
+  await until(() => client.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`), tab + ' controls rendered');
+};
 
 /** Select the first row through the current table UI while retaining old-capability acceptance. */
 exports.editFirstField = async function(client) {
@@ -96,10 +101,10 @@ exports.run = async function () {
     assert.equal(changed.getText(), text); assert.equal(parentTabs(uri).length, 0);
     await vscode.commands.executeCommand('undo'); await until(() => changed.getText() === before, 'native draft Undo');
     await vscode.commands.executeCommand('redo'); await until(() => changed.getText() === text, 'native draft Redo');
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', changed.uri);
-    const updated = await returned(uri); assert.ok(updated.getText().includes('Counted')); assert.equal(updated.isDirty, true);
-    assert.deepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); await until(() => updated.getText() === original, 'native module Undo');
-    accepted.push('same_draft_native_undo_redo_modal_return_and_unsaved_owner_single_undo');
+    await saveAndCloseQuery(changed);
+    const updated = await returned(uri); assert.ok(updated.getText().includes('Counted')); assert.equal(updated.isDirty, false);
+    assert.notDeepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); await until(() => updated.getText() === original, 'native module Undo');
+    accepted.push('same_draft_native_undo_redo_save_close_and_saved_owner_single_undo');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-builder', locale: vscode.env.language, accepted }));
   } catch (error) {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-builder', error: String(error.stack ?? error), accepted })); throw error;

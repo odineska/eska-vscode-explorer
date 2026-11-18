@@ -3,18 +3,19 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { connect } = require('./query-constructor-dom.cjs');
-const { until, parentTabs, returned } = require('./query-modal-host.cjs');
-const { ready, form, editFirstField } = require('./query-builder-host.cjs');
+const { until, parentTabs, returned, saveAndCloseQuery } = require('./query-modal-host.cjs');
+const { ready, form, editFirstField, selectTab } = require('./query-builder-host.cjs');
 
 /** A package property changes only through ordinary DOM input and submit events. */
 async function destination(client, name) {
-  await client.evaluate(`{document.getElementById('tab-packages').click();const input=document.querySelector('.temporary-destination input');
+  await selectTab(client, 'packages', '.temporary-destination input');
+  await client.evaluate(`{const input=document.querySelector('.temporary-destination input');
     input.value=${JSON.stringify(name)};input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('.temporary-destination').requestSubmit();}`);
   await until(() => client.evaluate(`document.querySelector('.query-preview pre').textContent.includes(${JSON.stringify('INTO ' + name)})`), 'destination acknowledged');
   await ready(client);
 }
 
-/** The installed extension uses backend package scopes, real table choices and native Undo/Redo without changing disk bytes. */
+/** The installed extension uses backend package scopes, real table choices, native Undo/Redo and Save of a clean source. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [];
   let client;
@@ -35,13 +36,15 @@ exports.run = async function () {
     await destination(client, 'Temp');
     await client.evaluate('document.querySelector(".add-statement").click()');
     await until(() => client.evaluate('document.querySelectorAll(".package-settings > .row").length === 2'), 'second package operator'); await ready(client);
-    await client.evaluate(`document.getElementById('tab-tablesFields').click();const row=[...document.querySelectorAll('.metadata-table')].find(row=>row.querySelector('.table-name').textContent==='Temp');
+    await selectTab(client, 'tablesFields', '.metadata-table');
+    await client.evaluate(`const row=[...document.querySelectorAll('.metadata-table')].find(row=>row.querySelector('.table-name').textContent==='Temp');
       if(!row)throw Error('temporary catalog');row.querySelector('.table-add').click();`);
     await until(() => client.evaluate('!!document.querySelector(".source-tree .field-choice")'), 'temporary fields'); await ready(client);
     assert.equal(await client.evaluate('[...document.querySelectorAll(".field-choice")].some(node=>node.textContent==="Temp.Value")'), true);
     await editFirstField(client);
     await form(client, { expression: 'Temp.Value', alias: 'Value' });
-    await client.evaluate('document.getElementById("tab-packages").click();document.querySelector(".package-settings > .row button").click()');
+    await selectTab(client, 'packages', '.package-settings > .row button');
+    await client.evaluate('document.querySelector(".package-settings > .row button").click()');
     await until(() => client.evaluate('document.querySelector(".temporary-destination input")?.value === "Temp"'), 'producer selected'); await ready(client);
     await destination(client, 'Renamed');
     assert.equal(await client.evaluate('document.querySelector(".query-preview pre").textContent.includes("FROM Renamed AS Temp")'), true);
@@ -62,10 +65,10 @@ exports.run = async function () {
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'package applied');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before);
     await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri);
-    const updated = await returned(uri); assert.equal(updated.isDirty, true); assert.ok(updated.getText().includes('DROP Renamed'));
-    assert.deepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
-    accepted.push('package_apply_native_undo_redo_and_parent_single_undo_preserve_disk');
+    await saveAndCloseQuery(draft);
+    const updated = await returned(uri); assert.equal(updated.isDirty, false); assert.ok(updated.getText().includes('DROP Renamed'));
+    assert.notDeepEqual(await fs.readFile(fixture.module), disk); await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
+    accepted.push('package_apply_undo_redo_save_clean_owner_and_parent_single_undo');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-package', locale: vscode.env.language, accepted }));
   } catch (error) {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-package', error: String(error.stack ?? error), accepted })); throw error;

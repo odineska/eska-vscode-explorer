@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Connection } from "../out/connection.js";
 import { MetadataTree } from "../out/tree.js";
 import { QueryClient, querySnapshot } from "../out/query/client.js";
 import { QueryRecovery } from "../out/query/recovery.js";
 import { QuerySessions } from "../out/query/sessions.js";
-import { querySessionCapabilities } from "../out/query/session-protocol.js";
+import { querySessionCapabilities, querySessionHeader } from "../out/query/session-protocol.js";
 import { createTreeProject } from "./fixture.mjs";
 import { createQuerySource } from "./query-fixture.mjs";
 
@@ -87,7 +87,8 @@ test("source-session capability requires durable preparation and bounds untruste
     nativeApplicationReceipt: true, explicitResume: true, bslEditing: false, sourceKinds: ["form", "dataCompositionSchema"],
     maxSessions: 16, maxRetainedBytes: 33_554_432,
   } } };
-  assert.deepEqual(querySessionCapabilities(hello), { bslEditing: false, maxSessions: 16, maxRetainedBytes: 33_554_432 });
+  assert.deepEqual(querySessionCapabilities(hello), { bslEditing: false, saveCleanOwner: false,
+    maxSessions: 16, maxRetainedBytes: 33_554_432 });
   assert.equal(querySessionCapabilities({ ...hello, apiVersion: { major: 1, minor: 15 } }), undefined);
   for (const replacement of [{ preparedStateDurable: false }, { writesOwner: true }, { maxSessions: 0 }, { preparedStorageVersion: 1 }]) {
     assert.throws(() => querySessionCapabilities({ ...hello, capabilities: { querySessions: { ...hello.capabilities.querySessions, ...replacement } } }),
@@ -98,12 +99,73 @@ test("source-session capability requires durable preparation and bounds untruste
     ownerProtection: "protectedViewWithConflicts", bslSave: "checkpointOnly",
   } } };
   assert.equal(querySessionCapabilities(bsl).bslEditing, true);
+  assert.equal(querySessionCapabilities(bsl).saveCleanOwner, false);
   for (const replacement of [{ ownerProtection: "nativeLock" }, { bslSave: "apply" }, { sourceKinds: ["form", "dataCompositionSchema"] }]) {
     assert.throws(() => querySessionCapabilities({ ...bsl, capabilities: { querySessions: { ...bsl.capabilities.querySessions, ...replacement } } }),
       { code: "protocolInvalid" });
   }
   assert.throws(() => querySessionCapabilities({ ...bsl, apiVersion: { major: 1, minor: 18 } }), { code: "protocolInvalid" });
+  const nativeSave = { ...bsl, apiVersion: { major: 1, minor: 55 }, capabilities: { querySessions: {
+    ...bsl.capabilities.querySessions, saveCleanOwner: true,
+  } } };
+  assert.equal(querySessionCapabilities(nativeSave).saveCleanOwner, true);
+  assert.throws(() => querySessionCapabilities({ ...nativeSave, apiVersion: { major: 1, minor: 54 } }), { code: "protocolInvalid" });
+  for (const saveCleanOwner of [null, false, "true"]) {
+    assert.throws(() => querySessionCapabilities({ ...nativeSave, capabilities: { querySessions: {
+      ...nativeSave.capabilities.querySessions, saveCleanOwner,
+    } } }), { code: "protocolInvalid" });
+  }
+});
 
+test("clean BSL save requires negotiated opt-in and confirms the same session twice", { skip: !executable }, async t => {
+  const flags = [];
+  const value = await fixture(t, "en-US", endpoint => ({ ...endpoint, sessions: { ...endpoint.sessions,
+    request(method, params) {
+      if (method === "query/sessionPrepare") flags.push(params.saveCleanOwner);
+      return endpoint.sessions.request(method, params);
+    } } }));
+  const roots = await value.tree.children(await value.tree.root(value.project));
+  const catalogs = roots.find(entry => entry.node.id.collection?.metadataKind === "catalog");
+  const object = (await value.tree.children(catalogs)).find(entry => entry.node.label.text === "Товары");
+  const modules = (await value.tree.children(object)).find(entry => entry.node.id.collection?.kind === "modules");
+  const [module] = await value.tree.children(modules);
+  let owner = '// native owner 😀\r\nQuery.Text = "SELECT 1";\r\n';
+  await writeFile(value.module, "\ufeff" + owner);
+  const client = new QueryClient(value.connection, value.state.session.sessionId, value.project, value.state.queryEditing);
+  const document = await client.open({ node: module.node.id,
+    source: { value: "Catalogs/Товары/Ext/ObjectModule.bsl", encoding: "utf-8" }, version: "7", text: owner });
+  const query = await document.read({ at: { line: 1, character: 19 } });
+  const id = randomUUID();
+  const session = await value.client.open(document, id, query.identity, false);
+  await document.close();
+  assert.match(session.header.protection.sourceRestriction, /^[1-9][0-9]*$/);
+  for (const sourceRestriction of ["0", 1, "not-a-token"]) {
+    assert.throws(() => querySessionHeader({ ...session.header,
+      protection: { ...session.header.protection, sourceRestriction } }, value.endpoint.capabilities),
+    { code: "protocolInvalid" });
+  }
+  if (!value.endpoint.sessions.capabilities.saveCleanOwner) {
+    t.skip("backend does not negotiate API 1.55");
+    return;
+  }
+  const key = session.header.querySessionId;
+  // A default plan keeps the historical checkpoint-only BSL behavior.
+  const unchanged = await session.prepare(facts(7, owner, false), "SELECT 1");
+  assert.equal(unchanged.saveOwner, false);
+  await session.applied(unchanged.applyToken, facts(7, owner, false));
+  for (const version of [7, 8]) {
+    const draft = `SELECT ${version}`;
+    await value.store.saveDraft(id, draft);
+    const plan = await session.prepare(facts(version, owner, false), draft, [], "crlf", true);
+    assert.equal(plan.saveOwner, true);
+    owner = apply(owner, plan);
+    await writeFile(value.module, "\ufeff" + owner);
+    await session.applied(plan.applyToken, facts(version + 1, owner, false));
+    assert.equal(session.header.querySessionId, key);
+    assert.equal(session.header.resumed, true);
+    assert.equal(session.record.base, draft);
+  }
+  assert.deepEqual(flags, [undefined, true, true]);
 });
 
 for (const locale of ["ru-RU", "en-US"]) test(`source-session SDK rebases input arriving during a native receipt (${locale})`,

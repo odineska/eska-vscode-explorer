@@ -1,8 +1,6 @@
 {
   "runDebugView": "ESKA: Run 1C",
   "queryOpen": "Open query",
-  "queryResume": "Resume query draft",
-  "queryCompare": "Compare query owner",
   "hideEmptyGroups": "Hide Empty Groups",
   "showEmptyGroups": "Show Empty Groups",
   "resetRootFilter": "Use Default Filter",
@@ -61,8 +59,6 @@
   "debugExecutable": "Path or command name for the optional eska-debug tool.",
   "selectAnalysisContext": "Choose analysis application",
   "queryEditBsl": "Edit query separately",
-  "queryApply": "Apply query to module",
-  "queryCancel": "Cancel query editing",
   "command.queryConstructor": "Query constructor",
   "command.placeQueryComments": "Assign source comment positions",
   "formatterExecutable": "Path to eska-fmt. The default eska-fmt resolves the standard component.",

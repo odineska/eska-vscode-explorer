@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
+const { assertQuerySave, closeQueryTabs, queryWriteEvidence, returned } = require('./query-modal-host.cjs');
 
 /** Native UI state changes use bounded predicates rather than a fixed startup delay. */
 async function until(action, label) {
@@ -14,6 +15,7 @@ async function until(action, label) {
 async function replace(document, text) {
   const editor = await vscode.window.showTextDocument(document, { preview: false });
   assert.equal(await editor.edit(edit => edit.replace(new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), text)), true);
+  assert.equal(document.getText().replaceAll('\r\n', '\n'), text.replaceAll('\r\n', '\n'));
 }
 
 /** Standard formatting commands exercise the installed provider and the editor's actual Undo/Redo stack. */
@@ -24,7 +26,7 @@ exports.run = async function () {
     const extension = vscode.extensions.getExtension('1c-tooling.eska-explorer'); assert.ok(extension);
     explorer = await extension.activate();
     await vscode.commands.executeCommand('eska.explorer.connect');
-    await until(() => explorer.connection.state.kind === 'ready', 'metadata connection');
+    await until(() => explorer.connection.state.kind === 'ready' && !explorer.support.loading, 'metadata connection and file policies');
     const config = vscode.workspace.getConfiguration('eska.explorer');
     assert.equal(config.get('languageFeatures'), process.env.ESKA_TEST_LANGUAGE === '1'); assert.equal(config.get('formatOnSave'), false);
     await vscode.workspace.getConfiguration('editor', { languageId: 'bsl' }).update('defaultFormatter', '1c-tooling.eska-explorer', vscode.ConfigurationTarget.Workspace);
@@ -42,6 +44,7 @@ exports.run = async function () {
     }
 
     await vscode.window.showTextDocument(owner, { preview: false });
+    await explorer.support.settleWorkspaceReadonlyRule(owner.uri);
     for (const attempt of ['cold', 'repeat']) {
       if (owner.getText() !== original) await vscode.commands.executeCommand('undo');
       const start = performance.now(); await vscode.commands.executeCommand('editor.action.formatDocument');
@@ -90,6 +93,7 @@ exports.run = async function () {
     await changing; assert.ok(owner.getText().includes('Значение=8;'));
     await vscode.commands.executeCommand('undo'); assert.equal(owner.getText(), original);
     accepted.push('native_edit_cancels_obsolete_formatter_reply');
+    if (owner.isDirty) assert.equal(await owner.save(), true);
     const at = owner.positionAt(owner.getText().indexOf('выбрать') + 2); editor.selection = new vscode.Selection(at, at);
     await vscode.commands.executeCommand('eska.explorer.editBslQuery');
     await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query', 'private query draft');
@@ -116,17 +120,18 @@ exports.run = async function () {
     accepted.push('query_crlf_snapshot_matches_acknowledged_lf_checkpoint');
     await config.update('formatOnSave', true, vscode.ConfigurationTarget.Workspace);
     await replace(draft, 'выбрать 3 как А,4 как Б');
-    assert.equal(await draft.save(), true);
-    assert.ok(draft.getText().startsWith('ВЫБРАТЬ'));
-    assert.deepEqual(await fs.readFile(fixture.module), disk);
+    if (!draft.isDirty) assert.fail('Editing the query before format on save did not make it dirty: ' + JSON.stringify(await queryWriteEvidence(explorer, draft)));
+    await assertQuerySave(explorer, draft, owner);
+    assert.ok(draft.getText().startsWith('ВЫБРАТЬ'), 'native Save formats the SDBL query before writing its owner');
+    assert.ok(owner.getText().includes('3 КАК А'));
+    assert.notDeepEqual(await fs.readFile(fixture.module), disk);
+    assert.equal(vscode.window.activeTextEditor?.document, draft);
     await config.update('formatOnSave', false, vscode.ConfigurationTarget.Workspace);
-    accepted.push('query_format_on_save_only_checkpoints_private_bsl_draft');
+    accepted.push('query_format_on_save_saves_formatted_source_and_keeps_query_open');
 
-    explorer.queries.closeDecision = async () => 'discard';
-    await vscode.window.tabGroups.close(vscode.window.tabGroups.activeTabGroup.activeTab);
+    await closeQueryTabs(draft);
     await until(() => !explorer.queries.sessions.size, 'query closes and releases owner');
-    owner = await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module));
-    await vscode.window.showTextDocument(owner, { preview: false });
+    owner = await returned(vscode.Uri.file(fixture.module));
     const controlled = '&ChangeAndValidate("Run")\r\nProcedure Custom()\r\n   A=1; // original  \r\n#Insert\r\nB= 2;\r\n#EndInsert\r\nEndProcedure';
     await replace(owner, `X=1;\r\n${controlled}\r\n\r\nProcedure Other()\r\nC=3;\r\nEndProcedure\r\n`);
     await vscode.commands.executeCommand('editor.action.formatDocument');
@@ -139,8 +144,14 @@ exports.run = async function () {
     await vscode.workspace.getConfiguration('editor').update('formatOnSave', true, vscode.ConfigurationTarget.Workspace);
     await vscode.workspace.getConfiguration('editor', owner).update('formatOnSave', false, vscode.ConfigurationTarget.Workspace, true);
     assert.equal(vscode.workspace.getConfiguration('editor', owner).get('formatOnSave'), false);
+    await explorer.support.settleWorkspaceReadonlyRule(owner.uri);
     await replace(owner, original.replace('Значение=1', 'Значение=3'));
-    assert.equal(await owner.save(), true);
+    const ownerSaveEvidence = () => JSON.stringify({
+      dirty: owner.isDirty, active: vscode.window.activeTextEditor?.document.uri.toString(), sessions: explorer.queries.sessions.size,
+      readonlyInclude: vscode.workspace.getConfiguration('files', owner.uri).get('readonlyInclude'),
+    });
+    assert.equal(owner.isDirty, true, ownerSaveEvidence());
+    assert.equal(await owner.save(), true, ownerSaveEvidence());
     assert.ok(owner.getText().includes('\tЗначение = 3;'));
     const saved = await fs.readFile(fixture.module);
     assert.equal(saved[0], 0xef); assert.equal(saved[1], 0xbb); assert.equal(saved[2], 0xbf);
