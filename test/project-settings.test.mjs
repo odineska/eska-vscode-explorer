@@ -20,7 +20,7 @@ const bundle = build({
           getState: () => saved, setState: value => { saved = value; },
         });
         // Each operation models a DOM event or an incoming host message.
-        const events = ["load", "select", "edit", "discard", "save", "probe", "pickInfobase", "receive", "visit"];
+        const events = ["load", "select", "edit", "discard", "save", "probe", "pickInfobase", "pickPlatform", "receive", "visit"];
         const actions = Object.fromEntries(events.map(name => [name, (...args) => {
           const result = model[name](...args);
           flush();
@@ -270,4 +270,31 @@ test("launcher lookup uses the draft container and updates only the infobase", a
   h.model.edit("runner", "local");
   h.model.pickInfobase();
   assert.equal(h.last().container, undefined);
+});
+
+test("installed platform choice updates the complete runner only in the current draft", async t => {
+  const h = await open(t);
+  h.reply(h.load, original);
+  h.model.edit("container", "draft-box");
+  h.model.pickPlatform();
+  const choosing = h.last();
+  assert.equal(choosing.type, "pickPlatform");
+  assert.equal(choosing.container, "draft-box");
+  const runner = { kind: "distrobox", container: "draft-box", version: "8.3.27.2342", ibcmd: "/opt/1cv8/x86_64/8.3.27.2342/ibcmd" };
+  h.receive({ ...choosing, type: "platform", runner });
+  assert.equal(h.model.current().draft.runner, "distrobox");
+  assert.equal(h.model.current().draft.version, runner.version);
+  assert.equal(h.model.current().draft.ibcmd, runner.ibcmd);
+  assert.equal(h.model.current().draft.container, runner.container);
+  assert.equal(h.last().type, "pickPlatform", "choosing does not save");
+  h.model.pickPlatform();
+  const host = h.last();
+  h.receive({ ...host, type: "platform", runner: { kind: "local", version: "8.5.1.1", ibcmd: "/host/ibcmd" } });
+  assert.equal(h.model.current().draft.runner, "local");
+  assert.equal(h.model.current().draft.container, "");
+  h.model.pickPlatform();
+  const late = h.last();
+  h.model.select("prod");
+  h.receive({ ...late, type: "platform", runner });
+  assert.equal(h.model.current().draft.runner, "local");
 });

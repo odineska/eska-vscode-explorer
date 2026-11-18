@@ -31,13 +31,14 @@ export type SettingsRequest = Operation & (
   | { type: "load" }
   | { type: "save"; value: Record<string, unknown> | null }
   | { type: "probe"; value: Record<string, unknown> }
-  | { type: "pickInfobase"; container?: string }
+  | { type: "pickInfobase" | "pickPlatform"; container?: string }
   | { type: "cancelPick" }
 );
 
 export type SettingsResponse = Operation & (
   | { type: "settings"; operation: "load" | "save"; settings: LocalSettings; warning?: string }
   | { type: "probe"; ready: boolean; detail: string; field?: string }
+  | { type: "platform"; runner?: Runner; detail?: string }
   | { type: "infobase"; infobase?: Exclude<Infobase, { kind: "standalone" }>; detail?: string }
   | { type: "error"; operation: "load" | "save"; detail: string; field?: string; requiresReload?: boolean }
 );
@@ -50,7 +51,8 @@ export function settingsRequest(value: unknown): SettingsRequest | undefined {
     case "load":
     case "cancelPick":
       return { type: value.type, id, profile };
-    case "pickInfobase": {
+    case "pickInfobase":
+    case "pickPlatform": {
       if (value.container !== undefined && typeof value.container !== "string") return;
       const container = value.container?.trim();
       return { type: value.type, id, profile, ...(container ? { container } : {}) };

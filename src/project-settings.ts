@@ -13,6 +13,7 @@ const labels = {
   registeredInfobase: "runtimeRegisteredInfobase", registeredInfobaseHint: "runtimeRegisteredInfobaseHint", test: "runtimeTestTab", prod: "runtimeProdTab",
   enabled: "runtimeEnabled", disabledProfile: "runtimeDisabledProfile", prodNotice: "runtimeProdNotice",
   profiles: "runtimeProfiles", database: "runtimeDatabase", authentication: "runtimeAuthentication",
+  installedPlatform: "runtimeInstalledPlatform", installedPlatformHint: "runtimeInstalledPlatformHint",
   platform: "runtimePlatform", debugging: "runtimeDebugging",
   infobase: "runtimeInfobase", file: "runtimeFile", cluster: "runtimeCluster", standalone: "runtimeStandalone",
   path: "runtimePath", host: "runtimeHost", hostHint: "runtimeHostHint", name: "runtimeName",
@@ -107,7 +108,7 @@ export class ProjectSettings implements vscode.Disposable {
         if (picker?.id === id && picker.profile === profile) cancelPick();
         return;
       }
-      if (type === "pickInfobase") {
+      if (type === "pickInfobase" || type === "pickPlatform") {
         cancelPick();
         const operation = { id, profile, cancellation: new vscode.CancellationTokenSource() };
         picker = operation;
@@ -115,13 +116,19 @@ export class ProjectSettings implements vscode.Disposable {
         const lookup = new AbortController();
         const cancellation = token.onCancellationRequested(() => lookup.abort());
         try {
-          const infobase = await pickInfobase(root, executable, language, request.container,
+          const chosen = await (type === "pickPlatform" ? pickPlatform : pickInfobase)(root, executable, language, request.container,
             AbortSignal.any([abort.signal, lookup.signal]), token)
             .catch(() => null);
           if (picker !== operation) return;
-          if (infobase) await post({ type: "infobase", id, profile, infobase });
-          else await post({ type: "infobase", id, profile,
-            ...(infobase === null ? { detail: text("runtimeRegisteredInfobasesUnavailable") } : {}) });
+          if (type === "pickPlatform") {
+            await post({ type: "platform", id, profile,
+              ...(chosen ? { runner: chosen as import("./project-settings-protocol.js").Runner } : {}),
+              ...(chosen === null ? { detail: text("runtimeInstalledPlatformsUnavailable") } : {}) });
+          } else {
+            if (chosen) await post({ type: "infobase", id, profile, infobase: chosen as Exclude<Infobase, { kind: "standalone" }> });
+            else await post({ type: "infobase", id, profile,
+              ...(chosen === null ? { detail: text("runtimeRegisteredInfobasesUnavailable") } : {}) });
+          }
         } finally {
           if (picker === operation) picker = undefined;
           cancellation.dispose();
@@ -311,4 +318,34 @@ async function pickInfobase(root: string, executable: string, language: string, 
   return (await vscode.window.showQuickPick(items, {
     placeHolder, matchOnDescription: true, matchOnDetail: true,
   }, token))?.infobase;
+}
+
+async function pickPlatform(root: string, executable: string, language: string, container: string | undefined,
+  signal: AbortSignal, token: vscode.CancellationToken) {
+  const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("buildExecutable", "eska-build");
+  const binary = await findTool(configured, "eska-build", dirname(executable)).catch(() => undefined);
+  if (!binary) return null;
+  if (signal.aborted || token.isCancellationRequested) return;
+  const result = await runtimeJson(binary, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US",
+    "platform", "list", "--include-distrobox", "--format", "json", ...(container ? [`--distrobox=${container}`] : [])],
+  { signal, timeout: 20_000 });
+  if (signal.aborted) return;
+  if (!isRecord(result) || result.schema_version !== 1 || result.kind !== "installed-platforms" || !Array.isArray(result.platforms)) return null;
+  const text = (key: MessageKey, ...values: string[]) => message(language, key, ...values);
+  const items = result.platforms.flatMap((entry: unknown) => {
+    if (!isRecord(entry) || typeof entry.version !== "string" || typeof entry.ibcmd !== "string" || !isRecord(entry.source)) return [];
+    const source = entry.source;
+    if (source.kind !== "host" && !(source.kind === "distrobox" && typeof source.container === "string")) return [];
+    const runner = source.kind === "host" ? { kind: "local" as const, version: entry.version, ibcmd: entry.ibcmd }
+      : { kind: "distrobox" as const, container: source.container as string, version: entry.version, ibcmd: entry.ibcmd };
+    return [{ label: entry.version, description: source.kind === "host" ? text("runtimeRegisteredInfobaseHost")
+      : `${text("runtimeDistrobox")} (${source.container})`, detail: entry.ibcmd, runner }];
+  });
+  let placeHolder = text("runtimeInstalledPlatformHint");
+  if (isRecord(result.sources) && (result.sources.host === "unavailable" ||
+      isRecord(result.sources.distrobox) && result.sources.distrobox.status === "unavailable")) {
+    placeHolder = text("runtimeInstalledPlatformPartial");
+  }
+  if (!items.length) return null;
+  return (await vscode.window.showQuickPick(items, { placeHolder, matchOnDescription: true, matchOnDetail: true }, token))?.runner;
 }

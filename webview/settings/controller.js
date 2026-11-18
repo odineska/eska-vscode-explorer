@@ -150,6 +150,15 @@ export function settingsController(api) {
     api.postMessage(box ? { ...request, container: box } : request);
   }
 
+  function pickPlatform() {
+    const { enabled, container } = current().draft;
+    if (!loaded() || !enabled || picker()) return;
+    const request = newRequest("pickPlatform");
+    setPicker(request);
+    set(profiles => { profiles[request.profile].notice = null; });
+    api.postMessage({ ...request, ...(container.trim() ? { container: container.trim() } : {}) });
+  }
+
   function acceptSettings(data, pending) {
     const wasLoaded = loaded();
     set(byProfile => {
@@ -198,6 +207,13 @@ export function settingsController(api) {
           detail: data.detail, field: inputField(data.field),
         };
       });
+    } else if (data.type === "platform") {
+      if (!sameRequest(picker(), data)) return;
+      setPicker(null);
+      if (profile !== active() || !current().draft.enabled) return;
+      if (data.runner) editFields(profile, { runner: data.runner.kind, version: data.runner.version,
+        ibcmd: data.runner.ibcmd, container: data.runner.container ?? "" });
+      else if (data.detail) set(profiles => { profiles[profile].notice = { kind: "error", detail: data.detail }; });
     } else if (data.type === "infobase") {
       if (!sameRequest(picker(), data)) return;
       setPicker(null);
@@ -235,7 +251,7 @@ export function settingsController(api) {
   return {
     active, current, loaded, write, warning, loadError, requiresReload, picker, result, saving, canSave,
     dirty: name => dirty[name](),
-    select, edit, discard, load, save, probe, pickInfobase, receive, fieldError,
+    select, edit, discard, load, save, probe, pickInfobase, pickPlatform, receive, fieldError,
     visit: field => set(profiles => { profiles[active()].visited[field] = true; }),
   };
 }

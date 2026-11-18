@@ -145,7 +145,11 @@ function Fields(props) {
         </Section>
       </div>
       <div class="settings-column">
-        <Section id="platform" icon="configuration" title={labels.platform}>
+        <Section id="platform" icon="configuration" title={labels.platform} action={
+          <Button quiet class="settings-import" disabled={!!model.picker()} title={labels.installedPlatformHint} onClick={model.pickPlatform}>
+            <Icon name="configuration"/>{labels.installedPlatform}
+          </Button>
+        }>
           <div class="settings-pair">
             {select("runner", labels.runner, ["local", "distrobox"])}{text("version")}
           </div>
