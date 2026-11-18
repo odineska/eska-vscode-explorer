@@ -24,6 +24,10 @@ jobs:
         run: |
           bun run --bun check
           bun run --bun compile
+      - name: Fetch published backend release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-release-metadata.sh
       - name: Install released backends into a clean prefix
         run: |
           mkdir -p ../eska-playground

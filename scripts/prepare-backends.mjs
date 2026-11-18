@@ -15,6 +15,14 @@ const root = await mkdtemp(join(playground, "explorer-release-backends-"));
 const prefix = join(root, "installation"), pythonTools = join(root, "python-tools");
 await mkdir(pythonTools);
 const target = hostTarget(), local = process.argv[2] && resolve(process.argv[2]);
+const metadataDirectory = process.env.ESKA_TEST_RELEASE_METADATA;
+async function releaseMetadata(repository) {
+  const data = metadataDirectory
+    ? await readFile(join(metadataDirectory, `${repository.split("/")[1]}.json`))
+    : await fetchBytes(`https://api.github.com/repos/${repository}/releases/latest`, 4 * 1024 * 1024);
+  return JSON.parse(data);
+}
+
 let projectRelease, projectData;
 const bootstrap = ["components.py", "component_installation.py", "component_package.py"];
 if (local) {
@@ -26,7 +34,7 @@ if (local) {
   projectData = await readFile(join(local, item.archive));
   for (const name of bootstrap) await copyFile(join(local, name), join(pythonTools, name));
 } else {
-  const release = JSON.parse(await fetchBytes("https://api.github.com/repos/odineska/eska/releases/latest", 4 * 1024 * 1024));
+  const release = await releaseMetadata("odineska/eska");
   projectRelease = parseRelease("project", target, release);
   assert.ok(projectRelease.asset, `ESKA release cannot be installed: ${projectRelease.restriction}`);
   projectData = await downloadAsset(projectRelease.asset);
@@ -50,8 +58,7 @@ if (local && process.env.ESKA_TEST_ANALYZER_BINARY) {
   analyzerRelease = { kind: "analyzer", target, version: info.version, asset: { name: "local-upstream",
     url: "https://example.invalid/local-upstream", size: analyzerData.length, sha256: createHash("sha256").update(analyzerData).digest("hex") } };
 } else {
-  const metadata = await fetchBytes("https://api.github.com/repos/itrous/bsl-analyzer/releases/latest", 4 * 1024 * 1024);
-  analyzerRelease = parseRelease("analyzer", target, JSON.parse(metadata));
+  analyzerRelease = parseRelease("analyzer", target, await releaseMetadata("itrous/bsl-analyzer"));
   assert.ok(analyzerRelease.asset, `Analyzer release cannot be installed: ${analyzerRelease.restriction}`);
   analyzerData = await downloadAsset(analyzerRelease.asset);
 }

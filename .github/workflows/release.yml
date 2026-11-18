@@ -32,6 +32,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Install Bun and Knope
         run: bash scripts/install-tools.sh release
+      - name: Fetch published backend release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-release-metadata.sh
       - name: Validate before publishing
         run: |
           bun install --frozen-lockfile --ignore-scripts
