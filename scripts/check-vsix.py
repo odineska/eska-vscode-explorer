@@ -51,7 +51,12 @@ def form_runtime_assets(root, manifest):
     assert any(name.endswith('.wasm') for name in fonts), 'Missing form rasterizer output'
     for name in outputs:
         assert (root / name).is_file(), f'Missing bundled browser asset: {name}'
-    return sorted(outputs - {'out/query-designer.js'})
+    picture_root = 'resources/forms/jet'
+    pictures = [f'{picture_root}/PublishFile/{density}.png' for density in (85, 100, 125, 150, 175, 200, 300, 400)]
+    pictures += [f'{picture_root}/UserTemplateDelete/100.png', f'{picture_root}/NOTICE.md', f'{picture_root}/LICENSE-MIT']
+    for name in pictures:
+        assert (root / name).is_file(), f'Missing form picture resource: {name}'
+    return sorted(outputs - {'out/query-designer.js'}) + pictures
 
 
 def check(archive, source=None):

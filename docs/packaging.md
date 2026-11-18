@@ -43,7 +43,8 @@ Bun. `scripts/bundle.mjs` собирает production JS и runtime зависи
 в `resources/analyzer-notices/` с source/hash provenance. `.vscodeignore` разрешает
 четыре JS-бандла (`extension`, `query-designer`, `form-preview`, `project-settings`), их runtime
 ресурсы, BSL/SDBL-грамматики и language configuration, NLS, README/CHANGELOG,
-LICENSE, SVG и PNG-иконку магазина. Отдельные модули, скомпилированные `tsc`,
+LICENSE, SVG, PNG-иконку магазина и PNG для предпросмотра из 1C:Jet.
+Уведомление об этих картинках входит в `resources/forms/jet/NOTICE.md` и `out/THIRD-PARTY-NOTICES.txt`. Отдельные модули, скомпилированные `tsc`,
 уже входят в `extension.js` и повторно не поставляются.
 Из `docs/` поставляются только `setup.md` и `setup.ru.md`: расширение открывает
 их локально при ошибках подключения. Остальная документация, скриншоты и отчёты

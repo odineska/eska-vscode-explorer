@@ -1,14 +1,24 @@
 import { Show, createContext, createMemo, useContext } from 'solid-js';
+import { standardPicture } from './standard-pictures.mjs';
 import { standardPicturePixelScale } from './standard-picture-density.mjs';
 
 export const StandardPictureScaleContext = createContext();
 
-export function useStandardPicturePixelScale() {
+export function useStandardPicturePixelScale(isRaster) {
   const scale = useContext(StandardPictureScaleContext);
   return createMemo(() => {
     if (!scale) return;
     const { zoom, pixelRatio } = scale();
-    return standardPicturePixelScale(zoom, pixelRatio);
+    return standardPicturePixelScale(zoom, pixelRatio, isRaster());
+  });
+}
+
+export function useStandardPicture(name, variant = () => undefined) {
+  const scale = useContext(StandardPictureScaleContext);
+  const root = document.getElementById('form-preview-script')?.dataset.pictureRoot;
+  return createMemo(() => standardPicture(name(), variant(), root && { root, ...scale?.() }), undefined, {
+    equals: (previous, next) => previous === next
+      || (previous?.isRaster === true && next?.isRaster === true && previous.source === next.source),
   });
 }
 
@@ -21,7 +31,7 @@ export function TemplatePicture(props) {
 
 export function NativeStandardPicture(props) {
   return <Show when={props.image.isTemplate} fallback={
-    <img class="taxi-icon" data-native-picture="vector" src={props.image.source} alt=""
+    <img class="taxi-icon" data-native-picture={props.image.isRaster ? 'raster' : 'vector'} src={props.image.source} alt=""
       draggable="false" aria-hidden="true" style={{ 'pointer-events': 'none' }}/>
   }>
     <TemplatePicture source={props.image.source} vector/>

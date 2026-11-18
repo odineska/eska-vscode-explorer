@@ -425,6 +425,17 @@ async function verifyDynamicToolbar(document, view, ui, english) {
         const menuLabels = await ui.evaluate("[...document.querySelectorAll('[data-table-more] [role=menuitem]')].map(item=>item.getAttribute('aria-label'))");
         for (const label of english ? ['Configure list...','Restore default settings','Search management'] : ['Настроить список...','Установить стандартные настройки','Управление поиском'])
           assert.ok(menuLabels.includes(label), label);
+        const deletionLabel = english ? 'Toggle deletion mark' : 'Пометить на удаление / Снять пометку';
+        const deletionIcon = `[data-table-more] [role=menuitem][aria-label="${deletionLabel}"] img`;
+        await until(() => ui.evaluate(`(() => {
+          const image = document.querySelector(${JSON.stringify(deletionIcon)});
+          const root = document.getElementById('form-preview-script').dataset.pictureRoot;
+          return image?.complete && image.dataset.nativePicture === 'raster'
+            && image.currentSrc === new URL('UserTemplateDelete/100.png', root).href
+            && image.naturalWidth === 16 && image.naturalHeight === 16
+            && image.offsetWidth === 16 && image.offsetHeight === 16;
+        })()`), 'deletion mark loaded in the dynamic list menu');
+        await ui.screenshot('table-deletion-mark-' + vscode.env.language + '.png');
         await ui.evaluate("document.querySelector('[data-table-more] [role=menu]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
         await until(() => ui.evaluate("!document.querySelector('[data-table-more] [role=menu]')"), 'overflow menu closes with Escape');
       }

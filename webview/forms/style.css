@@ -273,7 +273,7 @@ button { cursor: default; }
 .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem].active { background: var(--taxi-menu-activity); color: var(--taxi-menu-activity-ink, var(--taxi-FormTextColor)); }
 .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] > :is(.taxi-icon, .taxi-picture-resource, .taxi-picture-template) { left: 15px; }
 .taxi-menu button[role=menuitem][aria-disabled=true] { color: #aaa; }
-:is(.taxi-button, .taxi-menu [role=menuitem])[aria-disabled=true] > .taxi-icon[data-native-picture=vector] { filter: grayscale(.8); opacity: .5; }
+:is(.taxi-button, .taxi-menu [role=menuitem])[aria-disabled=true] > .taxi-icon:is([data-native-picture=vector], [data-native-picture=raster]) { filter: grayscale(.8); opacity: .5; }
 .taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) { padding-bottom: 1px; }
 .taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem] { padding-left: 44px; }
 .taxi-preview[data-os=linux] .taxi-menu:is([data-root-menu-level], [data-table-menu-level]) button[role=menuitem].active { box-shadow: inset 1px 0 #fff, inset -1px 0 #fff, inset 0 1px #fff; }
@@ -485,8 +485,8 @@ button { cursor: default; }
   min-width: var(--taxi-table-search-leading);
 }
 .taxi-table-command-bar > .taxi-button--icon-only { padding-left: 0; padding-right: 0; }
-.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only > [data-native-picture=vector] { position: relative; left: -1px; }
-.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only.taxi-button--dropdown > [data-native-picture=vector] { left: -2px; }
+.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only > :is([data-native-picture=vector], [data-native-picture=raster]) { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] :is(.taxi-table-command-bar,.taxi-command-bar[data-table-commands]) > .taxi-button--icon-only.taxi-button--dropdown > :is([data-native-picture=vector], [data-native-picture=raster]) { left: -2px; }
 .taxi-table-command-bar > .taxi-command-spacer { min-width: 0; margin-left: -9px; }
 .taxi-table-move { position: relative; display: inline-flex; margin-left: 11px; }
 .taxi-table-move:first-child { margin-left: 0; }
@@ -1381,4 +1381,4 @@ button { cursor: default; }
   display: flex; width: 100% !important; justify-content: flex-start; padding-inline: 6px;
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button { top: -1px; }
-.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button > [data-native-picture=vector] { position: relative; left: -1px; }
+.taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button > :is([data-native-picture=vector], [data-native-picture=raster]) { position: relative; left: -1px; }
