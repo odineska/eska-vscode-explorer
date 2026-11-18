@@ -11,6 +11,11 @@ esbuild 0.28.2 включает `yauzl` 3.4.0, `vscode-languageclient` 11.0.0 и
 JSX компилирует `@solidjs/babel-plugin` с Babel 8.1.2. Для сборки под Node.js
 Babel поддерживает версии `^22.18.0 || >=24.11.0`.
 
+При обновлении рабочей копии с прежним `node_modules` выполните
+`bun install --frozen-lockfile --ignore-scripts --force`. Обычная установка
+Bun 1.4.4 может оставить у `vscode-languageclient` старую вложенную копию
+`semver`, которую сборщик выберет вместо версии из нового lockfile.
+
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run --bun check

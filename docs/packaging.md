@@ -16,7 +16,7 @@
 4. Откройте доверенную папку с `eska.toml` и Designer XML; раскройте **ESKA: 1C Explorer**.
    [Настройка проекта](setup.ru.md). bsl-analyzer необязателен.
 
-Также можно выполнить `code --install-extension /полный/путь/eska-explorer-0.0.12.vsix`.
+Также можно выполнить `code --install-extension /полный/путь/eska-explorer.vsix`.
 Для VSCodium замените `code` на `codium`. Установка VSIX не регистрирует publisher
 в Marketplace и ничего не публикует. В Remote backend должен находиться на машине
 проекта; фактическая приёмка Remote пока не выполнена.
@@ -26,7 +26,7 @@
 Из корня репозитория расширения, с Bun 1.4.4 в PATH:
 
 ```sh
-bun install --frozen-lockfile --ignore-scripts
+bun install --frozen-lockfile --ignore-scripts --force
 bun run package --out eska-explorer.vsix
 python3 scripts/check-vsix.py eska-explorer.vsix
 ```
