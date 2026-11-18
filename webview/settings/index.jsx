@@ -1,11 +1,13 @@
-import { For, Match, onSettled, Show, Switch } from "solid-js";
+import { createEffect, createSignal, For, Match, onSettled, Show, Switch } from "solid-js";
 import { render } from "@solidjs/web";
 import { Button } from "../ui/controls.jsx";
 import { settingsController } from "./controller.js";
 import { autoAttachGroups, defaultAutoAttachTypes, profileContext, profiles, usesManagedDebug } from "./profile.mjs";
+import { projectController } from "./project-controller.js";
+import { ProjectPage, settingsSections } from "./project-page.jsx";
 
 const api = acquireVsCodeApi();
-const { labels, project, externalProcessing } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
+const { labels, project, externalProcessing, title, locale, scope } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
 
 function Icon(props) {
   return <span class="settings-icon" data-icon={props.name} aria-hidden="true"/>;
@@ -210,15 +212,9 @@ function Actions(props) {
   </footer>;
 }
 
-function App() {
-  const model = settingsController(api);
+function RunSettings(props) {
+  const model = props.model;
   let form;
-  const receive = event => model.receive(event.data);
-  onSettled(() => {
-    window.addEventListener("message", receive);
-    model.load();
-    return () => window.removeEventListener("message", receive);
-  });
 
   function focusError(field) {
     if (field === "autoAttach") form.querySelector('input[name="autoAttach"]:enabled')?.focus();
@@ -233,14 +229,7 @@ function App() {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") save(event);
   }
 
-  return <article class="settings-page" aria-busy={String(model.write()?.type === "load")} onKeyDown={keyboardSave}>
-    <header class="settings-heading">
-      <div>
-        <h1>{labels.title}</h1>
-        <p>{labels.projectCaption} <code>{project}</code></p>
-      </div>
-      <Button quiet disabled={!!model.write()} onClick={model.load}>{labels.reload}</Button>
-    </header>
+  return <div aria-busy={String(model.write()?.type === "load")} onKeyDown={keyboardSave}>
     <Show when={model.write()?.type === "load"}><p class="settings-load" role="status">{labels.loading}</p></Show>
     <Show when={model.loadError()}><p class="settings-warning settings-error" role="alert">{model.loadError()}</p></Show>
     <Show when={model.loaded()}>
@@ -263,6 +252,58 @@ function App() {
         <Actions model={model}/>
       </form>
     </Show>
+  </div>;
+}
+
+function App() {
+  const local = settingsController(api);
+  const shared = projectController(api);
+  const [section, setSection] = createSignal(scope === "workspace" ? "general" : "run");
+  const [gitFile, setGitFile] = createSignal(scope === "member" ? "ignore" : "manifest");
+  const file = () => section() === "git" ? gitFile() : "manifest";
+  const receive = event => {
+    if (event.data?.type === "project-file") shared.receive(event.data);
+    else local.receive(event.data);
+  };
+  onSettled(() => {
+    window.addEventListener("message", receive);
+    if (section() === "run") local.load();
+    else shared.ensure(file());
+    return () => window.removeEventListener("message", receive);
+  });
+  createEffect(() => section() === "run" ? null : file(), active => {
+    if (active) shared.ensure(active);
+  });
+  const visible = settingsSections.filter(([id]) =>
+    !(scope === "workspace" && id === "run" || scope === "member" && (id === "analyzer" || id === "check")));
+  function dirty(id) {
+    if (id === "run") return profiles.some(name => local.dirty(name));
+    return id === "git" ? ["manifest", "ignore", "attributes"].some(shared.dirty) : shared.dirty("manifest");
+  }
+  function reload() {
+    if (section() === "run") local.load();
+    else shared.request(file(), "show");
+  }
+  return <article class="settings-page">
+    <header class="settings-heading">
+      <div>
+        <h1>{title}</h1>
+        <p><code>{project}</code></p>
+      </div>
+      <Button quiet disabled={section() === "run" ? !!local.write() : !!shared.read(file()).pending} onClick={reload}>{labels.reload}</Button>
+    </header>
+    <nav class="settings-profiles" aria-label={title}>
+      <For each={visible}>{([id, label]) =>
+        <Button quiet class="settings-profile" data-settings-section={id} aria-pressed={String(section() === id)}
+          onClick={() => setSection(id)}>
+          {label[locale]}
+          <Show when={dirty(id)}><span class="settings-dirty-dot is-dirty" title={labels.dirty} aria-hidden="true"/></Show>
+        </Button>}</For>
+    </nav>
+    <Show when={section() === "run"} fallback={
+      <ProjectPage section={section()} file={file()} openGitFile={setGitFile} member={scope === "member"}
+        controller={shared} locale={locale}/>
+    }><RunSettings model={local}/></Show>
   </article>;
 }
 

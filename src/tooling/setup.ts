@@ -74,6 +74,12 @@ export class ToolingSetup implements vscode.Disposable {
     return installed?.path;
   }
 
+  /** Resolve the configured analyzer without changing the current language session or offering installation. */
+  findAnalyzerExecutable(): Promise<string | undefined> {
+    const configured = vscode.workspace.getConfiguration("eska.explorer").get<string>("analyzerExecutable", TOOL_NAMES.analyzer);
+    return findTool(configured, TOOL_NAMES.analyzer, dirname(managedPath(this.root, "analyzer")));
+  }
+
   /** Inspect language binaries independently; missing analysis never prevents a metadata connection. */
   async ensureAnalyzer(signal = this.lifetime.signal, offer = true): Promise<ToolInfo | undefined> {
     this.analyzerProbe?.abort();
@@ -81,7 +87,7 @@ export class ToolingSetup implements vscode.Disposable {
     signal = AbortSignal.any([signal, this.lifetime.signal, this.analyzerProbe.signal]);
     if (!vscode.workspace.isTrusted || this.disposed) return undefined;
     const configured = vscode.workspace.getConfiguration("eska.explorer").get<string>("analyzerExecutable", TOOL_NAMES.analyzer);
-    const path = await this.track(findTool(configured, TOOL_NAMES.analyzer, dirname(managedPath(this.root, "analyzer"))));
+    const path = await this.track(this.findAnalyzerExecutable());
     assertCurrent(signal);
     if (!path) {
       delete this.states.analyzer.info;

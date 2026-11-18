@@ -1,0 +1,160 @@
+import { createMemo, createSignal, For, Match, Switch } from "solid-js";
+import { Button } from "../ui/controls.jsx";
+import { caption, childModel, field, SettingsFields, SettingsGroup, word } from "./project-controls.jsx";
+import { at } from "./project-draft.mjs";
+
+const optionNames = {
+  indent_style: caption("Символ отступа", "Indent character"),
+  indent_width: caption("Ширина отступа", "Indent width"),
+  tab_width: caption("Ширина табуляции", "Tab width"),
+  continuation_indent_width: caption("Добавочный отступ продолжения", "Continuation indent"),
+  column_limit: caption("Ограничение длины строки", "Line length limit"),
+  keyword_case: caption("Регистр ключевых слов", "Keyword case"),
+  space_after_comma: caption("Пробел после запятой", "Space after comma"),
+  space_around_operators: caption("Пробелы вокруг операторов", "Spaces around operators"),
+  space_inside_parentheses: caption("Пробелы внутри скобок", "Spaces inside parentheses"),
+  space_before_call_parenthesis: caption("Пробел перед скобкой вызова", "Space before call parenthesis"),
+  wrap_arguments: caption("Перенос аргументов", "Argument wrapping"),
+  wrap_binary: caption("Перенос бинарных выражений", "Binary expression wrapping"),
+  break_before_binary_operators: caption("Перенос перед бинарным оператором", "Line break before binary operator"),
+  max_empty_lines: caption("Максимум пустых строк подряд", "Maximum consecutive blank lines"),
+  trim_trailing_whitespace: caption("Удалять хвостовые пробелы", "Trim trailing whitespace"),
+  insert_final_newline: caption("Перевод строки в конце файла", "Final newline"),
+  comments: caption("Отступы комментариев", "Comment indentation"),
+  align_assignments: caption("Выравнивать присваивания", "Align assignments"),
+  separate_object_initialization: caption("Отделять инициализацию объекта", "Separate object initialization"),
+  align_call_arguments: caption("Выравнивать запятые соседних вызовов", "Align commas in adjacent calls"),
+  closing_parenthesis_on_new_line: caption("Закрывающая скобка на новой строке", "Closing parenthesis on a new line"),
+  preserve_existing_line_breaks: caption("Сохранять существующие переносы", "Keep existing line breaks"),
+  indent_multiline_strings: caption("Выравнивать многострочные строки", "Align multiline strings"),
+  blank_lines_between_methods: caption("Пустых строк между методами", "Blank lines between methods"),
+  blank_lines_inside_methods: caption("Пустых строк на границах метода", "Blank lines inside method boundaries"),
+  blank_lines_around_blocks: caption("Пустых строк вокруг блоков", "Blank lines around blocks"),
+  blank_lines_inside_multistatement_blocks: caption("Пустых строк в блоках с несколькими операциями", "Blank lines inside multi-statement blocks"),
+  blank_lines_before_return: caption("Пустых строк перед возвратом", "Blank lines before return"),
+  blank_lines_around_multiline_statements: caption("Пустых строк вокруг многострочных инструкций", "Blank lines around multiline statements"),
+  blank_lines_between_object_groups: caption("Пустых строк между группами операций объекта", "Blank lines between object operation groups"),
+  select_items: caption("Перенос полей выборки", "Select field wrapping"),
+  condition_items: caption("Перенос условий", "Condition wrapping"),
+  group_items: caption("Перенос группировок и итогов", "Grouping and totals wrapping"),
+  order_items: caption("Перенос полей сортировки", "Sort field wrapping"),
+  blank_lines_between_queries: caption("Пустых строк между запросами", "Blank lines between queries"),
+  clause_newlines: caption("Секции запроса с новой строки", "Query clauses on new lines"),
+  align_aliases: caption("Выравнивать псевдонимы", "Align aliases"),
+};
+
+const choices = {
+  tab: caption("Табуляция", "Tabs"),
+  space: caption("Пробелы", "Spaces"),
+  canonical: caption("Канонический", "Canonical"),
+  upper: caption("Верхний", "Uppercase"),
+  lower: caption("Нижний", "Lowercase"),
+  preserve: caption("Сохранять", "Preserve"),
+  fit: caption("По длине строки", "Fit to line length"),
+  one_per_line: caption("По одному на строку", "One per line"),
+  indent_only: caption("Менять только отступ", "Adjust indentation only"),
+};
+
+const scopes = [
+  ["common", caption("Общие", "Common")],
+  ["bsl", caption("BSL", "BSL")],
+  ["sdbl", caption("Запросы", "Queries")],
+  ["advanced", caption("Профили и исключения", "Profiles and exceptions")],
+];
+const profileLabels = { eska: caption("ESKA", "ESKA"), "1c": caption("1С", "1C") };
+
+function forScope(schema, scope) {
+  return Object.entries(schema?.$defs?.[scope]?.properties ?? {}).map(([key, option]) => ({
+    path: [key],
+    label: optionNames[key] ?? caption(key, key),
+    type: option.enum ? "enum" : option.type,
+    choices: option.enum,
+    choiceLabels: choices,
+    min: option.minimum,
+    max: option.maximum,
+    ...(key === "column_limit" ? { hint: caption("0 снимает ограничение.", "0 removes the limit.") } : {}),
+  }));
+}
+
+function profileValue(name, language, key, configs, presets, visited = new Set()) {
+  if (Object.hasOwn(presets, name)) return presets[name][language]?.[key];
+  if (visited.has(name) || visited.size >= 32) return;
+  visited.add(name);
+  const definitions = configs.map(config => at(config, ["profiles", name])).filter(Boolean);
+  const latest = definitions.slice().reverse();
+  const explicit = latest.find(definition => at(definition, [language, key]) !== undefined)?.[language]?.[key]
+    ?? latest.find(definition => at(definition, ["common", key]) !== undefined)?.common?.[key];
+  const base = latest.find(definition => definition.based_on)?.based_on ?? "1c";
+  return explicit ?? profileValue(base, language, key, configs, presets, visited);
+}
+
+export function FormatSettings(props) {
+  const locale = props.locale;
+  const [scope, setScope] = createSignal("bsl");
+  const format = childModel(props.model, ["format"]);
+  const parent = () => props.metadata?.formatInherited;
+  const profileNames = createMemo(() => [...new Set([
+    "eska", "1c", ...Object.keys(parent()?.profiles ?? {}), ...Object.keys(format.value()?.profiles ?? {}),
+  ])]);
+  const selected = () => format.value()?.profile ?? parent()?.profile ?? "eska";
+  const selectedFields = createMemo(() => [field("profile", "enum", "Базовый пресет", "Base preset", {
+    choices: profileNames(), choiceLabels: profileLabels,
+    default: parent()?.profile ?? "eska",
+  })]);
+  const advanced = createMemo(() => {
+    const languageFields = scopes.slice(0, 3).map(([id, label]) => ({
+      path: [id], label, type: "object", itemFields: forScope(props.metadata?.formatSchema, id),
+    }));
+    return [
+      field("exclude", "string[]", "Исключить из форматирования", "Exclude from formatting"),
+      field("profiles", "map", "Командные профили", "Team profiles", {
+        itemFields: [
+          field("based_on", "enum", "На основе", "Based on", { choices: profileNames(), choiceLabels: profileLabels, default: "1c" }),
+          ...languageFields,
+        ],
+      }),
+      field("overrides", "array", "Переопределения по файлам", "Overrides by file", {
+        ordered: true,
+        initialEntry: () => ({ include: [""] }),
+        itemFields: [
+          field("include", "string[]", "Включить пути", "Include paths", { required: true, minItems: 1 }),
+          field("exclude", "string[]", "Исключить пути", "Exclude paths"),
+          ...languageFields,
+        ],
+        hint: caption("Правила применяются по порядку. Последнее совпавшее правило переопределяет заданные в нём параметры.",
+          "Rules apply in order. The last matching rule wins for each option it sets."),
+      }),
+    ];
+  });
+  function inherited(language, [key]) {
+    const presets = props.metadata?.formatPresets ?? {};
+    const config = format.value();
+    const lower = lang => at(parent(), [lang, key]) ?? at(parent(), ["common", key])
+      ?? profileValue(selected(), lang, key, [parent(), config], presets);
+    if (language !== "common") return at(config, ["common", key]) ?? lower(language);
+    const bsl = lower("bsl");
+    return Object.is(bsl, lower("sdbl")) ? bsl : undefined;
+  }
+  const options = createMemo(() => forScope(props.metadata?.formatSchema, scope()));
+  return <>
+    <SettingsGroup title={word(locale, "Стиль форматирования", "Formatting style")} icon="configuration">
+      <SettingsFields model={format} fields={selectedFields()} locale={locale}/>
+      <nav class="settings-profiles" aria-label={word(locale, "Область форматирования", "Formatting scope")}>
+        <For each={scopes}>{([id, label]) => <Button quiet class="settings-profile" data-format-scope={id}
+          aria-pressed={String(scope() === id)} onClick={() => setScope(id)}>{label[locale]}</Button>}</For>
+      </nav>
+      <Switch>
+        <Match when={scope() === "advanced"}>
+          <SettingsFields model={format} fields={advanced()} locale={locale}/>
+        </Match>
+        <Match when={scope()}>
+          <div class="settings-option-grid">
+            <SettingsFields model={childModel(format, [scope()], {
+              inherited: path => inherited(scope(), path),
+            })} fields={options()} locale={locale}/>
+          </div>
+        </Match>
+      </Switch>
+    </SettingsGroup>
+  </>;
+}

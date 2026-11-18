@@ -77,6 +77,157 @@ async function checkLayout(ui, workbench, language) {
   }
 }
 
+async function checkSharedSettings(open, root, text) {
+  const manifest = path.join(root, "eska.toml");
+  const original = await fs.readFile(manifest, "utf8");
+  const ignore = path.join(root, ".gitignore");
+  const originalIgnore = await fs.readFile(ignore, "utf8");
+  const attributes = path.join(root, ".gitattributes");
+  const originalAttributes = "# manual checkout rule\r\n* text=auto eol=lf\r\n";
+  await fs.writeFile(attributes, originalAttributes);
+  const section = name => `[data-settings-section="${name}"]`;
+  const setting = (name, control) => `${control}[data-setting="${name}"], [data-setting="${name}"] ${control}`;
+  const action = name => `[data-settings-action="${name}"]`;
+  const element = selector => `document.querySelector(${JSON.stringify(selector)})`;
+  const profile = setting("format.profile", "select");
+  const align = setting("format.bsl.align_assignments", "input");
+  const wrap = setting("format.bsl.wrap_arguments", "select");
+
+  async function setControl(ui, selector, value, event = "input") {
+    await ui.evaluate(`(() => {
+      const control = ${element(selector)};
+      control.value = ${JSON.stringify(value)};
+      control.dispatchEvent(new Event(${JSON.stringify(event)}, { bubbles: true }));
+    })()`);
+  }
+
+  async function preview(ui, fragment) {
+    await click(ui, action("preview"));
+    const selector = "[data-settings-preview]";
+    await until(() => ui.evaluate(`!!${element(selector)} && !!${element(action("save"))} && !${element(action("save"))}.disabled`),
+      "shared settings preview ready").catch(async error => {
+      const state = await ui.evaluate(`({
+        controls: [...document.querySelectorAll(".settings-fields input")].map(input => [input.value, input.validity.valid]),
+        alerts: [...document.querySelectorAll("[role=alert]")].map(alert => alert.textContent),
+        save: ${element(action("save"))}?.disabled,
+        status: document.querySelector(".settings-save-status")?.textContent,
+        errors: window.settingsTestErrors,
+      })`);
+      throw new Error(`${error.message} (${fragment}): ${JSON.stringify(state)}`, { cause: error });
+    });
+    assert.ok((await ui.evaluate(`${element(selector)}.textContent`)).includes(fragment), fragment);
+  }
+
+  async function saveDocument(ui, file, pattern) {
+    await click(ui, action("save"));
+    await until(async () => pattern.test(await fs.readFile(file, "utf8")), "settings saved to disk");
+    await until(() => ui.evaluate(`${element(action("save"))}.disabled && !document.querySelector("fieldset.settings-fields").disabled`),
+      "save acknowledged");
+    return fs.readFile(file, "utf8");
+  }
+
+  async function addGitRule(ui, file, original, pattern) {
+    const name = file === ignore ? "ignore" : "attributes";
+    await click(ui, `[data-git-file="${name}"]`);
+    const selector = `input[aria-label="${text("Add rule", "Добавить правило")}"]`;
+    await until(() => ui.evaluate(`!!${element(selector)} && !${element(selector)}.matches(":disabled")`), "Git rule editor ready");
+    await setControl(ui, selector, pattern);
+    await ui.evaluate(`${element(selector)}.closest(".settings-field").querySelector("button").click()`);
+    await preview(ui, pattern);
+    assert.equal(await fs.readFile(file, "utf8"), original);
+    const expected = name === "ignore" ? pattern : pattern + " filter=lfs diff=lfs merge=lfs -text";
+    const eol = name === "ignore" ? "\n" : "\r\n";
+    const written = await saveDocument(ui, file, /host-(?:temporary|records)/);
+    assert.equal(written, original + expected + eol);
+  }
+
+  async function openFormat(ui) {
+    await click(ui, section("format"));
+    await until(() => ui.evaluate(`!!${element(profile)} && !${element(profile)}.disabled && !!${element(wrap)} && !!${element(align)}`),
+      "shared format controls loaded");
+  }
+
+  async function checkAnalyzer(ui) {
+    await click(ui, section("analyzer"));
+    const editor = "[data-analyzer-group=editor]";
+    const codeLens = setting("tools.bsl-analyzer.code_lens.show_cyclomatic_complexity", "input");
+    await until(() => ui.evaluate(`!!${element(editor)} && !!${element(codeLens)}`), "BSL Analyzer catalog loaded");
+    await click(ui, editor + " > summary");
+    assert.equal(await ui.evaluate(`${element(codeLens)}.checked`), false);
+    await click(ui, codeLens);
+    assert.equal(await ui.evaluate(`${element(codeLens)}.checked`), true);
+    await preview(ui, "show_cyclomatic_complexity = true");
+    const written = await saveDocument(ui, manifest, /show_cyclomatic_complexity\s*=\s*true/);
+    assert.match(written, /max_warnings\s*=\s*0/);
+    const derived = await fs.readFile(path.join(root, "bsl-analyzer.toml"), "utf8");
+    assert.match(derived, /show_cyclomatic_complexity\s*=\s*true/);
+  }
+
+  async function assertOverrides(ui) {
+    assert.equal(await ui.evaluate(`${element(profile)}.value`), "1c");
+    assert.equal(await ui.evaluate(`${element(wrap)}.value`), "one_per_line");
+    assert.equal(await ui.evaluate(`${element(align)}.checked`), false);
+    assert.equal(await ui.evaluate(`${element(align)}.indeterminate`), false);
+  }
+
+  const ui = await open();
+  try {
+    await ui.evaluate('window.settingsTestErrors = []; window.addEventListener("error", event => window.settingsTestErrors.push(event.error?.stack ?? event.message));');
+    await openFormat(ui);
+    await setControl(ui, profile, "1c", "change");
+    await setControl(ui, wrap, "one_per_line", "change");
+    await click(ui, align);
+    if (await ui.evaluate(`${element(align)}.checked`)) await click(ui, align);
+    await assertOverrides(ui);
+    await click(ui, section("general"));
+    await until(() => ui.evaluate(`!!${element(setting("project.name", "input"))} && !${element(profile)}`), "general section selected");
+    await openFormat(ui);
+    await assertOverrides(ui);
+
+    await preview(ui, "one_per_line");
+    assert.equal(await fs.readFile(manifest, "utf8"), original);
+    const external = original + "\n# manual edit by another editor\n";
+    await fs.writeFile(manifest, external);
+    await click(ui, action("save"));
+    await until(() => ui.evaluate('!!document.querySelector(".settings-error[role=alert]")'), "stale settings save refused");
+    assert.equal(await fs.readFile(manifest, "utf8"), external);
+    await click(ui, ".settings-heading button");
+    await until(() => ui.evaluate(`!${element(action("save"))}.disabled`), "compatible format edits rebased");
+    await assertOverrides(ui);
+    const saved = await saveDocument(ui, manifest, /one_per_line/);
+    assert.match(saved, /profile\s*=\s*"1c"/);
+    assert.match(saved, /align_assignments\s*=\s*false/);
+    assert.match(saved, /wrap_arguments\s*=\s*"one_per_line"/);
+    assert.match(saved, /# manual edit by another editor/);
+    assert.equal(await fs.readFile(ignore, "utf8"), originalIgnore);
+
+    await click(ui, section("check"));
+    const warnings = setting("tools.eska-check.max_warnings", "input");
+    await until(() => ui.evaluate(`!!${element(warnings)}`), "check thresholds loaded");
+    await setControl(ui, warnings, "0");
+    await preview(ui, "max_warnings = 0");
+    assert.equal(await fs.readFile(manifest, "utf8"), saved);
+    const checked = await saveDocument(ui, manifest, /max_warnings\s*=\s*0/);
+    assert.match(checked, /align_assignments\s*=\s*false/);
+
+    await click(ui, section("git"));
+    await addGitRule(ui, ignore, originalIgnore, "/host-temporary/");
+    await addGitRule(ui, attributes, originalAttributes, '"host-records/*.mxl"');
+    if (process.env.ESKA_TEST_ANALYZER_BINARY) await checkAnalyzer(ui);
+  } finally {
+    ui.close();
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+  }
+
+  const reopened = await open();
+  try {
+    await openFormat(reopened);
+    await assertOverrides(reopened);
+  } finally {
+    reopened.close();
+  }
+}
+
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   execFileSync("git", ["init", "--quiet"], { cwd: fixture.root });
@@ -84,13 +235,15 @@ exports.run = async function () {
   const extension = vscode.extensions.all.find(item => item.packageJSON.name === "eska-explorer");
   const explorer = await extension.activate();
   await until(() => explorer.connection.state.kind === "ready", "metadata connected");
-  const settings = await until(async () => {
+  const findSettings = () => until(async () => {
+    if (explorer.connection.state.kind !== "ready") return;
     const roots = await explorer.getChildren();
     return [...roots, ...(await Promise.all(roots.filter(entry => entry.node && !entry.node.parent)
       .map(entry => explorer.getChildren(entry)))).flat()].find(item => item.fileKind === "group" && item.kind === "settings");
   }, "project settings tree node");
-  assert.equal(explorer.getTreeItem(settings).contextValue, "eskaProjectSettings");
   const open = async () => {
+    const settings = await findSettings();
+    assert.equal(explorer.getTreeItem(settings).contextValue, "eskaProjectSettings");
     await vscode.commands.executeCommand("eska.explorer.configureProject", settings);
     const ui = await connect(until, ".settings-page");
     await until(() => ui.evaluate("!!document.querySelector('.settings-fields')"), "local settings loaded");
@@ -113,7 +266,9 @@ exports.run = async function () {
   await fs.mkdir(base);
   await fs.writeFile(path.join(base, "1Cv8.1CD"), "");
   try {
-    assert.equal(await first.evaluate("document.querySelector('h1').textContent"), text("Run and Debug", "Запуск и отладка"));
+    assert.equal(await first.evaluate("document.querySelector('h1').textContent"), text("Project Settings", "Настройки проекта"));
+    assert.equal(await first.evaluate("document.querySelector('[data-settings-section=run]').textContent.trim()"),
+      text("Run and Debug", "Запуск и отладка"));
     assert.equal(await first.evaluate("document.querySelector('.settings-import').matches(':disabled')"), true);
     assert.equal(await first.evaluate("document.querySelector('button[type=submit]').disabled"), true);
     await click(first, "input[name=enabled]");
@@ -248,8 +403,11 @@ exports.run = async function () {
     await save(restored);
     await until(async () => !(await fs.readFile(file, "utf8")).includes("[prod."), "disabled profile removed from disk");
   } finally { restored.close(); }
+  const sharedSettings = process.env.ESKA_HOST_SHARED_SETTINGS === "1";
+  if (sharedSettings) await checkSharedSettings(open, fixture.root, text);
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
     passed: true, suite: "project-settings", vscode: vscode.version, locale: vscode.env.language,
+    shared_settings: sharedSettings, shared_analyzer: sharedSettings && !!process.env.ESKA_TEST_ANALYZER_BINARY,
     independent_drafts: true, keyboard_save: true, disk_conflict: true, draft_probe: !!platform,
     registered_infobase: !!picker, narrow_layout: true, themes: themes.map(([, kind]) => kind), epf: processing,
   }));

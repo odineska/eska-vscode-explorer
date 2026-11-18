@@ -183,7 +183,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       () => this.connection.disconnect(), () => this.connect(false));
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
-    this.projectSettings = new ProjectSettings(context);
+    this.projectSettings = new ProjectSettings(context, {
+      executable: () => this.tooling.findAnalyzerExecutable(),
+      application: root => {
+        const state = this.connection.state;
+        if (state.kind === "ready" && (relative(state.target.path, root) === "" || relativeFile(state.target.path, root))) {
+          return this.language.selectedApplication;
+        }
+      },
+      release: root => this.language.releaseForSettings(root),
+    });
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
@@ -943,8 +952,18 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   }
 
   private async configureProject(entry?: Element): Promise<void> {
+    if (entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" && !entry.scope.project) {
+      const state = this.connection.state;
+      if (state.kind === "ready" && state.target.backend === "project" && vscode.workspace.isTrusted
+        && this.files?.scopes.includes(entry.scope)) this.projectSettings.show(entry.scope.path, state.target.executable, false, "workspace");
+      return;
+    }
     const project = await this.runtimeProject(entry);
-    if (project) this.projectSettings.show(project.root, project.executable, project.externalProcessing);
+    if (project) {
+      const member = this.tree?.projects.some(item => item.info.scope.kind === "member"
+        && relative(nativePath(item.info.rootPath), project.root) === "");
+      this.projectSettings.show(project.root, project.executable, project.externalProcessing, member ? "member" : "project");
+    }
   }
 
   private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {

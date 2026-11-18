@@ -288,3 +288,58 @@
 .settings-auto-attach-groups > fieldset:disabled .settings-toggle {
   color: var(--vscode-disabledForeground, var(--settings-muted));
 }
+
+.settings-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: start;
+  gap: var(--settings-gap) 24px;
+}
+
+.settings-property-bar, .settings-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.settings-list { display: grid; gap: 8px; }
+.settings-list-content, .settings-key-input > input {
+  flex: 1 1 240px;
+  min-inline-size: min(100%, 240px);
+}
+.settings-list-content { display: grid; gap: 8px; }
+.settings-list-content > input { inline-size: 100%; }
+.settings-list-add { justify-self: start; }
+.settings-list-row:has(.settings-list-content > .settings-field) {
+  padding: 8px 10px;
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  align-items: flex-start;
+}
+
+.settings-detail {
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  padding: 7px 10px;
+}
+.settings-detail > summary {
+  cursor: pointer;
+  color: var(--vscode-editor-foreground, var(--vscode-foreground));
+}
+.settings-detail > summary.settings-property-bar { display: list-item; }
+.settings-detail > summary.settings-property-bar .settings-hint { margin-inline-start: 10px; }
+.settings-detail[open] > summary { margin-block-end: 9px; }
+.settings-detail > .settings-field + .settings-field { margin-block-start: 8px; }
+.settings-diff { margin-block: 12px; }
+.settings-diff pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-block-size: 44vh;
+  overflow: auto;
+  white-space: pre;
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  background: var(--settings-panel);
+}

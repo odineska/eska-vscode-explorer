@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import * as vscode from "vscode";
 import { message, type MessageKey } from "./messages.js";
+import { handleProjectFile, projectFileRequest, type AnalyzerSettingsHost } from "./project-file-settings.js";
 import { isRecord } from "./protocol.js";
 import { settingsRequest, type Infobase, type LocalSettings, type ProfileName, type SettingsResponse } from "./project-settings-protocol.js";
 import { runtimeJson } from "./runtime-tools.js";
@@ -58,15 +59,15 @@ interface Snapshot {
 export class ProjectSettings implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext, private readonly analyzer: AnalyzerSettingsHost) {}
 
-  show(root: string, executable: string, externalProcessing: boolean): void {
+  show(root: string, executable: string, externalProcessing: boolean, scope: "project" | "workspace" | "member" = "project"): void {
     const existing = this.panels.get(root);
     if (existing) { existing.reveal(); return; }
     const language = vscode.env.language;
     const text = (key: MessageKey, ...args: string[]) => message(language, key, ...args);
     const strings = Object.fromEntries(Object.entries(labels).map(([id, key]) => [id, text(key)]));
-    const panel = vscode.window.createWebviewPanel("eska.projectSettings", `${text("runtimeTitle")} · ${basename(root)}`,
+    const panel = vscode.window.createWebviewPanel("eska.projectSettings", `${text("projectSettingsTitle")} · ${basename(root)}`,
       vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, "out"), vscode.Uri.joinPath(this.context.extensionUri, "resources"),
       ] });
@@ -74,6 +75,7 @@ export class ProjectSettings implements vscode.Disposable {
     const abort = new AbortController();
     let snapshot: Snapshot | undefined;
     let pendingWrite = false;
+    const pendingFiles = new Set<string>();
     const probes: Partial<Record<ProfileName, AbortController>> = {};
     let picker: { id: string; profile: ProfileName; cancellation: vscode.CancellationTokenSource } | undefined;
     const post = (response: SettingsResponse) => {
@@ -84,8 +86,22 @@ export class ProjectSettings implements vscode.Disposable {
       picker = undefined;
     };
     const incoming = panel.webview.onDidReceiveMessage(async (value: unknown) => {
+      if (abort.signal.aborted || !vscode.workspace.isTrusted) return;
+      const shared = projectFileRequest(value);
+      if (shared) {
+        if (pendingFiles.has(shared.file)) return;
+        pendingFiles.add(shared.file);
+        try {
+          const result = await handleProjectFile(shared, root, executable, language, this.analyzer, abort.signal)
+            .catch(() => ({ ...shared, update: undefined, error: { code: "unavailable" } }));
+          if (result && !abort.signal.aborted) await panel.webview.postMessage(result);
+        } finally {
+          pendingFiles.delete(shared.file);
+        }
+        return;
+      }
       const request = settingsRequest(value);
-      if (!request || abort.signal.aborted || !vscode.workspace.isTrusted) return;
+      if (!request || scope === "workspace") return;
       const { id, profile, type } = request;
       if (type === "cancelPick") {
         if (picker?.id === id && picker.profile === profile) cancelPick();
@@ -170,7 +186,8 @@ export class ProjectSettings implements vscode.Disposable {
       incoming.dispose();
       this.panels.delete(root);
     });
-    panel.webview.html = this.html(panel.webview, { labels: strings, project: basename(root), externalProcessing });
+    panel.webview.html = this.html(panel.webview, { labels: strings, project: basename(root), externalProcessing,
+      title: text("projectSettingsTitle"), locale: language.startsWith("ru") ? "ru" : "en", scope });
   }
 
   private html(webview: vscode.Webview, bootstrap: unknown): string {
