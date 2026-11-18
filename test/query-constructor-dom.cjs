@@ -51,6 +51,7 @@ exports.connectWorkbench = async function (until) {
     await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', ...input });
     await connection.request('Input.dispatchKeyEvent', { type: 'keyUp', ...input });
   },
+  typeText: text => connection.request('Input.insertText', { text }),
   submitInput: async text => {
     await connection.request('Input.insertText', { text });
     await connection.request('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
