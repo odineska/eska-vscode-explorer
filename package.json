@@ -2,7 +2,7 @@
   "name": "eska-explorer",
   "displayName": "ESKA: 1C Explorer",
   "description": "%description%",
-  "version": "0.1.23",
+  "version": "0.1.27",
   "private": true,
   "license": "Apache-2.0",
   "engines": {
@@ -46,7 +46,8 @@
     "test:node": "npm run compile && node --test test/*.test.mjs",
     "test:integration": "bun run --bun compile && bun test test/integration.test.mjs test/tree.test.mjs test/search.test.mjs",
     "test:host": "bun run --bun compile && bun test/run-host.mjs",
-    "package": "bun run --bun compile && bun run --bun vsce package --no-dependencies --no-rewrite-relative-links"
+    "package": "bun run --bun compile && bun run --bun package:compiled",
+    "package:compiled": "bun run --bun vsce package --no-dependencies --no-rewrite-relative-links"
   },
   "devDependencies": {
     "@babel/core": "8.1.2",

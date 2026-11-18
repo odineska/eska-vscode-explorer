@@ -24,25 +24,30 @@ jobs:
         run: |
           bun run --bun check
           bun run --bun compile
+      - name: Fetch published backend release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-release-metadata.sh
       - name: Install released backends into a clean prefix
         run: |
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
-      - name: Test client and release preparation
-        run: |
-          bun test
-          KNOPE_TEST_BINARY="$(command -v knope)" \
-            python3 -m unittest discover -s test -p '*_test.py'
-      - name: Install the test editor
-        run: |
-          sudo apt-get update && sudo apt-get install -y xvfb libasound2t64
-          bash scripts/install-editor.sh
+      - name: Restore the pinned VS Code archive
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
+        with:
+          path: ${{ runner.temp }}/eska-test-editor/editor.tar.gz
+          key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
+      - name: Test the client and install the test editor
+        run: bash scripts/test-with-editor.sh
       - name: Check the packaged extension with real Metadata API and LSP
         env:
           ESKA_HOST_SUPPORT_DISABLED: '1'
         run: |
-          bun run --bun package
+          bun run --bun package:compiled
           export ESKA_TEST_VSIX="$(realpath "eska-explorer-$(node -p 'require("./package.json").version').vsix")"
           python3 scripts/check-vsix.py "$ESKA_TEST_VSIX"
           timeout 180s xvfb-run -a node test/run-host.mjs test/language-host.cjs
