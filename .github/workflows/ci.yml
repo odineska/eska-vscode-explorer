@@ -33,6 +33,14 @@ jobs:
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
+      - name: Restore the pinned VS Code archive
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
+        with:
+          path: ${{ runner.temp }}/eska-test-editor/editor.tar.gz
+          key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
       - name: Test the client and install the test editor
         run: bash scripts/test-with-editor.sh
       - name: Check the packaged extension with real Metadata API and LSP
