@@ -84,6 +84,26 @@ class FormPayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*unreferenced.css'):
             self.module.check(self.archive, self.source)
 
+    def test_scm_view_requires_its_browser_bundle_and_styles_alongside_forms(self):
+        manifest = json.loads(self.files['package.json'])
+        manifest['contributes']['commands'].append({'command': 'eska.explorer.scm.commit'})
+        self.files['package.json'] = json.dumps(manifest)
+        self.files.update({'out/scm-view.js': 'SCM browser runtime', 'out/scm-view.css': 'SCM styles'})
+        for name in ['package.json', 'out/scm-view.js', 'out/scm-view.css']:
+            (self.source / name).write_text(self.files[name], encoding='utf-8')
+        self.write_metadata({**self.outputs, 'out/scm-view.js': {}, 'out/scm-view.css': {}})
+        self.package()
+        self.module.check(self.archive, self.source)
+        for name in ['out/scm-view.js', 'out/scm-view.css']:
+            with self.subTest(asset=name, failure='missing'):
+                self.package(removed=name)
+                with self.assertRaisesRegex(AssertionError, 'missing archive files:.*' + name):
+                    self.module.check(self.archive, self.source)
+            with self.subTest(asset=name, failure='changed'):
+                self.package(changed={name: 'stale bundle'})
+                with self.assertRaisesRegex(AssertionError, name):
+                    self.module.check(self.archive, self.source)
+
     def test_metadata_cannot_escape_the_form_font_directory(self):
         self.write_metadata({**self.outputs, 'out/form-fonts/../extension.js': {}})
         self.package()

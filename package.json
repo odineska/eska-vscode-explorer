@@ -416,7 +416,7 @@
         "command": "eska.explorer.scm.diff",
         "title": "%scmDiff%",
         "category": "ESKA",
-        "icon": "$(diff)"
+        "icon": "$(compare-changes)"
       },
       {
         "command": "eska.explorer.scm.stage",
@@ -441,6 +441,118 @@
         "title": "%scmRefresh%",
         "category": "ESKA",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "eska.explorer.scm.head",
+        "title": "%scmHead%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.ignore",
+        "title": "%scmIgnore%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.revealOs",
+        "title": "%scmRevealOs%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.revealExplorer",
+        "title": "%scmRevealExplorer%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.compareWorkspace",
+        "title": "%scmCompareWorkspace%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.commit",
+        "title": "%scmCommit%",
+        "category": "ESKA",
+        "icon": "$(check)"
+      },
+      {
+        "command": "eska.explorer.scm.stageAll",
+        "title": "%scmStageAll%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
+        "command": "eska.explorer.scm.stageAllTracked",
+        "title": "%scmStageAllTracked%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
+        "command": "eska.explorer.scm.stageAllUntracked",
+        "title": "%scmStageAllUntracked%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
+        "command": "eska.explorer.scm.stageAllMerge",
+        "title": "%scmStageAllMerge%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
+        "command": "eska.explorer.scm.unstageAll",
+        "title": "%scmUnstageAll%",
+        "category": "ESKA",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "eska.explorer.scm.discardAll",
+        "title": "%scmDiscardAll%",
+        "category": "ESKA",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "eska.explorer.scm.discardAllTracked",
+        "title": "%scmDiscardAllTracked%",
+        "category": "ESKA",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "eska.explorer.scm.discardAllUntracked",
+        "title": "%scmDiscardAllUntracked%",
+        "category": "ESKA",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "eska.explorer.scm.openAll",
+        "title": "%scmOpenAll%",
+        "category": "ESKA",
+        "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "eska.explorer.scm.openAllStaged",
+        "title": "%scmOpenAllStaged%",
+        "category": "ESKA",
+        "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "eska.explorer.scm.openAllUntracked",
+        "title": "%scmOpenAllUntracked%",
+        "category": "ESKA",
+        "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "eska.explorer.scm.revealWindows",
+        "title": "%scmRevealWindows%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.revealMac",
+        "title": "%scmRevealMac%",
+        "category": "ESKA"
+      },
+      {
+        "command": "eska.explorer.scm.revealLinux",
+        "title": "%scmRevealLinux%",
+        "category": "ESKA"
       }
     ],
     "views": {
@@ -465,7 +577,8 @@
           "id": "eska.explorer.scm",
           "name": "%scmView%",
           "when": "eska.hasProject",
-          "visibility": "visible"
+          "visibility": "visible",
+          "type": "webview"
         }
       ]
     },
@@ -654,31 +767,6 @@
           "command": "eska.explorer.createMetadata",
           "when": "view == eska.explorer.projects && viewItem =~ /Creatable$/ && isWorkspaceTrusted && eska.explorer.metadataCreation && !eska.explorer.metadataObjects",
           "group": "navigation@4"
-        },
-        {
-          "command": "eska.explorer.scm.open",
-          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScmChange:/",
-          "group": "navigation@1"
-        },
-        {
-          "command": "eska.explorer.scm.diff",
-          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScmChange:/",
-          "group": "navigation@2"
-        },
-        {
-          "command": "eska.explorer.scm.stage",
-          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):(merge|working|untracked)$/",
-          "group": "navigation@3"
-        },
-        {
-          "command": "eska.explorer.scm.unstage",
-          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):index$/",
-          "group": "navigation@4"
-        },
-        {
-          "command": "eska.explorer.scm.discard",
-          "when": "view == eska.explorer.scm && viewItem =~ /^eskaScm(Change|Group):(working|untracked)$/",
-          "group": "navigation@5"
         }
       ],
       "commandPalette": [
@@ -789,6 +877,86 @@
         {
           "command": "eska.explorer.scm.refresh",
           "when": "eska.hasProject"
+        },
+        {
+          "command": "eska.explorer.scm.head",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.ignore",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.revealOs",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.revealExplorer",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.compareWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.commit",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.stageAll",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllTracked",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllUntracked",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllMerge",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.unstageAll",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.discardAll",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.discardAllTracked",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.discardAllUntracked",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.openAll",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.openAllStaged",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.openAllUntracked",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.revealWindows",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.revealMac",
+          "when": "false"
+        },
+        {
+          "command": "eska.explorer.scm.revealLinux",
+          "when": "false"
         }
       ],
       "editor/context": [
@@ -806,6 +974,123 @@
           "command": "eska.explorer.placeQueryComments",
           "when": "resourceScheme == eska-query && resourceExtname == .sdbl",
           "group": "eska@5"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "eska.explorer.scm.diff",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(index|working|untracked)$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "eska.explorer.scm.open",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange",
+          "group": "navigation@2"
+        },
+        {
+          "command": "eska.explorer.scm.head",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(index|working|untracked)$/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "eska.explorer.scm.discard",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup == working",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "eska.explorer.scm.discard",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup == untracked && eskaScmDiscard",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "eska.explorer.scm.stage",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(merge|working|untracked)$/",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.unstage",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup == index",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.ignore",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(working|untracked)$/",
+          "group": "1_modification@3"
+        },
+        {
+          "command": "eska.explorer.scm.revealLinux",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(merge|index|working)$/ && eskaScmReveal && remoteName == '' && isLinux",
+          "group": "2_view@1"
+        },
+        {
+          "command": "eska.explorer.scm.revealMac",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(merge|index|working)$/ && eskaScmReveal && remoteName == '' && isMac",
+          "group": "2_view@1"
+        },
+        {
+          "command": "eska.explorer.scm.revealWindows",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(merge|index|working)$/ && eskaScmReveal && remoteName == '' && isWindows",
+          "group": "2_view@1"
+        },
+        {
+          "command": "eska.explorer.scm.revealExplorer",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(merge|index|working)$/ && eskaScmReveal",
+          "group": "2_view@2"
+        },
+        {
+          "command": "eska.explorer.scm.compareWorkspace",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmChange && eskaScmGroup =~ /^(index|working)$/ && eskaScmCompare",
+          "group": "worktree_diff"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllMerge",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == merge",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.unstageAll",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == index",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.discardAll",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == working && eskaScmUntrackedMixed",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "eska.explorer.scm.stageAll",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == working && eskaScmUntrackedMixed",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.discardAllTracked",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == working && !eskaScmUntrackedMixed",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllTracked",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == working && !eskaScmUntrackedMixed",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.discardAllUntracked",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == untracked",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "eska.explorer.scm.stageAllUntracked",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmGroup && eskaScmGroup == untracked",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "eska.explorer.scm.commit",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmRepository",
+          "group": "navigation@1"
+        },
+        {
+          "command": "eska.explorer.scm.refresh",
+          "when": "webviewId == eska.explorer.scm && webviewSection == scmRepository",
+          "group": "navigation@2"
         }
       ]
     },

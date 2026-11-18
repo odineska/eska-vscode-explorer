@@ -5,8 +5,10 @@ import { sourceKey } from "./source.js";
 export interface GitChange { readonly uri: vscode.Uri; readonly originalUri: vscode.Uri; readonly renameUri?: vscode.Uri; readonly status: number }
 export interface GitRepository {
   readonly rootUri: vscode.Uri;
+  readonly kind?: "repository" | "submodule" | "worktree";
+  readonly inputBox: { value: string };
   readonly state: { readonly HEAD?: { readonly commit?: string; readonly name?: string }; readonly indexChanges: readonly GitChange[]; readonly workingTreeChanges: readonly GitChange[];
-    readonly mergeChanges: readonly GitChange[]; readonly untrackedChanges?: readonly GitChange[]; readonly onDidChange: vscode.Event<void> };
+    readonly mergeChanges: readonly GitChange[]; readonly untrackedChanges?: readonly GitChange[]; readonly onDidChange: vscode.Event<void>; readonly worktrees?: readonly { readonly main: boolean; readonly path: string }[] };
   status(): Promise<void>;
   add(paths: string[]): Promise<void>;
   revert(paths: string[]): Promise<void>;
