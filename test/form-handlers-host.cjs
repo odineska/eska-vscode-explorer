@@ -60,9 +60,17 @@ exports.run = async () => {
   assert.equal(await vscode.workspace.applyEdit(upload),true);
   const request=client.request.bind(client), uploads=[];
   client.request=async(method,params,...rest)=>{if(method.startsWith('query/buffer')||method==='form/handlerLocate')uploads.push({method,input:params.input,bufferId:params.bufferId});return request(method,params,...rest)};
+  const previous = view.snapshot;
   await replace(document,'<Event name="OnChange">NameChanged</Event>','<Event name="OnChange">DirtyChanged</Event>');
   main.panel.reveal();
   await until(async () => view.phase === 'ready' && await hasHandler(ui, 'DirtyChanged'), 'dirty XML handler reference');
+  const snapshot = view.snapshot;
+  assert.notEqual(snapshot.revision, previous.revision);
+  assert.equal(snapshot.model.handlers[first].name, 'DirtyChanged', 'the old index now points at another handler');
+  const navigation = view.navigation;
+  await service.receive(view, main, { type: 'handler', index: first, revision: previous.revision, formSessionId: snapshot.formSessionId });
+  await service.receive(view, main, { type: 'handler', index: first, revision: snapshot.revision, formSessionId: 'obsolete' });
+  assert.equal(view.navigation, navigation, 'old links must not navigate or interrupt current navigation');
   await navigate('DirtyChanged');assert.equal(module.isDirty,true);
   const transferred=uploads.find(value=>value.method==='form/handlerLocate')?.input?.bufferId;
   assert.equal(typeof transferred,'string');assert.ok(uploads.some(value=>value.method==='query/bufferClose'&&value.bufferId===transferred));

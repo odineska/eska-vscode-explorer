@@ -1,12 +1,11 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
-import { standardPicture } from './standard-pictures.mjs';
 import { choicePictureBounds, inactiveChoicePicture } from './choice-picture-paint.mjs';
-import { useStandardPicturePixelScale } from './NativeStandardPicture.jsx';
+import { useStandardPicture, useStandardPicturePixelScale } from './NativeStandardPicture.jsx';
 
 function ChoicePictureRaster(props) {
   let canvas;
   const [loaded, setLoaded] = createSignal();
-  const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
+  const standard = useStandardPicture(() => props.picture.kind === 'standard' ? props.picture.name : undefined);
   const asset = createMemo(() => {
     if (standard()) return standard();
     if (props.picture.kind !== 'common') return;
@@ -14,15 +13,18 @@ function ChoicePictureRaster(props) {
     // Reconciliation preserves the resource identity when an external file changes.
     return picture && { source: `data:${picture.mimeType};base64,${picture.data}`, isTemplate: picture.isTemplate };
   });
-  const standardScale = useStandardPicturePixelScale();
-  const pixelScale = () => props.os === 'linux' && standard() && !standard().isTemplate ? standardScale() : undefined;
+  const standardScale = useStandardPicturePixelScale(() => standard()?.isRaster);
+  const pixelScale = () => standard()?.isRaster || props.os === 'linux' && standard() && !standard().isTemplate
+    ? standardScale() : undefined;
   createEffect(on(asset, value => {
     setLoaded(undefined);
     if (!value) return;
     const image = new Image();
     image.onload = () => setLoaded({
-      image, width: image.naturalWidth, height: image.naturalHeight, isTemplate: value.isTemplate,
+      image, width: value.isRaster ? value.width : image.naturalWidth,
+      height: value.isRaster ? value.height : image.naturalHeight, isTemplate: value.isTemplate,
     });
+    if (value.isRaster) image.crossOrigin = 'anonymous';
     image.src = value.source;
     onCleanup(() => { image.onload = null; });
   }));
@@ -52,6 +54,7 @@ function ChoicePictureRaster(props) {
   });
   return <Show when={bounds()} fallback={props.fallback}>
     {box => <canvas ref={canvas} class="taxi-input-choice-picture" aria-hidden="true"
+      data-native-picture={standard()?.isRaster ? 'raster' : undefined}
       data-choice-picture-inactive={props.inactive ? '' : undefined}
       style={{
         left: `${box().x}px`, top: `${box().y}px`,

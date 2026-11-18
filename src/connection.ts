@@ -33,7 +33,7 @@ export class Connection {
   private disposed = false;
   private current: ConnectionState = { kind: "disconnected" };
   private lastTarget: ConnectionTarget | undefined;
-  private structuralRequest: Promise<unknown> | undefined;
+  private structuralRequest: { child: BackendProcess; pending: Promise<unknown> } | undefined;
   private readonly listeners = new Set<(method: string, params: unknown) => void>();
   private readonly sourceListeners = new Set<() => void>();
   private recoveryEndpoint: RecoveryEndpoint | undefined;
@@ -71,21 +71,22 @@ export class Connection {
 
   /** A replaced session cannot publish responses into the replacement tree. */
   async request(sessionId: string, method: string, params: Record<string, unknown> = {}, signal?: AbortSignal): Promise<unknown> {
-    while (this.structuralRequest) {
-      try { await this.structuralRequest; } catch { /* Recheck the live session after a failed structural operation. */ }
-      if (signal?.aborted) throw new ExplorerError("cancelled");
-    }
     const child = this.sessionChild(sessionId);
+    while (this.structuralRequest?.child === child) {
+      try { await this.structuralRequest.pending; } catch { /* Recheck the live session after a failed structural operation. */ }
+      if (signal?.aborted) throw new ExplorerError("cancelled");
+      if (child !== this.sessionChild(sessionId)) throw new ExplorerError("obsolete");
+    }
     const sourceMutation = this.sourceMutation(method);
     const structural = ["metadata/renamePreview", "metadata/renameApply", "metadata/undoProperty", "metadata/create", "metadata/previewObject", "metadata/applyObject", "metadata/previewFormEdit", "metadata/applyFormEdit", "metadata/replayFormEdit"].includes(method)
       || (method === "metadata/updateProperty" && typeof params?.contextSnapshot === "string");
     // Backend scans cannot stop midway. Keep the barrier until their actual reply, even if a tab closes.
     const pending = child.request(method, { ...params, sessionId }, structural ? 600_000 : undefined, structural ? undefined : signal);
-    if (structural) this.structuralRequest = pending;
+    if (structural) this.structuralRequest = { child, pending };
     let result: unknown;
     try { result = await pending; }
     finally {
-      if (this.structuralRequest === pending) this.structuralRequest = undefined;
+      if (this.structuralRequest?.pending === pending) this.structuralRequest = undefined;
       if (sourceMutation && this.child === child) for (const listener of this.sourceListeners) listener();
     }
     if (signal?.aborted) throw new ExplorerError("cancelled");
@@ -310,7 +311,7 @@ export class Connection {
     if (!child) return;
     if (this.stoppingChild?.child === child) return this.stoppingChild.pending;
     const pending = (async () => {
-      const results = await Promise.allSettled([...this.stopListeners].map(listener => listener()));
+      const results = await Promise.allSettled([...this.stopListeners].map(async listener => listener()));
       await child.stop(reason);
       if (this.child === child) this.child = undefined;
       for (const result of results) if (result.status === "rejected") throw result.reason;

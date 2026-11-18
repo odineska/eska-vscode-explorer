@@ -1,3 +1,4 @@
+import { selectStandardPictureDensity } from './standard-picture-density.mjs';
 import { webStandardPictures } from './web-standard-pictures.mjs';
 import { webTableMenuPictures } from './web-table-menu-pictures.mjs';
 
@@ -62,7 +63,7 @@ function pictureMap(artwork) {
 const standard = pictureMap(pictures);
 const tableActionMenu = pictureMap(webTableMenuPictures);
 
-export function standardPicture(name, variant = 'standard') {
+export function standardPicture(name, variant = 'standard', rasterContext) {
   if (typeof name !== 'string') return;
   const key = name.replace(/^StdPicture\./, '');
   if (variant === 'tableActionMenu') {
@@ -70,6 +71,16 @@ export function standardPicture(name, variant = 'standard') {
   }
   if (variant === 'tableCommand' && key !== 'MoveUp' && key !== 'MoveDown') return;
   if (['standard', 'tableMenu', 'tableCommand'].includes(variant) && Object.hasOwn(standard, key)) {
+    if (rasterContext?.root) {
+      const family = variant === 'standard' && key === 'Post' ? 'PublishFile'
+        : variant === 'tableMenu' && key === 'MarkObjectForDeletion' ? 'UserTemplateDelete' : undefined;
+      if (family) {
+        const { root, zoom, pixelRatio } = rasterContext;
+        const density = family === 'PublishFile'
+          ? selectStandardPictureDensity([85, 100, 125, 150, 175, 200, 300, 400], zoom, pixelRatio) : 100;
+        if (density) return { ...standard[key], source: `${root}${family}/${density}.png`, isRaster: true };
+      }
+    }
     return standard[key];
   }
 }

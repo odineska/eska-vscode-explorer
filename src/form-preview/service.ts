@@ -138,7 +138,8 @@ export class FormPreviewService implements vscode.Disposable {
     return this.inspectorWrite;
   }
   private frame(view: View, role: Role, restored?: vscode.WebviewPanel): Frame {
-    const localResourceRoots = [vscode.Uri.joinPath(this.context.extensionUri, "out")];
+    const pictureRoot = vscode.Uri.joinPath(this.context.extensionUri, "resources", "forms", "jet");
+    const localResourceRoots = [vscode.Uri.joinPath(this.context.extensionUri, "out"), pictureRoot];
     if (role === "main") localResourceRoots.push(vscode.Uri.joinPath(this.context.extensionUri, "resources", "icons"));
     const panel = restored ?? vscode.window.createWebviewPanel(VIEW_TYPE, role === "main" ? view.title : `${view.title} — ${this.strings().preview}`,
       role === "main" ? vscode.ViewColumn.One : vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots });
@@ -146,14 +147,15 @@ export class FormPreviewService implements vscode.Disposable {
     panel.webview.options = { enableScripts: true, localResourceRoots };
     panel.webview.onDidReceiveMessage(value => { void this.receive(view, frame, value).catch(error => this.failure(view, error)); });
     panel.onDidDispose(() => { if (view.frames.get(role) === frame) view.frames.delete(role); if (!view.frames.size) this.release(view); else this.publish(view); });
-    panel.webview.html = this.html(panel.webview, role === "main");
+    panel.webview.html = this.html(panel.webview, role === "main", pictureRoot);
     return frame;
   }
-  private html(webview: vscode.Webview, inspector: boolean): string {
+  private html(webview: vscode.Webview, inspector: boolean, pictureRoot: vscode.Uri): string {
     const nonce = randomBytes(16).toString("hex"), base = vscode.Uri.joinPath(this.context.extensionUri, "out");
     const script = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.js")), style = webview.asWebviewUri(vscode.Uri.joinPath(base, "form-preview.css"));
+    const pictureBase = webview.asWebviewUri(pictureRoot).toString() + "/";
     const artwork = inspector ? this.inspectorArtwork(webview) : "";
-    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; connect-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'"><link rel="stylesheet" href="${style}">${artwork}</head><body><div id="root"></div><script id="form-preview-script" nonce="${nonce}" src="${script}"></script></body></html>`;
+    return `<!doctype html><html lang="${this.locale().startsWith("ru") ? "ru" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource}; connect-src ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource} 'wasm-unsafe-eval'"><link rel="stylesheet" href="${style}">${artwork}</head><body><div id="root"></div><script id="form-preview-script" data-picture-root="${pictureBase}" nonce="${nonce}" src="${script}"></script></body></html>`;
   }
   /** Resolve trusted asset names once per view; the webview theme selects the artwork. */
   private inspectorArtwork(webview: vscode.Webview): string {
@@ -282,6 +284,10 @@ export class FormPreviewService implements vscode.Disposable {
       return;
     }
     if (value.type === "handler" && Number.isSafeInteger(value.index) && (value.index as number) >= 0) {
+      // Handler indexes identify entries only within the snapshot that rendered the link.
+      const snapshot = view.snapshot;
+      if (view.frames.get(frame.role) !== frame || !snapshot
+        || value.revision !== snapshot.revision || value.formSessionId !== snapshot.formSessionId) return;
       const navigation = ++view.navigation;
       try { await this.handler(view, value.index as number, navigation); }
       catch (error) {

@@ -105,7 +105,7 @@ export function PropertyInspector(props) {
     && key({identity: state.palette.identity}) === node().key ? state.palette : null);
   const locate = target => c.post({ type: 'locate', revision: state.revision, formSessionId: state.formSessionId,
     target: { ...target, identity: node().identity } });
-  const openHandler = index => c.post({ type: 'handler', index });
+  const openHandler = index => c.post({ type: 'handler', index, revision: state.revision, formSessionId: state.formSessionId });
 
   const paletteHandlers = createMemo(() => {
     const links = new Map();
