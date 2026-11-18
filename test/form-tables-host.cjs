@@ -310,6 +310,31 @@ async function verifyGeometryIdentity(document, view, ui, kind) {
     assert.equal(await ui.evaluate(`${viewport}.scrollLeft === ${viewport}.scrollWidth - ${viewport}.clientWidth`), true);
     await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key: 'Home', bubbles: true, cancelable: true}))`);
     assert.equal(await ui.evaluate(`${viewport}.scrollLeft`), 0);
+    if (fixed) {
+      const clickArrow = async direction => {
+        const point = await ui.evaluate(`(() => {
+          const strip = ${bar}, arrow = strip.querySelector('[data-scroll-arrow=${direction}]');
+          arrow.scrollIntoView({block:'nearest',inline:'nearest'});
+          return {x:(arrow.offsetLeft + arrow.offsetWidth / 2) / strip.clientWidth,
+            y:(arrow.offsetTop + arrow.offsetHeight / 2) / strip.clientHeight};
+        })()`);
+        await ui.pointer('.taxi-table-horizontal-scrollbar', true, point);
+      };
+      for (const zoom of [75, 150]) {
+        await ui.evaluate(`(() => {const select=document.querySelector('.form-zoom select');select.value='${zoom}';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+        await until(() => ui.evaluate(`document.querySelector('.taxi-preview').style.zoom==='${zoom / 100}'`), 'table zoom applied');
+        await ui.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+        await clickArrow('right');
+        await until(() => ui.evaluate(`${viewport}.scrollLeft > 0`), 'scaled right arrow scrolls the table');
+        await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key:'End',bubbles:true,cancelable:true}))`);
+        const end = await ui.evaluate(`${viewport}.scrollLeft`);
+        await clickArrow('left');
+        await until(() => ui.evaluate(`${viewport}.scrollLeft < ${end}`), 'scaled left arrow uses pointer coordinates');
+        await ui.evaluate(`${bar}.dispatchEvent(new KeyboardEvent('keydown', {key:'Home',bubbles:true,cancelable:true}))`);
+      }
+      await ui.evaluate(`(() => {const select=document.querySelector('.form-zoom select');select.value='100';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+      await until(() => ui.evaluate("document.querySelector('.taxi-preview').style.zoom==='1'"), 'table zoom restored');
+    }
   }
   const retained = await ui.evaluate(`({
     headers: __tableIdentity.headers.filter(node => node.isConnected).length,

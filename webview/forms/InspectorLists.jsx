@@ -79,7 +79,12 @@ export function StructurePane(props) {
     if (!row.children.length || props.terms.length) return;
     c.ui('folded', { ...state.ui.folded, [row.key]: !state.ui.folded[row.key] });
   };
-  const all = collapse => c.ui('folded', collapse ? Object.fromEntries([...props.index.nodes.values()].filter(row => row.children.length).map(row => [row.key, true])) : {});
+  function all(collapse) {
+    const folded = collapse ? Object.fromEntries([...props.index.nodes.values()]
+      .filter(row => row.children.length).map(row => [row.key, true])) : {};
+    c.ui('folded', folded);
+    if (!collapse) virtual.reveal(positions().get(state.selected) ?? -1);
+  }
   const locate = row => c.post({ type: 'locate', target: { kind: 'element', identity: row.node.identity } });
   const addition = row => formAddPlacement(props.index.nodes, state.model.root, state.formLayout, row);
   const movement = (row, delta) => formSiblingMove(props.index.nodes, state.model.root, state.formLayout, row, delta);
@@ -143,7 +148,7 @@ export function StructurePane(props) {
     if (next) { c.select(next.node); virtual.reveal(list.indexOf(next)); }
     event.preventDefault();
   }
-  createEffect(on(() => props.reveal, key => {
+  createEffect(on(c.treeReveal, key => {
     if (!key) return;
     virtual.reveal(positions().get(key) ?? -1);
   }));

@@ -16,6 +16,10 @@ export function App(props) {
   const index = createMemo(on([() => state.revision, () => state.model, () => state.locale],
     () => indexInspector(state.model, state.locale, state.strings)));
   const drag = c.drag = createFormDrag(c, index);
+  createEffect(on([
+    () => state.revision, () => state.formSessionId, () => state.model, () => state.detached,
+    c.writable, c.edit,
+  ], drag.clear, { defer: true }));
   c.menu = createFormMenu();
   const [size, setSize] = createSignal({ width: 0, height: 0, toolbar: 34, status: 23 });
   const inspectors = createMemo(() => inspectorLayout(size(), state.ui, state.role === 'main' && state.detached));

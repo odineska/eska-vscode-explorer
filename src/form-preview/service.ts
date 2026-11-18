@@ -192,8 +192,10 @@ export class FormPreviewService implements vscode.Disposable {
     if (view.closed || this.disposed || !isRecord(value)) return;
     if (value.type === "formDraft" && view.frames.get(frame.role) === frame) {
       const action = value.action;
+      const previewMove = action === "change" && value.merge === undefined && Array.isArray(value.operations)
+        && value.operations.length === 1 && isRecord(value.operations[0]) && value.operations[0].kind === "moveElement";
       if (view.editor && !view.handlerEditing && (action === "discard" && frame.role === "main" ||
-        this.canEdit(view) && (frame.role === "main" || action === "undo" || action === "redo" || action === "save")))
+        this.canEdit(view) && (frame.role === "main" || previewMove || action === "undo" || action === "redo" || action === "save")))
         await view.editor.receive(value, reply => { void frame.panel.webview.postMessage(reply); });
       else void frame.panel.webview.postMessage({ type: "formDraftResult", id: value.id, message: "editUnavailable" });
       return;
@@ -513,8 +515,9 @@ export class FormPreviewService implements vscode.Disposable {
       draftStatus: view.editor?.status ?? null,
       propertySearch: view.client?.limits.propertySearch === true,
       ...(updateSchema ? { editSchema: schema ?? null } : {}),
-      ...(frame.role === "main" ? { palette: view.palette ?? null, authoring: !!schema?.writable && this.canEdit(view),
-        formLayout: this.connection.state.kind === "ready" ? this.connection.state.formLayout ?? null : null } : {}),
+      authoring: !!view.editor?.schema?.writable && this.canEdit(view),
+      formLayout: this.connection.state.kind === "ready" ? this.connection.state.formLayout ?? null : null,
+      ...(frame.role === "main" ? { palette: view.palette ?? null } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
       ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
