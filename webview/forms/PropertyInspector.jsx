@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { PropertyPalette } from './PropertyPalette.jsx';
 import { PropertyGroups } from './PropertyGroups.jsx';
 import { PropertyValue } from './PropertyValue.jsx';
@@ -45,7 +45,7 @@ function DeclaredProperties(props) {
     <Show when={groups().get(group)?.length}>
       <table class="form-properties"><tbody>
       <tr class="form-declared-category"><th colspan="2">{state.strings[group]}</th></tr>
-      <For each={groups().get(group)}>{field => <tr tabIndex={props.locate ? 0 : undefined}
+      <For each={groups().get(group)}>{field => <tr tabindex={props.locate ? 0 : undefined}
         data-property-name={field.key.name} data-property-namespace={field.key.namespace ?? ''} data-palette-source="declared"
         title={`{${field.key.namespace ?? ''}}${field.key.name} · ${state.strings.paletteForm}`}
         onDblClick={event => { if (!event.target.closest('summary,button,input')) source(field); }}
@@ -82,7 +82,7 @@ function TypeDetails(props) {
         </li>}</For>
       </ul>
       <div class="form-type-source">
-        <details><summary>{strings().technicalType}</summary><pre tabIndex="0">{technical()}</pre></details>
+        <details><summary>{strings().technicalType}</summary><pre tabindex="0">{technical()}</pre></details>
         <InspectorIconButton icon="copy" label={strings().copyType} onClick={() => props.copy(technical())}/>
       </div>
     </Show>
@@ -128,7 +128,7 @@ export function PropertyInspector(props) {
     return handlers().filter(entry => !linked.has(entry.index));
   });
   const [usageLimit, setUsageLimit] = createSignal(40);
-  createEffect(on(() => data()?.id, () => setUsageLimit(40)));
+  createEffect(() => data()?.id, () => { setUsageLimit(40); });
   const usages = createMemo(() => {
     const row = data();
     if (row?.section === 'attributes') return props.index.usages.get(row.path) ?? [];
@@ -186,7 +186,9 @@ export function PropertyInspector(props) {
     // Retry after the selected node's asynchronous palette is published.
     const resolvedPalette = palette();
     fields();
-    if (!id || !scroll || state.authoring && !data() && !resolvedPalette) return;
+    return id && (!state.authoring || data() || resolvedPalette) ? id : undefined;
+  }, id => {
+    if (!id || !scroll) return;
     let current = true;
     queueMicrotask(() => {
       if (!current) return;
@@ -201,7 +203,7 @@ export function PropertyInspector(props) {
       field.focus({ preventScroll: true });
       c.revealProperty('');
     });
-    onCleanup(() => { current = false; });
+    return () => { current = false; };
   });
   const canAuthorExtra = entry => state.handlerAuthoring && state.authoring && editNode()
     && handlers().filter(item => item.handler.event === entry.handler.event).length === 1;

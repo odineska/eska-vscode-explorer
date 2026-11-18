@@ -16,7 +16,7 @@
 4. Откройте доверенную папку с `eska.toml` и Designer XML; раскройте **ESKA: 1C Explorer**.
    [Настройка проекта](setup.ru.md). bsl-analyzer необязателен.
 
-Также можно выполнить `code --install-extension /полный/путь/eska-explorer-0.0.12.vsix`.
+Также можно выполнить `code --install-extension /полный/путь/eska-explorer.vsix`.
 Для VSCodium замените `code` на `codium`. Установка VSIX не регистрирует publisher
 в Marketplace и ничего не публикует. В Remote backend должен находиться на машине
 проекта; фактическая приёмка Remote пока не выполнена.
@@ -26,22 +26,24 @@
 Из корня репозитория расширения, с Bun 1.4.4 в PATH:
 
 ```sh
-bun install --frozen-lockfile --ignore-scripts
-bun run package
-python3 scripts/check-vsix.py eska-explorer-0.0.12.vsix
+bun install --frozen-lockfile --ignore-scripts --force
+bun run package --out eska-explorer.vsix
+python3 scripts/check-vsix.py eska-explorer.vsix
 ```
 
-Закреплён официальный `@vscode/vsce` 4.0.0; компилятор и упаковщик запускаются через
-Bun. `scripts/bundle.mjs` собирает production JS и runtime зависимости
+Для упаковки используется `@vscode/vsce` 4.1.1. Bun запускает компилятор и
+упаковщик. `scripts/bundle.mjs` собирает production JS и runtime зависимости
 `yauzl`/`pend`, `vscode-languageclient` 11.0.0 и его зависимости в
 `out/extension.js` через закреплённый esbuild 0.28.2. Поэтому
 `--no-dependencies` сохраняет рабочие установщик и LSP-клиент в установленном VSIX.
-Во всех поставляемых JS-бандлах esbuild удаляет лишние пробелы, сохраняя
-имена и лицензионные комментарии.
-`out/THIRD-PARTY-NOTICES.txt` содержит лицензии всех модулей bundle; отсутствие
-лицензии останавливает сборку. Upstream license/NOTICE анализатора включены
+esbuild сохраняет лицензионные комментарии во всех бандлах и имена в коде
+Extension Host. В браузерных бандлах он сокращает идентификаторы.
+`out/THIRD-PARTY-NOTICES.txt` содержит лицензии встроенных модулей. Для
+`solid-js@2.0.1` и `@solidjs/web@2.0.1` сборка использует копию MIT-лицензии
+из исходного коммита Solid. Отсутствие лицензии у другого модуля останавливает
+сборку. Upstream license/NOTICE анализатора включены
 в `resources/analyzer-notices/` с source/hash provenance. `.vscodeignore` разрешает
-четыре JS-бандла (`extension`, `query-designer`, `form-preview`, `project-settings`), их runtime
+пять JS-бандлов (`extension`, `query-designer`, `form-preview`, `project-settings`, `scm-view`), их runtime
 ресурсы, BSL/SDBL-грамматики и language configuration, NLS, README/CHANGELOG,
 LICENSE, SVG, PNG-иконку магазина и PNG для предпросмотра из 1C:Jet.
 Уведомление об этих картинках входит в `resources/forms/jet/NOTICE.md` и `out/THIRD-PARTY-NOTICES.txt`. Отдельные модули, скомпилированные `tsc`,

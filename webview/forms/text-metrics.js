@@ -1,10 +1,10 @@
-import { createSignal, createEffect, on, onCleanup } from 'solid-js';
+import { createSignal, createEffect } from 'solid-js';
 import { firstFontFamily, hintedTextWidth, wordTextAdvances } from './font-metrics.mjs';
 
 /** Share font loading and discrete advances across captions and button footprints. */
 function createNativeWidth(element, request, measure) {
   const [width, setWidth] = createSignal();
-  createEffect(on(request, value => {
+  createEffect(request, value => {
     if (value.os !== 'linux' || !value.automatic || value.text.length > 4096) { setWidth(); return; }
     const target = element(), css = getComputedStyle(target);
     const descriptor = `${css.fontStyle} ${css.fontWeight} ${Math.round(parseFloat(css.fontSize))}px ${css.fontFamily}`;
@@ -22,8 +22,8 @@ function createNativeWidth(element, request, measure) {
         ?? [...value.text].reduce((sum, char) => sum + Math.floor(context.measureText(char).width + .5), 0);
       setWidth(measure(target, css, textWidth, value.text));
     }, () => {});
-    onCleanup(() => { current = false; });
-  }));
+    return () => { current = false; };
+  });
   return width;
 }
 

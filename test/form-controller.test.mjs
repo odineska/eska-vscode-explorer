@@ -8,7 +8,7 @@ test('browser controller unwraps Solid store proxies before selection and naviga
   const bundle = await build({ entryPoints:[fileURLToPath(new URL('../webview/forms/controller.js',import.meta.url))],
     bundle:true, write:false, platform:'browser', format:'cjs', conditions:['browser','production'], define:{'process.env.NODE_ENV':'"production"'} });
   const listeners = new Map(), messages = [], module = {exports:{}};
-  const context = createContext({module,exports:module.exports,console,
+  const context = createContext({module,exports:module.exports,console,queueMicrotask,
     requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},
     window:{addEventListener:(name,callback)=>listeners.set(name,callback),removeEventListener:name=>listeners.delete(name)} });
   runInContext(bundle.outputFiles[0].text,context);
@@ -38,7 +38,7 @@ test('persisted selection identity survives loading before the restored model ar
     bundle:true, write:false, platform:'browser', format:'cjs', conditions:['browser','production'], define:{'process.env.NODE_ENV':'"production"'} });
   const listeners = new Map(), module = {exports:{}};
   let frame, saved;
-  const context = createContext({module,exports:module.exports,console,
+  const context = createContext({module,exports:module.exports,console,queueMicrotask,
     requestAnimationFrame:callback=>{frame=callback;return 1;},cancelAnimationFrame:()=>{},
     window:{addEventListener:(name,callback)=>listeners.set(name,callback),removeEventListener:name=>listeners.delete(name)} });
   runInContext(bundle.outputFiles[0].text,context);
@@ -61,7 +61,7 @@ test('shared preview navigation is restored before rendering without sharing lay
   const bundle=await build({entryPoints:[fileURLToPath(new URL('../webview/forms/controller.js',import.meta.url))],bundle:true,write:false,platform:'browser',format:'cjs',conditions:['browser','production'],define:{'process.env.NODE_ENV':'"production"'}});
   const listeners=new Map(),messages=[],module={exports:{}};
   let callback,saved;
-  const context=createContext({module,exports:module.exports,console,requestAnimationFrame:value=>{callback=value;return 1;},cancelAnimationFrame:()=>{},window:{addEventListener:(name,value)=>listeners.set(name,value),removeEventListener:name=>listeners.delete(name)}});
+  const context=createContext({module,exports:module.exports,console,queueMicrotask,requestAnimationFrame:value=>{callback=value;return 1;},cancelAnimationFrame:()=>{},window:{addEventListener:(name,value)=>listeners.set(name,value),removeEventListener:name=>listeners.delete(name)}});
   runInContext(bundle.outputFiles[0].text,context);
   const initial={ui:{pages:{'own:current:1':'own:current:2'},collapsed:{'own:current:10':true},zoom:150}};
   const controller=module.exports.controller({getState:()=>runInContext(`(${JSON.stringify(initial)})`,context),setState:value=>{saved=structuredClone(value);},postMessage:value=>messages.push(structuredClone(value))});
@@ -99,7 +99,7 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   const bundle = await build({
     stdin: {
       contents: `export { controller } from './webview/forms/controller.js';
-        export { createRoot, createEffect } from 'solid-js';`,
+        export { createRoot, createEffect, flush } from 'solid-js';`,
       resolveDir: repository,
     },
     bundle: true,
@@ -116,10 +116,11 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
     module,
     exports: module.exports,
     console,
+    queueMicrotask,
     requestAnimationFrame: () => 1,
     cancelAnimationFrame: () => {},
-    observe: value => snapshots.push(structuredClone(value)),
-    paint: sequence => paints.push(sequence),
+    observe: value => { snapshots.push(structuredClone(value)); },
+    paint: sequence => { paints.push(sequence); },
     window: {
       addEventListener: (name, callback) => listeners.set(name, callback),
       removeEventListener: name => listeners.delete(name),
@@ -146,16 +147,16 @@ test('each incoming message publishes one coherent reactive snapshot', async () 
   receive({ type: 'state', sequence: 1, formSessionId: 'first', revision: '1', culture: 'en-US', model: { root } });
   runInContext(`module.exports.createRoot(dispose => {
     globalThis.stopObserving = dispose;
-    module.exports.createEffect(() => paint(formController.state.modelSequence));
-    module.exports.createEffect(() => observe({
+    module.exports.createEffect(() => formController.state.modelSequence, paint);
+    module.exports.createEffect(() => ({
       sequence: formController.state.sequence,
       culture: formController.state.culture,
       width: formController.state.model.root.properties[0].value.text,
       selected: formController.state.selected,
       page: formController.state.ui.pages['own:current:1'],
       collapsed: formController.state.ui.collapsed['own:current:10']
-    }));
-  });`, context);
+    }), observe);
+  }); module.exports.flush();`, context);
   snapshots.length = 0;
 
   const changed = structuredClone(root);
@@ -205,7 +206,7 @@ test('form actions stay unavailable until Undo/Redo acknowledges the already ren
     bundle: true, write: false, platform: 'browser', format: 'cjs', conditions: ['browser', 'production'],
     define: { 'process.env.NODE_ENV': '"production"' } });
   const listeners = new Map(), messages = [], module = { exports: {} };
-  const context = createContext({ module, exports: module.exports, console,
+  const context = createContext({ module, exports: module.exports, console, queueMicrotask,
     requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
     window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) } });
   runInContext(bundle.outputFiles[0].text, context);
@@ -241,7 +242,7 @@ test('handler creation waits for automatic form writes and only binds after succ
     bundle: true, write: false, platform: 'browser', format: 'cjs', conditions: ['browser', 'production'],
     define: { 'process.env.NODE_ENV': '"production"' } });
   const listeners = new Map(), messages = [], module = { exports: {} };
-  const context = createContext({ module, exports: module.exports, console,
+  const context = createContext({ module, exports: module.exports, console, queueMicrotask,
     requestAnimationFrame: () => 1, cancelAnimationFrame: () => {},
     window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) } });
   runInContext(bundle.outputFiles[0].text, context);

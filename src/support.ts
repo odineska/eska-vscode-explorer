@@ -61,6 +61,8 @@ export class SupportController implements vscode.FileDecorationProvider {
   private readonly pendingReadonly = new Set<string>();
   private rulesWritten: Promise<void> = Promise.resolve();
   private publishedRules: string[] | undefined;
+  private confirmedWorkspaceRules = new Set<string>();
+  private readonly relinquishedWorkspaceRules = new Set<string>();
   loading = false;
   failed = false;
   private clearRestrictions = false;
@@ -79,8 +81,15 @@ export class SupportController implements vscode.FileDecorationProvider {
       for (const editor of editors) void this.protectEditor(editor);
     });
     this.settingsSubscription = vscode.workspace.onDidChangeConfiguration(event => {
-      if (!event.affectsConfiguration('files.readonlyInclude') || !this.writing) return;
+      if (!event.affectsConfiguration('files.readonlyInclude')) return;
       const current = this.readRules();
+      if (!this.writing) {
+        for (const rule of this.confirmedWorkspaceRules) if (current[rule] !== true) {
+          this.confirmedWorkspaceRules.delete(rule);
+          this.relinquishedWorkspaceRules.add(rule);
+        }
+        return;
+      }
       const same = (left: Record<string, boolean>, right: Record<string, boolean>): boolean =>
         JSON.stringify(Object.entries(left).sort()) === JSON.stringify(Object.entries(right).sort());
       if (same(current, this.writing.expected)) return;
@@ -92,6 +101,32 @@ export class SupportController implements vscode.FileDecorationProvider {
 
   /** One window-wide switch governs both navigation and additional workspace folders. */
   get enabled(): boolean { return vscode.workspace.getConfiguration('eska.explorer').get<boolean>('supportPolicy', true); }
+
+  /** A query can disregard only this controller's exact pending workspace restriction. */
+  ownedWorkspaceReadonlyRule(uri: vscode.Uri): string | undefined {
+    if (this.stopped || !this.enabled || !this.available || !this.targeted || uri.scheme !== 'file') return undefined;
+    const entry = this.locate(uri.fsPath);
+    if (!entry || entry.project.info.requiresRefresh || entry.project.info.requiresReopen
+      || this.fileIndex.get(uri.toString())?.file.readOnly) return undefined;
+    const pattern = readonlyPattern(uri.fsPath);
+    if (this.confirmedWorkspaceRules.has(pattern) && this.readRules()[pattern] === true
+      && !this.publishedRules?.includes(pattern)) return pattern;
+    return undefined;
+  }
+
+  /** Settle the exact owner's support check before capturing its native user settings. */
+  async settleWorkspaceReadonlyRule(uri: vscode.Uri): Promise<string | undefined> {
+    if (this.stopped || !this.enabled || !this.available || !this.targeted || uri.scheme !== 'file') return undefined;
+    const entry = this.locate(uri.fsPath);
+    if (!entry) return undefined;
+    const endpoint = entry.tree.connection.sources;
+    if (!endpoint || (await this.resolveUri(uri.fsPath)).scheme !== 'file') return undefined;
+    await this.rulesWritten;
+    const current = this.locate(uri.fsPath);
+    if (current?.tree !== entry.tree || current.project !== entry.project
+      || entry.tree.connection.sources !== endpoint) return undefined;
+    return this.ownedWorkspaceReadonlyRule(uri);
+  }
 
   /** A session change invalidates every queued response before any setting is written. */
   setTree(tree: MetadataTree | undefined, available: boolean, clearRestrictions = false, targeted = false): void {
@@ -572,9 +607,11 @@ export class SupportController implements vscode.FileDecorationProvider {
   /** Resolve journal identities against existing settings instead of storing megabytes of duplicate paths. */
   private ownedRules(): string[] {
     const hashes = this.context.workspaceState.get<string[]>('supportReadonlyRules.v2');
-    if (!hashes) return this.context.workspaceState.get<string[]>('supportReadonlyRules.v1', []);
-    const owned = new Set(hashes);
-    return Object.keys(this.readRules()).filter(pattern => owned.has(this.ruleHash(pattern)));
+    const journal = new Set(hashes);
+    const owned = hashes === undefined
+      ? this.context.workspaceState.get<string[]>('supportReadonlyRules.v1', [])
+      : Object.keys(this.readRules()).filter(pattern => journal.has(this.ruleHash(pattern)));
+    return owned.filter(pattern => !this.relinquishedWorkspaceRules.has(pattern));
   }
 
   /** Hash only ownership identities; settings still contain the exact reversible file patterns. */
@@ -613,6 +650,7 @@ export class SupportController implements vscode.FileDecorationProvider {
     if (epoch !== undefined && epoch !== this.epoch) return;
     current = this.readRules();
     merged = reconcileRules(current, previous, desired);
+    const inserted = new Set(merged.owned.filter(key => !Object.hasOwn(current, key)));
     let expected = merged.rules;
     const externallyEdited = new Set<string>();
     for (let retry = 0; retry < 3 && JSON.stringify(current) !== JSON.stringify(expected); retry++) {
@@ -632,6 +670,9 @@ export class SupportController implements vscode.FileDecorationProvider {
       expected = next;
     }
     merged.owned = merged.owned.filter(key => !externallyEdited.has(key));
+    this.confirmedWorkspaceRules = new Set(merged.owned.filter(key => current[key] === true
+      && (inserted.has(key) || this.confirmedWorkspaceRules.has(key))));
+    for (const key of this.confirmedWorkspaceRules) this.relinquishedWorkspaceRules.delete(key);
     await this.saveOwnedRules(merged.owned);
   }
 

@@ -37,6 +37,8 @@ export class QuerySessions {
   /** Visual editing requires the independently negotiated exclusive-draft contract. */
   get constructorLimits() { return this.endpoint.sessions?.capabilities.constructorLimits; }
 
+  get saveCleanOwner(): boolean { return this.transport.capabilities.saveCleanOwner; }
+
   /** ESKA publishes the initial owner/base/draft and consumes the transient checked document handle. */
   async open(document: QueryDocument, id: string, query: QueryIdentity,
     userReadOnly: boolean): Promise<QuerySourceSession> {
@@ -180,8 +182,9 @@ export class QuerySourceSession {
 
   /** A save of an older native SDBL revision cannot silently apply a newer acknowledged draft. */
   async prepare(owner: QueryOwnerFacts, draft: string, comments: CommentDecision[] = [],
-    lineEnding?: "lf" | "crlf"): Promise<QueryPreparedSession["plan"]> {
+    lineEnding?: "lf" | "crlf", saveCleanOwner = false): Promise<QueryPreparedSession["plan"]> {
     if (lineEnding !== undefined && !this.client.limits.editorLineEndings) throw new ExplorerError("incompatible");
+    const saveOwnerRequested = saveCleanOwner && this.client.saveCleanOwner;
     let original: ReturnType<QueryRecovery["record"]> | undefined;
     const result = await this.transition(async (storeId, current) => {
       original = this.record;
@@ -190,7 +193,7 @@ export class QuerySourceSession {
         throw new ExplorerError("requestFailed", "query_failed", { reason: "stale_draft" });
       }
       return this.call("query/sessionPrepare", storeId, { revision: current.revision, owner, comments,
-        ...(lineEnding ? { lineEnding } : {}) });
+        ...(lineEnding ? { lineEnding } : {}), ...(saveOwnerRequested ? { saveCleanOwner: true } : {}) });
     });
     this.current = result;
     const raw = result as unknown as Record<string, unknown>;
@@ -201,7 +204,7 @@ export class QuerySourceSession {
     const prepared = result.record.prepared;
     if (!prepared || prepared.applyToken !== raw.plan.applyToken || prepared.saveOwner !== raw.plan.saveOwner
       || prepared.noOp !== plan.noOp || prepared.parts.output.snapshot !== plan.outputSnapshot || prepared.format !== result.format
-      || (raw.plan.saveOwner && (plan.noOp || owner.isDirty))) invalid();
+      || (raw.plan.saveOwner && (plan.noOp || owner.isDirty || (original.identity.kind === "bslLiteral" && !saveOwnerRequested)))) invalid();
     return { ...plan, applyToken: raw.plan.applyToken, saveOwner: raw.plan.saveOwner };
   }
 

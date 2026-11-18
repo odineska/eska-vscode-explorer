@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup } from 'solid-js';
+import { For, Show, createSignal, onSettled } from 'solid-js';
 import { InspectorIcon } from './InspectorIcon.jsx';
 
 export function createFormMenu() {
@@ -27,20 +27,16 @@ function Popup(props) {
     popup.style.left = Math.max(4, Math.min(entry.x, window.innerWidth - width - 4)) + 'px';
     popup.style.top = Math.max(4, Math.min(entry.y, window.innerHeight - height - 4)) + 'px';
   }
-  function mount(element) {
-    popup = element;
-    queueMicrotask(() => {
-      if (!popup.isConnected) return;
-      layout();
-      (itemButtons()[0] ?? popup).focus();
-    });
+  onSettled(() => {
+    layout();
+    (itemButtons()[0] ?? popup).focus();
     document.addEventListener('pointerdown', dismiss, true);
     window.addEventListener('resize', layout);
-    onCleanup(() => {
+    return () => {
       document.removeEventListener('pointerdown', dismiss, true);
       window.removeEventListener('resize', layout);
-    });
-  }
+    };
+  });
   function keyboard(event) {
     if (event.key === 'Escape' || event.key === 'Tab') {
       controller.close();
@@ -56,7 +52,7 @@ function Popup(props) {
     event.preventDefault();
     buttons[next].focus();
   }
-  return <div class="form-action-menu" role="menu" tabIndex="-1" aria-label={entry.label} ref={mount} onKeyDown={keyboard}>
+  return <div class="form-action-menu" role="menu" tabIndex="-1" aria-label={entry.label} ref={popup} onKeyDown={keyboard}>
     <div class="form-menu-context form-truncate">{entry.label}</div>
     <For each={entry.actions}>{action => <button type="button" role="menuitem" data-edit-action={action.id}
       disabled={action.disabled} onClick={() => { controller.close(); action.run(); }}>

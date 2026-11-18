@@ -1,4 +1,4 @@
-import { Show, onMount, onCleanup } from 'solid-js';
+import { Show, onSettled } from 'solid-js';
 import { Preview } from './Preview.jsx';
 import { InspectorIcon } from './InspectorIcon.jsx';
 
@@ -7,14 +7,14 @@ export function PreviewSurface(props) {
   const c = props.controller, state = c.state;
   const detached = () => state.role === 'preview';
   let surface;
-  onMount(() => {
+  onSettled(() => {
     if (detached()) return;
     const viewport = surface.querySelector('.preview-scroll');
     const measure = () => surface.style.setProperty('--preview-scrollbar', `${viewport.offsetWidth - viewport.clientWidth}px`);
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
     measure();
-    onCleanup(() => observer.disconnect());
+    return () => observer.disconnect();
   });
   return <div class="form-preview-surface" ref={surface}>
     <Preview controller={c}/>

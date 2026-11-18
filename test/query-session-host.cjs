@@ -153,19 +153,14 @@ async function interruptedApply(explorer, fixture) {
   assert.equal(pending.storageVersion, 2);
   assert.equal(Buffer.from(pending.draft, "base64").toString("utf8"), "SELECT 1");
   assert.ok((await fs.readFile(fixture.query.formPath, "utf8")).includes("SELECT 10"));
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery");
-  await ownerWritable(explorer, row, false);
-  assert.equal(draft.getText(), "SELECT 1", "resume does not replace the latest native draft");
-  assert.equal(draft.isDirty, true, "the unapplied draft is saveable under the recovered baseline");
-  const cleared = JSON.parse(await fs.readFile(checkpoint, "utf8"));
-  assert.equal(cleared.storageVersion, 1);
-  assert.ok((await fs.readFile(fixture.query.formPath, "utf8")).includes("SELECT 10"), "reconciliation never replays a source edit");
+  assert.ok((await fs.readFile(fixture.query.formPath, "utf8")).includes("SELECT 10"), "opening the recovered tab never replays a source edit");
+  await replace(draft, "SELECT 1", "SELECT 11");
   const nextSync = sourceEvent(explorer, fixture.query.formPath);
-  assert.equal(await draft.save(), true);
+  assert.equal(await draft.save(), true, "native Save reconciles the interrupted receipt and applies the latest query");
   await nextSync();
   const form = await fs.readFile(fixture.query.formPath, "utf8");
   assert.equal(form.includes("SELECT 10"), false);
-  assert.ok(form.includes("SELECT 1"));
+  assert.ok(form.includes("SELECT 11"));
   await closeQuery(explorer, draft);
   await ownerWritable(explorer, row, true);
 }
@@ -225,16 +220,19 @@ exports.run = async function () {
     await vscode.workspace.getConfiguration("eska.explorer").update("supportPolicy", false, vscode.ConfigurationTarget.Workspace);
     await until(() => !explorer.support.enabled && !explorer.support.loading, "ordinary support opt-out is visible");
     if (process.env.ESKA_HOST_LOCALE) assert.ok(vscode.env.language.startsWith(process.env.ESKA_HOST_LOCALE));
-    const failure = explorer.queries.failure.bind(explorer.queries);
-    explorer.queries.failure = error => { errors.push({ message: String(error), code: error?.code, domain: error?.domain, details: error?.details }); failure(error); };
+    const log = explorer.queries.log.bind(explorer.queries);
+    explorer.queries.log = message => {
+      if (message.startsWith("query_save_failed ")) errors.push(message);
+      log(message);
+    };
     await newerInput(explorer, fixture);
     await interruptedApply(explorer, fixture);
     await protectedOwnerViews(explorer, fixture);
     assert.equal(errors.length, 1);
-    assert.ok(errors[0].message.includes("simulated interrupted native receipt"));
+    assert.ok(errors[0].includes("simulated interrupted native receipt"));
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: true, suite: "query-source-sessions",
       vscode: vscode.version, locale: vscode.env.language, backendSourceSessions: true, newerInputDuringReceipt: true,
-      interruptedNativeReceipt: true, latestDraftPreserved: true, explicitReconciliation: true, cleanDraftMarkedDirty: true,
+      interruptedNativeReceipt: true, latestDraftPreserved: true, reconciliationOnSave: true, nativeEditIsSaveable: true,
       noAutomaticReplay: true, cleanCloseReleasesCheckpoint: true, backendSourceWriteFence: true,
       backendFenceReleasedOnError: true, restoredFenceUntilClose: true, languageWritesRespectSourceOwnership: true,
       supportDisabledDoesNotReleaseOwnership: true, staleNativeAuthorizationRejected: true,

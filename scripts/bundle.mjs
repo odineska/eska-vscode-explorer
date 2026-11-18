@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { transformAsync } from "@babel/core";
-import solid from "babel-preset-solid";
+import solid from "@solidjs/babel-plugin";
 import { readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -10,19 +10,19 @@ for (const [file, expected] of [["scripts/form-font-raster.c", raster.bridgeSha2
   if (createHash("sha256").update(await readFile(file)).digest("hex") !== expected) throw new Error(`Stale caption rasterizer: ${file}`);
 }
 
-// Remove generated whitespace while keeping names and licenses in the shipped code.
+// Preserve license comments in both targets and readable names in extension-host stack traces.
 const bundleOptions = { bundle: true, metafile: true, legalComments: "inline", minifyWhitespace: true };
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
 const result = await build({ ...bundleOptions, entryPoints: ["src/extension.ts"], outfile: "out/extension.js",
   platform: "node", target: "node22", format: "cjs", external: ["vscode"] });
-const browserOptions = { ...bundleOptions, outdir: "out",
+const browserOptions = { ...bundleOptions, outdir: "out", minifyIdentifiers: true,
   platform: "browser", target: "chrome140", format: "iife",
   loader: { ".ttf": "file", ".wasm": "file" }, assetNames: "form-fonts/[name]-[hash]",
   conditions: ["browser", "production"], define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "solid-jsx", setup(builder) {
     builder.onLoad({ filter: /\.jsx$/ }, async args => {
       const result = await transformAsync(await readFile(args.path, "utf8"), { filename: args.path,
-        presets: [[solid, { generate: "dom", hydratable: false }]], babelrc: false, configFile: false });
+        plugins: [[solid, { generate: "dom", hydratable: false }]], babelrc: false, configFile: false });
       if (!result?.code) throw new Error(`Cannot compile Solid component: ${args.path}`);
       return { contents: result.code, loader: "js" };
     });
@@ -69,8 +69,15 @@ notices.push(await readFile("resources/forms/jet/NOTICE.md", "utf8"));
 notices.push(await readFile("resources/forms/jet/LICENSE-MIT", "utf8"));
 for (const [name, { folder, value }] of [...packages].sort(([a], [b]) => a.localeCompare(b, "en"))) {
   const files = (await readdir(folder)).filter(file => /^(licen[cs]e|copying|notice)(\.|$)/i.test(file)).sort();
-  if (!files.length) throw new Error(`Missing bundled dependency license: ${name}`);
   notices.push(`${name} (${value.license ?? "see license"})\n${"=".repeat(72)}\n`);
+  if (!files.length) {
+    // These tarballs omit the MIT text from their shared publication commit.
+    // https://github.com/solidjs/solid/blob/82f71fddb1340cab46167db119da5702038e65ab/LICENSE
+    if (value.license !== "MIT" || !["solid-js@2.0.1", "@solidjs/web@2.0.1"].includes(name)) {
+      throw new Error(`Missing bundled dependency license: ${name}`);
+    }
+    notices.push(`LICENSE\n${await readFile("scripts/licenses/solid-2.0.1.txt", "utf8")}\n`);
+  }
   for (const file of files) notices.push(`${file}\n${await readFile(join(folder, file), "utf8")}\n`);
 }
 await writeFile("out/THIRD-PARTY-NOTICES.txt", notices.join("\n"));

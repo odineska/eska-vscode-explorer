@@ -4,6 +4,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const vscode = require('vscode');
+const { closeQueryTabs } = require('./query-modal-host.cjs');
 
 /** Share only atomic test markers between two actual extension-host processes in one private normal IDE profile. */
 async function publish(file, value) {
@@ -58,7 +59,6 @@ exports.run = async function () {
   const draft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === 'eska-query'
     && vscode.window.activeTextEditor.document, 'query opened in first window');
   await replace(draft, 'SELECT 1', 'SELECT 6');
-  assert.equal(await draft.save(), true);
   await publish(ready, { pid: process.pid });
   const isolated = path.dirname(fixture.root);
   const workspace = path.join(isolated, 'second-window.code-workspace');
@@ -68,12 +68,12 @@ exports.run = async function () {
   const second = await until(() => fs.readFile(written, 'utf8').then(JSON.parse).catch(() => undefined), 'second native window saved module');
   assert.notEqual(second.pid, process.pid);
   await vscode.window.showTextDocument(draft, { preview: false });
-  await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri);
+  assert.equal(await draft.save(), false);
   assert.equal(owner.getText(), captured, 'first dirty parent is not overwritten');
   assert.equal(draft.getText(), 'SELECT 6\nAS Value', 'query draft remains available');
   assert.equal((await fs.readFile(fixture.module)).toString('hex'), second.disk, 'second window source stays intact');
   assert.ok(second.source.includes('Other = 99'));
-  await vscode.commands.executeCommand('eska.explorer.cancelQuery', draft.uri);
+  await closeQueryTabs(draft, true);
   await publish(path.join(fixture.root, 'host-result.json'), { passed: true, suite: 'bsl-two-native-windows',
     locale: vscode.env.language, vscode: vscode.version, extensionHosts: [process.pid, second.pid], dirtyParentPreserved: true,
     externalSourcePreserved: true, draftPreservedOnConflict: true });

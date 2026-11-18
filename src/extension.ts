@@ -172,7 +172,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       this.support, roots => this.registerLanguagePolicyRoots(roots));
     this.disposables.push(this.language);
     this.queries = new QueryTabs(context, this.connection, () => this.tree, () => this.language.selectedApplication,
-      entry => { if (!this.disposed) this.changed.fire(entry); }, value => this.output.warn(value));
+      entry => { if (!this.disposed) this.changed.fire(entry); }, value => this.output.warn(value),
+      uri => this.support.ownedWorkspaceReadonlyRule(uri), uri => this.support.settleWorkspaceReadonlyRule(uri));
     this.formatting = new FormattingService(String(context.extension.packageJSON.version), this.queries, this.tooling, (text, level) => this.output[level ?? "info"](text));
     this.language.attachQueries(new QueryLanguage(this.queries, value => this.output.warn(value)));
     this.queryDesigner = new QueryDesigner(context, this.queries, value => this.output.warn(value));
@@ -281,22 +282,6 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     }));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.placeQueryComments", async () => {
       try { await this.queries.placeComments(); }
-      catch (error) { this.queries.explain(error); }
-    }));
-    this.disposables.push(vscode.commands.registerCommand("eska.explorer.applyQuery", async (uri?: vscode.Uri) => {
-      try { await this.queries.apply(uri); }
-      catch (error) { this.queries.explain(error); }
-    }));
-    this.disposables.push(vscode.commands.registerCommand("eska.explorer.cancelQuery", async (uri?: vscode.Uri) => {
-      try { await this.queries.cancel(uri); }
-      catch (error) { this.queries.explain(error); }
-    }));
-    this.disposables.push(vscode.commands.registerCommand("eska.explorer.resumeQuery", async () => {
-      try { await this.queries.resume(); }
-      catch (error) { this.queries.explain(error); }
-    }));
-    this.disposables.push(vscode.commands.registerCommand("eska.explorer.compareQueryOwner", async () => {
-      try { await this.queries.compare(); }
       catch (error) { this.queries.explain(error); }
     }));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openFile", (entry: WorkspaceEntry) => this.openFile(entry)));

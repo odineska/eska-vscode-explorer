@@ -1,4 +1,4 @@
-import { For, Index, Show, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { CORE_NS, XS_NS, addType, defaultLanguage, localized, property, scalar } from './editor-model.mjs';
 import { FORM_NS } from './model.mjs';
 import { FormTypeEditor, formTypeId } from './FormTypeEditor.jsx';
@@ -30,14 +30,14 @@ export function TypeChoice(props) {
 export function LocalizedFields(props) {
   const values = () => props.values.length ? props.values : [{ language: props.language, content: '' }];
   return <div class="form-edit-localized">
-    <Index each={values()}>{(item, i) =>
+    <For each={values()} keyed={false}>{(item, i) =>
       <label class="form-edit-localized-row">
         <Show when={values().length > 1}><span>{item().language}</span></Show>
         <input type="text" aria-label={values().length > 1 ? `${props.label} (${item().language})` : props.label}
           value={item().content} onInput={event => props.change(values().map((value, index) =>
             index === i ? { ...value, content: event.currentTarget.value } : value))}/>
       </label>
-    }</Index>
+    }</For>
   </div>;
 }
 
@@ -196,7 +196,7 @@ export function InlineFormProperty(props) {
   }
   onCleanup(() => c.flushField(key));
   return <div ref={element} class="form-inline-property" data-edit-property={field.name} data-edit-field={field.id}
-    onFocusIn={() => { focused = true; }} onFocusOut={blur} aria-invalid={!!error()}>
+    onFocusIn={() => { focused = true; }} onFocusOut={blur} aria-invalid={String(!!error())}>
     <Show when={composite()} fallback={
       <ValueEditor {...props} field={field} label={label()} value={value()} change={update} invalid={invalid}/>
     }>

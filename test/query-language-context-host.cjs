@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { closeQueryTabs } = require('./query-modal-host.cjs');
 
 /** Wait for the selected real analyzer context and exact metadata completion. */
 async function until(action, label) {
@@ -52,8 +53,8 @@ exports.run = async function () {
     assert.equal((await labels(second)).includes("OnlyFirst"), false);
     assert.equal(first.getText(), original);
     accepted.push("second_application_query_resolves_only_its_own_metadata");
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", second.uri);
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", first.uri);
+    await closeQueryTabs(second, true);
+    await closeQueryTabs(first, true);
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: true, suite: "query-language-context", accepted }));
   } catch (error) {
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: false, accepted,

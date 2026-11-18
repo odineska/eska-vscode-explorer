@@ -1,5 +1,4 @@
-import { batch, createEffect, createMemo, createSignal } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createEffect, createMemo, createSignal, createStore } from "solid-js";
 import { draft, formatErrors, inputField, profiles, serialize } from "./profile.mjs";
 
 const snapshot = value => JSON.stringify(serialize(value));
@@ -51,8 +50,8 @@ export function settingsController(api) {
     for (const name of profiles) if (dirty[name]()) {
       drafts[name] = { draft: { ...state[name].draft }, baseline: snapshot(state[name].saved) };
     }
-    api.setState({ version: 1, active: active(), profiles: drafts });
-  });
+    return { version: 1, active: active(), profiles: drafts };
+  }, value => { if (value) api.setState(value); });
 
   function cancelPick() {
     const pending = picker();
@@ -70,11 +69,12 @@ export function settingsController(api) {
 
   function editFields(name, fields) {
     if (!Object.keys(fields).some(field => state[name].draft[field] !== fields[field])) return;
-    batch(() => {
-      set(name, "draft", fields);
-      set(name, "revision", revision => revision + 1);
-      set(name, "notice", null);
-      if (!dirty[name]()) set(name, "diskChanged", false);
+    set(profiles => {
+      const profile = profiles[name];
+      Object.assign(profile.draft, fields);
+      profile.revision++;
+      profile.notice = null;
+      if (snapshot(profile.draft) === snapshot(profile.saved)) profile.diskChanged = false;
     });
   }
 
@@ -87,26 +87,23 @@ export function settingsController(api) {
     const name = active();
     if (!dirty[name]() || write()) return;
     cancelPick();
-    batch(() => {
-      editFields(name, state[name].saved);
-      set(name, { validate: false, notice: null, diskChanged: false });
-      set(name, "visited", () => ({}));
+    editFields(name, { ...state[name].saved });
+    set(profiles => {
+      Object.assign(profiles[name], { validate: false, notice: null, diskChanged: false, visited: {} });
     });
   }
 
   function load() {
     if (write()) return;
     const request = newRequest("load");
-    batch(() => {
-      setWrite(request);
-      setLoadError("");
-    });
+    setWrite(request);
+    setLoadError("");
     api.postMessage(request);
   }
 
   function firstInvalidField() {
     const field = Object.keys(errors())[0];
-    if (field) set(active(), "validate", true);
+    if (field) set(profiles => { profiles[active()].validate = true; });
     return field;
   }
 
@@ -115,10 +112,8 @@ export function settingsController(api) {
     const field = firstInvalidField();
     if (field) return field;
     const request = newRequest("save");
-    batch(() => {
-      set(request.profile, "notice", null);
-      setWrite({ ...request, revision: current().revision });
-    });
+    set(profiles => { profiles[request.profile].notice = null; });
+    setWrite({ ...request, revision: current().revision });
     api.postMessage({ ...request, value: serialize(current().draft) });
   }
 
@@ -127,7 +122,10 @@ export function settingsController(api) {
     const field = firstInvalidField();
     if (field) return field;
     const request = newRequest("probe");
-    set(request.profile, "result", () => ({ id: request.id, revision: current().revision, status: "pending" }));
+    set(profiles => {
+      const profile = profiles[request.profile];
+      profile.result = { id: request.id, revision: profile.revision, status: "pending" };
+    });
     api.postMessage({ ...request, value: serialize(current().draft) });
   }
 
@@ -135,40 +133,44 @@ export function settingsController(api) {
     if (!loaded() || !current().draft.enabled || picker()) return;
     const request = newRequest("pickInfobase");
     setPicker(request);
-    set(request.profile, "notice", null);
+    set(profiles => { profiles[request.profile].notice = null; });
     api.postMessage(request);
   }
 
   function acceptSettings(data, pending) {
     const wasLoaded = loaded();
-    for (const name of profiles) {
-      const next = draft(data.settings[name]);
-      const profile = state[name];
-      const recovering = wasLoaded ? undefined : restored(name);
-      const keep = pending.type === "save"
-        ? name !== pending.profile || profile.revision !== pending.revision
-        : !!recovering || wasLoaded && dirty[name]();
-      const previous = recovering?.baseline ?? snapshot(profile.saved);
-      const changedOnDisk = pending.type === "load" && keep && previous !== snapshot(next);
-      set(name, "saved", next);
-      if (!keep) {
-        if (snapshot(profile.draft) !== snapshot(next)) set(name, "revision", revision => revision + 1);
-        set(name, "draft", next);
+    set(byProfile => {
+      for (const name of profiles) {
+        const next = draft(data.settings[name]);
+        const profile = byProfile[name];
+        const recovering = wasLoaded ? undefined : restored(name);
+        const previous = recovering?.baseline ?? snapshot(profile.saved);
+        const keep = pending.type === "save"
+          ? name !== pending.profile || profile.revision !== pending.revision
+          : !!recovering || wasLoaded && snapshot(profile.draft) !== previous;
+        const nextSnapshot = snapshot(next);
+        const changedOnDisk = pending.type === "load" && keep && previous !== nextSnapshot;
+        profile.saved = next;
+        if (!keep) {
+          if (snapshot(profile.draft) !== nextSnapshot) profile.revision++;
+          profile.draft = { ...next };
+        }
+        if (pending.type === "load") {
+          profile.notice = null;
+          profile.diskChanged = snapshot(profile.draft) !== nextSnapshot && (profile.diskChanged || changedOnDisk);
+        }
       }
-      if (pending.type === "load") {
-        set(name, "notice", null);
-        set(name, "diskChanged", dirty[name]() && (profile.diskChanged || changedOnDisk));
+      const profile = byProfile[pending.profile];
+      if (pending.type === "save") {
+        profile.notice = { kind: "saved" };
+        profile.diskChanged = false;
+      } else if (wasLoaded) {
+        profile.notice = { kind: "reloaded" };
       }
-    }
+    });
     setWarning(data.warning ?? "");
     setRequiresReload(false);
     setLoaded(true);
-    if (pending.type === "save") {
-      set(pending.profile, "notice", { kind: "saved" });
-      set(pending.profile, "diskChanged", false);
-    } else if (wasLoaded) {
-      set(pending.profile, "notice", { kind: "reloaded" });
-    }
   }
 
   function receive(data) {
@@ -177,9 +179,11 @@ export function settingsController(api) {
     if (data.type === "probe") {
       const checked = state[profile].result;
       if (checked?.id !== id || checked.status !== "pending" || checked.revision !== state[profile].revision) return;
-      set(profile, "result", {
-        id, revision: checked.revision, status: data.ready ? "success" : "failure",
-        detail: data.detail, field: inputField(data.field),
+      set(profiles => {
+        profiles[profile].result = {
+          id, revision: checked.revision, status: data.ready ? "success" : "failure",
+          detail: data.detail, field: inputField(data.field),
+        };
       });
     } else if (data.type === "infobase") {
       if (!sameRequest(picker(), data)) return;
@@ -189,20 +193,21 @@ export function settingsController(api) {
       if (base) editFields(profile, {
         kind: base.kind, path: base.path ?? "", host: base.host ?? "", name: base.name ?? "", url: "", admin: "",
       });
-      else if (data.detail) set(profile, "notice", { kind: "error", detail: data.detail });
+      else if (data.detail) set(profiles => { profiles[profile].notice = { kind: "error", detail: data.detail }; });
     } else if (data.type === "settings" || data.type === "error") {
       const pending = write();
       if (!sameRequest(pending, data) || pending.type !== data.operation) return;
-      batch(() => {
-        if (data.type === "settings") acceptSettings(data, pending);
-        else if (pending.type === "load") setLoadError(data.detail);
-        else {
-          set(profile, "notice", { kind: "error", detail: data.detail,
-            field: state[profile].revision === pending.revision ? inputField(data.field) : undefined });
-          setRequiresReload(data.requiresReload === true);
-        }
-        setWrite(null);
-      });
+      if (data.type === "settings") acceptSettings(data, pending);
+      else if (pending.type === "load") setLoadError(data.detail);
+      else {
+        set(profiles => {
+          const next = profiles[profile];
+          next.notice = { kind: "error", detail: data.detail,
+            field: next.revision === pending.revision ? inputField(data.field) : undefined };
+        });
+        setRequiresReload(data.requiresReload === true);
+      }
+      setWrite(null);
     }
   }
 
@@ -218,6 +223,6 @@ export function settingsController(api) {
     active, current, loaded, write, warning, loadError, requiresReload, picker, result, saving, canSave,
     dirty: name => dirty[name](),
     select, edit, discard, load, save, probe, pickInfobase, receive, fieldError,
-    visit: field => set(active(), "visited", field, true),
+    visit: field => set(profiles => { profiles[active()].visited[field] = true; }),
   };
 }

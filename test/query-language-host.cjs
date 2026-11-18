@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { closeQueryTabs } = require('./query-modal-host.cjs');
 
 /** Native providers can refuse reads during indexing; each assertion has a bounded real-server deadline. */
 async function until(action, label) {
@@ -110,7 +111,7 @@ exports.run = async function () {
     await until(() => completion(owner, "Товар.Ар", "Артикул"), "native owner restored to LSP");
     assert.equal(explorer.language.session.documents.poisoned(owner.uri.toString()), true);
     accepted.push("native_owner_edit_pauses_query_and_restores_actual_native_text");
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", draft.uri);
+    await closeQueryTabs(draft, true);
     assert.ok(owner.getText().includes("Other = 99")); assert.deepEqual(await fs.readFile(fixture.module), disk);
     accepted.push("cancel_preserves_unrelated_native_edit_and_disk");
     const otherOriginal = other.getText(), ownerBeforeRename = owner.getText(), otherDisk = await fs.readFile(fixture.languageSource.other);
@@ -123,7 +124,7 @@ exports.run = async function () {
     const secondDraft = await until(() => vscode.window.activeTextEditor?.document.uri.scheme === "eska-query"
       && vscode.window.activeTextEditor.document, "second query draft");
     await until(() => completion(secondDraft, "Товар.Ар", "Артикул"), "second owner projection is synchronized");
-    await vscode.commands.executeCommand("eska.explorer.cancelQuery", secondDraft.uri);
+    await closeQueryTabs(secondDraft, true);
     const live = explorer.language.session;
     await live.documents.settled(other.uri.toString());
     const wireVersion = live.documents.wireVersion(other);

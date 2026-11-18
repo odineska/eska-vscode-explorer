@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Match, Show, Switch, createMemo, createSignal, onSettled } from 'solid-js';
 import { color, flag, font, property, scalar, viewStatusAddition } from './model.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 import { CommandButton } from './Preview.jsx';
@@ -22,11 +22,11 @@ function StatusStrip(props) {
       width: designCaptionWidth(label, node().presentation.font) };
   }));
   const alignment = () => ({ Left: 'start', Center: 'center', Right: 'end' })[scalar(node(), 'HorizontalLocation')];
-  onMount(() => {
+  onSettled(() => {
     if (state.os !== 'linux' || !props.standalone && !props.fitTable) return;
     const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
     observer.observe(strip);
-    onCleanup(() => observer.disconnect());
+    return () => observer.disconnect();
   });
   const chipWidth = label => {
     if (state.os !== 'linux' || label.width === undefined) return;
@@ -40,7 +40,7 @@ function StatusStrip(props) {
     'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
     'justify-content': alignment(),
   });
-  return <div ref={strip} class="taxi-table-search-controls" classList={{ 'taxi-view-status--standalone': props.standalone }}
+  return <div ref={strip} class={["taxi-table-search-controls", { 'taxi-view-status--standalone': props.standalone }]}
     data-element={node().key} data-view-status="" style={style()}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }}>
     <For each={labels()}>{label => <ViewStatusChip label={label} width={chipWidth(label)}

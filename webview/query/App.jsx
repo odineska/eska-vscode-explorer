@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, onCleanup, Show, untrack } from 'solid-js';
+import { createEffect, createMemo, For, onSettled, Show, untrack } from 'solid-js';
 import { Button, Toolbar } from '../ui/controls.jsx';
 
 /** Rust supplies every statement, capability and selection; this frame stores presentation only. */
@@ -52,8 +52,7 @@ export function ConstructorApp(props) {
     </Toolbar></Show>;
   }
 
-  createEffect(() => {
-    const current = view(), body = panes();
+  createEffect(() => ({ current: view(), body: panes() }), ({ current, body }) => {
     if (!current) return;
     const paint = `${current.state.model.revision}:${current.state.location?.serial ?? ''}`;
     if (paint !== lastPaint) {
@@ -61,16 +60,18 @@ export function ConstructorApp(props) {
       if (fullText) controller.paintText(fullText);
       lastPaint = paint;
     }
+    let pending = true;
     queueMicrotask(() => {
-      if (view() !== current) return;
+      if (!pending || view() !== current) return;
       if (!current.state.busy) controller.overlays();
       else for (const dialog of document.querySelectorAll('#root > :not(.constructor-shell)')) dialog.inert = true;
       if (body && mounted !== body.key) { controller.layout.mount(current.selected, current.page, current.state.labels); mounted = body.key; }
       if (preview && current.page === 'text') preview.hidden = true;
       else if (preview) preview.hidden = false;
     });
+    return () => { pending = false; };
   });
-  onCleanup(() => controller.dispose());
+  onSettled(() => () => controller.dispose());
 
   return <div class="constructor-shell" onKeyDown={event => {
     if (child() || locked()) return;
@@ -81,7 +82,7 @@ export function ConstructorApp(props) {
     <Show when={view()}>
       <nav class="tabs classic-tabs" role="tablist" aria-label={labels().sections}>
         <For each={view().pages}>{page => <Button role="tab" id={`tab-${page}`} aria-controls="query-page"
-          aria-selected={view().page === page} tabIndex={view().page === page ? 0 : -1} disabled={locked() || child()}
+          aria-selected={String(view().page === page)} tabIndex={view().page === page ? 0 : -1} disabled={locked() || child()}
           onClick={() => activate(page)} onKeyDown={event => {
             const index = view().pages.indexOf(page), count = view().pages.length;
             const next = event.key === 'ArrowRight' ? (index + 1) % count : event.key === 'ArrowLeft' ? (index + count - 1) % count : event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : -1;

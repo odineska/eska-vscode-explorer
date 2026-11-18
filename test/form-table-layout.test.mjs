@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const bundle = build({
   stdin: { resolveDir: repository, contents: `
-    import { createRoot, createEffect, createComputed, For, onCleanup } from 'solid-js';
-    import { createStore } from 'solid-js/store';
+    import { createRoot, createEffect, createStore, flush, onCleanup } from 'solid-js';
+    import { For } from '@solidjs/web';
     import { createTableLayout } from './webview/forms/table-layout.js';
     export { tableLayout } from './webview/forms/table-model.mjs';
     export function observe(initial) {
@@ -22,11 +22,21 @@ const bundle = build({
         const footers = For({ get each() { return layout().columns; }, children: item => {
           counts.footers++; onCleanup(() => counts.footerDisposals++); return item;
         }});
-        createComputed(() => { headers(); footers(); });
+        createEffect(() => { headers(); footers(); }, () => {});
         const snapshots = [];
-        createEffect(() => snapshots.push({ tracks: layout().tracks,
-          widths: layout().columns.map(column => column.width), preferredWidth: layout().preferredWidth }));
-        return { source, set, layout, counts, snapshots, dispose };
+        createEffect(() => ({ tracks: layout().tracks,
+          widths: layout().columns.map(column => column.width), preferredWidth: layout().preferredWidth }),
+          value => { snapshots.push(value); });
+        function update(...path) {
+          const value = path.pop(), key = path.pop();
+          set(draft => {
+            const owner = path.reduce((current, part) => current[part], draft);
+            owner[key] = value;
+          });
+          flush();
+        }
+        flush();
+        return { source, set: update, layout, counts, snapshots, dispose };
       });
     }` },
   bundle: true, write: false, platform: 'browser', format: 'cjs',
@@ -45,7 +55,7 @@ function fixture(mode) {
     presentation: { autoCommandItems: [] } };
 }
 async function observe(t, initial = fixture()) {
-  const module = { exports: {} }, context = createContext({ module, exports: module.exports });
+  const module = { exports: {} }, context = createContext({ module, exports: module.exports, queueMicrotask });
   runInContext((await bundle).outputFiles[0].text, context);
   const value = data => runInContext(`(${JSON.stringify(data)})`, context);
   const result = module.exports.observe(value(initial));

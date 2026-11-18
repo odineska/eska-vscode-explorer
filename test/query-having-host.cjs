@@ -3,12 +3,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
 const { connect } = require('./query-constructor-dom.cjs');
-const { until, parentTabs, returned } = require('./query-modal-host.cjs');
-const { ready, form, editFirstField } = require('./query-builder-host.cjs');
+const { until, parentTabs, returned, saveAndCloseQuery } = require('./query-modal-host.cjs');
+const { ready, form, editFirstField, selectTab } = require('./query-builder-host.cjs');
 
 /** A native typed condition reaches ESKA before another DOM intention is issued. */
 async function addFilter(client, kind, values) {
-  await client.evaluate(`document.getElementById('tab-conditions').click();document.querySelector('[data-section="${kind}"] .action-add').click()`);
+  await selectTab(client, 'conditions', `[data-section="${kind}"] .action-add`);
+  await client.evaluate(`document.querySelector('[data-section="${kind}"] .action-add').click()`);
   await form(client, values);
 }
 
@@ -41,10 +42,10 @@ exports.run = async function () {
     await client.evaluate('document.querySelector(".constructor-apply").click()'); client.close(); client = undefined;
     await until(() => vscode.window.activeTextEditor?.document.uri.toString() === draft.uri.toString() && draft.getText() === text, 'HAVING apply');
     await vscode.commands.executeCommand('undo'); assert.equal(draft.getText(), before); await vscode.commands.executeCommand('redo'); assert.equal(draft.getText(), text);
-    await vscode.commands.executeCommand('eska.explorer.applyQuery', draft.uri); const updated = await returned(uri);
-    assert.ok(updated.getText().includes('HAVING')); assert.deepEqual(await fs.readFile(fixture.module), disk);
+    await saveAndCloseQuery(draft); const updated = await returned(uri);
+    assert.ok(updated.getText().includes('HAVING')); assert.notDeepEqual(await fs.readFile(fixture.module), disk);
     await vscode.commands.executeCommand('undo'); assert.equal(updated.getText(), original);
-    accepted.push('separate_typed_where_having_cancel_apply_undo_redo_and_unchanged_owner_bytes');
+    accepted.push('separate_typed_where_having_cancel_apply_undo_redo_and_save_clean_owner');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'query-having', locale: vscode.env.language, accepted }));
   } catch (error) { await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, suite: 'query-having', error: String(error.stack ?? error), accepted })); throw error; }
   finally { client?.close(); }

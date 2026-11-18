@@ -1,10 +1,10 @@
-import {createEffect,createSignal,on,onCleanup} from 'solid-js';
+import { createEffect, createSignal, onSettled } from 'solid-js';
 import {buttonArrowPixels} from './button-caption.mjs';
 import { rgb } from './native-control-paint.js';
 
 export function NativeButtonArrow(props){
  let canvas;const [ready,setReady]=createSignal(false),owner={};
- createEffect(on(()=>[props.enabled,props.foreground,props.controller.state.modelSequence],()=>{
+ createEffect(()=>[props.enabled,props.foreground,props.controller.state.modelSequence],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(!props.enabled)return;
   const button=props.button(),draw=()=>{
    try{
@@ -14,8 +14,8 @@ export function NativeButtonArrow(props){
     canvas.width=6;canvas.height=3;context.putImageData(new ImageData(buttonArrowPixels(foreground,background),6,3),0,0);setReady(true);runtime?.issue(owner,false);
    }catch{setReady(false);runtime?.issue(owner,true);}
   };
-  const observer=new ResizeObserver(draw);observer.observe(button);draw();onCleanup(()=>{observer.disconnect();runtime?.issue(owner,false);});
- }));
- onCleanup(()=>props.controller.nativeText?.issue(owner,false));
+  const observer=new ResizeObserver(draw);observer.observe(button);draw();return ()=>{observer.disconnect();runtime?.issue(owner,false);};
+ });
+ onSettled(() => ()=>props.controller.nativeText?.issue(owner,false));
  return <><span style={{visibility:ready()?'hidden':undefined}}>▾</span><canvas ref={canvas} aria-hidden="true" style={{display:ready()?undefined:'none',position:'absolute',color:props.foreground,right:'6px',top:'12px','pointer-events':'none'}}/></>;
 }

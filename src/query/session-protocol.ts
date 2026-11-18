@@ -7,6 +7,7 @@ import { recoveryHeader, type RecoveryCapabilities, type RecoveryHeader } from "
 
 export interface QuerySessionCapabilities {
   readonly bslEditing: boolean;
+  readonly saveCleanOwner: boolean;
   readonly projections?: ProjectionLimits;
   readonly constructorLimits?: ConstructorLimits;
   readonly maxSessions: number;
@@ -35,7 +36,7 @@ export interface QuerySessionHeader {
   draftWritable: boolean;
   constructorActive?: boolean;
   format: "editor" | "source";
-  protection: { capturedSourceWritable: boolean; userReadOnly: boolean; ownerLock: string | null };
+  protection: { capturedSourceWritable: boolean; userReadOnly: boolean; ownerLock: string | null; sourceRestriction?: string | null };
   record: RecoveryHeader;
 }
 export interface QuerySessionPlan extends QueryPlan {
@@ -58,9 +59,12 @@ export function querySessionCapabilities(hello: unknown): QuerySessionCapabiliti
   const bslEditing = value.bslEditing === true;
   if (bslEditing && (hello.apiVersion.minor < 19 || !value.sourceKinds.includes("bsl")
     || value.ownerProtection !== "protectedViewWithConflicts" || value.bslSave !== "checkpointOnly")) invalid();
+  if (value.saveCleanOwner !== undefined && (value.saveCleanOwner !== true
+    || !bslEditing || hello.apiVersion.minor < 55)) invalid();
   const projections = projectionCapabilities(hello);
   const constructorLimits = constructorCapabilities(hello);
-  return { bslEditing, ...(constructorLimits ? { constructorLimits } : {}), ...(projections ? { projections } : {}), maxSessions: Math.min(value.maxSessions, 16), maxRetainedBytes: Math.min(value.maxRetainedBytes, 33_554_432) };
+  return { bslEditing, saveCleanOwner: value.saveCleanOwner === true, ...(constructorLimits ? { constructorLimits } : {}),
+    ...(projections ? { projections } : {}), maxSessions: Math.min(value.maxSessions, 16), maxRetainedBytes: Math.min(value.maxRetainedBytes, 33_554_432) };
 }
 
 /** Validate transport shape only; ESKA decides source ownership, permissions and lifecycle transitions. */
@@ -71,6 +75,7 @@ export function querySessionHeader(value: unknown, limits: RecoveryCapabilities)
     || (value.constructorActive !== undefined && (typeof value.constructorActive !== "boolean" || (value.constructorActive && value.draftWritable)))
     || !["editor", "source"].includes(String(value.format)) || !isRecord(value.protection)
     || typeof value.protection.capturedSourceWritable !== "boolean" || typeof value.protection.userReadOnly !== "boolean"
+    || (value.protection.sourceRestriction != null && (!isToken(value.protection.sourceRestriction) || value.protection.sourceRestriction === "0"))
     || !(value.protection.ownerLock === null || (isToken(value.protection.ownerLock) && value.protection.ownerLock !== "0"))) invalid();
   const record = recoveryHeader(value.record, limits);
   if (value.id !== record.id) invalid();

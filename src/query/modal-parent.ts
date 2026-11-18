@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ProtectedSources } from "../protected-source.js";
+import { ExplorerError } from "../protocol.js";
 
 /** A modal child remembers only native presentation; ESKA continues to own its source and permissions. */
 export class QueryModalParent {
@@ -27,9 +28,10 @@ export class QueryModalParent {
     });
   }
 
-  /** Native close owns dirty-file decisions; cancellation leaves the parent available and never opens a child. */
+  /** Keep unsaved owner buffers and hide their clean views without asking for an unrelated save. */
   async hide(): Promise<boolean> {
-    const tabs = this.tabs();
+    const dirty = vscode.workspace.textDocuments.some(doc => this.contains(doc.uri) && doc.isDirty);
+    const tabs = dirty ? [] : this.tabs().filter(tab => !tab.isDirty);
     return !tabs.length || vscode.window.tabGroups.close(tabs, true);
   }
 
@@ -50,9 +52,20 @@ export class QueryModalParent {
 
 /** Only an acknowledged private query may be reverted to its provider checkpoint when replacing its native views. */
 export async function hideOwnedQuery(uri: vscode.Uri): Promise<void> {
-  for (const group of vscode.window.tabGroups.all) for (const tab of [...group.tabs]) {
-    if (!(tab.input instanceof vscode.TabInputText) || tab.input.uri.toString() !== uri.toString()) continue;
-    await vscode.window.showTextDocument(uri, { viewColumn: group.viewColumn, preview: false });
+  const key = uri.toString();
+  const owned = (tab: vscode.Tab | undefined) =>
+    tab?.input instanceof vscode.TabInputText && tab.input.uri.toString() === key;
+  const tabs = () => vscode.window.tabGroups.all.flatMap(group => group.tabs.filter(owned));
+  let pending = tabs();
+  for (let tab = pending[0]; tab; tab = pending[0]) {
+    // Closing the last tab in a group may shift every column to its right.
+    const viewColumn = tab.group.viewColumn;
+    await vscode.window.showTextDocument(uri, { viewColumn, preview: tab.isPreview });
+    const active = vscode.window.tabGroups.activeTabGroup;
+    if (active.viewColumn !== viewColumn || !owned(active.activeTab)) throw new ExplorerError("sourceChanged");
     await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+    const remaining = tabs();
+    if (remaining.length >= pending.length) throw new ExplorerError("sourceChanged");
+    pending = remaining;
   }
 }

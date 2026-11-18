@@ -43,12 +43,6 @@ export class NativeQueryConstructor {
   /** A parent activation returns to the currently owning visual panel. */
   reveal(): void { this.foreground?.(); }
 
-  /** Only the owned application/restoration transaction exposes its native draft model as writable. */
-  get nativeWritable(): boolean {
-    return this.phase === "applying" ? this.backend?.model.writable === true
-      : this.phase === "restoring" && this.source.header.draftWritable;
-  }
-
   /** Native input never checkpoints behind ESKA's lock; unexpected input is retained for explicit cancellation. */
   observe(document: vscode.TextDocument): void {
     if (this.phase === "reverting") return;

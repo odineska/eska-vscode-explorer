@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { createEffect, createMemo, createSignal } from 'solid-js';
 import { paintCanvas } from './native-control-paint.js';
 import { horizontalScrollbarGeometry, scrollTableByColumn, tableHorizontalPaint } from './table-scrollbar.mjs';
 import { previewClientRect } from './preview-coordinates.mjs';
@@ -6,7 +6,7 @@ import { previewClientRect } from './preview-coordinates.mjs';
 function ScrollFragment(props) {
   let canvas;
   const image = createMemo(() => props.image);
-  createEffect(() => { paintCanvas(canvas, image()); });
+  createEffect(image, pixels => { paintCanvas(canvas, pixels); });
   return <canvas ref={canvas} data-scroll-arrow={props.arrow} width={image().width} height={image().height} style={{ left: `${props.x}px`, top: `${props.y}px` }} aria-hidden="true"/>;
 }
 
@@ -16,12 +16,11 @@ export function TableHorizontalScrollbar(props) {
   const [pointer, setPointer] = createSignal();
   const [dragging, setDragging] = createSignal(false);
   let drag;
-  createEffect(() => {
-    const target = props.target;
+  createEffect(() => props.target, target => {
     const read = () => setPosition(target.scrollLeft);
     read();
     target.addEventListener('scroll', read, { passive: true });
-    onCleanup(() => target.removeEventListener('scroll', read));
+    return () => target.removeEventListener('scroll', read);
   });
 
   const railWidth = () => props.railWidth ?? props.viewport;
@@ -101,7 +100,7 @@ export function TableHorizontalScrollbar(props) {
   }
 
   return <div class="taxi-table-horizontal-scrollbar" role="scrollbar" tabIndex={props.enabled ? 0 : -1}
-    aria-label={props.label} aria-controls={props.target.id} aria-orientation="horizontal" aria-disabled={!props.enabled}
+    aria-label={props.label} aria-controls={props.target.id} aria-orientation="horizontal" aria-disabled={String(!props.enabled)}
     aria-valuemin={0} aria-valuemax={geometry().maximum} aria-valuenow={geometry().position}
     onPointerDown={press} onPointerMove={move} onPointerLeave={() => setPointer(undefined)}
     onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release} onKeyDown={key}

@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const vscode = require('vscode');
+const { closeQueryTabs } = require('./query-modal-host.cjs');
 
 /** Wait for a real published-server response without accepting an indexing-time empty result. */
 async function until(operation, label, timeout = 180000) {
@@ -104,10 +105,11 @@ exports.run = async function () {
       await vscode.commands.executeCommand('eska.explorer.queryConstructor', document.uri);
       const view = explorer.queryDesigner.views.get(document.uri.toString()); assert.ok(view); assert.equal(view.binding.core.model.writable, false);
       await assert.rejects(view.binding.core.action({ kind: 'append', statement: 0, clause: 'fields', text: '9' }), error => error.details?.reason === 'user_read_only');
+      const readonlyQuery = document.getText();
       await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: 'apply' }); document = vscode.window.activeTextEditor.document;
-      await vscode.commands.executeCommand('eska.explorer.applyQuery', document.uri);
-      assert.ok(errors.some(error => ['user_read_only', 'read_only'].includes(error.details?.reason)));
-      await vscode.commands.executeCommand('eska.explorer.cancelQuery', document.uri);
+      assert.equal((await vscode.workspace.fs.stat(document.uri)).permissions, vscode.FilePermission.Readonly);
+      assert.equal(document.getText(), readonlyQuery);
+      await closeQueryTabs(document);
       assert.equal(owner.getText(), original); assert.deepEqual(await fs.readFile(input.module), disk);
       await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'support-locked-query', input, locale: vscode.env.language,
         metadataCompletionFromReadonlySource: true, constructorCannotGrantWrite: true, nativeAndDiskUnchanged: true, errors, samples }));
@@ -137,13 +139,16 @@ exports.run = async function () {
           await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: 'apply' }); document = vscode.window.activeTextEditor.document;
           assert.ok(document.getText().includes(`${index + 10} AS Bench`));
         });
-        await timed(samples, 'apply', () => vscode.commands.executeCommand('eska.explorer.applyQuery', document.uri));
-        assert.ok(owner.getText().includes(`${index + 10} AS Bench`)); assert.equal(owner.isDirty, true);
+        await timed(samples, 'save', async () => { assert.equal(await document.save(), true); });
+        await timed(samples, 'closeSaved', () => closeQueryTabs(document));
+        assert.ok(owner.getText().includes(`${index + 10} AS Bench`)); assert.equal(owner.isDirty, false);
         await vscode.window.showTextDocument(owner); await vscode.commands.executeCommand('undo'); assert.equal(owner.getText(), original);
+        assert.equal(await owner.save(), true);
+        await until(() => explorer.queries.sessions.size === 0, 'closed query session released');
         assert.equal(explorer.queries.sessions.size, 0); assert.equal(explorer.queryDesigner.views.size, 0);
-        // A separate open/cancel cycle measures release without using a Source Apply receipt.
-        document = await timed(samples, 'openForCancel', open);
-        await timed(samples, 'cancel', () => vscode.commands.executeCommand('eska.explorer.cancelQuery', document.uri));
+        // An unchanged query can close without saving the source.
+        document = await timed(samples, 'openForClose', open);
+        await timed(samples, 'closeUnchanged', () => closeQueryTabs(document));
       } else {
         assert.equal(owner.getText(), original);
         await timed(samples, 'close', async () => { await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor'); });

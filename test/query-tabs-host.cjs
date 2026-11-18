@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const vscode = require("vscode");
+const { assertQuerySave } = require('./query-modal-host.cjs');
 const queryErrors = [];
 
 /** Preserve typed query failures when an assertion fails before the native host's normal result. */
@@ -45,7 +46,7 @@ async function replace(document, before, after) {
 /** Wait for this save's real file event and metadata barrier before testing the next independent owner. */
 async function saveAndSync(explorer, document, source) {
   let observed = false;
-  const watchers = explorer.watchers.filter(subscription => typeof subscription.flush === "function");
+  const watchers = [...explorer.projectWatchers.values()];
   assert.ok(watchers.length, "production source watchers are active");
   const originals = watchers.map(watcher => watcher.add);
   for (const [index, watcher] of watchers.entries()) watcher.add = function (file) {
@@ -53,11 +54,10 @@ async function saveAndSync(explorer, document, source) {
     return originals[index].call(this, file);
   };
   try {
-    const saved = await document.save();
-    assert.equal(saved, true);
+    await assertQuerySave(explorer, document);
     await until(() => observed, "the saved source reached native file watchers");
     for (const watcher of watchers) await watcher.flush();
-    return saved;
+    return true;
   } finally { for (const [index, watcher] of watchers.entries()) watcher.add = originals[index]; }
 }
 
@@ -124,7 +124,7 @@ async function run() {
   draft = vscode.window.activeTextEditor.document;
   assert.equal(draft.getText(), "SELECT 2");
   await replace(draft, "SELECT 2", "SELECT 4\nFROM T");
-  assert.equal(await draft.save(), true);
+  await assertQuerySave(explorer, draft, owner);
   assert.equal(owner.isDirty, true);
   assert.equal(owner.getText(), dirtyBefore.replace("SELECT 2", "SELECT 4\r\nFROM T"));
   assert.equal(await fs.readFile(schemaPath, "utf8"), afterFirst, "unrelated dirty owner edits are not saved");
@@ -134,12 +134,8 @@ async function run() {
   await vscode.commands.executeCommand("redo");
   assert.equal(owner.getText(), dirtyBefore.replace("SELECT 2", "SELECT 4\r\nFROM T"));
   await vscode.window.showTextDocument(draft, { preview: false });
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery");
   assert.equal(await saveAndSync(explorer, owner, schemaPath), true, "the user can explicitly save the dirty XML owner");
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery");
   const savedOwner = owner.getText();
-  const ownerSession = [...explorer.queries.sessions.values()].find(value => value.record.identity.kind === "dataSet");
-  assert.equal(ownerSession.record.diskSnapshot, require("node:crypto").createHash("sha256").update(await fs.readFile(schemaPath)).digest("hex"));
   const queryTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === draft.uri.toString());
   assert.equal(await vscode.window.tabGroups.close(queryTabs), true);
   await replace(owner, "<other>unsaved</other>", "<other>local-again</other>");
@@ -207,7 +203,7 @@ async function run() {
   assert.ok(recoveryMethods.has("query/recoveryAppend"));
   assert.ok(recoveryMethods.has("query/recoveryCommit"));
   assert.ok(recoveryMethods.has("query/recoveryClose"));
-  for (const method of ["query/sessionOpen", "query/sessionPrepare", "query/sessionApplied", "query/sessionResume", "query/sessionClose"]) {
+  for (const method of ["query/sessionOpen", "query/sessionPrepare", "query/sessionApplied", "query/sessionClose"]) {
     assert.ok(sourceSessionMethods.has(method), method);
   }
   assert.equal(legacyQueryPlans, 0, "production saves use the common source-session lifecycle");
@@ -233,7 +229,7 @@ async function restoreRun(fixture) {
   const conflict = await vscode.workspace.openTextDocument(vscode.Uri.parse(state.draftUri));
   await vscode.window.showTextDocument(conflict, { preview: false });
   await until(() => conflict.isDirty && conflict.getText() === state.draftText, "query recovered as a real dirty document");
-  assert.equal(await conflict.save(), false, "resumption is explicit even when a restored tab becomes dirty");
+  assert.equal(await conflict.save(), false, "a broken project cannot save a recovered query");
   assert.equal(await fs.readFile(state.schemaPath, "utf8"), state.schemaDisk);
   const id = conflict.uri.path.split("/")[1];
   const snapshot = conflict.uri.with({ path: `/${id}/owner.xml` });
@@ -244,23 +240,16 @@ async function restoreRun(fixture) {
   await fs.writeFile(path.join(fixture.root, "eska.toml"), state.manifest);
   await vscode.commands.executeCommand("eska.explorer.restart");
   await until(() => explorer.tree && explorer.connection.state.kind === "ready" && !explorer.support.loading, "repaired query backend ready");
-  await vscode.commands.executeCommand("eska.explorer.compareQueryOwner");
-  const comparison = vscode.window.tabGroups.all.flatMap(group => group.tabs).find(tab => tab.input instanceof vscode.TabInputTextDiff
-    && tab.input.original.toString() === snapshot.toString());
-  assert.ok(comparison, "owner comparison uses the retained original snapshot");
-  assert.equal(await vscode.window.tabGroups.close(comparison), true);
-  assert.equal((await explorer.queries.recovery.records()).length, 2, "closing a snapshot does not discard its query session");
+  assert.equal(Buffer.from(await vscode.workspace.fs.readFile(snapshot)).toString("utf8"), state.ownerText);
+  assert.equal((await explorer.queries.recovery.records()).length, 2, "reconnecting preserves both recovered drafts");
   await vscode.window.showTextDocument(conflict, { preview: false });
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery");
   assert.equal(await conflict.save(), false, "a conflicting owner cannot be resumed silently");
   assert.equal(conflict.getText(), state.draftText);
   const resumed = await vscode.workspace.openTextDocument(vscode.Uri.parse(state.listUri));
   await vscode.window.showTextDocument(resumed, { preview: false });
   await until(() => resumed.isDirty && resumed.getText() === "SELECT 10", "independent list draft recovered");
-  assert.equal(await resumed.save(), false);
-  assert.equal(await fs.readFile(state.formPath, "utf8"), state.formDisk);
-  await vscode.commands.executeCommand("eska.explorer.resumeQuery");
-  assert.equal(await resumed.save(), true, "matching owner snapshots can resume under new process-local editor versions");
+  assert.equal(await fs.readFile(state.formPath, "utf8"), state.formDisk, "opening draft does not write");
+  assert.equal(await resumed.save(), true, "native Save revalidates a matching owner snapshot");
   assert.equal(await fs.readFile(state.formPath, "utf8"), state.formDisk.replace("SELECT 9", "SELECT 10"));
   assert.equal(await fs.readFile(state.schemaPath, "utf8"), state.schemaDisk);
   await vscode.commands.executeCommand("eska.explorer.disconnect");
@@ -281,7 +270,7 @@ async function restoreRun(fixture) {
   assert.equal(remaining[0].draft, offlineText, "offline input is reconciled without losing the independent draft");
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: true, suite: "query-tabs-cold-recovery",
     vscode: vscode.version, locale: vscode.env.language, dirtyDraftRecovered: true, originalDirtyXmlSnapshotRetained: true, automaticApply: false,
-    conflictRetainsDraft: true, explicitResumeUnderFreshEditorVersion: true, independentOwnerSave: true,
+    conflictRetainsDraft: true, nativeSaveUnderFreshEditorVersion: true, independentOwnerSave: true,
     backendRecovery: true, recoveryWithBrokenManifest: true, offlineInputReconciled: true,
     offlineCleanCloseRetainedUntilAcknowledged: true }));
 }

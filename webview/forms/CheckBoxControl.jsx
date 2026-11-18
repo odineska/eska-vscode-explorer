@@ -1,4 +1,4 @@
-import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { checkboxGlyph } from './choice-glyph.mjs';
 import { checkboxLabels, checkboxMode, checkboxTumblerLayout } from './checkbox-model.mjs';
 import { linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
@@ -32,7 +32,7 @@ function Tumbler(props) {
       '--taxi-tumbler-padding': `${side}px`,
     };
   };
-  createEffect(on(() => [state.os, state.modelSequence, layout(), props.inactive, runtime?.pixelAligned()], () => {
+  createEffect(() => [state.os, state.modelSequence, layout(), props.inactive, runtime?.pixelAligned()], () => {
     setCaptionsPainted(false);
     runtime?.issue(owner, false);
     if (state.os !== 'linux' || layout().width === undefined || !runtime?.pixelAligned()) { setPainted(false); return; }
@@ -59,16 +59,16 @@ function Tumbler(props) {
         setCaptionsPainted(paintCanvas(canvas, image));
       }).catch(fail);
     });
-    onCleanup(() => { current = false; cancelAnimationFrame(frame); runtime?.issue(owner, false); });
-  }));
+    return () => { current = false; cancelAnimationFrame(frame); runtime?.issue(owner, false); };
+  });
   return <span ref={surface} class="taxi-checkbox-tumbler" role="radiogroup" aria-label={caption(node(), state)} aria-readonly="true"
-    aria-disabled={props.inactive} data-equal-width={layout().equal}
+    aria-disabled={props.inactive?.toString()} data-equal-width={String(layout().equal)}
     data-native-tumbler={painted() ? 'ready' : undefined}
     data-native-tumbler-captions={captionsPainted() ? 'ready' : undefined}
     data-sized={layout().width === undefined ? undefined : ''} style={style()}>
-    <Index each={labels()}>{label => <span class="taxi-checkbox-choice" role="radio" aria-label={label()} aria-checked="false">
+    <For keyed={false} each={labels()}>{label => <span class="taxi-checkbox-choice" role="radio" aria-label={label()} aria-checked="false">
       <span>{label()}</span>
-    </span>}</Index>
+    </span>}</For>
     <canvas ref={canvas} class="taxi-tumbler-face" aria-hidden="true" hidden={!painted()}/>
   </span>;
 }
@@ -79,18 +79,18 @@ function Mark(props) {
   const state = props.controller.state;
   const switcher = () => props.mode === 'Switcher';
   const scale = () => state.ui.zoom * props.controller.nativeText?.density() / 100;
-  createEffect(on(() => [state.os, state.modelSequence, props.mode, props.inactive, scale()], ([os, , mode, inactive, pixelScale]) => {
+  createEffect(() => [state.os, state.modelSequence, props.mode, props.inactive, scale()], ([os, , mode, inactive, pixelScale]) => {
     if (os !== 'linux' || !Number.isFinite(pixelScale) || pixelScale <= 0) { setPainted(false); return; }
     const draw = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(surface.parentElement);
       const image = backdrop ? checkboxGlyph(mode, inactive, backdrop, pixelScale) : undefined;
       setPainted(paintCanvas(canvas, image));
     });
-    onCleanup(() => cancelAnimationFrame(draw));
-  }));
+    return () => cancelAnimationFrame(draw);
+  });
   return <span ref={surface} class={switcher() ? 'taxi-checkbox-switch' : 'taxi-checkbox'}
     role={switcher() ? 'switch' : 'checkbox'} aria-label={caption(props.node, state)} aria-checked="false"
-    aria-disabled={props.inactive} data-inactive={props.inactive} data-native-mark={painted() ? 'ready' : undefined}>
+    aria-disabled={props.inactive?.toString()} data-inactive={props.inactive?.toString()} data-native-mark={painted() ? 'ready' : undefined}>
     <Show when={switcher() && !painted()}>
       <svg width="34" height="20" viewBox="0 0 34 20" aria-hidden="true">
         <rect class="taxi-checkbox-switch-track" x="9.5" y="3" width="24.5" height="13" rx="6.5"/>
