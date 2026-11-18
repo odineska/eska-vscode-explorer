@@ -1,4 +1,6 @@
 {
+  "projectOnboarding": "Начать проект 1С",
+  "projectOnboardingWelcome": "Создайте проект, импортируйте файл 1С, подключите исходники Designer XML или клонируйте Git-репозиторий.\n[Начать проект 1С](command:eska.explorer.projectOnboarding)",
   "scmCompareRevisions": "Сравнить две версии",
   "runDebugView": "ESKA: запуск 1С",
   "queryOpen": "Открыть запрос",

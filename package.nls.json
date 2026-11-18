@@ -1,4 +1,6 @@
 {
+  "projectOnboarding": "Start a 1C project",
+  "projectOnboardingWelcome": "Create a project, import a 1C artifact, connect Designer XML sources or clone a Git repository.\n[Start a 1C project](command:eska.explorer.projectOnboarding)",
   "scmCompareRevisions": "Compare two versions",
   "runDebugView": "ESKA: Run 1C",
   "queryOpen": "Open query",

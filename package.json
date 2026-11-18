@@ -63,7 +63,19 @@
     "typescript": "7.0.2"
   },
   "contributes": {
+    "viewsWelcome": [
+      {
+        "view": "eska.explorer.projects",
+        "contents": "%projectOnboardingWelcome%"
+      }
+    ],
     "commands": [
+      {
+        "command": "eska.explorer.projectOnboarding",
+        "title": "%projectOnboarding%",
+        "category": "ESKA",
+        "icon": "$(new-folder)"
+      },
       {
         "command": "eska.explorer.checkDebuggerUpdates",
         "title": "%checkDebuggerUpdates%",
@@ -589,6 +601,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "eska.explorer.projectOnboarding",
+          "when": "view == eska.explorer.projects",
+          "group": "onboarding@1"
+        },
         {
           "command": "eska.explorer.scm.compareRevisions",
           "when": "view == eska.explorer.scm",

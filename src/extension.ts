@@ -46,6 +46,7 @@ import { ProjectSettings } from "./project-settings.js";
 import { ProjectBuild } from "./project-build.js";
 import { ProjectCheck } from "./project-check.js";
 import type { AnalyzerSettingsHost } from "./project-file-settings.js";
+import { registerProjectOnboarding } from "./project-onboarding.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
@@ -60,7 +61,7 @@ let active: Explorer | undefined;
 /** Activation starts workspace protection independently of whether the tree is expanded. */
 export function activate(context: vscode.ExtensionContext): unknown {
   active = new Explorer(context);
-  context.subscriptions.push(active);
+  context.subscriptions.push(active, registerProjectOnboarding(context));
   return context.extensionMode === vscode.ExtensionMode.Test ? active : undefined;
 }
 
@@ -468,6 +469,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       }
     }
     const state = this.connection.state;
+    if (state.kind === "disconnected" && !this.projects.folders.length) return [];
     return entry ? [] : [{ label: this.text(state.kind === "error" ? state.error.code : state.kind === "ready" ? "connecting" : state.kind) }];
   }
 
