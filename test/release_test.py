@@ -141,8 +141,10 @@ class ReleaseTests(unittest.TestCase):
         record = {"expired": False, "name": "explorer-full-ci-2", "size_in_bytes": len(contents), "id": 15,
                   "digest": "sha256:" + hashlib.sha256(contents).hexdigest()}
         with patch.object(module, "api", return_value={"artifacts": [record]}), \
-                patch.object(module.subprocess, "check_output", return_value=contents):
+                patch.object(module.subprocess, "check_output", return_value=contents) as request:
             self.assertEqual(module.read_artifact({"id": 11, "run_attempt": 2}), {"tree": "tested"})
+            request.assert_called_once_with(("gh", "api", f"repos/{module.REPOSITORY}/actions/artifacts/15/zip"),
+                                            timeout=module.API_TIMEOUT_SECONDS)
             record["digest"] = "sha256:" + "0" * 64
             self.assertIsNone(module.read_artifact({"id": 11, "run_attempt": 2}))
 

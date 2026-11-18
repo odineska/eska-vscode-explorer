@@ -74,7 +74,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.plan.outputs.version }}
         run: |
           if [[ -f scripts/release-ci-proof.py ]]; then
-            result="$(python3 scripts/release-ci-proof.py "$RUNNER_TEMP/explorer-release-inputs.json" --baseline "$RELEASE_VERSION")" || exit 0
+            result="$(timeout --kill-after=2s 25s python3 scripts/release-ci-proof.py "$RUNNER_TEMP/explorer-release-inputs.json" --baseline "$RELEASE_VERSION")" || exit 0
             if [[ "$result" == verified_baseline=true ]]; then
               printf '%s\n' "$result" >> "$GITHUB_OUTPUT"
             fi
@@ -94,6 +94,7 @@ jobs:
           VERIFIED_BASELINE: ${{ steps.baseline.outputs.verified_baseline }}
         run: |
           if [[ "$VERIFIED_BASELINE" == true ]]; then
+            knope --validate
             bash scripts/test-with-editor.sh --editor-only
           else
             bun run --bun check

@@ -15,14 +15,19 @@ from zipfile import BadZipFile, ZipFile
 REPOSITORY = "odineska/eska-vscode-explorer"
 ARTIFACT = "explorer-full-ci"
 WORKFLOW = ".github/workflows/ci.yml"
+API_TIMEOUT_SECONDS = 6
 
 
 def output(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
+def request(path):
+    return subprocess.check_output(("gh", "api", f"repos/{REPOSITORY}/{path}"), timeout=API_TIMEOUT_SECONDS)
+
+
 def api(path):
-    return json.loads(output("gh", "api", f"repos/{REPOSITORY}/{path}"))
+    return json.loads(request(path))
 
 
 def evidence(inputs):
@@ -43,7 +48,7 @@ def read_artifact(run):
     artifact = records[0]
     if artifact["expired"] or artifact["name"] != name or artifact["size_in_bytes"] > 65536:
         return None
-    archive = subprocess.check_output(("gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip"))
+    archive = request(f"actions/artifacts/{artifact['id']}/zip")
     if artifact.get("digest") != f"sha256:{hashlib.sha256(archive).hexdigest()}":
         return None
     with ZipFile(BytesIO(archive)) as package:
@@ -113,6 +118,6 @@ if __name__ == "__main__":
     else:
         try:
             reuse = baseline_passed(args.inputs, args.baseline)
-        except (BadZipFile, ImportError, OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError):
+        except (BadZipFile, ImportError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
             reuse = False
         print(f"verified_baseline={str(reuse).lower()}")
