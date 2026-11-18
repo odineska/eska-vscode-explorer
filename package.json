@@ -220,6 +220,12 @@
         "icon": "$(check)"
       },
       {
+        "command": "eska.explorer.buildArtifact",
+        "title": "%buildArtifact%",
+        "category": "ESKA Explorer",
+        "icon": "$(package)"
+      },
+      {
         "command": "eska.explorer.runTest",
         "title": "%runTest%",
         "category": "ESKA Explorer"
@@ -659,6 +665,11 @@
           "command": "eska.explorer.checkProject",
           "when": "view == eska.explorer.projects && viewItem =~ /^eskaRoot/ && isWorkspaceTrusted",
           "group": "project@1"
+        },
+        {
+          "command": "eska.explorer.buildArtifact",
+          "when": "view == eska.explorer.projects && viewItem =~ /^eskaRoot/ && isWorkspaceTrusted",
+          "group": "project@2"
         },
         {
           "command": "eska.explorer.configureProject",

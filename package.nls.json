@@ -44,6 +44,7 @@
   "restartLanguage": "Restart BSL Analyzer and Reanalyze",
   "configureProject": "Configure Project",
   "checkProject": "Check Project",
+  "buildArtifact": "Build 1C File…",
   "runTest": "Run Test Infobase",
   "applyTest": "Update Test Infobase",
   "installExtensionTest": "Install Extension in Test Infobase",

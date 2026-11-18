@@ -44,6 +44,7 @@
   "restartLanguage": "Перезапустить анализатор BSL и проверить код заново",
   "configureProject": "Настроить проект",
   "checkProject": "Проверить проект",
+  "buildArtifact": "Собрать файл 1С…",
   "runTest": "Запустить тестовую базу",
   "applyTest": "Обновить тестовую базу",
   "installExtensionTest": "Установить расширение в тестовую базу",

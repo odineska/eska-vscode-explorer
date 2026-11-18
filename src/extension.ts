@@ -43,6 +43,7 @@ import { basename, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
+import { ProjectBuild } from "./project-build.js";
 import { ProjectCheck } from "./project-check.js";
 import type { AnalyzerSettingsHost } from "./project-file-settings.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
@@ -203,11 +204,16 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         return (await this.tooling.ensureFormatter(signal, true, configured))?.path;
       },
     });
+    const projectBuild = new ProjectBuild();
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
-    this.disposables.push(this.projectCheck,
-      vscode.commands.registerCommand("eska.explorer.checkProject", (entry?: Element) => this.checkProject(entry)));
+    this.disposables.push(this.projectCheck, projectBuild,
+      vscode.commands.registerCommand("eska.explorer.checkProject", (entry?: Element) => this.checkProject(entry)),
+      vscode.commands.registerCommand("eska.explorer.buildArtifact", async (entry?: Element) => {
+        const project = await this.runtimeProject(entry);
+        if (project) await projectBuild.run(project);
+      }));
     for (const [name, action] of [
       ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
       ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
