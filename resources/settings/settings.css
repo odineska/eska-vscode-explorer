@@ -248,6 +248,9 @@
 .settings-icon[data-icon="style-item"] { --settings-icon: url("../icons/light/style-item.svg"); }
 .settings-icon[data-icon="module"] { --settings-icon: url("../icons/light/module.svg"); }
 .settings-icon[data-icon="language"] { --settings-icon: url("../icons/light/language.svg"); }
+.settings-icon[data-icon="form"] { --settings-icon: url("../icons/light/form.svg"); }
+.settings-icon[data-icon="modules"] { --settings-icon: url("../icons/light/modules.svg"); }
+.settings-icon[data-icon="common-templates"] { --settings-icon: url("../icons/light/common-templates.svg"); }
 
 @media (min-width: 621px) and (max-width: 800px), (max-width: 400px) {
   .settings-pair { grid-template-columns: minmax(0, 1fr); }
@@ -324,6 +327,20 @@
 .settings-counter > input[type="number"]::-webkit-inner-spin-button,
 .settings-counter > input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .settings-counter > :is(.settings-hint, .settings-field-error) { grid-column: 1 / -1; }
+
+.settings-analyzer-rule { display: grid; gap: 8px; }
+.settings-analyzer-rule + .settings-analyzer-rule { border-block-start: 1px solid var(--settings-border); padding-block-start: 12px; }
+.settings-analyzer-rule-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  gap: 6px 16px;
+  align-items: center;
+}
+.settings-analyzer-rule-header code { color: var(--settings-muted); }
+
+@media (max-width: 550px) {
+  .settings-analyzer-rule-header { grid-template-columns: minmax(0, 1fr); }
+}
 
 .settings-property-bar, .settings-list-row {
   display: flex;

@@ -152,7 +152,7 @@ async function checkSharedSettings(open, root, text) {
     const editor = "[data-analyzer-group=editor]";
     const codeLens = setting("tools.bsl-analyzer.code_lens.show_cyclomatic_complexity", "input");
     await until(() => ui.evaluate(`!!${element(editor)} && !!${element(codeLens)}`), "BSL Analyzer catalog loaded");
-    await click(ui, editor + " > summary");
+    assert.equal(await ui.evaluate(`!${element(codeLens)}.closest("details") && ${element(codeLens)}.getBoundingClientRect().height > 0`), true);
     assert.equal(await ui.evaluate(`${element(codeLens)}.checked`), false);
     await click(ui, codeLens);
     assert.equal(await ui.evaluate(`${element(codeLens)}.checked`), true);

@@ -8,6 +8,11 @@ import { childModel, SettingsFields, SettingsGroup, word } from "./project-contr
 const policyPath = ["tools", "bsl-analyzer"];
 const diagnosticsPath = ["diagnostics", "parameters"];
 const isTable = value => value !== null && typeof value === "object" && !Array.isArray(value);
+const groupIcons = {
+  source: "configuration", platform_help: "language", analysis: "service",
+  diagnostics_baseline: "check", editor: "form", search: "storage",
+  search_workspace: "modules", search_reference: "common-templates",
+};
 
 function isFormatConfigured(format) {
   if (!isTable(format)) return false;
@@ -41,16 +46,10 @@ function DiagnosticRule(props) {
     ? word(props.locale, "Включено", "On")
     : word(props.locale, "Выключено", "Off");
 
-  return <details class="settings-detail" data-setting={key}>
-    <summary class="settings-property-bar">
-      <span>{rule.label[props.locale] ?? rule.label.en} <code>{rule.id}</code></span>
-      <span class="settings-hint">{mode()
-        ? stateText(mode() === "on")
-        : word(props.locale, "По умолчанию", "Default") + " · " + stateText(rule.defaultEnabled)}</span>
-    </summary>
-    <div class="settings-controls">
+  return <article class="settings-analyzer-rule" data-setting={key}>
+    <div class="settings-analyzer-rule-header">
+      <label class="settings-label" for={id}>{rule.label[props.locale] ?? rule.label.en} <code>{rule.id}</code></label>
       <div class="settings-field">
-        <label class="settings-label" for={id}>{word(props.locale, "Состояние правила", "Rule state")}</label>
         <select id={id} value={mode()} aria-label={rule.id + " · " + word(props.locale, "Состояние правила", "Rule state")}
           onChange={event => setMode(event.currentTarget.value)}>
           <option value="">{word(props.locale, "По умолчанию", "Default")} · {stateText(rule.defaultEnabled)}</option>
@@ -58,20 +57,17 @@ function DiagnosticRule(props) {
           <option value="off">{stateText(false)}</option>
         </select>
       </div>
-      <Show when={rule.parameters.length > 0 && mode() !== "off"} fallback={
-        <Show when={rule.parameters.length > 0 && mode() === "off"}>
-          <span class="settings-hint">{word(props.locale,
-            "Включите правило, чтобы редактировать параметры. При сохранении выключенного правила параметры удаляются.",
-            "Enable the rule to edit its parameters. Saving the rule as off removes its parameters.")}</span>
-        </Show>
-      }>
-        <Show when={!mode()}><span class="settings-hint">{word(props.locale,
-          "Изменение параметра включает правило. При сохранении состояния по умолчанию переопределения удаляются.",
-          "Editing a parameter enables the rule. Saving the default state removes overrides.")}</span></Show>
-        <SettingsFields locale={props.locale} model={parameters} fields={rule.parameters}/>
-      </Show>
     </div>
-  </details>;
+    <Show when={rule.parameters.length > 0 && mode() !== "off"}>
+      <div class="settings-option-grid settings-grouped-fields">
+        <SettingsFields locale={props.locale} model={parameters} fields={rule.parameters}/>
+      </div>
+    </Show>
+  </article>;
+}
+
+function fieldTerms(field) {
+  return [field.path.join("."), field.label.ru, field.label.en];
 }
 
 export function AnalyzerSettings(props) {
@@ -83,13 +79,22 @@ export function AnalyzerSettings(props) {
   const policy = childModel(props.model, policyPath, {
     managedByFormat: () => isFormatConfigured(at(props.model.value(), ["format"]))
   });
-  const rules = createMemo(() => {
-    const words = search().trim().toLowerCase().split(/\s+/u);
-    return catalog().diagnosticCatalog.filter(rule => {
-      const searchable = [rule.id, rule.label.ru, rule.label.en].join(" ").toLowerCase();
-      return words.every(term => searchable.includes(term));
+  const terms = createMemo(() => search().trim().toLowerCase().split(/\s+/u).filter(Boolean));
+  function matches(parts) {
+    const searchable = parts.join(" ").toLowerCase();
+    return terms().every(term => searchable.includes(term));
+  }
+  const groups = createMemo(() => {
+    if (!terms().length) return catalog().analyzerGroups;
+    return catalog().analyzerGroups.flatMap(group => {
+      const name = [group.id, group.label.ru, group.label.en];
+      if (matches(name)) return [group];
+      const fields = group.fields.filter(field => matches([...name, ...fieldTerms(field)]));
+      return fields.length ? [{ ...group, fields }] : [];
     });
   });
+  const rules = createMemo(() => catalog().diagnosticCatalog.filter(rule =>
+    matches([rule.id, rule.label.ru, rule.label.en, ...rule.parameters.flatMap(fieldTerms)])));
 
   return <>
     <SettingsGroup title={word(props.locale, "BSL Analyzer", "BSL Analyzer")}>
@@ -100,26 +105,31 @@ export function AnalyzerSettings(props) {
       }>
         <p class="settings-hint">{word(props.locale, "Версия каталога", "Catalog version")} {props.version}</p>
       </Show>
-      <For each={catalog().analyzerGroups}>{group =>
-        <details class="settings-detail" data-analyzer-group={group.id}>
-          <summary>{group.label[props.locale] ?? group.label.en}</summary>
-          <div class="settings-controls">
-            <SettingsFields locale={props.locale} model={policy} fields={group.fields}/>
-          </div>
-        </details>
-      }</For>
-    </SettingsGroup>
-    <SettingsGroup title={word(props.locale, "Правила диагностики", "Diagnostic rules")}>
       <div class="settings-field">
-        <label class="settings-label" for={searchId}>{word(props.locale, "Поиск по названию или коду", "Search by name or code")}</label>
+        <label class="settings-label" for={searchId}>{word(props.locale, "Поиск по настройкам и диагностикам", "Search settings and diagnostic rules")}</label>
         <input id={searchId} type="search" data-setting="analyzer.rule-search"
           value={search()} onInput={event => setSearch(event.currentTarget.value)}/>
       </div>
-      <Show when={rules().length} fallback={
-        <p class="settings-hint">{word(props.locale, "Правила не найдены.", "No matching rules.")}</p>
-      }>
-        <For each={rules()}>{rule => <DiagnosticRule rule={rule} model={policy} locale={props.locale} stashedParameters={stashedParameters}/>}</For>
+      <Show when={!groups().length && !rules().length}>
+        <p class="settings-hint">{word(props.locale, "Настройки и правила не найдены.", "No matching settings or rules.")}</p>
       </Show>
     </SettingsGroup>
+    <For each={groups()}>{group =>
+      <div data-analyzer-group={group.id}>
+        <SettingsGroup title={group.label[props.locale] ?? group.label.en} icon={groupIcons[group.id] ?? "attributes"}>
+          <div class="settings-option-grid settings-grouped-fields">
+            <SettingsFields locale={props.locale} model={policy} fields={group.fields}/>
+          </div>
+        </SettingsGroup>
+      </div>
+    }</For>
+    <Show when={rules().length}>
+      <SettingsGroup title={word(props.locale, "Правила диагностики", "Diagnostic rules")} icon="check">
+        <p class="settings-hint">{word(props.locale,
+          "Изменение параметра включает правило. Выключение или сброс правила удаляет его переопределения.",
+          "Editing a parameter enables its rule. Turning a rule off or resetting it removes its overrides.")}</p>
+        <For each={rules()}>{rule => <DiagnosticRule rule={rule} model={policy} locale={props.locale} stashedParameters={stashedParameters}/>}</For>
+      </SettingsGroup>
+    </Show>
   </>;
 }
