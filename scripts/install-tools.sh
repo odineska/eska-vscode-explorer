@@ -13,12 +13,15 @@ download() {
   printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check --status
 }
 
-download 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64.zip' \
-  '36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913' "$tool_root/bun.zip"
-unzip -qo "$tool_root/bun.zip" -d "$tool_root"
-printf '%s\n' "$tool_root/bun-linux-x64" >> "${GITHUB_PATH:?}"
+mode="${1:-check}"
+if [[ "$mode" != prepare ]]; then
+  download 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64.zip' \
+    '36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913' "$tool_root/bun.zip"
+  unzip -qo "$tool_root/bun.zip" -d "$tool_root"
+  printf '%s\n' "$tool_root/bun-linux-x64" >> "${GITHUB_PATH:?}"
+fi
 
-if [[ "${1:-check}" == release ]]; then
+if [[ "$mode" == release || "$mode" == prepare ]]; then
   download 'https://github.com/knope-dev/knope/releases/download/knope%2Fv0.23.0/knope-x86_64-unknown-linux-musl.tgz' \
     '76a970a5e237344abc14be3de37ed50c021b659a9b66b3f54afc77e6d48ac501' "$tool_root/knope.tgz"
   tar -xzf "$tool_root/knope.tgz" -C "$tool_root"

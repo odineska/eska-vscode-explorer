@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   check:
@@ -16,24 +17,57 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 3
+      - name: Check for a generated release-only change
+        id: release-pr
+        if: >-
+          github.repository == 'odineska/eska-vscode-explorer' &&
+          ((github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            startsWith(github.head_ref, 'release/eska-explorer-')) ||
+           (github.event_name == 'workflow_dispatch' &&
+            startsWith(github.ref, 'refs/heads/release/eska-explorer-')))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_HEAD_REF: ${{ github.head_ref || github.ref_name }}
+          RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            git fetch --no-tags --depth=1 origin refs/heads/main || exit 0
+            RELEASE_BASE_SHA="$(git rev-parse FETCH_HEAD)" || exit 0
+          fi
+          classifier="$RUNNER_TEMP/release-pr-check.py"
+          git show "$RELEASE_BASE_SHA:scripts/release-pr-check.py" > "$classifier" || exit 0
+          result="$(python3 -I "$classifier")" || exit 0
+          if [[ "$result" == metadata_only=true ]]; then
+            printf '%s\n' "$result" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install Bun and Knope
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bash scripts/install-tools.sh release
       - name: Install locked dependencies
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Check and compile
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: |
           bun run --bun check
           bun run --bun compile
       - name: Fetch published backend release metadata
+        if: steps.release-pr.outputs.metadata_only != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/fetch-release-metadata.sh
       - name: Install released backends into a clean prefix
+        if: steps.release-pr.outputs.metadata_only != 'true'
+        env:
+          ESKA_TEST_RELEASE_INPUTS: ${{ runner.temp }}/explorer-release-inputs.json
         run: |
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
       - name: Restore the pinned VS Code archive
+        if: steps.release-pr.outputs.metadata_only != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         continue-on-error: true
         env:
@@ -42,8 +76,10 @@ jobs:
           path: ${{ runner.temp }}/eska-test-editor/editor.tar.gz
           key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
       - name: Test the client and install the test editor
+        if: steps.release-pr.outputs.metadata_only != 'true'
         run: bash scripts/test-with-editor.sh
       - name: Check the packaged extension with real Metadata API and LSP
+        if: steps.release-pr.outputs.metadata_only != 'true'
         env:
           ESKA_HOST_SUPPORT_DISABLED: '1'
         run: |
@@ -51,3 +87,23 @@ jobs:
           export ESKA_TEST_VSIX="$(realpath "eska-explorer-$(node -p 'require("./package.json").version').vsix")"
           python3 scripts/check-vsix.py "$ESKA_TEST_VSIX"
           timeout 180s xvfb-run -a node test/run-host.mjs test/language-host.cjs
+      - name: Record the tested tree and release inputs
+        id: record
+        continue-on-error: true
+        if: >-
+          steps.release-pr.outputs.metadata_only != 'true' &&
+          github.repository == 'odineska/eska-vscode-explorer' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PULL_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 scripts/release-ci-proof.py "$RUNNER_TEMP/explorer-release-inputs.json" --record "$RUNNER_TEMP/proof.json" --pull "$PULL_NUMBER"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.record.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: explorer-full-ci-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/proof.json
+          if-no-files-found: error
+          retention-days: 14
