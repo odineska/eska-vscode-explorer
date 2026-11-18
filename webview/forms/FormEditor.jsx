@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Match, Show, Switch, createMemo, createSignal, onSettled } from 'solid-js';
 import { ConditionalAppearanceEditor } from './ConditionalAppearanceEditor.jsx';
 import { FormDefinitionEditor, FormStructureEditor } from './FormEditorStructure.jsx';
 import { formEditIndex, targetKey } from './editor-model.mjs';
@@ -14,8 +14,10 @@ export function FormEditor(props) {
   const [references, setReferences] = createSignal([]);
   const [pending, setPending] = createSignal(false);
   let dialog;
-  onMount(() => dialog.showModal());
-  onCleanup(() => { if (dialog.open) dialog.close(); });
+  onSettled(() => {
+    dialog.showModal();
+    return () => { if (dialog.open) dialog.close(); };
+  });
 
   const schema = () => c.state.editSchema;
   const selection = createMemo(() => formEditIndex(schema()).get(targetKey(target)));

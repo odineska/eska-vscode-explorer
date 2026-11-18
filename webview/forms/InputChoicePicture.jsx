@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { choicePictureBounds, inactiveChoicePicture } from './choice-picture-paint.mjs';
 import { useStandardPicture, useStandardPicturePixelScale } from './NativeStandardPicture.jsx';
 
@@ -16,7 +16,7 @@ function ChoicePictureRaster(props) {
   const standardScale = useStandardPicturePixelScale(() => standard()?.isRaster);
   const pixelScale = () => standard()?.isRaster || props.os === 'linux' && standard() && !standard().isTemplate
     ? standardScale() : undefined;
-  createEffect(on(asset, value => {
+  createEffect(asset, value => {
     setLoaded(undefined);
     if (!value) return;
     const image = new Image();
@@ -26,14 +26,13 @@ function ChoicePictureRaster(props) {
     });
     if (value.isRaster) image.crossOrigin = 'anonymous';
     image.src = value.source;
-    onCleanup(() => { image.onload = null; });
-  }));
+    return () => { image.onload = null; };
+  });
   const logicalImage = loaded;
   const bounds = createMemo(() => logicalImage() && choicePictureBounds(logicalImage(), props.height));
-  createEffect(() => {
-    const image = logicalImage(), box = bounds();
+  createEffect(() => [logicalImage(), bounds(), pixelScale(), props.inactive && props.os === 'linux'],
+    ([image, box, scale, inactive]) => {
     if (!canvas || !box || !image) return;
-    const scale = pixelScale();
     const width = Math.max(1, Math.round(box.width * (scale ?? 1)));
     const height = Math.max(1, Math.round(box.height * (scale ?? 1)));
     canvas.width = width;
@@ -46,7 +45,7 @@ function ChoicePictureRaster(props) {
       context.fillStyle = getComputedStyle(canvas).color;
       context.fillRect(0, 0, width, height);
     }
-    if (props.inactive && props.os === 'linux') {
+    if (inactive) {
       const pixels = context.getImageData(0, 0, width, height);
       inactiveChoicePicture(pixels.data);
       context.putImageData(pixels, 0, 0);

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
 import { controlCaptionWidth, wordCaptionWidth, linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
@@ -43,18 +43,18 @@ export function RadioChoices(props) {
       '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
   };
 
-  createEffect(on(() => [state.modelSequence, segments(), inactive()], () => {
+  createEffect(() => [state.modelSequence, segments(), inactive()], () => {
     setInactiveColor(undefined);
     if (!linux || segments() || !inactive()) return;
     const frame = requestAnimationFrame(() => {
       const foreground = rgb(getComputedStyle(surface).color), backdrop = solidBackdrop(surface.parentElement);
       if (foreground && backdrop) setInactiveColor(`rgb(${inactiveRadioTextColor(foreground, backdrop).join(', ')})`);
     });
-    onCleanup(() => cancelAnimationFrame(frame));
-  }));
+    return () => cancelAnimationFrame(frame);
+  });
 
   const runtime = props.controller.nativeText, owner = {};
-  createEffect(on(() => [state.modelSequence, layout(), inactive(), runtime?.pixelAligned()], () => {
+  createEffect(() => [state.modelSequence, layout(), inactive(), runtime?.pixelAligned()], () => {
     setPainted(false);
     runtime?.issue(owner, false);
     const size = layout(), font = valueFont();
@@ -77,12 +77,12 @@ export function RadioChoices(props) {
         setPainted(paintCanvas(canvas, image));
       }).catch(fail);
     });
-    onCleanup(() => { current = false; cancelAnimationFrame(frame); runtime.issue(owner, false); });
-  }));
+    return () => { current = false; cancelAnimationFrame(frame); runtime.issue(owner, false); };
+  });
 
   return <div ref={surface} class="taxi-radios" data-representation={segments() ? 'segments' : 'buttons'} data-rows={rows()}
     data-native-segments={painted() ? 'ready' : undefined}
-    role="radiogroup" aria-label={caption(node(), state)} aria-disabled={inactive()} style={style()}>
+    role="radiogroup" aria-label={caption(node(), state)} aria-disabled={String(inactive())} style={style()}>
     <For each={choices()}>{(_choice, index) => {
       const label = () => labels()[index()];
       const width = createMemo(() => linux
@@ -101,7 +101,7 @@ export function RadioChoices(props) {
           'margin-inline-start': column ? '-1px' : undefined,
           'margin-block-start': row === 1 ? '-2px' : row > 1 ? '-1px' : undefined };
       };
-      return <span class="taxi-radio-option" role="radio" aria-label={label()} aria-checked={checked()} style={optionStyle()}
+      return <span class="taxi-radio-option" role="radio" aria-label={label()} aria-checked={String(checked())} style={optionStyle()}
         data-top={edge(position().row === 0)} data-bottom={edge(index() + columns() >= choices().length)}
         data-left={edge(position().column === 0)} data-right={edge(position().column === columns() - 1 || index() === choices().length - 1)}>
         <Show when={!segments()}><RadioMark state={state} selected={checked()} inactive={inactive()} runtime={runtime}/></Show>
@@ -119,16 +119,16 @@ function RadioMark(props) {
   let mark, canvas;
   const [painted, setPainted] = createSignal(false);
   const scale = () => props.state.ui.zoom * props.runtime?.density() / 100;
-  createEffect(on(() => [props.state.os, props.state.modelSequence, props.selected, props.inactive, scale()], ([os, , selected, inactive, pixelScale]) => {
+  createEffect(() => [props.state.os, props.state.modelSequence, props.selected, props.inactive, scale()], ([os, , selected, inactive, pixelScale]) => {
     if (os !== 'linux' || !Number.isFinite(pixelScale) || pixelScale <= 0) { setPainted(false); return; }
     const frame = requestAnimationFrame(() => {
       const backdrop = solidBackdrop(mark.parentElement);
       const image = backdrop ? radioGlyph(selected, inactive, backdrop, pixelScale) : undefined;
       setPainted(paintCanvas(canvas, image));
     });
-    onCleanup(() => cancelAnimationFrame(frame));
-  }));
-  return <i ref={mark} classList={{ 'taxi-radio': true, checked: props.selected }} aria-hidden="true"
+    return () => cancelAnimationFrame(frame);
+  });
+  return <i ref={mark} class={{ 'taxi-radio': true, checked: props.selected }} aria-hidden="true"
     data-native-radio={painted() ? 'ready' : undefined}>
     <canvas ref={canvas} hidden={!painted()}/>
   </i>;

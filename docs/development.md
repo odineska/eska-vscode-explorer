@@ -4,11 +4,12 @@
 
 ## Разработка
 
-Зависимости закреплены в `bun.lock`: TypeScript 7.0.2, API VS Code 1.109.0,
-типы Node 22.20.5. Зависимости обновлены 2026-10-25; Bun — 1.4.4.
-Production-код работает в Node Extension Host. `yauzl` 3.4.0, `vscode-languageclient`
-11.0.0 и их зависимости включаются в bundle через esbuild 0.28.2; npm modules из checkout
-установленному VSIX не нужны. Bun используется для инструментов проекта.
+Для сборки используется Bun 1.4.4. В `bun.lock` закреплены TypeScript 7.0.2,
+типы VS Code 1.109.0 и Node 22.20.5 для поддерживаемого Extension Host.
+esbuild 0.28.2 включает `yauzl` 3.4.0, `vscode-languageclient` 11.0.0 и их
+зависимости в пакет расширения. Webview используют SolidJS 2.0.1 и `@solidjs/web`.
+JSX компилирует `@solidjs/babel-plugin` с Babel 8.1.2. Для сборки под Node.js
+Babel поддерживает версии `^22.18.0 || >=24.11.0`.
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
@@ -631,7 +632,7 @@ CSS задают компоновку конкретного экрана. Но�
 
 Оболочка конструктора находится в `webview/query/App.jsx`, общие Solid-компоненты —
 в `webview/ui/controls.jsx`. `scripts/bundle.mjs` компилирует JSX официальным
-`babel-preset-solid` и собирает браузерный `out/query-designer.js` через esbuild.
+`@solidjs/babel-plugin` и собирает браузерный `out/query-designer.js` через esbuild.
 Solid включён в этот файл; CDN и runtime-доступ к `node_modules` не нужны.
 Его лицензия входит в `out/THIRD-PARTY-NOTICES.txt` вместе с лицензиями остальных
 встроенных зависимостей. Расширение по-прежнему собирается отдельным Node bundle.

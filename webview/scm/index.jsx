@@ -1,6 +1,5 @@
-import { batch, createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
-import { createStore, reconcile } from 'solid-js/store';
-import { render } from 'solid-js/web';
+import { createEffect, createMemo, createSignal, createStore, flush, For, onSettled, reconcile, Show } from 'solid-js';
+import { render } from '@solidjs/web';
 import { Button, Toolbar } from '../ui/controls.jsx';
 import { iconPaths } from '../ui/icons.mjs';
 import { acknowledgeDraft, acknowledgeInput, reconcilePendingCommits, selectRow } from './model.mjs';
@@ -44,6 +43,8 @@ function Icon(props) {
 }
 
 function persist() {
+  // Menu actions in the same event also read this newly selected row.
+  flush();
   vscode.setState({ selection: selection().keys, anchor: selection().anchor, collapsed: collapsed(), activeRow: activeRow() });
 }
 
@@ -103,8 +104,7 @@ function Repository(props) {
   const draft = () => drafts().get(repo().key);
   let input;
   // Avoid resetting the caret when the host echoes the current draft.
-  createEffect(() => {
-    const value = draft()?.value ?? '';
+  createEffect(() => draft()?.value ?? '', value => {
     if (input.value !== value) input.value = value;
   });
 
@@ -155,8 +155,8 @@ function Group(props) {
   };
   return <section class="scm-group" aria-label={group().label} data-vscode-context={context(group().context)}>
     <div class="scm-heading scm-group-heading">
-      <Button quiet class="scm-toggle" aria-expanded={!folded()} title={folded() ? state.labels.expand : state.labels.collapse} onClick={toggle}>
-        <span classList={{ 'scm-chevron-open': !folded() }}><Icon name="right" /></span>
+      <Button quiet class="scm-toggle" aria-expanded={String(!folded())} title={folded() ? state.labels.expand : state.labels.collapse} onClick={toggle}>
+        <span class={folded() ? '' : 'scm-chevron-open'}><Icon name="right" /></span>
         <span class="scm-label">{group().label}</span>
       </Button>
       <ActionButtons actions={group().actions} label={group().label} disabled={props.disabled}
@@ -175,7 +175,10 @@ function Row(props) {
   const row = () => props.row;
   const key = () => row().key;
   const selected = () => selectedKeys().has(key());
-  onCleanup(() => rowsByKey.delete(key()));
+  onSettled(() => {
+    const rowKey = key();
+    return () => rowsByKey.delete(rowKey);
+  });
 
   function open() {
     if (!props.disabled) action(key(), 'openChange');
@@ -206,13 +209,13 @@ function Row(props) {
     if (!selected()) select(key(), {});
   }
 
-  return <li class="scm-row" classList={{ 'scm-selected': selected() }}
+  return <li class={selected() ? "scm-row scm-selected" : "scm-row"}
     data-vscode-context={context(row().context, key())}
     onPointerDown={event => { if (event.button === 2) selectForMenu(); }}
     onContextMenu={selectForMenu}>
     <Button quiet class="scm-row-target" ref={element => rowsByKey.set(key(), element)}
       tabIndex={tabbableRow() === key() ? 0 : -1}
-      title={row().title} aria-pressed={selected()} aria-disabled={props.disabled}
+      title={row().title} aria-pressed={String(selected())} aria-disabled={props.disabled?.toString()}
       onFocus={() => { setActiveRow(key()); persist(); }} onKeyDown={handleKey}
       onClick={event => {
         select(key(), event);
@@ -254,12 +257,10 @@ window.addEventListener('message', event => {
   }
   if (snapshot?.type !== 'snapshot' || snapshot.revision < state.revision) return;
   const keys = new Set(snapshot.repositories.flatMap(repo => repo.groups.flatMap(group => group.rows.map(row => row.key))));
-  batch(() => {
-    setDrafts(new Map(snapshot.repositories.map(repo => [repo.key, acknowledgeDraft(drafts().get(repo.key), repo)])));
-    setSelection({ keys: selection().keys.filter(key => keys.has(key)), anchor: selection().anchor });
-    setPending(reconcilePendingCommits(pending(), snapshot.repositories));
-    setState(reconcile(snapshot, { key: 'key' }));
-  });
+  setDrafts(new Map(snapshot.repositories.map(repo => [repo.key, acknowledgeDraft(drafts().get(repo.key), repo)])));
+  setSelection({ keys: selection().keys.filter(key => keys.has(key)), anchor: selection().anchor });
+  setPending(reconcilePendingCommits(pending(), snapshot.repositories));
+  setState(draft => { reconcile(snapshot, 'key')(draft); });
 });
 render(App, document.getElementById('root'));
 vscode.postMessage({ type: 'ready' });

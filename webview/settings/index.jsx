@@ -1,5 +1,5 @@
-import { For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
-import { render } from "solid-js/web";
+import { For, Match, onSettled, Show, Switch } from "solid-js";
+import { render } from "@solidjs/web";
 import { Button } from "../ui/controls.jsx";
 import { settingsController } from "./controller.js";
 import { profileContext, profiles, usesManagedDebug } from "./profile.mjs";
@@ -15,12 +15,12 @@ function Profiles(props) {
   const model = props.model;
   return <nav class="settings-profiles" aria-label={labels.profiles}>
     <For each={profiles}>{name => <Button quiet class="settings-profile" data-profile={name}
-      aria-pressed={model.active() === name}
+      aria-pressed={String(model.active() === name)}
       aria-label={[labels[name], name, model.dirty(name) && labels.dirty].filter(Boolean).join(", ")}
       onClick={() => model.select(name)}>
       <Icon name={name === "test" ? "data-processor" : "storage"}/>
       <span>{labels[name]}</span><code class="settings-badge" data-profile={name}>{name}</code>
-      <span class="settings-dirty-dot" classList={{ "is-dirty": model.dirty(name) }} title={model.dirty(name) ? labels.dirty : undefined} aria-hidden="true"/>
+      <span class={model.dirty(name) ? "settings-dirty-dot is-dirty" : "settings-dirty-dot"} title={model.dirty(name) ? labels.dirty : undefined} aria-hidden="true"/>
     </Button>}</For>
   </nav>;
 }
@@ -42,7 +42,7 @@ function TextField(props) {
   const description = () => [props.hint && id + "-hint", error() && id + "-error"].filter(Boolean).join(" ") || undefined;
   return <div class="settings-field">
     <label class="settings-label" for={id}>{labels[field]}</label>
-    <input id={id} name={field} classList={{ "eska-code": field !== "user" }}
+    <input id={id} name={field} class={field !== "user" ? "eska-code" : ""}
       type={props.url ? "url" : "text"} inputmode={props.numeric ? "numeric" : undefined}
       autocomplete="off" spellcheck="false"
       aria-describedby={description()} aria-invalid={error() ? "true" : undefined}
@@ -181,11 +181,11 @@ function App() {
   const model = settingsController(api);
   let form;
   const receive = event => model.receive(event.data);
-  onMount(() => {
+  onSettled(() => {
     window.addEventListener("message", receive);
     model.load();
+    return () => window.removeEventListener("message", receive);
   });
-  onCleanup(() => window.removeEventListener("message", receive));
 
   function focusError(field) {
     if (field) form.elements.namedItem(field)?.focus();
@@ -199,7 +199,7 @@ function App() {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") save(event);
   }
 
-  return <article class="settings-page" aria-busy={model.write()?.type === "load"} onKeyDown={keyboardSave}>
+  return <article class="settings-page" aria-busy={String(model.write()?.type === "load")} onKeyDown={keyboardSave}>
     <header class="settings-heading">
       <div>
         <h1>{labels.title}</h1>

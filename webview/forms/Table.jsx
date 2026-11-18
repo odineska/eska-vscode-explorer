@@ -1,4 +1,4 @@
-import { For, Show, Switch, Match, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, Show, Switch, Match, createEffect, createMemo, createSignal } from 'solid-js';
 import { scalar, flag, property, caption, font, color, text, fontLineHeight } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
 import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
@@ -69,7 +69,7 @@ function Header(props) {
     item.presentation.tableColumnAppearance?.headerBackground, scalar(item, 'HeaderHorizontalAlign', 'Left').toLowerCase(), state.os), ...extra });
   const title = item => flag(item, 'ShowInHeader') ? caption(item, state) : '';
   return <Switch>
-    <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} classList={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}><TableCaption node={node()} controller={props.controller} text={title(node())}/></div></Match>
+    <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} class={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}><TableCaption node={node()} controller={props.controller} text={title(node())}/></div></Match>
     <Match when={model().mode === 'horizontal'}><div class="taxi-table-header-horizontal" style={{ 'grid-column': `span ${model().columns.length}`, height: `${props.height}px`, 'grid-template-rows': model().show ? `${model().captionHeight}px minmax(0, 1fr)` : 'minmax(0, 1fr)' }}>
       <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell taxi-table-header-title" style={cell(node())} onClick={select}><TableCaption node={node()} controller={props.controller} text={caption(node(),state)}/></div></Show>
       <div class="taxi-table-header-children"><For each={model().children}>{child => <Header model={child} controller={props.controller} height={props.height - model().captionHeight}/>}</For></div>
@@ -108,8 +108,7 @@ export function TableToolbarSearch(props) {
   const searchControl = () => <SearchControl node={props.control} controller={props.controller}/>;
   return <>
     <Show when={props.control && !props.search}>{searchControl()}</Show>
-    <Show when={props.spacer}><span class="taxi-command-spacer"
-      classList={{ 'taxi-command-spacer--wide': !!props.control && !props.search }}/></Show>
+    <Show when={props.spacer}><span class={["taxi-command-spacer", { 'taxi-command-spacer--wide': !!props.control && !props.search }]}/></Show>
     <Show when={props.search}>{search => <TableSearch node={search()} controller={props.controller}/>}</Show>
     <Show when={props.control && props.search}>{searchControl()}</Show>
   </>;
@@ -122,11 +121,11 @@ export function Table(props) {
   const layout = createTableLayout(node, state, additions);
   let content;
   const [columnSpace, setColumnSpace] = createSignal(0);
-  createEffect(() => {
-    if (!layout().nativeColumns && !layout().nativeDynamicList) return;
+  createEffect(() => layout().nativeColumns || layout().nativeDynamicList, visible => {
+    if (!visible) return;
     const observer = new ResizeObserver(([entry]) => setColumnSpace(Math.round(entry.contentRect.width)));
     observer.observe(content);
-    onCleanup(() => observer.disconnect());
+    return () => observer.disconnect();
   });
   const tracks = createMemo(() => tableTracks(layout(), columnSpace()));
   const overflows = () => columnSpace() < layout().contentMinWidth;
@@ -186,7 +185,7 @@ export function Table(props) {
     <Show when={layout().topSearch}>{search => <TableSearch node={search()} controller={props.controller} placement="top"/>}</Show>
     <ViewStatus node={node()} controller={props.controller} fitTable/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
-      aria-disabled={inactive() || undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>
+      aria-disabled={inactive() ? 'true' : undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>
       <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" data-clip-header={layout().clipHeader ? '' : undefined} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>

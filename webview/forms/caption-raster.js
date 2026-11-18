@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, onCleanup } from 'solid-js';
+import { createEffect, createSignal, onSettled } from 'solid-js';
 import { fontLineMetrics } from './model.mjs';
 import { firstFontFamily, hintedTextWidth, supportsNativeSans } from './font-metrics.mjs';
 
@@ -6,7 +6,7 @@ import { firstFontFamily, hintedTextWidth, supportsNativeSans } from './font-met
 export function createCaptionRaster(props, { target, mode, paint, dependencies, calibrated, advances, resizeWith }) {
   const [status, setStatus] = createSignal('browser');
   const owner = {};
-  createEffect(on(
+  createEffect(
     () => [props.runtime, props.enabled, props.text, JSON.stringify(props.font), JSON.stringify(props.foreground), props.runtime?.pixelAligned?.(), ...dependencies()],
     () => {
       const { runtime, enabled, text, font } = props;
@@ -61,14 +61,14 @@ export function createCaptionRaster(props, { target, mode, paint, dependencies, 
         raster = candidate;
         draw();
       }).catch(fail);
-      onCleanup(() => {
+      return () => {
         current = false;
         resize.disconnect();
         appearance?.disconnect();
         runtime.issue(owner, false);
-      });
+      };
     },
-  ));
-  onCleanup(() => props.runtime?.issue(owner, false));
+  );
+  onSettled(() => () => props.runtime?.issue(owner, false));
   return status;
 }

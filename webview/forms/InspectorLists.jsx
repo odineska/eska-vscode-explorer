@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onMount, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, onSettled } from 'solid-js';
 import { automaticCommands, text } from './model.mjs';
 import { canExpandData, dataRowExpanded, dataRows, definitionSections, treeRows } from './inspector-model.mjs';
 import { InspectorIcon, InspectorIconButton, dataGlyph, nodeGlyph } from './InspectorIcon.jsx';
@@ -17,7 +17,7 @@ function virtualRows(rows, rowHeight, initialHeight, headerHeight = 0) {
   const limit = createMemo(() => Math.ceil(height() / rowHeight) + 16);
   const start = createMemo(() => Math.max(0, Math.min(rows().length - limit(), Math.floor(scroll() / rowHeight) - 8)));
   const visible = createMemo(() => rows().slice(start(), start() + limit()));
-  onMount(() => {
+  onSettled(() => {
     let scheduled;
     const observer = new ResizeObserver(() => {
       scheduled ??= setTimeout(() => {
@@ -26,10 +26,10 @@ function virtualRows(rows, rowHeight, initialHeight, headerHeight = 0) {
       }, 0);
     });
     observer.observe(area);
-    onCleanup(() => {
+    return () => {
       observer.disconnect();
       if (scheduled !== undefined) clearTimeout(scheduled);
-    });
+    };
   });
   function reveal(index) {
     if (index < 0 || !area) return;
@@ -60,8 +60,8 @@ export function InspectorTabs(props) {
     event.currentTarget.querySelectorAll('[role=tab]')[index]?.focus();
   }
   return <div class="form-tabs" role="tablist" aria-label={props.label} onKeyDown={keyboard}>
-    <For each={props.tabs}>{name => <button type="button" role="tab" aria-selected={props.active === name} tabIndex={props.active === name ? 0 : -1}
-      classList={{ active: props.active === name }} onClick={() => activate(name)}>{props.strings[name]}</button>}</For>
+    <For each={props.tabs}>{name => <button type="button" role="tab" aria-selected={String(props.active === name)} tabindex={props.active === name ? 0 : -1}
+      class={{ active: props.active === name }} onClick={() => activate(name)}>{props.strings[name]}</button>}</For>
   </div>;
 }
 
@@ -148,14 +148,14 @@ export function StructurePane(props) {
     if (next) { c.select(next.node); virtual.reveal(list.indexOf(next)); }
     event.preventDefault();
   }
-  createEffect(on(c.treeReveal, key => {
+  createEffect(c.treeReveal, key => {
     if (!key) return;
     virtual.reveal(positions().get(key) ?? -1);
-  }));
+  });
   // Selection from the form must be visible without shifting focus to this window.
-  createEffect(on([() => state.selected, () => state.modelSequence], ([key]) => {
+  createEffect(() => [state.selected, state.modelSequence], ([key]) => {
     virtual.reveal(positions().get(key) ?? -1);
-  }));
+  });
 
   return <section class="form-pane form-pane--structure" hidden={props.hidden} aria-label={state.strings.structure}>
     <header class="form-pane-heading"><h2>{state.strings.structure}</h2><div class="form-pane-tools">
@@ -166,23 +166,23 @@ export function StructurePane(props) {
     </div></header>
     <InspectorTabs tabs={['elements', 'commandInterface']} active={state.ui.treeTab} change={name => c.ui('treeTab', name)}
       strings={state.strings} label={state.strings.structure}/>
-    <div ref={virtual.mount} hidden={!tree()} role="tree" tabIndex="0" class="form-tree" aria-label={state.strings.elements}
+    <div ref={virtual.mount} hidden={!tree()} role="tree" tabindex="0" class="form-tree" aria-label={state.strings.elements}
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-row-${state.selected}` : undefined}
       onScroll={virtual.scroll} onKeyDown={keyboard}>
       <Show when={rows().length} fallback={<div class="form-list-empty">{state.strings.noMatches}</div>}>
         <div class="form-tree-canvas" style={{ height: `${rows().length * treeHeight}px` }}>
           <For each={virtual.visible()}>{(row, index) => {
             const expanded = () => !state.ui.folded[row.key] || !!props.terms.length;
-            return <div role="treeitem" data-form-tree-node={row.key} draggable={c.drag.movable(row.key)} id={`form-row-${row.key}`} aria-level={row.depth + 1} aria-selected={isSelected(row)}
-              aria-expanded={row.children.length ? expanded() : undefined} title={row.title && row.title !== row.label ? `${row.path}\n${row.title}` : row.path}
-              classList={{ 'form-tree-row': true, selected: isSelected(row), related: related(row), 'form-tree-hidden': row.node.presentation.displayed === false }}
+            return <div role="treeitem" data-form-tree-node={row.key} draggable={String(c.drag.movable(row.key))} id={`form-row-${row.key}`} aria-level={row.depth + 1} aria-selected={String(isSelected(row))}
+              aria-expanded={row.children.length ? String(expanded()) : undefined} title={row.title && row.title !== row.label ? `${row.path}\n${row.title}` : row.path}
+              class={{ 'form-tree-row': true, selected: isSelected(row), related: related(row), 'form-tree-hidden': row.node.presentation.displayed === false }}
               style={{ top: `${(virtual.start() + index()) * treeHeight}px`, '--form-depth': row.depth }}
               onClick={() => { c.select(row.node); virtual.focus(); }} onDblClick={() => locate(row)}
               onContextMenu={event => {
                 event.preventDefault(); contextMenu(row, event.currentTarget, { x: event.clientX, y: event.clientY });
               }}>
               <Show when={row.children.length} fallback={<span class="form-tree-expander"/>}>
-                <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded() ? state.strings.collapse : state.strings.expand}
+                <button type="button" tabindex="-1" class="form-tree-expander" aria-label={expanded() ? state.strings.collapse : state.strings.expand}
                   onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
                   <InspectorIcon name={expanded() ? 'down' : 'right'}/>
                 </button>
@@ -251,12 +251,17 @@ export function DataPane(props) {
     : dataRowExpanded(state.ui.dataFolded, row.id, props.revealed);
   const loaded = createMemo(() => new Set((state.model.expandedData ?? []).map(path => path.join('.'))));
   const hasChildren = row => props.index.children.get(row.id)?.length || state.referenceData && !loaded().has(row.path) && canExpandData(row);
+  const dataRequest = row => state.referenceData && !loaded().has(row.path) && canExpandData(row)
+    ? { type: 'expandData', path: row.path.split('.'), revision: state.revision, formSessionId: state.formSessionId } : undefined;
   const requestData = row => {
-    if (state.referenceData && !loaded().has(row.path) && canExpandData(row)) c.post({ type: 'expandData', path: row.path.split('.'), revision: state.revision, formSessionId: state.formSessionId });
+    const request = dataRequest(row);
+    if (request) c.post(request);
   };
   createEffect(() => {
-    if (state.phase !== 'ready') return;
-    for (const row of rows()) if (!row.heading && !props.terms.length && expanded(row)) requestData(row);
+    if (state.phase !== 'ready' || props.terms.length) return [];
+    return rows().filter(row => !row.heading && expanded(row)).map(dataRequest).filter(Boolean);
+  }, requests => {
+    for (const request of requests) c.post(request);
   });
   const virtual = virtualRows(rows, dataHeight, 180, 24);
   const current = () => props.activeData ?? props.relatedData;
@@ -316,10 +321,10 @@ export function DataPane(props) {
     if (next) { props.select(next); virtual.reveal(rows().indexOf(next)); }
     event.preventDefault();
   }
-  createEffect(on(() => state.ui.tab, virtual.reset));
-  createEffect(on(() => props.reveal, id => {
+  createEffect(() => state.ui.tab, virtual.reset);
+  createEffect(() => props.reveal, id => {
     if (id) virtual.reveal(rows().findIndex(row => row.id === id));
-  }));
+  });
   const width = () => bound(state.ui.dataWidth, 26, 74);
   const range = { minimum: 26, maximum: 74 };
   return <section class="form-pane form-pane--data" hidden={props.hidden} aria-label={state.strings.data}>
@@ -330,7 +335,7 @@ export function DataPane(props) {
     <InspectorTabs tabs={definitionSections} active={state.ui.tab} change={name => c.ui('tab', name)}
       strings={state.strings} label={state.strings.data}/>
     <div ref={element => { grid = element; virtual.mount(element); }} class="form-table-scroll form-data-grid"
-      role="treegrid" aria-label={state.strings[state.ui.tab]} aria-colcount="2" aria-rowcount={rows().length + 1} tabIndex="0"
+      role="treegrid" aria-label={state.strings[state.ui.tab]} aria-colcount="2" aria-rowcount={rows().length + 1} tabindex="0"
       aria-activedescendant={virtual.visible().some(isSelected) ? `form-data-${props.activeData.id}` : undefined}
       onScroll={virtual.scroll} onKeyDown={keyboard}>
       <table class="form-definitions" role="presentation">
@@ -344,16 +349,16 @@ export function DataPane(props) {
           <For each={virtual.visible()}>{(row, index) => <Show when={!row.heading} fallback={
             <tr class="form-data-heading" role="row"><td colspan="2" role="gridcell">{state.strings[row.heading]}</td></tr>
           }>
-            <tr classList={{ 'form-data-row': true, selected: isSelected(row), related: linked(row) }} id={`form-data-${row.id}`}
-              role="row" aria-level={row.depth + 1} aria-selected={isSelected(row)} aria-rowindex={virtual.start() + index() + 2}
-              aria-expanded={hasChildren(row) ? expanded(row) : undefined}
+            <tr class={{ 'form-data-row': true, selected: isSelected(row), related: linked(row) }} id={`form-data-${row.id}`}
+              role="row" aria-level={row.depth + 1} aria-selected={String(isSelected(row))} aria-rowindex={virtual.start() + index() + 2}
+              aria-expanded={hasChildren(row) ? String(expanded(row)) : undefined}
               data-form-data-path={row.path} data-form-attribute={row.section === 'attributes' ? row.id : undefined}
-              draggable={row.section === 'attributes' && c.writable()} title={row.path}
+              draggable={String(row.section === 'attributes' && c.writable())} title={row.path}
               onClick={() => { props.select(row); virtual.focus(); }} onDblClick={() => props.locate(row)}
               onContextMenu={event => { event.preventDefault(); dataMenu(row, event.currentTarget, { x: event.clientX, y: event.clientY }); }}>
               <td role="gridcell"><div class="form-data-name" style={{ '--form-depth': row.depth }}>
                 <Show when={hasChildren(row)} fallback={<span class="form-tree-expander" aria-hidden="true"/>}>
-                  <button type="button" tabIndex="-1" class="form-tree-expander" aria-label={expanded(row) ? state.strings.collapse : state.strings.expand}
+                  <button type="button" tabindex="-1" class="form-tree-expander" aria-label={expanded(row) ? state.strings.collapse : state.strings.expand}
                     disabled={!!props.terms.length} onClick={event => { event.stopPropagation(); fold(row); virtual.focus(); }}>
                     <InspectorIcon name={expanded(row) ? 'down' : 'right'}/>
                   </button>

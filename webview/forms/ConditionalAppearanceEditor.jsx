@@ -1,5 +1,4 @@
-import { For, Index, Show, createMemo, createSignal } from 'solid-js';
-import { createStore, produce, unwrap } from 'solid-js/store';
+import { For, Show, createMemo, createSignal, createStore, snapshot } from 'solid-js';
 import { ColorField, LocalizedFields } from './FormEditorFields.jsx';
 import { defaultLanguage } from './editor-model.mjs';
 import { AppearanceOperandEditor, emptyOperand } from './AppearanceOperandEditor.jsx';
@@ -31,7 +30,7 @@ function Conditions(props) {
   }
   return <div class="form-edit-conditions">
 
-    <Index each={props.items}>{(condition, index) =>
+    <For each={props.items} keyed={false}>{(condition, index) =>
       <div class="form-edit-condition" data-condition={condition().kind}>
         <div class="form-edit-condition-header">
           <label class="form-edit-check"><input type="checkbox" checked={condition().enabled}
@@ -58,7 +57,7 @@ function Conditions(props) {
           <Conditions {...props} items={condition().items} depth={props.depth + 1} change={items => patch(index, { items })}/>
         </Show>
       </div>
-    }</Index>
+    }</For>
     <div class="form-edit-actions">
       <button class="form-edit-secondary" type="button" onClick={() => props.change([...props.items, emptyCondition()])}>{s.editAddCondition}</button>
       <Show when={props.depth < 16}><button class="form-edit-secondary" type="button" onClick={() => props.change([...props.items, {
@@ -169,7 +168,7 @@ export function ConditionalAppearanceEditor(props) {
     { attribute: null, appearance: props.schema.conditionalAppearance },
     ...(props.schema.dynamicListAppearance ?? []),
   ].filter(scope => scope.appearance);
-  const [draft, setDraft] = createStore({ scopes: scopes.map(scope => structuredClone(unwrap(scope.appearance.rules))) });
+  const [draft, setDraft] = createStore({ scopes: scopes.map(scope => structuredClone(snapshot(scope.appearance.rules))) });
   const modified = new Set();
   const [active, setActive] = createSignal(0);
   const [selected, select] = createSignal(0);
@@ -191,29 +190,32 @@ export function ConditionalAppearanceEditor(props) {
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, props.locale));
   });
   function changeRules(update) {
-    modified.add(active());
-    setDraft('scopes', active(), update);
+    const index = active();
+    modified.add(index);
+    setDraft(store => { update(store.scopes[index]); });
   }
   function changeRule(key, value) {
-    modified.add(active());
-    setDraft('scopes', active(), selected(), key, value);
+    const scopeIndex = active(), ruleIndex = selected();
+    modified.add(scopeIndex);
+    setDraft(store => { store.scopes[scopeIndex][ruleIndex][key] = value; });
   }
   const opaque = item => [item.enabled, item.fields, item.conditions, item.format].some(part => part === null);
   const label = (item, index) => (item.fields?.map(field => field.name).join(', ') || s.editAllFields) + ` · ${s.editRule} ${index + 1}`;
   function add(item = emptyRule()) {
     select(rules().length);
-    changeRules(entries => [...entries, item]);
+    changeRules(entries => { entries.push(item); });
   }
   function remove() {
     const index = selected();
-    changeRules(entries => entries.filter((_, i) => i !== index));
-    select(Math.min(index, Math.max(rules().length - 1, 0)));
+    const remaining = rules().length - 1;
+    changeRules(entries => { entries.splice(index, 1); });
+    select(Math.min(index, Math.max(remaining - 1, 0)));
     setConfirmation(false);
   }
   function move(offset) {
     const index = selected(), next = index + offset;
     if (next < 0 || next >= rules().length) return;
-    changeRules(produce(entries => { const [item] = entries.splice(index, 1); entries.splice(next, 0, item); }));
+    changeRules(entries => { const [item] = entries.splice(index, 1); entries.splice(next, 0, item); });
     select(next);
   }
   return <form id="form-edit-draft" class="form-edit-form form-edit-appearance" onSubmit={event => {
@@ -222,7 +224,7 @@ export function ConditionalAppearanceEditor(props) {
       ...(scopes[index].attribute === null
         ? { kind: 'setConditionalAppearance' }
         : { kind: 'setListConditionalAppearance', attribute: scopes[index].attribute }),
-      rules: structuredClone(unwrap(draft.scopes[index])),
+      rules: structuredClone(snapshot(draft.scopes[index])),
     })));
   }}>
     <Show when={scopes.length > 1}>
@@ -236,7 +238,7 @@ export function ConditionalAppearanceEditor(props) {
       <button class="form-edit-secondary" type="button" onClick={() => { setConfirmation(false); add(); }}>{s.editAddRule}</button>
       <Show when={rule()}>
         <button class="form-edit-secondary" type="button" disabled={opaque(rule())}
-          onClick={() => add({ ...structuredClone(unwrap(rule())), original: null })}>{s.editDuplicateRule}</button>
+          onClick={() => add({ ...structuredClone(snapshot(rule())), original: null })}>{s.editDuplicateRule}</button>
         <button class="form-edit-secondary" type="button" disabled={!selected()} onClick={() => move(-1)}>{s.editUp}</button>
         <button class="form-edit-secondary" type="button" disabled={selected() >= rules().length - 1} onClick={() => move(1)}>{s.editDown}</button>
         <button class="form-edit-secondary" type="button" onClick={() => setConfirmation(true)}>{s.editDelete}</button>
@@ -248,14 +250,14 @@ export function ConditionalAppearanceEditor(props) {
     </div></Show>
     <Show when={rule()} fallback={<p>{s.editNoRules}</p>}>
       <label>{s.editRule}<select value={selected()} onChange={event => { select(Number(event.currentTarget.value)); setConfirmation(false); }}>
-        <Index each={rules()}>{(item, index) => <option value={index} selected={index === selected()}>{label(item(), index)}</option>}</Index>
+        <For each={rules()} keyed={false}>{(item, index) => <option value={index} selected={index === selected()}>{label(item(), index)}</option>}</For>
       </select></label>
       <Show when={rule().enabled !== null}>
         <label class="form-edit-check"><input type="checkbox" checked={rule().enabled}
           onChange={event => changeRule('enabled', event.currentTarget.checked)}/>{s.editEnabled}</label>
       </Show>
       <div class="form-edit-tabs" role="group" aria-label={s.editRule}>
-        <For each={Object.entries(tabs)}>{([key, label]) => <button type="button" aria-pressed={tab() === key} onClick={() => setTab(key)}>{s[label]}</button>}</For>
+        <For each={Object.entries(tabs)}>{([key, label]) => <button type="button" aria-pressed={String(tab() === key)} onClick={() => setTab(key)}>{s[label]}</button>}</For>
       </div>
       <Show when={rule()[tab()] !== null} fallback={<p>{s.editUnsupported}</p>}>
         <Show when={tab() === 'conditions'}>

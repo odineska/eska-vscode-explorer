@@ -1,4 +1,4 @@
-import { For, Index, Show } from 'solid-js';
+import { For, Show } from 'solid-js';
 
 const literals = {
   string: 'editString', number: 'editNumber', boolean: 'editBoolean',
@@ -40,13 +40,13 @@ function ValueList(props) {
   const items = () => props.value;
   const changeValue = (index, value) => props.change(items().map((item, i) => i === index ? value : item));
   return <div class="form-edit-value-list" role="group" aria-label={s.editValueList}>
-    <Index each={items()}>{(item, index) => <div class="form-edit-list-value">
+    <For each={items()} keyed={false}>{(item, index) => <div class="form-edit-list-value">
       <OperandType strings={s} options={literals} kind={item().kind}
         change={kind => changeValue(index, emptyOperand(kind))}/>
       <ScalarOperand strings={s} operand={item()}
         change={value => changeValue(index, { ...item(), value })}/>
       <button class="form-edit-secondary" type="button" onClick={() => props.change(items().filter((_, i) => i !== index))}>{s.editDelete}</button>
-    </div>}</Index>
+    </div>}</For>
     <button class="form-edit-secondary" type="button" disabled={items().length >= 512}
       onClick={() => props.change([...items(), emptyOperand('string')])}>{s.editAddValue}</button>
   </div>;

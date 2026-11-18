@@ -1,4 +1,4 @@
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 import { controller } from './controller.js';
 import { App } from './App.jsx';
 import { previewWindowFocus } from './window-focus.mjs';

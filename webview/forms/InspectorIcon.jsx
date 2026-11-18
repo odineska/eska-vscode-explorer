@@ -55,7 +55,7 @@ export function InspectorIcon(props) {
 
 export function InspectorIconButton(props) {
   return <button type="button" class="form-icon-button" title={props.label} aria-label={props.label} disabled={props.disabled}
-    data-edit-action={props.action} aria-haspopup={props.hasPopup} aria-expanded={props.expanded}
+    data-edit-action={props.action} aria-haspopup={props.hasPopup?.toString()} aria-expanded={props.expanded?.toString()}
     onClick={props.onClick} onDblClick={event => event.stopPropagation()}>
     <InspectorIcon name={props.icon}/>
   </button>;

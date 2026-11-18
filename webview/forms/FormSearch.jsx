@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createMemo, createSignal, flush, onSettled } from 'solid-js';
 import { InspectorIcon, InspectorIconButton } from './InspectorIcon.jsx';
 import { searchForm } from './form-search.mjs';
 
@@ -11,9 +11,11 @@ export function FormSearch(props) {
   createEffect(() => {
     const { propertySearch, revision, formSessionId } = c.state;
     const query = c.state.ui.search;
-    if (!propertySearch || !shown() || !revision) return;
-    const timer = setTimeout(() => c.post({ type: 'searchProperties', query, revision, formSessionId }), 120);
-    onCleanup(() => clearTimeout(timer));
+    if (propertySearch && shown() && revision) return { type: 'searchProperties', query, revision, formSessionId };
+  }, request => {
+    if (!request) return;
+    const timer = setTimeout(() => c.post(request), 120);
+    return () => clearTimeout(timer);
   });
   function choose(item) {
     if (!item) return;
@@ -36,19 +38,23 @@ export function FormSearch(props) {
       event.preventDefault();
       choose(results()[active()]);
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      setOpen(true);
+      if (!open()) {
+        setOpen(true);
+        flush();
+      }
       if (!results().length) return;
       event.preventDefault();
-      setActive((active() + results().length + (event.key === 'ArrowDown' ? 1 : -1)) % results().length);
-      resultsBox?.children[active()]?.scrollIntoView({ block: 'nearest' });
+      const next = (active() + results().length + (event.key === 'ArrowDown' ? 1 : -1)) % results().length;
+      setActive(next);
+      onSettled(() => { resultsBox?.children[next]?.scrollIntoView({ block: 'nearest' }); });
     }
   }
   const resultId = index => 'form-search-result-' + index;
   return <div class="form-global-search">
     <div class="form-inspector-search"><InspectorIcon name="search"/>
-      <input ref={input} type="search" role="combobox" aria-autocomplete="list" aria-expanded={shown()}
+      <input ref={input} type="search" role="combobox" aria-autocomplete="list" aria-expanded={String(shown())}
         aria-controls="form-search-results" aria-activedescendant={shown() && results()[active()] ? resultId(active()) : undefined}
-        aria-label={s.inspectorSearch} placeholder={s.inspectorSearch} value={c.state.ui.search} maxLength="512"
+        aria-label={s.inspectorSearch} placeholder={s.inspectorSearch} value={c.state.ui.search} maxlength="512"
         onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
         onInput={event => { c.ui('search', event.currentTarget.value); setActive(0); setOpen(true); }} onKeyDown={keydown}/>
       <Show when={c.state.ui.search}><InspectorIconButton icon="clear" label={s.clearSearch} onClick={clear}/></Show>
@@ -57,7 +63,7 @@ export function FormSearch(props) {
       ref={resultsBox}>
       <For each={results()} fallback={<span class="form-list-empty">{s.noMatches}</span>}>{(item, index) =>
         <div id={resultId(index())} role="option" data-result-property={item.property}
-          data-result-key={item.kind === 'element' ? item.row.key : item.row.id} aria-selected={active() === index()}
+          data-result-key={item.kind === 'element' ? item.row.key : item.row.id} aria-selected={String(active() === index())}
           onPointerDown={event => event.preventDefault()}
           onClick={() => choose(item)}>
           <span class="form-truncate"><small>{s[item.property ? 'properties' : item.kind === 'element' ? 'elements' : item.kind]}</small>{item.title}</span>

@@ -72,7 +72,10 @@ exports.run = async function () {
       ['group', 'fields', { expression: '1', alias: 'Counted', aggregate: 'sum' }],
       ['order', 'order', { expression: 'Товары.Артикул', descending: 'yes' }],
     ]) {
-      await client.evaluate(`document.getElementById('tab-${tab}').click();document.querySelector('[data-section="${section}"] .action-add').click();`);
+      await client.evaluate(`document.getElementById('tab-${tab}').click();`);
+      const addButton = `document.querySelector('[data-section="${section}"] .action-add')`;
+      await until(() => client.evaluate(`Boolean(${addButton})`), 'target tab rendered');
+      await client.evaluate(`${addButton}.click();`);
       await form(client, values);
     }
     const text = await client.evaluate('document.querySelector(".query-preview pre").textContent');

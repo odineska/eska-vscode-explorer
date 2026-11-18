@@ -1,10 +1,10 @@
-import {createEffect,createSignal,on,onCleanup} from 'solid-js';
+import { createEffect, createSignal, onSettled } from 'solid-js';
 import {flag} from './model.mjs';
 import {pdfSurfaceRgba} from './pdf-surface.mjs';
 
 export function Pdf(props){
  let surface,canvas;const [ready,setReady]=createSignal(false),owner={};
- createEffect(on(()=>[props.controller.state.os,props.controller.state.modelSequence,props.controller.state.ui.zoom,props.metrics],()=>{
+ createEffect(()=>[props.controller.state.os,props.controller.state.modelSequence,props.controller.state.ui.zoom,props.metrics],()=>{
   const runtime=props.controller.nativeText;runtime?.issue(owner,false);setReady(false);if(props.controller.state.os!=='linux')return;
   const draw = () => {
    const metrics = props.metrics;
@@ -20,9 +20,9 @@ export function Pdf(props){
    setReady(Boolean(pixels));
    runtime?.issue(owner, !pixels);
   };
-  const frame=requestAnimationFrame(draw),resize=new ResizeObserver(draw);resize.observe(surface);draw();onCleanup(()=>{cancelAnimationFrame(frame);resize.disconnect();runtime?.issue(owner,false);});
- }));
- onCleanup(()=>props.controller.nativeText?.issue(owner,false));
+  const frame=requestAnimationFrame(draw),resize=new ResizeObserver(draw);resize.observe(surface);draw();return ()=>{cancelAnimationFrame(frame);resize.disconnect();runtime?.issue(owner,false);};
+ });
+ onSettled(() => ()=>props.controller.nativeText?.issue(owner,false));
  const fallback=()=>({display:ready()?'none':undefined});
  return <div ref={surface} class="taxi-pdf" data-native-pdf={ready()?'ready':'browser'}>
   <div class="taxi-pdf-page" style={fallback()}/><div class="taxi-pdf-scroll-vertical" style={fallback()}><i/><b/></div><div class="taxi-pdf-scroll-horizontal" style={fallback()}><i/><b/></div>

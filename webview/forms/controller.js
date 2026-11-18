@@ -1,5 +1,4 @@
-import { createStore, reconcile, unwrap } from 'solid-js/store';
-import { batch, createSignal } from 'solid-js';
+import { createProjection, createRoot, createSignal, createStore, flush, merge, snapshot } from 'solid-js';
 import { prepare, key, formElementPath, pageSelections } from './model.mjs';
 import { parsePreviewNavigation } from '../../src/form-preview/navigation.js';
 import { property } from './editor-model.mjs';
@@ -8,9 +7,17 @@ import { defaultInspectorUi, parseInspectorState } from '../../src/form-preview/
 /** Only UI state is persisted. Models and backend session handles are refreshed after reload. */
 export function controller(api) {
   const saved = api.getState(), navigation = parsePreviewNavigation(saved?.ui) ?? {pages:{},collapsed:{}};
-  const [state, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, model: null, palette: null, revision: null, formSessionId: null, detached: false, handlerNavigation: false, handlerAuthoring: false, referenceData: false,
-    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, editSchema: null, draftStatus: null, propertySearch: false, propertyMatches: null,
+  const [presentation, set] = createStore({ role: 'main', phase: 'loading', sequence: 0, modelSequence: 0, locale: 'en-US', culture: 'en-US', os: 'linux', strings: {}, revision: null, formSessionId: null, detached: false, handlerNavigation: false, handlerAuthoring: false, referenceData: false,
+    notice: '', restore: null, selected: '', copiedType: false, authoring: false, formLayout: null, draftStatus: null, propertySearch: false, propertyMatches: null,
     ui: { ...defaultInspectorUi(), ...parseInspectorState(saved)?.ui, ...navigation } });
+  const [model, setModel] = createSignal(null);
+  const [schema, setSchema] = createSignal({ editSchema: null, palette: null });
+  const { disposeProjection, state } = createRoot(dispose => {
+    // Solid's derived stores keep nested keyed array identities across snapshots.
+    const view = createProjection(() => ({ model: model() }), { model: null }, { key: 'reconcileKey' });
+    const properties = createProjection(() => schema(), { editSchema: null, palette: null }, { key: 'id' });
+    return { disposeProjection: dispose, state: merge(presentation, view, properties) };
+  });
   const [edit, setEdit] = createSignal(null);
   const [fieldPending, setFieldPending] = createSignal(0);
   const [changing, setChanging] = createSignal(0);
@@ -70,6 +77,7 @@ export function controller(api) {
     const session = state.formSessionId;
     flushFields();
     setHandlerBusy(true);
+    flush();
     try {
       // A handler may belong to an element just created by a queued form edit.
       const results = await Promise.all([...changes]);
@@ -95,6 +103,7 @@ export function controller(api) {
     if (edit() || replaying() || handlerBusy() || !history()[action] && !fieldPending()) return;
     flushFields();
     setReplaying(true);
+    flush();
     try { await draftAction(action); }
     finally { setReplaying(false); }
   }
@@ -120,33 +129,44 @@ export function controller(api) {
     if (!writable() || edit() || replaying()) return;
     flushFields();
     setEdit({ intent, target, section, placement });
+    flush();
   }
-  const closeEditor = () => setEdit(null);
+  function closeEditor() {
+    setEdit(null);
+    flush();
+  }
   function revealData(row) {
-    batch(() => {
-      set('ui', 'tab', row.section);
-      set('ui', 'inspectedData', row.id);
-      setDataReveal(row.id);
-      persist(true);
+    set(draft => {
+      draft.ui.tab = row.section;
+      draft.ui.inspectedData = row.id;
     });
+    setDataReveal(row.id);
+    persist(true);
   }
   const [selection, setSelection] = createSignal(saved?.selection ?? null);
   const [previewReveal, setPreviewReveal] = createSignal('', { equals: false });
   const [treeReveal, setTreeReveal] = createSignal('', { equals: false });
   // Store proxies cannot cross VS Code's structured-clone message boundary.
-  const post = value => api.postMessage(unwrap(value));
-  const navigationState = () => ({pages:unwrap(state.ui.pages),collapsed:unwrap(state.ui.collapsed)});
+  const post = value => api.postMessage(snapshot(value));
+  const navigationState = () => {
+    const { pages, collapsed } = snapshot(state.ui);
+    return { pages, collapsed };
+  };
   const shareNavigation = () => post({type:'previewNavigation',previewNavigation:navigationState()});
   function applyNavigation(value) {
     const navigation = parsePreviewNavigation(value);
     if (!navigation) return;
-    set('ui', 'pages', reconcile(navigation.pages));
-    set('ui', 'collapsed', reconcile(navigation.collapsed));
+    set(draft => {
+      draft.ui.pages = navigation.pages;
+      draft.ui.collapsed = navigation.collapsed;
+    });
   }
   function selectIdentity(identity, explicit = false) {
-    set('selected', key({ identity }));
+    set(draft => {
+      draft.selected = key({ identity });
+      if (explicit) draft.ui.inspectedData = '';
+    });
     setSelection(identity);
-    if (explicit) set('ui', 'inspectedData', '');
   }
   function revealInPreview(identity) {
     const selected = key({ identity });
@@ -156,8 +176,10 @@ export function controller(api) {
     const collapsed = { ...state.ui.collapsed };
     for (const node of path.slice(0, -1)) if (collapsed[node.key]) collapsed[node.key] = false;
     selectIdentity(identity, true);
-    set('ui', 'pages', { ...state.ui.pages, ...pages });
-    set('ui', 'collapsed', collapsed);
+    set(draft => {
+      Object.assign(draft.ui.pages, pages);
+      draft.ui.collapsed = collapsed;
+    });
     shareNavigation();
     setPreviewReveal(selected);
   }
@@ -166,8 +188,8 @@ export function controller(api) {
     shareInspector ||= userChange;
     cancelAnimationFrame(persistFrame);
     persistFrame = requestAnimationFrame(() => {
-      const saved = { schemaVersion: 1, ...unwrap(state.restore), selection: unwrap(selection()),
-        ui: { ...unwrap(state.ui), selected: state.selected } };
+      const saved = { schemaVersion: 1, ...snapshot(state.restore), selection: snapshot(selection()),
+        ui: { ...snapshot(state.ui), selected: state.selected } };
       api.setState(saved);
       if (shareInspector && state.role === 'main') {
         const preferences = parseInspectorState(saved);
@@ -180,7 +202,7 @@ export function controller(api) {
     const value = event.data;
     if (!value || typeof value !== 'object') return;
 
-    batch(() => {
+    try {
       if (value.type === 'formDraftResult' || value.type === 'formHandlerResult') {
         const resolve = pending.get(value.id);
         pending.delete(value.id);
@@ -189,8 +211,10 @@ export function controller(api) {
         if (value.type === 'formDraftResult' && value.target?.name) {
           const section = { attribute: 'attributes', command: 'commands', parameter: 'parameters' }[value.target.kind];
           if (section) {
-            set('ui', 'tab', section);
-            set('ui', 'inspectedData', section + ':' + value.target.name);
+            set(draft => {
+              draft.ui.tab = section;
+              draft.ui.inspectedData = section + ':' + value.target.name;
+            });
             persist(true);
           }
         }
@@ -199,7 +223,7 @@ export function controller(api) {
       }
       if (value.type === 'propertyMatches') {
         if (value.revision === state.revision && value.formSessionId === state.formSessionId && value.query === state.ui.search)
-          set('propertyMatches', value);
+          set(draft => { draft.propertyMatches = value; });
         return;
       }
       if (value.type === 'previewNavigation') {
@@ -210,7 +234,13 @@ export function controller(api) {
       if (value.type === 'selection') {
         if (value.identity) {
           selectIdentity(value.identity, value.external === true);
-          persist(value.external && revealInInspector(value.identity));
+          let result;
+          if (value.external === true) {
+            const selected = key({ identity: value.identity });
+            set(draft => { result = revealInInspector(draft, selected); });
+            if (result) setTreeReveal(selected);
+          }
+          persist(result?.changed);
         }
         return;
       }
@@ -220,78 +250,90 @@ export function controller(api) {
         return;
       }
       if (value.type === 'inspectorTypeCopied') {
-        set('copiedType', true);
+        set(draft => { draft.copiedType = true; });
         return;
       }
       if (value.type !== 'state' || !Number.isSafeInteger(value.sequence) || value.sequence < state.sequence) return;
 
       if (value.previewNavigation) applyNavigation(value.previewNavigation);
       const inspector = parseInspectorState(value.inspectorState);
-      if (inspector) set('ui', inspector.ui);
-      for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
-        if (value[field] !== undefined) set(field, value[field]);
-      }
-      if (value.editSchema !== undefined) set('editSchema', reconcile(value.editSchema, { key: 'id', merge: true }));
-      if (value.palette !== undefined) set('palette', reconcile(value.palette, { key: 'id', merge: true }));
       const revision = value.revision ?? null, formSessionId = value.formSessionId ?? null;
       const hadModel = !!state.model;
       // Palette and status messages advance the delivery sequence without invalidating native paint.
-      if (value.model && (!state.model || revision === null || formSessionId === null
-        || revision !== state.revision || formSessionId !== state.formSessionId)) {
-        set('revision', revision);
-        set('formSessionId', formSessionId);
-        set('modelSequence', value.sequence);
-        set('model', reconcile(prepare(value.model), { key: 'reconcileKey', merge: true }));
-        if (!state.selected) set('selected', state.ui.selected ?? key(value.model.root));
-      }
-      if (value.selection) {
-        const changed = key({ identity: value.selection }) !== state.selected;
-        selectIdentity(value.selection);
-        if (changed && value.model && hadModel && !inspector) revealInInspector(value.selection);
-      }
+      const newModel = value.model && (!hadModel || revision === null || formSessionId === null
+        || revision !== state.revision || formSessionId !== state.formSessionId);
+      const model = newModel ? prepare(value.model) : undefined;
+      if (model) setModel(model);
+      if (value.editSchema !== undefined || value.palette !== undefined) setSchema(previous => ({
+        editSchema: value.editSchema === undefined ? previous.editSchema : value.editSchema,
+        palette: value.palette === undefined ? previous.palette : value.palette,
+      }));
+      let reveal = '';
+      set(draft => {
+        if (inspector) Object.assign(draft.ui, inspector.ui);
+        for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
+          if (value[field] !== undefined) draft[field] = value[field];
+        }
+        if (model) {
+          draft.revision = revision;
+          draft.formSessionId = formSessionId;
+          draft.modelSequence = value.sequence;
+          if (!draft.selected) draft.selected = draft.ui.selected ?? key(value.model.root);
+        }
+        if (value.selection) {
+          const selected = key({ identity: value.selection });
+          if (selected !== draft.selected && value.model && hadModel && !inspector) {
+            const result = revealInInspector(draft, selected, model ?? state.model);
+            if (result) reveal = selected;
+          }
+          draft.selected = selected;
+        }
+      });
+      if (value.selection) setSelection(value.selection);
+      if (reveal) setTreeReveal(reveal);
       persist();
-    });
+    } finally {
+      flush();
+    }
   }
   window.addEventListener('message', receive);
-  function revealInInspector(identity) {
-    if (state.role !== 'main') return false;
-    const selected = key({ identity });
-    const path = formElementPath(state.model?.root, selected);
-    if (!path.length) return false;
-    const folds = path.slice(0, -1).filter(node => state.ui.folded[node.key]);
-    const changed = folds.length > 0 || state.ui.treeTab !== 'elements';
-    if (folds.length) {
-      const folded = { ...state.ui.folded };
-      for (const ancestor of folds) delete folded[ancestor.key];
-      set('ui', 'folded', reconcile(folded));
-    }
-    set('ui', 'treeTab', 'elements');
-    set('ui', 'inspectedData', '');
-    setTreeReveal(selected);
-    return changed;
+  function revealInInspector(draft, selected, model = state.model) {
+    if (draft.role !== 'main') return;
+    const path = formElementPath(model?.root, selected);
+    if (!path.length) return;
+    const folds = path.slice(0, -1).filter(node => draft.ui.folded[node.key]);
+    const changed = folds.length > 0 || draft.ui.treeTab !== 'elements';
+    for (const ancestor of folds) delete draft.ui.folded[ancestor.key];
+    draft.ui.treeTab = 'elements';
+    draft.ui.inspectedData = '';
+    return { changed };
   }
-  const select = (node, reveal = false) => {
-    let changed = false;
-    batch(() => {
-      selectIdentity(node.identity, true);
-      if (reveal) changed = revealInInspector(node.identity);
-    });
+  function select(node, reveal = false) {
+    selectIdentity(node.identity, true);
+    let result;
+    if (reveal) {
+      const selected = key(node);
+      set(draft => { result = revealInInspector(draft, selected); });
+      if (result) setTreeReveal(selected);
+    }
     post({ type: 'select', identity: node.identity });
-    persist(changed);
-  };
+    persist(result?.changed);
+    flush();
+  }
   const showOnForm = node => {
     select(node);
     post({ type: 'showOnForm', identity: node.identity });
   };
   const copyType = value => {
-    set('copiedType', false);
+    set(draft => { draft.copiedType = false; });
     post({ type: 'copyInspectorType', value });
   };
   const ui = (name, value) => {
-    set('ui', name, name === 'folded' ? reconcile(value) : value);
+    set(draft => { draft.ui[name] = value; });
     const shared = name === 'pages' || name === 'collapsed';
     if (shared) shareNavigation();
     persist(!shared);
+    flush();
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });
   return { state, selection, select, ui, post, previewReveal, treeReveal, showOnForm, copyType, openEditor, edit, editStatus, closeEditor,
@@ -303,5 +345,6 @@ export function controller(api) {
       for (const key of fields.keys()) discardField(key);
       for (const resolve of pending.values()) resolve({ message: 'editUnavailable' });
       pending.clear();
+      disposeProjection();
     } };
 }

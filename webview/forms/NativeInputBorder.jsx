@@ -1,4 +1,4 @@
-import { batch, createEffect, on, onCleanup } from 'solid-js';
+import { createEffect } from 'solid-js';
 import { color, flag, property } from './model.mjs';
 import { inputBorderPixels, disabledInputForeground } from './input-border.mjs';
 import { NativeInputCorners, inputCornerBackground } from './NativeInputCorners.jsx';
@@ -26,7 +26,7 @@ export function createInputBorderPaintQueue() {
       const frame = { colors: new Map(), declarations: new Map(), palettes: new Map() };
       const updates = [...pending].map(measure => measure(frame));
       pending.clear();
-      batch(() => { for (const update of updates) update?.(); });
+      for (const update of updates) update?.();
     });
     return () => {
       pending.delete(read);
@@ -46,9 +46,9 @@ export function NativeInputBorder(props) {
     return () => props.setPaint(undefined);
   };
   // A parent's background can change while reconciliation retains the child node.
-  createEffect(on(() => [state.modelSequence, state.os, props.choice, props.referenceButtons,
+  createEffect(() => [state.modelSequence, state.os, props.choice, props.referenceButtons,
     JSON.stringify(node().presentation.border), JSON.stringify(node().presentation.background)], () => {
-    onCleanup(props.controller.scheduleInputBorderPaint(({ colors, declarations, palettes }) => {
+    return props.controller.scheduleInputBorderPaint(({ colors, declarations, palettes }) => {
       if (state.os !== 'linux') return reset();
       const surface = props.surface(), kind = node().presentation.valueType.kind;
       const reference = props.referenceButtons;
@@ -74,8 +74,8 @@ export function NativeInputBorder(props) {
       }
       const paint = palettes.get(key);
       return () => props.setPaint(paint);
-    }));
-  }));
+    });
+  });
   const multilineReference = () => props.referenceButtons && flag(node(), 'MultiLine', false);
   return <><span ref={source} hidden aria-hidden="true" style={{
     color: color(node().presentation.border), 'background-color': color(node().presentation.background),

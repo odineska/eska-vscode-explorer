@@ -1,10 +1,10 @@
-import { createEffect, onCleanup } from 'solid-js';
+import { createEffect } from 'solid-js';
 
 /** Pack whole categories without moving their DOM nodes, focus or logical reading order. */
 export function PropertyGroups(props) {
   let container;
-  createEffect(() => {
-    if (!props.wide || !container) return;
+  createEffect(() => props.wide, wide => {
+    if (!wide || !container) return;
     let frame;
     const measure = () => {
       frame = undefined;
@@ -28,13 +28,13 @@ export function PropertyGroups(props) {
     const children = new MutationObserver(observe);
     children.observe(container, { childList: true });
     observe();
-    onCleanup(() => {
+    return () => {
       resize.disconnect();
       children.disconnect();
       cancelAnimationFrame(frame);
       delete container.dataset.propertyLayout;
       for (const table of container.children) table.style.removeProperty('grid-row-end');
-    });
+    };
   });
-  return <div ref={container} classList={{ 'form-property-groups': true, 'form-property-groups--wide': props.wide }}>{props.children}</div>;
+  return <div ref={container} class={{ 'form-property-groups': true, 'form-property-groups--wide': props.wide }}>{props.children}</div>;
 }

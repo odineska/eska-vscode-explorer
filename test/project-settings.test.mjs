@@ -9,7 +9,7 @@ import { settingsRequest } from "../out/project-settings-protocol.js";
 const repository = fileURLToPath(new URL("../", import.meta.url));
 const bundle = build({
   stdin: { resolveDir: repository, contents: `
-    import { createRoot } from "solid-js";
+    import { createRoot, flush } from "solid-js";
     import { settingsController } from "./webview/settings/controller.js";
     export function setup(initial) {
       let saved = initial;
@@ -19,7 +19,14 @@ const bundle = build({
           postMessage: value => requests.push(value),
           getState: () => saved, setState: value => { saved = value; },
         });
-        return { model, requests, persisted: () => saved, dispose };
+        // Each operation models a DOM event or an incoming host message.
+        const events = ["load", "select", "edit", "discard", "save", "probe", "pickInfobase", "receive", "visit"];
+        const actions = Object.fromEntries(events.map(name => [name, (...args) => {
+          const result = model[name](...args);
+          flush();
+          return result;
+        }]));
+        return { model: { ...model, ...actions }, requests, persisted: () => saved, dispose };
       });
     }
   ` },
@@ -34,7 +41,7 @@ const original = { test: fixture(), prod: fixture("prod-base") };
 
 async function open(t, persisted) {
   const module = { exports: {} };
-  const context = createContext({ module, exports: module.exports, crypto, URL });
+  const context = createContext({ module, exports: module.exports, crypto, queueMicrotask, URL });
   const value = data => runInContext(`(${JSON.stringify(data)})`, context);
   runInContext((await bundle).outputFiles[0].text, context);
   const h = module.exports.setup(value(persisted));

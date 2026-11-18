@@ -1,4 +1,4 @@
-import { createContext, useContext, createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from 'solid-js';
+import { createContext, useContext, createSignal, createMemo, createEffect, flush, onSettled, untrack } from 'solid-js';
 import { number } from './model.mjs';
 import { stretches, formAllocation, atPreferredAxis, linuxContainerHeightUnit } from './layout-model.mjs';
 import { minimumFormLayout } from './minimum-layout.js';
@@ -22,7 +22,7 @@ import { measureDecorations } from './decoration-layout.js';
 import { sameDecorationLines } from './decoration-metrics.mjs';
 import { conditionalPageFits, rowFitWidth, sideTabWidths } from './page-fit-layout.js';
 
-export const FormLayoutContext = createContext();
+export const FormLayoutContext = createContext(null);
 export const useFormLayout = () => useContext(FormLayoutContext);
 
 function naturalFormSize(root, rows, widths) {
@@ -121,6 +121,8 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     setMeasuringReference(true);
     try {
       if (liveWrap.size) setWrapped(new Set());
+      // The reference pass reads the DOM before the normal reactive microtask.
+      flush();
       needsPreferred = true;
       for (let pass = 0; pass < 6 && (needsPreferred || needsMinimum); pass++) measureLayout(target);
       if (!needsPreferred && !needsMinimum) {
@@ -129,6 +131,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     } finally {
       setMeasuringReference(false);
       setWrapped(liveWrap);
+      flush();
       needsPreferred = needsMinimum = true;
     }
   }
@@ -150,6 +153,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       if (fieldCaptions().size) setFieldCaptions(new Map());
       if (aboveTitles().size) setAboveTitles(new Set());
       if (decorations().size) setDecorations(new Map());
+      flush();
       const scale = boundingScale(root);
       const model = state.model.root, context = { targets, alignment, scale, os: state.os, collapsed: state.ui.collapsed };
       const commands = body.querySelector(':scope > .taxi-root-commands');
@@ -222,6 +226,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
         element.style.setProperty('--taxi-preferred-height', `${size.height}px`);
       }
       setPreferredWidths(widths);
+      flush();
     }
     if (needsMinimum) {
       needsMinimum = false;
@@ -235,6 +240,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       });
       setGeometry(measured);
       content.dataset.formLayout = 'allocated';
+      flush();
       if (scroll) {
         surface.scrollLeft = scroll[0]; surface.scrollTop = scroll[1];
         bodyScroll.scrollLeft = scroll[2]; bodyScroll.scrollTop = scroll[3];
@@ -257,7 +263,9 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       if (resized && previous.outerWidth !== undefined) setViewportResized(true);
       if (Object.keys(next).some(key => previous[key] !== next[key])) {
         if (headingTitles.length && next.width !== previous.width) needsMinimum = true;
-        setSize(next); schedule();
+        setSize(next);
+        flush();
+        schedule();
       }
     }
     rootCommands?.allocate();
@@ -333,6 +341,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       needsPreferred = true;
       needsMinimum = true; schedule(); return wrap;
     });
+    flush();
   }
   function measureWrapping(root, conditionalGroups) {
     const wrap = new Set();
@@ -383,21 +392,21 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
     };
     visit(state.model.root); JSON.stringify(state.ui.collapsed);
     state.model.scriptVariant; state.locale; state.culture; state.os;
-    invalidatePreferred();
-  });
-  createEffect(() => { state.ui.zoom; needsMinimum = true; schedule(); });
-  createEffect(() => { preferredX(); preferredY(); needsMinimum = true; schedule(); });
-  onMount(() => {
+  }, invalidatePreferred);
+  const invalidateMinimum = () => { needsMinimum = true; schedule(); };
+  createEffect(() => state.ui.zoom, invalidateMinimum);
+  createEffect(() => [preferredX(), preferredY()], invalidateMinimum);
+  onSettled(() => {
     mounted = true;
     const observer = new ResizeObserver(schedule); observer.observe(viewport()); observer.observe(frame());
     document.fonts?.ready.then(() => { if (active) invalidatePreferred(); });
     schedule();
-    onCleanup(() => observer.disconnect());
-  });
-  onCleanup(() => {
-    active = false;
-    cancelAnimationFrame(scheduled);
-    clearAlignment();
+    return () => {
+      observer.disconnect();
+      active = false;
+      cancelAnimationFrame(scheduled);
+      clearAlignment();
+    };
   });
   const allocation = () => {
     const { minimum, chromeHeight } = geometry();

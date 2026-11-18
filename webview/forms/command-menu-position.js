@@ -1,4 +1,3 @@
-import { onCleanup } from 'solid-js';
 import { borderBoxSize } from './layout-box.mjs';
 import { previewClientRect } from './preview-coordinates.mjs';
 
@@ -27,9 +26,9 @@ export function positionCommandMenu(menu, anchor, nested) {
   if (viewport) observer.observe(viewport);
   window.addEventListener('scroll', place, true);
   window.addEventListener('resize', place);
-  onCleanup(() => {
+  return () => {
     observer.disconnect();
     window.removeEventListener('scroll', place, true);
     window.removeEventListener('resize', place);
-  });
+  };
 }

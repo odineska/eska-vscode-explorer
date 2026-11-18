@@ -37,14 +37,14 @@ function Row(props) {
   };
   const locate = () => { const selection = target(); if (selection) props.locate(selection); };
   const control = () => props.field(row().id);
-  return <tr classList={{ 'form-event': value().kind === 'declaredEvent' }} data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
+  return <tr class={{ 'form-event': value().kind === 'declaredEvent' }} data-palette-id={row().id} data-palette-source={value().sourceKind ?? value().kind}
     data-property-name={value().kind === 'declaredEvent' ? 'Event' : xmlKey()?.name} data-property-namespace={xmlKey() ? xmlKey().namespace ?? '' : undefined}
     tabindex={target() ? '0' : undefined}
     data-palette-available={row().available === false ? 'false' : undefined}
     title={hint()}
     onDblClick={event => { if (!event.target.closest('summary,button,input')) locate(); }}
     onKeyDown={event => { if (target() && event.target === event.currentTarget && ['F12', 'Enter'].includes(event.key)) { event.preventDefault(); locate(); } }}>
-    <th>{label()}</th><td classList={{ 'form-property-default': value().kind === 'absent' }}>
+    <th>{label()}</th><td class={{ 'form-property-default': value().kind === 'absent' }}>
       <Show when={control()} fallback={<Switch>
         <Match when={handler()}><button class="form-handler" type="button" title={state.strings.handler} onClick={() => props.openHandler(handler().index)}>{handler().handler.name}</button></Match>
         <Match when={eventText() !== undefined}>{eventText()}</Match>

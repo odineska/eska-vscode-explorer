@@ -1,4 +1,4 @@
-import { For, Show, createEffect, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect } from 'solid-js';
 import { color, property } from './model.mjs';
 import { sideTabCornerPixels, tabBackground, tabCornerPixels } from './tab-border.mjs';
 import { rgb, solidBackdrop } from './native-control-paint.js';
@@ -12,7 +12,7 @@ const REGIONS = { left:sideRegions(false), right:sideRegions(true) };
 export function NativeTabBorder(props) {
   let source, neighbours, lastKey;
   const state=props.controller.state;
-  createEffect(on(()=>[state.modelSequence,state.os,props.enabled,props.side,props.bottom,props.active,props.selected,props.titleColorAuthored,
+  createEffect(()=>[state.modelSequence,state.os,props.enabled,props.side,props.bottom,props.active,props.selected,props.titleColorAuthored,
     JSON.stringify([props.node.presentation.background,props.node.presentation.titleColor,props.previous?.presentation.background,props.next?.presentation.background,props.pageBackground,props.pageHasBackground])],()=>{
     const frame=requestAnimationFrame(()=>{
       const button=props.button();
@@ -32,8 +32,8 @@ export function NativeTabBorder(props) {
       lastKey=key;props.setPaint({background,foreground,corners:props.side?sideTabCornerPixels(value):tabCornerPixels(value)});
     });
     // Both local page selection and dirty ancestor colors must reach the DOM first.
-    onCleanup(()=>cancelAnimationFrame(frame));
-  }));
+    return ()=>cancelAnimationFrame(frame);
+  });
   return <span class="taxi-tab-border" aria-hidden="true">
     <span ref={source} hidden style={{color:color(props.node.presentation.background),'background-color':color(props.pageBackground),'border-top-color':color(props.node.presentation.titleColor)}}/>
     <span ref={neighbours} hidden style={{color:color(props.previous?.presentation.background??props.node.presentation.background),'background-color':color(props.next?.presentation.background??props.node.presentation.background)}}/>

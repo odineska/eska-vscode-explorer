@@ -2,7 +2,7 @@ import { Show, createContext, createMemo, useContext } from 'solid-js';
 import { standardPicture } from './standard-pictures.mjs';
 import { standardPicturePixelScale } from './standard-picture-density.mjs';
 
-export const StandardPictureScaleContext = createContext();
+export const StandardPictureScaleContext = createContext(null);
 
 export function useStandardPicturePixelScale(isRaster) {
   const scale = useContext(StandardPictureScaleContext);
@@ -16,7 +16,7 @@ export function useStandardPicturePixelScale(isRaster) {
 export function useStandardPicture(name, variant = () => undefined) {
   const scale = useContext(StandardPictureScaleContext);
   const root = document.getElementById('form-preview-script')?.dataset.pictureRoot;
-  return createMemo(() => standardPicture(name(), variant(), root && { root, ...scale?.() }), undefined, {
+  return createMemo(() => standardPicture(name(), variant(), root && { root, ...scale?.() }), {
     equals: (previous, next) => previous === next
       || (previous?.isRaster === true && next?.isRaster === true && previous.source === next.source),
   });

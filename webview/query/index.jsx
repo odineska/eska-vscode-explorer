@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 import { createDesignerController } from '../../resources/query/controller.mjs';
 import { ConstructorApp } from './App.jsx';
 

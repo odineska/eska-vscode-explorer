@@ -5,7 +5,7 @@ export function Splitter(props) {
   const disabled = () => range() && range().maximum <= range().minimum;
 
   return <div role="separator" tabindex={disabled() ? -1 : 0} aria-orientation={props.vertical ? 'vertical' : 'horizontal'}
-    aria-label={props.label} aria-disabled={disabled() || undefined} aria-valuemin={range()?.minimum}
+    aria-label={props.label} aria-disabled={disabled() ? 'true' : undefined} aria-valuemin={range()?.minimum}
     aria-valuemax={range()?.maximum} aria-valuenow={range() ? props.value() : undefined}
     class={props.class ?? (props.vertical ? 'form-splitter form-splitter--vertical' : 'form-splitter')}
     onClick={event => event.stopPropagation()} onDblClick={event => event.stopPropagation()}

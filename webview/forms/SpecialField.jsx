@@ -1,4 +1,4 @@
-import { Show, Switch, Match, createMemo, createEffect, createSignal, onMount, onCleanup } from 'solid-js';
+import { Show, Switch, Match, createMemo, createEffect, createSignal, onSettled } from 'solid-js';
 import { number, flag, scalar, color } from './model.mjs';
 import { documentSurfaceMetrics } from './document-surface.mjs';
 import { pdfSurfaceMetrics } from './pdf-surface.mjs';
@@ -30,7 +30,7 @@ export function SpecialField(props) {
   const [allocation, setAllocation] = createSignal();
   const preferred = createMemo(() => props.node.kind==='ChartField'?chartSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='GanttChartField'?ganttSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='DendrogramField'?dendrogramSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='PlannerField'?plannerSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='PeriodField'?periodSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='CalendarField'?calendarSurfaceMetrics(props.node,props.controller.state.os):props.node.kind==='PDFDocumentField'?pdfSurfaceMetrics(props.node,props.controller.state.os):['TextDocumentField','FormattedDocumentField','HTMLDocumentField','SpreadSheetDocumentField','GeographicalSchemaField','GraphicalSchemaField'].includes(props.node.kind)?documentSurfaceMetrics(props.node,props.controller.state.os):undefined), owner={};
   const document = createMemo(() => allocatedSurfaceMetrics(preferred(), allocation(), props.node));
-  onMount(() => {
+  onSettled(() => {
     let scheduled, active = true;
     const measure = () => {
       scheduled = undefined; if (!active || !surface?.isConnected || surface.clientWidth <= 0 || surface.clientHeight <= 0) return;
@@ -39,10 +39,11 @@ export function SpecialField(props) {
     };
     const observer = new ResizeObserver(() => { if (active && scheduled === undefined) scheduled = requestAnimationFrame(measure); });
     observer.observe(surface); measure();
-    onCleanup(() => { active = false; observer.disconnect(); cancelAnimationFrame(scheduled); });
+    return () => { active = false; observer.disconnect(); cancelAnimationFrame(scheduled); };
   });
-  createEffect(()=>props.controller.nativeText?.issue(owner,props.controller.state.os==='linux'&&document()&&!document().calibrated));
-  onCleanup(()=>props.controller.nativeText?.issue(owner,false));
+  createEffect(() => props.controller.state.os === 'linux' && document() && !document().calibrated,
+    approximate => { props.controller.nativeText?.issue(owner, approximate); });
+  onSettled(() => ()=>props.controller.nativeText?.issue(owner,false));
   const width = () => preferred()?.width ?? (number(props.node, 'Width') > 0 ? Math.max(15, number(props.node, 'Width')) * 8 + 4 : props.node.kind === 'CalendarField' ? 338 : 500);
   const height = () => preferred()?.height ?? (number(props.node, 'Height') > 0 ? Math.max(2, number(props.node, 'Height')) * 20 + 3 : props.node.kind === 'CalendarField' ? 300 : props.node.kind === 'PeriodField' ? 209 : 243);
   const minimumWidth = () => {
@@ -82,7 +83,7 @@ export function SpecialField(props) {
       <Match when={props.node.kind === 'DendrogramField'}><Dendrogram {...props} width={(document()?.width ?? width()) - 2} height={(document()?.height ?? height()) - 2} metrics={document()}/></Match>
       <Match when={props.node.kind === 'GanttChartField'}><Gantt {...props} width={(document()?.width ?? width()) - 2} height={(document()?.height ?? height()) - 2} metrics={document()}/></Match>
       <Match when={props.node.kind==='GeographicalSchemaField'}><Geographical node={props.node} controller={props.controller}/></Match>
-      <Match when={['GraphicalSchemaField', 'HTMLDocumentField'].includes(props.node.kind)}><div classList={{ 'taxi-document-surface': true, 'taxi-graphical-schema': props.node.kind === 'GraphicalSchemaField' }}/></Match>
+      <Match when={['GraphicalSchemaField', 'HTMLDocumentField'].includes(props.node.kind)}><div class={{ 'taxi-document-surface': true, 'taxi-graphical-schema': props.node.kind === 'GraphicalSchemaField' }}/></Match>
     </Switch>
   </div></div>;
 }

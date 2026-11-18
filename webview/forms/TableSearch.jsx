@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on, onCleanup } from 'solid-js';
+import { For, Show, createEffect, createSignal, onSettled } from 'solid-js';
 import { color, flag, font as fontStyle, fontPixels, number, property } from './model.mjs';
 import { controlCaptionWidth } from './font-metrics.mjs';
 import { inputBorderPixels } from './input-border.mjs';
@@ -42,7 +42,7 @@ export function TableSearch(props) {
       '--taxi-search-hint': paint()?.hintColor,
     };
   };
-  createEffect(on(() => [state.os, state.modelSequence, compact()], () => {
+  createEffect(() => [state.os, state.modelSequence, compact()], () => {
     const runtime = props.controller.nativeText;
     runtime?.issue(owner, false);
     setPaint();
@@ -69,13 +69,13 @@ export function TableSearch(props) {
       });
       runtime?.issue(owner, false);
     };
-    onCleanup(observeRasterPaint(surface, draw));
-  }));
-  onCleanup(() => props.controller.nativeText?.issue(owner, false));
-  return <div ref={surface} class="taxi-table-search" classList={{
+    return observeRasterPaint(surface, draw);
+  });
+  onSettled(() => () => props.controller.nativeText?.issue(owner, false));
+  return <div ref={surface} class={["taxi-table-search", {
     'taxi-table-search--top': props.placement === 'top', 'taxi-table-search--compact': compact(),
     'taxi-table-search--standalone': standalone(),
-  }} data-native-search-field={paint() ? 'ready' : 'fallback'} data-element={props.node.key} style={style()}
+  }]} data-native-search-field={paint() ? 'ready' : 'fallback'} data-element={props.node.key} style={style()}
     onClick={event => { event.stopPropagation(); props.controller.select(props.node); }}>
     <input ref={input} readOnly tabIndex="-1" placeholder={placeholder()} aria-label={state.strings.search}
       style={{ color: authoredText() ? color(props.node.presentation.foreground) : undefined }}/>

@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo, createSignal, on, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, Show } from 'solid-js';
 import { DataPane, StructurePane } from './InspectorLists.jsx';
 import { PropertyInspector } from './PropertyInspector.jsx';
 import { attributeFor, commandFor } from './inspector-model.mjs';
@@ -20,7 +20,7 @@ export function Inspector(props) {
   const pluralRules = createMemo(() => new Intl.PluralRules(state.locale));
   const detached = () => props.layout.mode === 'detached';
   const [dataReveal, setDataReveal] = createSignal('', { equals: false });
-  createEffect(on(c.dataReveal, setDataReveal));
+  createEffect(c.dataReveal, value => { setDataReveal(value); });
   const selectData = row => c.ui('inspectedData', row.id);
 
   const revealedData = createMemo(() => {
@@ -33,10 +33,8 @@ export function Inspector(props) {
     return open;
   });
   function showData(row) {
-    batch(() => {
-      c.ui('tab', row.section);
-      setDataReveal(row.id);
-    });
+    c.ui('tab', row.section);
+    setDataReveal(row.id);
   }
   const showElement = row => c.select(row.node, true);
   function dataTarget(row) {

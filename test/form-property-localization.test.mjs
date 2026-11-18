@@ -6,16 +6,16 @@ import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { transformAsync } from '@babel/core';
-import solid from 'babel-preset-solid';
+import solid from '@solidjs/babel-plugin';
 
 const repository=fileURLToPath(new URL('../',import.meta.url));
 const rendered=build({
-  stdin:{contents:`import { renderToString } from 'solid-js/web';import { PropertyValue } from './webview/forms/PropertyValue.jsx';
+  stdin:{contents:`import { renderToString } from '@solidjs/web';import { PropertyValue } from './webview/forms/PropertyValue.jsx';
     export const render=(field,locale)=>renderToString(()=>PropertyValue({field,state:{locale,strings:{details:'Details'}}}));`,resolveDir:repository},
   bundle:true,write:false,platform:'node',format:'cjs',conditions:['node'],define:{'process.env.NODE_ENV':'"production"'},
-  plugins:[{name:'solid-ssr',setup(builder){builder.onLoad({filter:/\.jsx$/},async args=>({contents:(await transformAsync(await readFile(args.path,'utf8'),{filename:args.path,presets:[[solid,{generate:'ssr',hydratable:false}]],babelrc:false,configFile:false})).code,loader:'js'}));}}],
+  plugins:[{name:'solid-ssr',setup(builder){builder.onLoad({filter:/\.jsx$/},async args=>({contents:(await transformAsync(await readFile(args.path,'utf8'),{filename:args.path,plugins:[[solid,{generate:'ssr',hydratable:false}]],babelrc:false,configFile:false})).code,loader:'js'}));}}],
 }).then(bundle=>{
-  const module={exports:{}};runInNewContext(bundle.outputFiles[0].text,{module,exports:module.exports,require:createRequire(import.meta.url),setTimeout,clearTimeout});return module.exports.render;
+  const module={exports:{}};runInNewContext(bundle.outputFiles[0].text,{module,exports:module.exports,require:createRequire(import.meta.url),setTimeout,clearTimeout,queueMicrotask});return module.exports.render;
 });
 const core='http://v8.1c.ru/8.1/data/core';
 const caption={'ru-RU':'Локализованная строка','en-US':'LocalizedString'};

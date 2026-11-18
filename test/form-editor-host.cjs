@@ -262,9 +262,15 @@ async function checkScrollingDrag(ui, view, read, zoom) {
     const beforeHit = document.elementFromPoint(x, edge);
     fire('dragover', edge, beforeHit);
     const first = marker();
-    for (let i = 0; scrollport.scrollTop < 40 && i < 15; i++) await pause();
+    // The group can span the pointer for many pixels. Observe a new target
+    // from the autoscroll frames without dispatching another dragover.
+    const deadline = performance.now() + 2000;
+    let next;
+    do {
+      await frames();
+      next = marker();
+    } while ((!next || next[0] === first?.[0]) && performance.now() < deadline);
     const scrolled = scrollport.scrollTop;
-    const next = marker();
     const hit = document.elementFromPoint(x, edge);
     fire('dragleave', edge, hit, transfer, document.querySelector('.form-status'));
     await pause();
@@ -279,7 +285,8 @@ async function checkScrollingDrag(ui, view, read, zoom) {
     fire('drop', y);
     fire('dragend', y, source);
     return { extent: scrollport.scrollHeight - scrollport.clientHeight, covered, foreign, scrolled, left, cleared, first, next, destination, edge,
-      hit: beforeHit?.closest('[data-element]')?.dataset.element, scrollport: scrollport.className };
+      hit: beforeHit?.closest('[data-element]')?.dataset.element, nextHit: hit?.closest('[data-element]')?.dataset.element,
+      scrollport: scrollport.className };
   }, previewField);
   assert.deepEqual(result.covered, { hit: true, marker: ['201', 'before'] });
   assert.ok(result.extent > 500 && result.foreign === 0 && result.scrolled > 0 && result.left === result.scrolled && result.cleared, JSON.stringify(result));
