@@ -25,6 +25,7 @@ async function releaseMetadata(repository) {
 
 let projectRelease, projectData;
 const bootstrap = ["components.py", "component_installation.py", "component_package.py"];
+const bootstrapDigests = {};
 if (local) {
   const index = JSON.parse(await readFile(join(local, "release.json"), "utf8"));
   const item = index.components["eska-project"];
@@ -46,6 +47,7 @@ if (local) {
     assert.match(asset.digest, /^sha256:[a-f0-9]{64}$/);
     assert.equal(asset.browser_download_url, `https://github.com/odineska/eska/releases/download/${release.tag_name}/${name}`);
     const data = await downloadAsset({ name, url: asset.browser_download_url, size: asset.size, sha256: asset.digest.slice(7) });
+    bootstrapDigests[name] = asset.digest;
     await writeFile(join(pythonTools, name), data);
   }
 }
@@ -70,6 +72,15 @@ const references = !local || process.env.ESKA_TEST_REFERENCE_ROOT
 const environment = { ESKA_TEST_ROOT: playground, ESKA_TEST_BINARY: project.path,
   ESKA_TEST_ANALYZER_BINARY: analyzer.path, ESKA_TEST_PYTHON_TOOLS: pythonTools, ESKA_TEST_LANGUAGE: "1" };
 if (references) environment.ESKA_TEST_REFERENCE_ROOT = references.path;
+if (process.env.ESKA_TEST_RELEASE_INPUTS && !local && metadataDirectory && references?.commit) {
+  await writeFile(process.env.ESKA_TEST_RELEASE_INPUTS, JSON.stringify({
+    target,
+    project: { version: project.version, sha256: projectRelease.asset.sha256 },
+    analyzer: { version: analyzer.version, sha256: analyzerRelease.asset.sha256 },
+    references: references.commit,
+    bootstrap: bootstrapDigests,
+  }) + "\n", {flag: "wx"});
+}
 await writeFile(join(root, "environment.json"), JSON.stringify(environment, null, 2) + "\n");
 if (process.env.GITHUB_ENV) {
   for (const [name, value] of Object.entries(environment)) {

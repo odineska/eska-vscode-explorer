@@ -58,13 +58,27 @@ jobs:
         run: bash scripts/fetch-release-metadata.sh
       - name: Validate before publishing
         if: steps.plan.outputs.build == 'true'
+        env:
+          ESKA_TEST_RELEASE_INPUTS: ${{ runner.temp }}/explorer-release-inputs.json
         run: |
           bun install --frozen-lockfile --ignore-scripts
-          bun run --bun check
           bun run --bun compile
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
+      - name: Verify equivalent full application CI
+        id: baseline
+        if: steps.plan.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          if [[ -f scripts/release-ci-proof.py ]]; then
+            result="$(python3 scripts/release-ci-proof.py "$RUNNER_TEMP/explorer-release-inputs.json" --baseline "$RELEASE_VERSION")" || exit 0
+            if [[ "$result" == verified_baseline=true ]]; then
+              printf '%s\n' "$result" >> "$GITHUB_OUTPUT"
+            fi
+          fi
       - name: Cache the pinned VS Code archive
         if: steps.plan.outputs.build == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -76,7 +90,15 @@ jobs:
           key: vscode-archive-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-editor.sha256') }}
       - name: Test the client and install the test editor
         if: steps.plan.outputs.build == 'true'
-        run: bash scripts/test-with-editor.sh --release
+        env:
+          VERIFIED_BASELINE: ${{ steps.baseline.outputs.verified_baseline }}
+        run: |
+          if [[ "$VERIFIED_BASELINE" == true ]]; then
+            bash scripts/test-with-editor.sh --editor-only
+          else
+            bun run --bun check
+            bash scripts/test-with-editor.sh --release
+          fi
       - name: Validate the packaged VSIX
         if: steps.plan.outputs.build == 'true'
         run: |

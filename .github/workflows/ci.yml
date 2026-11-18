@@ -60,6 +60,8 @@ jobs:
         run: bash scripts/fetch-release-metadata.sh
       - name: Install released backends into a clean prefix
         if: steps.release-pr.outputs.metadata_only != 'true'
+        env:
+          ESKA_TEST_RELEASE_INPUTS: ${{ runner.temp }}/explorer-release-inputs.json
         run: |
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
@@ -85,3 +87,23 @@ jobs:
           export ESKA_TEST_VSIX="$(realpath "eska-explorer-$(node -p 'require("./package.json").version').vsix")"
           python3 scripts/check-vsix.py "$ESKA_TEST_VSIX"
           timeout 180s xvfb-run -a node test/run-host.mjs test/language-host.cjs
+      - name: Record the tested tree and release inputs
+        id: record
+        continue-on-error: true
+        if: >-
+          steps.release-pr.outputs.metadata_only != 'true' &&
+          github.repository == 'odineska/eska-vscode-explorer' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PULL_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 scripts/release-ci-proof.py "$RUNNER_TEMP/explorer-release-inputs.json" --record "$RUNNER_TEMP/proof.json" --pull "$PULL_NUMBER"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.record.outcome == 'success'
+        continue-on-error: true
+        with:
+          name: explorer-full-ci-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/proof.json
+          if-no-files-found: error
+          retention-days: 14

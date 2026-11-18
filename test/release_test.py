@@ -7,9 +7,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -88,6 +90,61 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(module.plan(), ("", ""))
             git("switch", "--quiet", "--detach", release_commit)
             self.assertEqual(module.plan(), ("0.1.0", ""))
+
+    def test_full_ci_proof_requires_exact_tree_inputs_and_successful_job(self):
+        module = load("release-ci-proof")
+        baseline, head = "b" * 40, "c" * 40
+        repository = {"full_name": module.REPOSITORY}
+        pull = {"number": 42, "merge_commit_sha": baseline, "merged_at": "2026-11-18T10:00:00Z",
+                "base": {"ref": "main", "repo": repository}, "head": {"sha": head, "repo": repository}}
+        run = {"id": 11, "run_attempt": 2, "workflow_id": 7, "path": module.WORKFLOW, "event": "pull_request",
+               "conclusion": "success",
+               "head_sha": head, "repository": repository, "head_repository": repository, "pull_requests": [],
+               "created_at": "2026-11-18T09:00:00Z"}
+        steps = [{"name": name, "conclusion": "success"} for name in [
+            "Check and compile", "Test the client and install the test editor",
+            "Check the packaged extension with real Metadata API and LSP", "Record the tested tree and release inputs"]]
+        responses = {
+            "actions/workflows/ci.yml": {"id": 7, "path": module.WORKFLOW},
+            f"commits/{baseline}/pulls": [pull],
+            f"actions/workflows/ci.yml/runs?event=pull_request&status=success&head_sha={head}": {"workflow_runs": [run]},
+            "actions/runs/11/attempts/2/jobs": {"jobs": [{"name": "check", "conclusion": "success", "steps": steps}]},
+        }
+        expected = {"tree": "application-tree", "inputs": {"references": "verified-tag", "analyzer": {"sha256": "analyzer-hash"}}}
+        proof = expected | {"pull": 42}
+        classifier = load("release-pr-check")
+        with patch.dict(sys.modules, {"release-pr-check": classifier}), \
+                patch.object(classifier, "release_only_tree", return_value=True), \
+                patch.object(module, "output", side_effect=[baseline, "application-tree"] * 5), \
+                patch.object(module, "evidence", side_effect=lambda _: expected.copy()), \
+                patch.object(module, "api", side_effect=responses.__getitem__), \
+                patch.object(module, "read_artifact", return_value=proof):
+            self.assertTrue(module.baseline_passed(self.root / "inputs.json", "0.1.0"))
+            proof["inputs"] = {"references": "other-tag", "analyzer": {"sha256": "analyzer-hash"}}
+            self.assertFalse(module.baseline_passed(self.root / "inputs.json", "0.1.0"))
+            proof["inputs"] = expected["inputs"]
+            proof["tree"] = "other-tree"
+            self.assertFalse(module.baseline_passed(self.root / "inputs.json", "0.1.0"))
+            proof["tree"] = expected["tree"]
+            steps[2]["conclusion"] = "skipped"
+            self.assertFalse(module.baseline_passed(self.root / "inputs.json", "0.1.0"))
+            steps[2]["conclusion"] = "success"
+            run["head_repository"] = {"full_name": "other/eska-vscode-explorer"}
+            self.assertFalse(module.baseline_passed(self.root / "inputs.json", "0.1.0"))
+
+    def test_ci_proof_download_verifies_artifact_digest(self):
+        module = load("release-ci-proof")
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("proof.json", '{"tree":"tested"}')
+        contents = archive.getvalue()
+        record = {"expired": False, "name": "explorer-full-ci-2", "size_in_bytes": len(contents), "id": 15,
+                  "digest": "sha256:" + hashlib.sha256(contents).hexdigest()}
+        with patch.object(module, "api", return_value={"artifacts": [record]}), \
+                patch.object(module.subprocess, "check_output", return_value=contents):
+            self.assertEqual(module.read_artifact({"id": 11, "run_attempt": 2}), {"tree": "tested"})
+            record["digest"] = "sha256:" + "0" * 64
+            self.assertIsNone(module.read_artifact({"id": 11, "run_attempt": 2}))
 
     def test_local_execution_cannot_publish(self):
         """A local check must not accidentally open PRs or push branches."""

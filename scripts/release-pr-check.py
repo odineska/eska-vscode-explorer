@@ -43,7 +43,12 @@ def generated_release_pr():
     target = run("git", "rev-parse", "HEAD^{tree}")
     if target != run("git", "rev-parse", f"{head}^{{tree}}"):
         return False
-    if set(run("git", "diff", "--name-only", base, "HEAD").splitlines()) != {"package.json", "CHANGELOG.md"}:
+    return release_only_tree(base, "HEAD", version)
+
+
+def release_only_tree(base, head, version):
+    """Require unchanged application and tooling plus exactly one new changelog section."""
+    if set(run("git", "diff", "--name-only", base, head).splitlines()) != {"package.json", "CHANGELOG.md"}:
         return False
 
     package = json.loads(run("git", "show", f"{base}:package.json"))
@@ -51,10 +56,10 @@ def generated_release_pr():
     if previous_version == version:
         return False
     package["version"] = version
-    if json.loads(run("git", "show", "HEAD:package.json")) != package:
+    if json.loads(run("git", "show", f"{head}:package.json")) != package:
         return False
     old_changelog = run("git", "show", f"{base}:CHANGELOG.md")
-    changelog = run("git", "show", "HEAD:CHANGELOG.md")
+    changelog = run("git", "show", f"{head}:CHANGELOG.md")
     heading = re.search(rf"^## {re.escape(version)} \(\d{{4}}-\d{{2}}-\d{{2}}\)\n", changelog, re.MULTILINE)
     if heading is None:
         return False

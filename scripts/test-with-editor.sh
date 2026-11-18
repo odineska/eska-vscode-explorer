@@ -2,15 +2,18 @@
 # Overlap independent client tests and editor setup before running the VSIX in the editor.
 set -euo pipefail
 
-(
-  bun test
-  if [[ "${1:-}" == --release ]]; then
-    knope --validate
-  fi
-  KNOPE_TEST_BINARY="$(command -v knope)" \
-    python3 -m unittest discover -s test -p '*_test.py'
-) &
-tests_pid=$!
+tests_pid=
+if [[ "${1:-}" != --editor-only ]]; then
+  (
+    bun test
+    if [[ "${1:-}" == --release ]]; then
+      knope --validate
+    fi
+    KNOPE_TEST_BINARY="$(command -v knope)" \
+      python3 -m unittest discover -s test -p '*_test.py'
+  ) &
+  tests_pid=$!
+fi
 
 (
   # Hosted runners already provide these packages. Install them if the image changes.
@@ -25,6 +28,8 @@ tests_pid=$!
 editor_pid=$!
 
 status=0
-wait "$tests_pid" || status=$?
+if [[ -n "$tests_pid" ]]; then
+  wait "$tests_pid" || status=$?
+fi
 wait "$editor_pid" || status=$?
 exit "$status"
