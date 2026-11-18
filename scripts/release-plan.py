@@ -9,35 +9,42 @@ def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
+def version_commit(version):
+    """Find the first commit of the current version along main's first-parent history."""
+    introduced = run("git", "rev-parse", "HEAD")
+    for commit in run("git", "rev-list", "--first-parent", "HEAD", "--", "package.json").splitlines():
+        manifest = json.loads(run("git", "show", f"{commit}:package.json"))
+        if manifest["version"] != version:
+            break
+        introduced = commit
+    return introduced
+
+
 def plan():
     version = run("python3", "scripts/release-version.py")
     if not version:
-        return "", False
+        return "", ""
     tag = f"refs/tags/v{version}"
     if not run("git", "tag", "--list", f"v{version}"):
-        parents = run("git", "rev-list", "--parents", "-n", "1", "HEAD").split()
-        if len(parents) > 1:
-            previous = json.loads(run("git", "show", "HEAD^1:package.json"))["version"]
-            if previous == version:
-                raise RuntimeError(f"Retry the main workflow at the commit introducing v{version}")
-        return version, True
+        return version, version_commit(version)
 
     release = json.loads(run("gh", "release", "view", f"v{version}", "--json", "isDraft,assets"))
     if release["isDraft"]:
         raise RuntimeError("Expected an existing published release")
     filename = f"eska-explorer-{version}.vsix"
     existing = next((asset for asset in release["assets"] if asset["name"] == filename), None)
-    same_tree = run("git", "rev-parse", "HEAD^{tree}") == run("git", "rev-parse", f"{tag}^{{tree}}")
     if existing is None:
-        if not same_tree:
-            raise RuntimeError(f"Retry the workflow at the commit tagged v{version} to finish attaching the VSIX")
-        return version, True
+        commit = run("git", "rev-parse", f"{tag}^{{commit}}")
+        run("git", "merge-base", "--is-ancestor", commit, "HEAD")
+        return version, commit
     if existing.get("state") != "uploaded" or existing.get("size", 0) <= 0:
         raise RuntimeError("Existing VSIX asset is incomplete; inspect it before retrying")
-    return (version, False) if same_tree else ("", False)
+    same_tree = run("git", "rev-parse", "HEAD^{tree}") == run("git", "rev-parse", f"{tag}^{{tree}}")
+    return (version, "") if same_tree else ("", "")
 
 
 if __name__ == "__main__":
-    version, build = plan()
+    version, commit = plan()
     print(f"version={version}")
-    print(f"build={str(build).lower()}")
+    print(f"commit={commit}")
+    print(f"build={str(bool(commit)).lower()}")

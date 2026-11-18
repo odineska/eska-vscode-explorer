@@ -20,10 +20,28 @@ jobs:
           fetch-depth: 3
       - name: Check for a generated release-only change
         id: release-pr
+        if: >-
+          github.repository == 'odineska/eska-vscode-explorer' &&
+          ((github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            startsWith(github.head_ref, 'release/eska-explorer-')) ||
+           (github.event_name == 'workflow_dispatch' &&
+            startsWith(github.ref, 'refs/heads/release/eska-explorer-')))
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_HEAD_REF: ${{ github.head_ref || github.ref_name }}
-        run: python3 scripts/release-pr-check.py >> "$GITHUB_OUTPUT"
+          RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            git fetch --no-tags --depth=1 origin refs/heads/main || exit 0
+            RELEASE_BASE_SHA="$(git rev-parse FETCH_HEAD)" || exit 0
+          fi
+          classifier="$RUNNER_TEMP/release-pr-check.py"
+          git show "$RELEASE_BASE_SHA:scripts/release-pr-check.py" > "$classifier" || exit 0
+          result="$(python3 -I "$classifier")" || exit 0
+          if [[ "$result" == metadata_only=true ]]; then
+            printf '%s\n' "$result" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install Bun and Knope
         if: steps.release-pr.outputs.metadata_only != 'true'
         run: bash scripts/install-tools.sh release

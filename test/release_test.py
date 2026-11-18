@@ -1,6 +1,7 @@
 """Release automation checks use only owned temporary repositories and fake forge calls."""
 
 import importlib.util
+import hashlib
 import json
 import os
 import re
@@ -47,34 +48,46 @@ class ReleaseTests(unittest.TestCase):
         (self.root / "CHANGELOG.md").write_text("## 0.1.0 (2026-09-18)\n")
         self.assertEqual(module.release_version(self.root), "0.1.0")
 
-    def test_release_plan_checks_only_new_or_unfinished_release_tree(self):
-        """Ordinary main updates never rebuild an existing release."""
+    def test_release_plan_recovers_the_missed_version_commit(self):
+        """A later push can recover a skipped release without packaging the new tip."""
         module = load("release-plan")
-        answers = {
-            ("python3", "scripts/release-version.py"): "0.1.0",
-            ("git", "tag", "--list", "v0.1.0"): "v0.1.0",
-            ("git", "rev-parse", "HEAD^{tree}"): "release-tree",
-            ("git", "rev-parse", "refs/tags/v0.1.0^{tree}"): "release-tree",
-        }
-        release_call = ("gh", "release", "view", "v0.1.0", "--json", "isDraft,assets")
-        asset = {"name": "eska-explorer-0.1.0.vsix", "state": "uploaded", "size": 9}
-        answers[release_call] = json.dumps({"isDraft": False, "assets": [asset]})
-        with patch.object(module, "run", side_effect=lambda *args: answers[args]):
-            self.assertEqual(module.plan(), ("0.1.0", False))
-            answers[("git", "rev-parse", "HEAD^{tree}")] = "later-tree"
-            self.assertEqual(module.plan(), ("", False))
-            answers[release_call] = json.dumps({"isDraft": False, "assets": []})
-            with self.assertRaisesRegex(RuntimeError, "commit tagged v0.1.0"):
-                module.plan()
-            answers[("git", "rev-parse", "HEAD^{tree}")] = "release-tree"
-            self.assertEqual(module.plan(), ("0.1.0", True))
-            answers[("git", "tag", "--list", "v0.1.0")] = ""
-            answers[("git", "rev-list", "--parents", "-n", "1", "HEAD")] = "first-release parent"
-            answers[("git", "show", "HEAD^1:package.json")] = '{"version":"0.0.0"}'
-            self.assertEqual(module.plan(), ("0.1.0", True))
-            answers[("git", "show", "HEAD^1:package.json")] = '{"version":"0.1.0"}'
-            with self.assertRaisesRegex(RuntimeError, "commit introducing v0.1.0"):
-                module.plan()
+
+        def git(*args):
+            return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
+
+        def commit_version(version):
+            (self.root / "package.json").write_text(json.dumps({"version": version}))
+            (self.root / "CHANGELOG.md").write_text(f"## {version} (2026-11-18)\n")
+            git("add", "package.json", "CHANGELOG.md")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", version)
+            return git("rev-parse", "HEAD")
+
+        git("init", "-qb", "main")
+        commit_version("0.0.1")
+        release_commit = commit_version("0.1.0")
+        assets = []
+
+        def run(*args):
+            if args[0] == "git":
+                return git(*args[1:])
+            if args[0] == "gh":
+                return json.dumps({"isDraft": False, "assets": assets})
+            return "0.1.0"
+
+        from_release = ("0.1.0", release_commit)
+        with patch.object(module, "run", side_effect=run):
+            self.assertEqual(module.plan(), from_release)
+            (self.root / "package.json").write_text('{"version":"0.1.0","description":"later change"}')
+            git("add", "package.json")
+            git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Later change")
+            self.assertNotEqual(git("rev-parse", "HEAD"), release_commit)
+            self.assertEqual(module.plan(), from_release)
+            git("tag", "v0.1.0", release_commit)
+            self.assertEqual(module.plan(), from_release)
+            assets.append({"name": "eska-explorer-0.1.0.vsix", "state": "uploaded", "size": 9})
+            self.assertEqual(module.plan(), ("", ""))
+            git("switch", "--quiet", "--detach", release_commit)
+            self.assertEqual(module.plan(), ("0.1.0", ""))
 
     def test_local_execution_cannot_publish(self):
         """A local check must not accidentally open PRs or push branches."""
@@ -231,11 +244,12 @@ class VsixReleaseTests(unittest.TestCase):
             candidate = Path(directory) / "eska-explorer-0.1.0.vsix"
             candidate.write_bytes(b"already tested")
             calls = []
+            assets = []
 
             def run(*args):
                 calls.append(args)
                 if args[:3] == ("gh", "release", "view"):
-                    return json.dumps({"isDraft": False, "assets": []})
+                    return json.dumps({"isDraft": False, "assets": assets})
                 if args == ("git", "rev-parse", "refs/tags/v0.1.0^{tree}"):
                     return "tag-tree"
                 if args == ("git", "rev-parse", "HEAD^{tree}"):
@@ -248,7 +262,14 @@ class VsixReleaseTests(unittest.TestCase):
                     module.publish("0.1.0", candidate)
                 tree = "tag-tree"
                 module.publish("0.1.0", candidate)
-            self.assertEqual(calls[-1][0:5], ("gh", "release", "upload", "v0.1.0", str(candidate)))
+                self.assertEqual(calls[-1][0:5], ("gh", "release", "upload", "v0.1.0", str(candidate)))
+                assets.append({"name": candidate.name, "state": "uploaded", "size": candidate.stat().st_size})
+                assets[0]["digest"] = "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+                module.publish("0.1.0", candidate)
+                assets[0]["digest"] = "sha256:" + "0" * 64
+                with self.assertRaisesRegex(RuntimeError, "Existing VSIX differs"):
+                    module.publish("0.1.0", candidate)
+            self.assertEqual(sum(call[:3] == ("gh", "release", "upload") for call in calls), 1)
             self.assertFalse(any(call[0] == "bun" for call in calls))
 
 

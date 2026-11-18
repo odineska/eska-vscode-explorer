@@ -2,6 +2,7 @@
 """Attach a VSIX built from the release tag, without replacing existing assets."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -34,28 +35,48 @@ def stage_tag(version, destination):
     return source
 
 
-def publish(version, verified_vsix=None):
-    """Build missing assets from the immutable tag; reruns preserve published packages."""
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version) or version == "0.0.0":
-        raise ValueError("Expected a released three-part version")
+def existing_asset(version, filename):
     release = json.loads(run("gh", "release", "view", f"v{version}", "--repo", REPOSITORY,
                              "--json", "isDraft,assets"))
     if release["isDraft"]:
         raise RuntimeError("Expected an existing published release")
+    return next((asset for asset in release["assets"] if asset["name"] == filename), None)
+
+
+def confirm_asset(asset, verified_vsix):
+    if asset.get("state") != "uploaded" or asset.get("size", 0) <= 0:
+        raise RuntimeError("Existing VSIX asset is incomplete; inspect it before retrying")
+    if verified_vsix is not None:
+        with verified_vsix.open("rb") as contents:
+            digest = hashlib.file_digest(contents, "sha256").hexdigest()
+        if asset.get("digest") != f"sha256:{digest}":
+            raise RuntimeError("Existing VSIX differs from the package verified on this runner")
+
+
+def publish(version, verified_vsix=None):
+    """Build missing assets from the immutable tag; reruns preserve published packages."""
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version) or version == "0.0.0":
+        raise ValueError("Expected a released three-part version")
     filename = f"eska-explorer-{version}.vsix"
-    existing = next((asset for asset in release["assets"] if asset["name"] == filename), None)
-    if existing is not None:
-        if existing.get("state") != "uploaded" or existing.get("size", 0) <= 0:
-            raise RuntimeError("Existing VSIX asset is incomplete; inspect it before retrying")
-        print(f"Already attached: {filename}")
-        return
     if verified_vsix is not None:
         tag_tree = run("git", "rev-parse", f"refs/tags/v{version}^{{tree}}")
         if run("git", "rev-parse", "HEAD^{tree}") != tag_tree or run("git", "status", "--porcelain"):
             raise RuntimeError("Verified VSIX must come from the clean release tag tree")
         if verified_vsix.name != filename or not verified_vsix.is_file() or verified_vsix.is_symlink():
             raise RuntimeError("Expected the VSIX verified on this runner")
-        run("gh", "release", "upload", f"v{version}", str(verified_vsix), "--repo", REPOSITORY)
+    existing = existing_asset(version, filename)
+    if existing is not None:
+        confirm_asset(existing, verified_vsix)
+        print(f"Already attached: {filename}")
+        return
+    if verified_vsix is not None:
+        try:
+            run("gh", "release", "upload", f"v{version}", str(verified_vsix), "--repo", REPOSITORY)
+        except subprocess.CalledProcessError:
+            existing = existing_asset(version, filename)
+            if existing is None:
+                raise
+            confirm_asset(existing, verified_vsix)
         print(f"Attached: {filename}")
         return
     with tempfile.TemporaryDirectory(prefix="eska-release-vsix-", dir=os.environ.get("RUNNER_TEMP")) as directory:

@@ -35,6 +35,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release-plan.py >> "$GITHUB_OUTPUT"
+      - name: Select the exact release sources
+        if: steps.plan.outputs.build == 'true'
+        env:
+          RELEASE_COMMIT: ${{ steps.plan.outputs.commit }}
+        run: |
+          cp scripts/release-vsix.py "$RUNNER_TEMP/release-vsix.py"
+          git switch -C main "$RELEASE_COMMIT"
       - name: Install release tools
         env:
           BUILD: ${{ steps.plan.outputs.build }}
@@ -104,7 +111,7 @@ jobs:
             git fetch origin --tags
           fi
           if [[ "$build" == true ]]; then
-            python3 scripts/release-vsix.py "$version" --verified-vsix "eska-explorer-$version.vsix"
+            python3 "$RUNNER_TEMP/release-vsix.py" "$version" --verified-vsix "eska-explorer-$version.vsix"
           fi
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Prepare the next release PR
@@ -113,9 +120,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin main
-          if [[ "$(git rev-parse HEAD)" == "$(git rev-parse FETCH_HEAD)" ]]; then
-            python3 scripts/prepare-release.py
-          fi
+          git switch -C main FETCH_HEAD
+          python3 scripts/prepare-release.py
 
   openvsx:
     needs: release
