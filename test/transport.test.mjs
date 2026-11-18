@@ -285,3 +285,41 @@ test('API 1.30 falls back on the same process without new constructor features',
  assert.deepEqual(versions,[API_VERSION.minor,30]);assert.equal(children.length,1);
  assert.equal(value.recovery?.sessions?.capabilities?.constructorLimits,undefined);
 });
+
+test("a replacement backend never receives requests queued under the previous process", async t => {
+  const { value, children } = connection(t);
+  await value.connect(target);
+  const sessionId = value.state.session.sessionId;
+  const request = children[0].request.bind(children[0]);
+  let finish;
+  const barrier = new Promise(resolve => { finish = resolve; });
+  children[0].request = (method, ...params) => method === "metadata/renamePreview" ? barrier : request(method, ...params);
+
+  const structural = assert.rejects(value.request(sessionId, "metadata/renamePreview"), { code: "obsolete" });
+  const queued = assert.rejects(value.request(sessionId, "initialize", hello), { code: "obsolete" });
+  try {
+    await value.connect({ ...target, name: "replacement" });
+    assert.equal(value.state.session.sessionId, sessionId);
+  } finally {
+    finish();
+  }
+  await Promise.all([structural, queued]);
+  assert.equal(children.length, 2);
+});
+
+test("a synchronous checkpoint failure still runs the remaining checkpoints and reaps the backend", async t => {
+  const { value, children } = connection(t);
+  await value.connect(target);
+  const seen = [];
+  const failed = value.beforeStop(() => { throw new Error("checkpoint failed"); });
+  const remaining = value.beforeStop(async () => { seen.push("checkpoint"); });
+  try {
+    await value.disconnect();
+    exited(children[0].pid);
+    assert.deepEqual(seen, ["checkpoint"]);
+    assert.equal(value.state.error.code, "cleanupFailed");
+  } finally {
+    failed.dispose();
+    remaining.dispose();
+  }
+});
