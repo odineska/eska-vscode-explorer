@@ -282,6 +282,10 @@ export class FormPreviewService implements vscode.Disposable {
       return;
     }
     if (value.type === "handler" && Number.isSafeInteger(value.index) && (value.index as number) >= 0) {
+      // Handler indexes identify entries only within the snapshot that rendered the link.
+      const snapshot = view.snapshot;
+      if (view.frames.get(frame.role) !== frame || !snapshot
+        || value.revision !== snapshot.revision || value.formSessionId !== snapshot.formSessionId) return;
       const navigation = ++view.navigation;
       try { await this.handler(view, value.index as number, navigation); }
       catch (error) {
