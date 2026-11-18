@@ -44,17 +44,11 @@ jobs:
           mkdir -p ../eska-playground
           export ESKA_TEST_ROOT="$(realpath ../eska-playground)"
           node scripts/prepare-backends.mjs
-      - name: Проверки с установленными бэкендами
+      - name: Test the client and install the test editor
+        run: bash scripts/test-with-editor.sh --release
+      - name: Validate the packaged VSIX
         run: |
-          bun test
-          knope --validate
-          KNOPE_TEST_BINARY="$(command -v knope)" \
-            python3 -m unittest discover -s test -p '*_test.py'
-      - name: Проверка VSIX и LSP в чистом редакторе
-        run: |
-          sudo apt-get update && sudo apt-get install -y xvfb libasound2t64
-          bash scripts/install-editor.sh
-          bun run --bun package
+          bun run --bun package:compiled
           python3 scripts/check-vsix.py "eska-explorer-$(node -p 'require("./package.json").version').vsix"
       - name: Запуск установленного VSIX
         env:
