@@ -63,17 +63,33 @@ const scopes = [
 ];
 const profileLabels = { eska: caption("ESKA", "ESKA"), "1c": caption("1С", "1C") };
 
+const optionGroups = [
+  ["dimension", caption("Отступы", "Indentation"), key => key.includes("indent_") || key === "tab_width"],
+  ["document-journal", caption("Пустые строки", "Blank lines"), key => key.startsWith("blank_lines_") || key === "max_empty_lines"],
+  ["style-item", caption("Выравнивание", "Alignment"), key => key.startsWith("align_") || key === "separate_object_initialization"],
+  ["module", caption("Переносы строк", "Line wrapping"), key => key.startsWith("wrap_")
+    || ["column_limit", "break_before_binary_operators", "closing_parenthesis_on_new_line", "preserve_existing_line_breaks",
+      "select_items", "condition_items", "group_items", "order_items", "clause_newlines"].includes(key)],
+  ["attributes", caption("Пробелы", "Spacing"), key => key.startsWith("space_") || key === "trim_trailing_whitespace"],
+  ["language", caption("Регистр и оформление", "Case and layout"), () => true],
+];
+
 function forScope(schema, scope) {
-  return Object.entries(schema?.$defs?.[scope]?.properties ?? {}).map(([key, option]) => ({
-    path: [key],
-    label: optionNames[key] ?? caption(key, key),
-    type: option.enum ? "enum" : option.type,
-    choices: option.enum,
-    choiceLabels: choices,
-    min: option.minimum,
-    max: option.maximum,
-    ...(key === "column_limit" ? { hint: caption("0 снимает ограничение.", "0 removes the limit.") } : {}),
-  }));
+  const definitions = schema?.$defs?.[scope]?.properties ?? {};
+  const keys = new Set([...Object.keys(optionNames), ...Object.keys(definitions)]);
+  return [...keys].filter(key => Object.hasOwn(definitions, key)).map(key => {
+    const option = definitions[key];
+    return {
+      path: [key],
+      label: optionNames[key] ?? caption(key, key),
+      type: option.enum ? "enum" : option.type,
+      choices: option.enum,
+      choiceLabels: choices,
+      min: option.minimum,
+      max: option.maximum,
+      ...(key === "column_limit" ? { hint: caption("0 снимает ограничение.", "0 removes the limit.") } : {}),
+    };
+  });
 }
 
 function profileValue(name, language, key, configs, presets, visited = new Set()) {
@@ -135,7 +151,19 @@ export function FormatSettings(props) {
     const bsl = lower("bsl");
     return Object.is(bsl, lower("sdbl")) ? bsl : undefined;
   }
-  const options = createMemo(() => forScope(props.metadata?.formatSchema, scope()));
+  const groups = createMemo(() => {
+    const options = forScope(props.metadata?.formatSchema, scope());
+    const groups = optionGroups.map(([icon, label]) => ({ icon, label, fields: [] }));
+    for (const option of options) {
+      const index = optionGroups.findIndex(([, , includes]) => includes(option.path[0]));
+      groups[index].fields.push(option);
+    }
+    return groups.filter(group => group.fields.length);
+  });
+  const style = createMemo(() => {
+    const language = scope();
+    return childModel(format, [language], { inherited: path => inherited(language, path) });
+  });
   return <>
     <SettingsGroup title={word(locale, "Стиль форматирования", "Formatting style")} icon="configuration">
       <SettingsFields model={format} fields={selectedFields()} locale={locale}/>
@@ -143,18 +171,22 @@ export function FormatSettings(props) {
         <For each={scopes}>{([id, label]) => <Button quiet class="settings-profile" data-format-scope={id}
           aria-pressed={String(scope() === id)} onClick={() => setScope(id)}>{label[locale]}</Button>}</For>
       </nav>
-      <Switch>
-        <Match when={scope() === "advanced"}>
-          <SettingsFields model={format} fields={advanced()} locale={locale}/>
-        </Match>
-        <Match when={scope()}>
-          <div class="settings-option-grid">
-            <SettingsFields model={childModel(format, [scope()], {
-              inherited: path => inherited(scope(), path),
-            })} fields={options()} locale={locale}/>
-          </div>
-        </Match>
-      </Switch>
     </SettingsGroup>
+    <Switch>
+      <Match when={scope() === "advanced"}>
+        <SettingsGroup title={word(locale, "Профили и исключения", "Profiles and exceptions")} icon="attributes">
+          <SettingsFields model={format} fields={advanced()} locale={locale}/>
+        </SettingsGroup>
+      </Match>
+      <Match when={scope()}>
+        <For each={groups()}>{group =>
+          <SettingsGroup title={group.label[locale]} icon={group.icon}>
+            <div class="settings-option-grid settings-grouped-fields">
+              <SettingsFields model={style()} fields={group.fields} locale={locale}/>
+            </div>
+          </SettingsGroup>
+        }</For>
+      </Match>
+    </Switch>
   </>;
 }

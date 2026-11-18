@@ -243,6 +243,11 @@
 .settings-icon[data-icon="configuration"] { --settings-icon: url("../icons/light/configuration.svg"); }
 .settings-icon[data-icon="service"] { --settings-icon: url("../icons/light/service.svg"); }
 .settings-icon[data-icon="check"] { --settings-icon: url("../icons/light/check.svg"); }
+.settings-icon[data-icon="dimension"] { --settings-icon: url("../icons/light/dimension.svg"); }
+.settings-icon[data-icon="document-journal"] { --settings-icon: url("../icons/light/document-journal.svg"); }
+.settings-icon[data-icon="style-item"] { --settings-icon: url("../icons/light/style-item.svg"); }
+.settings-icon[data-icon="module"] { --settings-icon: url("../icons/light/module.svg"); }
+.settings-icon[data-icon="language"] { --settings-icon: url("../icons/light/language.svg"); }
 
 @media (min-width: 621px) and (max-width: 800px), (max-width: 400px) {
   .settings-pair { grid-template-columns: minmax(0, 1fr); }
@@ -295,6 +300,30 @@
   align-items: start;
   gap: var(--settings-gap) 24px;
 }
+
+.settings-grouped-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+}
+
+.settings-counter {
+  --settings-counter-size: max(34px, var(--eska-control-height));
+  grid-template-columns: minmax(0, 1fr) var(--settings-counter-size);
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.settings-counter > .settings-property-bar { justify-content: flex-start; gap: 2px 7px; }
+.settings-counter > input[type="number"] {
+  inline-size: var(--settings-counter-size);
+  block-size: var(--settings-counter-size);
+  min-block-size: 0;
+  padding: 0 2px;
+  text-align: center;
+  appearance: textfield;
+}
+.settings-counter > input[type="number"]::-webkit-inner-spin-button,
+.settings-counter > input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.settings-counter > :is(.settings-hint, .settings-field-error) { grid-column: 1 / -1; }
 
 .settings-property-bar, .settings-list-row {
   display: flex;

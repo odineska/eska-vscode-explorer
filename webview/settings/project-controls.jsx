@@ -5,6 +5,10 @@ import { at } from "./project-draft.mjs";
 export const caption = (ru, en) => ({ ru, en });
 export const field = (path, type, ru, en, extra) => ({ path: path.split("."), type, label: caption(ru, en), ...extra });
 
+function isCompactInteger(option) {
+  return option.type === "integer" && option.min >= 0 && Number.isInteger(option.max) && option.max <= 99;
+}
+
 export function SettingsGroup(props) {
   const id = createUniqueId();
   return <section class="settings-group" aria-labelledby={id}>
@@ -46,6 +50,7 @@ function Setting(props) {
   const inherited = () => model.inherited?.(option.path) ?? option.default;
   const effective = () => value() ?? inherited();
   const managed = () => option.managedBy === "eska" || option.managedBy === "format" && model.managedByFormat?.();
+  const compact = () => isCompactInteger(option) && !managed();
   const error = () => model.error?.() === key;
   const description = () => [hint && id + "-hint", error() && id + "-error"].filter(Boolean).join(" ") || undefined;
   const defaultText = word(locale, "Наследовать", "Inherit");
@@ -55,7 +60,7 @@ function Setting(props) {
     <Button quiet class="settings-import" title={defaultText}
       aria-label={defaultText + " · " + label} onClick={() => update(undefined)}>{defaultText}</Button>
   </Show>;
-  return <div class="settings-field" data-setting={key}>
+  return <div class={compact() ? "settings-field settings-counter" : "settings-field"} data-setting={key}>
     <Switch>
       <Match when={managed()}>
         <span class="settings-label">{label}</span>
@@ -109,6 +114,7 @@ function Setting(props) {
         <div class="settings-property-bar"><label class="settings-label" for={id}>{label}</label>{reset()}</div>
         <input id={id} autocomplete="off" spellcheck="false" class="eska-code"
           type={option.type === "string" ? "text" : "number"}
+          inputmode={compact() ? "numeric" : undefined}
           min={option.min} max={option.max} step={option.type === "number" ? "any" : undefined}
           aria-invalid={error() || undefined} aria-describedby={description()}
           required={option.required} value={shown(value())}
