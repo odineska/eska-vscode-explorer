@@ -57,3 +57,28 @@ test('automatic table movement reuses the same direction drawings as ordinary ta
   }
   assert.equal(standardPicture('OpenFile', 'tableCommand'), undefined);
 });
+
+test('bundled rasters are scoped to the verified picture variants and keep logical size', () => {
+  const root = 'https://preview.example/resources/forms/jet/';
+  const raster = (name, variant, zoom = 100, pixelRatio = 1) =>
+    standardPicture(name, variant, { root, zoom, pixelRatio });
+  for (const [zoom, ratio, density] of [[75, 1, 85], [100, 1, 100], [125, 1, 125],
+    [100, 1.5, 150], [175, 1, 175], [100, 2, 200], [150, 2, 300], [200, 2, 400]]) {
+    const post = raster('StdPicture.Post', 'standard', zoom, ratio);
+    assert.deepEqual(post, {
+      width: 16, height: 16, source: root + `PublishFile/${density}.png`,
+      isRaster: true, isTemplate: false,
+    });
+    const deletion = raster('StdPicture.MarkObjectForDeletion', 'tableMenu', zoom, ratio);
+    assert.deepEqual(deletion, {
+      width: 16, height: 16, source: root + 'UserTemplateDelete/100.png',
+      isRaster: true, isTemplate: false,
+    });
+  }
+  assert.equal(raster('Post', 'tableMenu'), standardPicture('Post', 'tableMenu'));
+  assert.equal(raster('MarkObjectForDeletion', 'standard'), standardPicture('MarkObjectForDeletion'));
+  assert.equal(raster('MarkObjectForDeletion', 'tableActionMenu'), undefined);
+  assert.equal(raster('Post', 'tableActionMenu'), undefined);
+  assert.equal(raster('Post', 'tableCommand'), undefined);
+  assert.equal(raster('MoveUp', 'tableCommand'), standardPicture('MoveUp', 'tableCommand'));
+});

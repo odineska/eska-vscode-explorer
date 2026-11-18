@@ -21,9 +21,14 @@ class FormPayloadTests(unittest.TestCase):
                       'out/extension.js': 'extension runtime', 'out/query-designer.js': 'query runtime',
                       'out/project-settings.js': 'settings runtime',
                       'resources/settings/settings.css': 'settings styles',
+                      'resources/forms/jet/UserTemplateDelete/100.png': 'command picture',
+                      'resources/forms/jet/NOTICE.md': 'picture attribution',
+                      'resources/forms/jet/LICENSE-MIT': 'source license',
                       'out/form-preview.js': 'form runtime', 'out/form-preview.css': 'form styles',
                       'out/form-fonts/LiberationSans-Regular-ABC.ttf': 'font bytes',
                       'out/form-fonts/font-raster-DEF.wasm': 'rasterizer bytes'}
+        for density in (85, 100, 125, 150, 175, 200, 300, 400):
+            self.files[f'resources/forms/jet/PublishFile/{density}.png'] = f'command picture at {density}%'
         for name, content in self.files.items():
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,9 +48,10 @@ class FormPayloadTests(unittest.TestCase):
         self.package()
         self.module.check(self.archive, self.source)
 
-    def test_missing_or_changed_form_bundle_style_font_and_wasm_stop_publication(self):
+    def test_form_bundle_and_resources_must_match_the_source_bytes(self):
         for name in ['out/form-preview.js', 'out/form-preview.css', 'out/form-fonts/LiberationSans-Regular-ABC.ttf',
-                     'out/form-fonts/font-raster-DEF.wasm']:
+                     'out/form-fonts/font-raster-DEF.wasm', 'resources/forms/jet/PublishFile/100.png',
+                     'resources/forms/jet/NOTICE.md', 'resources/forms/jet/LICENSE-MIT']:
             with self.subTest(asset=name, failure='missing'):
                 self.package(removed=name)
                 with self.assertRaisesRegex(AssertionError, 'missing archive files:'):
@@ -54,6 +60,17 @@ class FormPayloadTests(unittest.TestCase):
                 self.package(changed={name: 'changed bytes'})
                 with self.assertRaisesRegex(AssertionError, name):
                     self.module.check(self.archive, self.source)
+
+    def test_form_picture_set_is_required_and_only_known_variants_may_ship(self):
+        extra = 'resources/forms/jet/UserTemplateDelete/85.png'
+        self.package(extra={extra: 'different artwork'})
+        with self.assertRaisesRegex(AssertionError, 'Unexpected archive files:.*85.png'):
+            self.module.check(self.archive, self.source)
+        missing = 'resources/forms/jet/PublishFile/200.png'
+        (self.source / missing).unlink()
+        self.package(removed=missing)
+        with self.assertRaisesRegex(AssertionError, 'Missing form picture resource:.*200.png'):
+            self.module.check(self.archive, self.source)
 
     def test_stale_unreferenced_fonts_are_rejected_even_if_present_in_source(self):
         name = 'out/form-fonts/obsolete-OLD.ttf'

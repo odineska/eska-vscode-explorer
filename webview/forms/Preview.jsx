@@ -27,14 +27,14 @@ import { standardPicture } from './standard-pictures.mjs';
 import { FormLayoutContext, createFormLayout, useFormLayout } from './responsive-layout.js';
 import { pageInputTitlePair, displayedInPreview, fixedPageInputs, stretchWeight, controlBounds, groupPreferredSize, horizontalGrouping, automaticHorizontalSpacing, horizontalInputMaximum, pictureFieldStyle, groupCanShrink, compactCommandBarGroup, ordinaryGroup, hasAuthoredGroupHeight } from './layout-model.mjs';
 import { tableAdditionsProjection, tableSearch, tableSearchReference } from './table-model.mjs';
-import { NativeStandardPicture, StandardPictureScaleContext, TemplatePicture } from './NativeStandardPicture.jsx';
+import { NativeStandardPicture, StandardPictureScaleContext, TemplatePicture, useStandardPicture } from './NativeStandardPicture.jsx';
 import { menuCaption, menuChildren, menuEnabled, menuItems, menuNode, menuPicture, menuSeparator, menuShortcut, formCommandPlacement, rootCommandPlacement, startsRootCommandSection, tableCommandRows } from './command-menu-model.mjs';
 import { commandBarContent } from './command-bar-model.mjs';
 import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
-  const drawing = createMemo(() => standardPicture(props.name, props.variant));
+  const drawing = useStandardPicture(() => props.name, () => props.variant);
   return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
     {image => <NativeStandardPicture image={image()}/>}
   </Show>;
