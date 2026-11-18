@@ -17,12 +17,9 @@ import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
 import { sideTabRepresentation, tabMetrics, tabPictureLayout } from './tab-metrics.mjs';
-import { NativeInputCalculator } from './NativeInputCalculator.jsx';
-import { NativeInputCalendar } from './NativeInputCalendar.jsx';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { InputChoicePicture } from './InputChoicePicture.jsx';
-import { referenceButtonBackground, webInputGlyphCenters } from './reference-button-paint.mjs';
-import { webInputButtonAtlas, webInputButtonTile } from './web-input-button-atlas.mjs';
+import { inputButtonGlyphs } from './reference-button-paint.mjs';
 import { NativeTabBorder } from './NativeTabBorder.jsx';
 import { NativeButtonBorder } from './NativeButtonBorder.jsx';
 import { createNativeGroupBackdrop } from './native-group-background.js';
@@ -37,10 +34,9 @@ import { positionCommandMenu } from './command-menu-position.js';
 import { rgb } from './native-control-paint.js';
 
 export function Icon(props) {
-  const drawing = createMemo(() => props.os === 'linux' ? standardPicture(props.name, props.variant) : undefined);
-  const tableAction = () => props.os === 'linux' && props.variant === 'tableActionMenu';
-  return <Show when={tableAction() || drawing()} fallback={<BrowserIcon name={props.name}/>}>
-    <NativeStandardPicture image={drawing()} name={props.name} variant={props.variant}/>
+  const drawing = createMemo(() => standardPicture(props.name, props.variant));
+  return <Show when={drawing()} fallback={<BrowserIcon name={props.name}/>}>
+    {image => <NativeStandardPicture image={image()}/>}
   </Show>;
 }
 function BrowserIcon(props) {
@@ -73,7 +69,7 @@ function CommonPicture(props) {
 function Picture(props) {
   const picture = () => props.picture ?? props.node?.presentation.picture;
   const image = () => props.controller.state.model.assets.find(asset => asset.id === picture()?.source)?.picture;
-  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} variant={props.pictureVariant} os={flag(props.node, 'Enabled') ? props.controller.state.os : undefined}/></Match>
+  return <Switch><Match when={picture()?.kind === 'standard'}><Icon name={picture().name} variant={props.pictureVariant}/></Match>
     <Match when={picture()?.kind === 'common' && image()}>{asset => <CommonPicture image={asset()}/>}</Match>
   </Switch>;
 }
@@ -109,7 +105,7 @@ export function CommandButton(props) {
     if (!iconOnly()) return false;
     const value = picture();
     if (!value) return true;
-    if (typeof value === 'string') return !!standardPicture(value, props.pictureVariant);
+    if (typeof value === 'string') return props.pictureVariant !== 'tableCommand' && !!standardPicture(value, props.pictureVariant);
     return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
   });
   const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
@@ -185,7 +181,7 @@ export function CommandButton(props) {
     style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), 'border-top-color': standaloneBorder(), 'border-left-color': standaloneBorder(), 'border-right-color': standaloneBorder(), 'border-bottom-color': borderPaint() ? undefined : standaloneBorder(), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, '--taxi-button-height': authoredHeight(), width: authoredWidth() > 0 ? `${props.controller.state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded : undefined}
     disabled={props.enabled === false} aria-disabled={props.enabled === false || props.node && !flag(props.node, 'Enabled')} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
-    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant} os={flag(props.node, 'Enabled') || props.standaloneSearch ? props.controller.state.os : undefined}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show>
+    <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show>
     <Show when={!iconOnly()}>
       <Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}>
         <Show when={wrappedLink()} fallback={<NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/>}>
@@ -788,31 +784,17 @@ function MenuLevel(props) {
     }}</For>
   </div>;
 }
-function WebInputGlyph(props) {
-  const centers = createMemo(() => webInputGlyphCenters(props.kind, props.height));
-  return <span class="taxi-web-input-glyphs" aria-hidden="true" data-inactive={props.inactive ? '' : undefined}>
-    <For each={centers()}>{([role, x, y]) => <span class="taxi-web-input-glyph" data-web-input-glyph={role}
-      style={webInputButtonTile(props.atlas, role, x, y, referenceButtonSlotWidth - 1, props.height - 2)}/>}</For>
+function InputButtonGlyph(props) {
+  return <span class="taxi-input-glyphs" aria-hidden="true" data-inactive={props.inactive ? '' : undefined}
+    data-spin={props.kind === 'spin' ? '' : undefined}>
+    <For each={inputButtonGlyphs(props.kind)}>{glyph =>
+      <svg class="taxi-input-glyph" data-input-glyph={glyph.role} width={glyph.width} height={glyph.height}
+        viewBox={`0 0 ${glyph.width} ${glyph.height}`}>
+        <Show when={glyph.fill}><path d={glyph.fill} fill="currentColor"/></Show>
+        <Show when={glyph.stroke}><path d={glyph.stroke} fill="none" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round"/></Show>
+      </svg>
+    }</For>
   </span>;
-}
-
-function PrimitiveChoiceGlyph(props) {
-  return <Switch fallback="...">
-    <Match when={props.atlas && ['calculator', 'calendar', 'list', 'choice'].includes(props.kind)}>
-      <WebInputGlyph kind={props.kind === 'list' ? 'dropdown' : props.kind} height={props.height} atlas={props.atlas} inactive={props.inactive}/>
-    </Match>
-    <Match when={props.kind === 'calendar'}>
-      <Show when={props.os === 'linux'} fallback={<Icon name="Calendar"/>}>
-        <NativeInputCalendar height={props.height} inactive={props.inactive} fallback={<Icon name="Calendar"/>}/>
-      </Show>
-    </Match>
-    <Match when={props.kind === 'calculator'}>
-      <Show when={props.os === 'linux'} fallback={<Icon name="Calculator"/>}>
-        <NativeInputCalculator height={props.height} inactive={props.inactive}/>
-      </Show>
-    </Match>
-    <Match when={props.kind === 'list'}>▾</Match>
-  </Switch>;
 }
 
 function Input(props) {
@@ -830,8 +812,6 @@ function Input(props) {
   const multiline = () => flag(node(), 'MultiLine', false);
   const referenceButtons = createMemo(() => referenceInputButtons(node(), state.os));
   const referenceButtonHeight = () => inputHeight(node(), state.os);
-  const atlas = createMemo(() => state.os === 'linux' && webInputButtonAtlas(state.ui.zoom,
-    props.controller.nativeText?.density?.() ?? window.devicePixelRatio));
   const readOnly = () => flag(node(), 'ReadOnly', false);
   const disabled = () => paint()?.disabled ?? !flag(node(), 'Enabled');
   const textSizing = createMemo(() => textInputWidthBounds(node(), state.os));
@@ -882,9 +862,8 @@ function Input(props) {
     </Switch>
     <Show when={referenceButtons()} fallback={<>
       <Show when={choice() && primitiveSelection()?.includes('dropdown')}>
-        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list"
-          style={{ background: `${referenceButtonBackground('dropdown', controlHeight(), inactive(), atlas())}, #fff` }}>
-          <Show when={atlas()}>{source => <WebInputGlyph kind="dropdown" height={controlHeight()} atlas={source()} inactive={inactive()}/>}</Show>
+        <span class="taxi-input-button taxi-input-button--choice" data-choice-kind="list">
+          <InputButtonGlyph kind="dropdown" inactive={inactive()}/>
         </span>
       </Show>
       <Show when={choice() && (primitiveSelection()?.includes('choice') ?? true)}>
@@ -892,23 +871,29 @@ function Input(props) {
           classList={{ 'taxi-input-button--number': choiceKind() === 'calculator' }}>
           <InputChoicePicture picture={choiceKind() === 'list' ? undefined : choicePicture()} assets={state.model.assets}
             os={state.os} height={controlHeight()} inactive={inactive()}
-            fallback={<PrimitiveChoiceGlyph kind={choiceKind()} os={state.os} height={controlHeight()} inactive={inactive()} atlas={atlas()}/>}/>
+            fallback={<InputButtonGlyph kind={choiceKind() === 'list' ? 'dropdown' : choiceKind()} inactive={inactive()}/>}/>
         </span>
       </Show>
-      <Show when={inputOpenButton(node(), state.os)}><span class="taxi-input-button taxi-input-button--open"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4h5v6H1V4zm3-3h6v6H5z" fill="none" stroke="#777"/></svg></span></Show>
-      <Show when={flag(node(), 'ClearButton', false)}><span class="taxi-input-button">×</span></Show>
-      <Show when={flag(node(), 'SpinButton', false)}><span class="taxi-input-button taxi-spin">▴<br/>▾</span></Show>
+      <Show when={inputOpenButton(node(), state.os)}>
+        <span class="taxi-input-button taxi-input-button--open"><InputButtonGlyph kind="open" inactive={disabled()}/></span>
+      </Show>
+      <Show when={flag(node(), 'ClearButton', false)}>
+        <span class="taxi-input-button"><InputButtonGlyph kind="clear" inactive={inactive()}/></span>
+      </Show>
+      <Show when={flag(node(), 'SpinButton', false)}>
+        <span class="taxi-input-button"><InputButtonGlyph kind="spin" inactive={inactive()}/></span>
+      </Show>
     </>}>{buttons => <For each={buttons()}>{kind => {
       const inactiveButton = () => disabled() || readOnly() && kind !== 'open';
       return <span class="taxi-input-button" data-reference-button={kind}
         data-choice-kind={kind === 'dropdown' && listChoice() ? 'list' : kind}
         classList={{ 'taxi-input-button--choice': ['choice', 'dropdown'].includes(kind), 'taxi-input-button--open': kind === 'open' }}
         data-choice-picture-empty={kind === 'choice' && choicePicture() === null ? '' : undefined}
-        aria-hidden="true" style={{ '--taxi-reference-button-paint': referenceButtonBackground(kind, referenceButtonHeight(), inactiveButton(), atlas()) }}>
-        <Show when={atlas()}>{source => <WebInputGlyph kind={kind} height={referenceButtonHeight()} atlas={source()} inactive={inactiveButton()}/>}</Show>
-        <Show when={kind === 'choice' && choicePicture()}>
+        aria-hidden="true">
+        <Show when={kind === 'choice'} fallback={<InputButtonGlyph kind={kind} inactive={inactiveButton()}/>}>
           <InputChoicePicture picture={choicePicture()} assets={state.model.assets} os={state.os}
-            height={referenceButtonHeight()} inactive={inactive()}/>
+            height={referenceButtonHeight()} inactive={inactive()}
+            fallback={<InputButtonGlyph kind={kind} inactive={inactiveButton()}/>}/>
         </Show>
       </span>;
     }}</For>}</Show>

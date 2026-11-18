@@ -7,7 +7,6 @@ import { SearchControl, ViewStatus } from './Additions.jsx';
 import { NativeLabel } from './NativeLabel.jsx';
 import { tableCommandRows } from './command-menu-model.mjs';
 import { TableSearch } from './TableSearch.jsx';
-import { NativeTableMovement } from './NativeTableMovement.jsx';
 import { TableHorizontalScrollbar } from './TableHorizontalScrollbar.jsx';
 import { minimumHorizontalTableViewport, tableScrollbarGrays, tablePaginationGlyphs } from './table-scrollbar.mjs';
 
@@ -85,7 +84,6 @@ function Header(props) {
 }
 
 export function TableCommandActions(props) {
-  let movementGroup;
   const state = props.controller.state;
   const isMovement = item => /\.(MoveUp|MoveDown)$/.test(item.key);
   const movement = createMemo(() => props.commands.filter(isMovement));
@@ -97,10 +95,9 @@ export function TableCommandActions(props) {
         enabled={props.enabled} iconOnly={copy} picture={copy ? 'StdPicture.CloneListItem' : undefined}/>;
     }}</For>
     <Show when={movement().length}>
-      <span ref={movementGroup} class="taxi-table-move">
+      <span class="taxi-table-move">
         <For each={movement()}>{item => <CommandButton controller={props.controller} label={label(item)}
           enabled={props.enabled} picture={`StdPicture.${item.key.split('.').at(-1)}`} pictureVariant="tableCommand" iconOnly/>}</For>
-        <NativeTableMovement element={() => movementGroup} commands={movement()} controller={props.controller}/>
       </span>
     </Show>
   </>;

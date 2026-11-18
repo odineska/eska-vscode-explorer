@@ -767,22 +767,20 @@ export async function createTablePixelsGallery(fixture) {
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native pictures ${table.name}.`);
       for(const [locale,pictures]of Object.entries(table.locales)){
-        const expected=row.locales[locale];expected.additionalRegions??=[];expected.additionalRegions.push(...pictures,table.toolbar[locale]);
+        const expected=row.locales[locale];expected.additionalRegions??=[];
+        expected.additionalRegions.push(...pictures.map(region=>({...region,vectorComparison:true})));
       }
     }
   }
   const movement=process.env.ESKA_FORM_TABLE_MOVEMENT_PIXELS;
   if(movement){
     if(!isAbsolute(movement))throw new Error('ESKA_FORM_TABLE_MOVEMENT_PIXELS must be absolute.');
-    const defaultTable=reference.rows.find(row=>row.name==='Default');
     for(const table of JSON.parse(await readFile(join(movement,'metrics.json'),'utf8')).rows){
       const row=reference.rows.find(row=>row.name===table.name);
       if(!row)throw new Error(`Missing table for native movement ${table.name}.`);
       for(const [locale,region]of Object.entries(table.locales)){
         const expected=row.locales[locale];expected.additionalRegions??=[];
-        // These default and detached poses use the moved group measurements.
-        const moved=defaultTable?.locales[locale]?.movedToolbar;
-        expected.additionalRegions.push(moved?{...region,rgbSha256:moved.movementRgbSha256}:region);
+        expected.additionalRegions.push({...region,vectorComparison:true});
       }
     }
   }

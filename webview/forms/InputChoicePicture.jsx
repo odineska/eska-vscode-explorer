@@ -1,44 +1,32 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { standardPicture } from './standard-pictures.mjs';
 import { choicePictureBounds, inactiveChoicePicture } from './choice-picture-paint.mjs';
-import { paintCanvas } from './native-control-paint.js';
-import { useStandardPicturePixelScale, useStandardPictureVariant } from './NativeStandardPicture.jsx';
-import { scaleRaster } from './raster-scale.mjs';
+import { useStandardPicturePixelScale } from './NativeStandardPicture.jsx';
 
 function ChoicePictureRaster(props) {
   let canvas;
-  const [common, setCommon] = createSignal();
-  const [variantImage, setVariantImage] = createSignal();
+  const [loaded, setLoaded] = createSignal();
+  const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
   const asset = createMemo(() => {
+    if (standard()) return standard();
     if (props.picture.kind !== 'common') return;
     const picture = props.assets.find(asset => asset.id === props.picture.source)?.picture;
     // Reconciliation preserves the resource identity when an external file changes.
     return picture && { source: `data:${picture.mimeType};base64,${picture.data}`, isTemplate: picture.isTemplate };
   });
-  const standard = createMemo(() => props.picture.kind === 'standard' ? standardPicture(props.picture.name) : undefined);
-  const scalable = () => props.os === 'linux' && !!standard() && !standard().isTemplate;
-  const variant = useStandardPictureVariant(() => props.picture.name, scalable);
   const standardScale = useStandardPicturePixelScale();
-  const pixelScale = () => scalable() ? standardScale() : undefined;
-  createEffect(on(variant, source => {
-    setVariantImage(undefined);
-    if (!source) return;
-    const image = new Image();
-    image.onload = () => setVariantImage({ image, source });
-    image.src = source;
-    onCleanup(() => { image.onload = null; });
-  }));
+  const pixelScale = () => props.os === 'linux' && standard() && !standard().isTemplate ? standardScale() : undefined;
   createEffect(on(asset, value => {
-    setCommon(undefined);
+    setLoaded(undefined);
     if (!value) return;
     const image = new Image();
-    image.onload = () => setCommon({
+    image.onload = () => setLoaded({
       image, width: image.naturalWidth, height: image.naturalHeight, isTemplate: value.isTemplate,
     });
     image.src = value.source;
     onCleanup(() => { image.onload = null; });
   }));
-  const logicalImage = () => standard() ?? common();
+  const logicalImage = loaded;
   const bounds = createMemo(() => logicalImage() && choicePictureBounds(logicalImage(), props.height));
   createEffect(() => {
     const image = logicalImage(), box = bounds();
@@ -50,19 +38,7 @@ function ChoicePictureRaster(props) {
     canvas.height = height;
     const context = canvas.getContext('2d');
     if (!context) return;
-    const loaded = variantImage();
-    if (loaded && variant() === loaded.source) {
-      context.drawImage(loaded.image, 0, 0, width, height);
-    } else if (image.rgba && (scale || image.width === width && image.height === height)) {
-      paintCanvas(canvas, scaleRaster(image, width, height));
-    } else {
-      let source = image.image;
-      if (image.rgba) {
-        source = document.createElement('canvas');
-        paintCanvas(source, image);
-      }
-      context.drawImage(source, 0, 0, width, height);
-    }
+    context.drawImage(image.image, 0, 0, width, height);
     if (image.isTemplate) {
       context.globalCompositeOperation = 'source-in';
       context.fillStyle = getComputedStyle(canvas).color;
