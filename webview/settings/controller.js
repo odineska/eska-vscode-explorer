@@ -8,8 +8,18 @@ function recover(value) {
   if (typeof value?.baseline !== "string" || !value.draft) return;
   const fields = draft();
   for (const name of Object.keys(fields)) {
-    if (typeof value.draft[name] !== typeof fields[name]) return;
-    fields[name] = value.draft[name];
+    const saved = value.draft[name];
+    if (name === "autoAttach") {
+      // Version 1 webview drafts stored a comma-separated string.
+      if (typeof saved === "string") {
+        if (fields.customAutoAttach) fields.autoAttach = saved.split(",").map(type => type.trim()).filter(Boolean);
+      } else if (Array.isArray(saved) && saved.every(type => typeof type === "string")) {
+        fields.autoAttach = [...saved];
+      } else return;
+    } else {
+      if (typeof saved !== typeof fields[name]) return;
+      fields[name] = saved;
+    }
   }
   if (!["file", "cluster", "standalone"].includes(fields.kind) || !["local", "distrobox"].includes(fields.runner)) return;
   return { draft: fields, baseline: value.baseline };
@@ -48,7 +58,7 @@ export function settingsController(api) {
     if (!loaded()) return;
     const drafts = {};
     for (const name of profiles) if (dirty[name]()) {
-      drafts[name] = { draft: { ...state[name].draft }, baseline: snapshot(state[name].saved) };
+      drafts[name] = { draft: { ...state[name].draft, autoAttach: [...state[name].draft.autoAttach] }, baseline: snapshot(state[name].saved) };
     }
     return { version: 1, active: active(), profiles: drafts };
   }, value => { if (value) api.setState(value); });

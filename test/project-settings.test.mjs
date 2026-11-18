@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createContext, runInContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { draft, formatErrors, serialize } from "../webview/settings/profile.mjs";
+import { autoAttachGroups, defaultAutoAttachTypes, draft, formatErrors, serialize } from "../webview/settings/profile.mjs";
 import { settingsRequest } from "../out/project-settings-protocol.js";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
@@ -75,6 +75,49 @@ test("runtime fields round-trip both runners, all infobases, and existing debug 
   const disabled = { ...draft(fixture()), enabled: false };
   assert.equal(serialize(disabled), null);
   assert.equal(disabled.path, "test-base");
+});
+
+test("automatic attachment distinguishes standard targets, explicit targets and disabled attachment", () => {
+  const standard = { ...fixture(), debug: { managed: true } };
+  const types = Object.values(autoAttachGroups).flat();
+  assert.deepEqual(types, [
+    "ManagedClient", "Client", "WEBClient", "COMConnector",
+    "Server", "ServerEmulation", "JOB", "JobFileMode",
+    "WEBService", "HTTPService", "OData",
+    "MobileClient", "MobileServer", "MobileJobFileMode", "MobileManagedClient", "MobileManagedServer",
+  ]);
+  assert.deepEqual(draft(standard).autoAttach, defaultAutoAttachTypes);
+  assert.deepEqual(serialize(draft(standard)), standard);
+  for (const selection of [[], defaultAutoAttachTypes, [...types].reverse()]) {
+    const profile = { ...standard, debug: { ...standard.debug, auto_attach_types: selection } };
+    assert.deepEqual(serialize(draft(profile)), profile);
+  }
+});
+
+test("automatic attachment recovers old drafts and saves each profile independently", async t => {
+  const testProfile = { ...fixture(), debug: { managed: true } };
+  const prodProfile = { ...fixture("prod-base"), debug: { url: "http://localhost:1550", auto_attach_types: ["MobileManagedServer"] } };
+  const settings = { test: testProfile, prod: prodProfile };
+  const previous = {
+    version: 1, active: "test",
+    profiles: {
+      test: { baseline: JSON.stringify(testProfile), draft: { ...draft(testProfile), customAutoAttach: true, autoAttach: "" } },
+      prod: { baseline: JSON.stringify(prodProfile), draft: { ...draft(prodProfile), autoAttach: "WEBClient, JOB" } },
+    },
+  };
+  const h = await open(t, previous);
+  h.reply(h.load, settings);
+  h.model.save();
+  const saving = h.last();
+  assert.deepEqual(saving.value.debug.auto_attach_types, []);
+  h.reply(saving, { ...settings, test: saving.value });
+  const savedSettings = { ...settings, test: saving.value };
+  h.model.select("prod");
+  const reopened = await open(t, h.persisted());
+  reopened.reply(reopened.load, savedSettings);
+  assert.equal(reopened.model.active(), "prod");
+  reopened.model.save();
+  assert.deepEqual(reopened.last().value.debug.auto_attach_types, ["WEBClient", "JOB"]);
 });
 
 test("format feedback follows the distinction between client URLs and dbgs origins", () => {

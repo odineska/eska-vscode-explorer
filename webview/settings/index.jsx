@@ -2,7 +2,7 @@ import { For, Match, onSettled, Show, Switch } from "solid-js";
 import { render } from "@solidjs/web";
 import { Button } from "../ui/controls.jsx";
 import { settingsController } from "./controller.js";
-import { profileContext, profiles, usesManagedDebug } from "./profile.mjs";
+import { autoAttachGroups, defaultAutoAttachTypes, profileContext, profiles, usesManagedDebug } from "./profile.mjs";
 
 const api = acquireVsCodeApi();
 const { labels, project, externalProcessing } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
@@ -74,6 +74,40 @@ function Toggle(props) {
   </label>;
 }
 
+function AutoAttachTypes(props) {
+  const selection = () => props.model.current().draft;
+  const selected = () => selection().customAutoAttach ? selection().autoAttach : defaultAutoAttachTypes;
+  const error = () => props.model.fieldError("autoAttach", labels);
+
+  function change(type, checked) {
+    const types = selection().autoAttach;
+    props.model.edit("autoAttach", checked ? [...types, type] : types.filter(value => value !== type));
+  }
+
+  return <fieldset class="settings-auto-attach" aria-describedby="settings-auto-attach-hint">
+    <legend class="settings-label">{labels.autoAttach}</legend>
+    <Toggle model={props.model} name="customAutoAttach"/>
+    <p class="settings-hint" id="settings-auto-attach-hint">
+      {selection().customAutoAttach ? labels.autoAttachCustomHint : labels.autoAttachDefaultHint}
+    </p>
+    <div class="settings-auto-attach-groups">
+      <For each={Object.entries(autoAttachGroups)}>{([group, types]) =>
+        <fieldset disabled={!selection().customAutoAttach}>
+          <legend class="settings-label">{labels[group]}</legend>
+          <For each={types}>{type => <label class="settings-toggle">
+            <input type="checkbox" name="autoAttach" value={type} checked={selected().includes(type)}
+              aria-invalid={error() ? "true" : undefined}
+              aria-describedby={error() ? "settings-auto-attach-error" : undefined}
+              onChange={event => change(type, event.currentTarget.checked)}/>
+            <span>{labels[type]}</span>
+          </label>}</For>
+        </fieldset>
+      }</For>
+    </div>
+    <Show when={error()}><span class="settings-field-error" id="settings-auto-attach-error">{error()}</span></Show>
+  </fieldset>;
+}
+
 function Fields(props) {
   const model = props.model;
   const profile = () => model.current().draft;
@@ -122,8 +156,7 @@ function Fields(props) {
             {text("debugPort", { numeric: true })}
           </Show>
           <Show when={managed() || profile().endpoint}>
-            {toggle("customAutoAttach")}
-            <Show when={profile().customAutoAttach}>{text("autoAttach")}</Show>
+            <AutoAttachTypes model={model}/>
             <Show when={externalProcessing || profile().epfArtifact || profile().epfDebugUrl}>
               {text("epfArtifact")}{text("epfDebugUrl")}
             </Show>
@@ -188,7 +221,8 @@ function App() {
   });
 
   function focusError(field) {
-    if (field) form.elements.namedItem(field)?.focus();
+    if (field === "autoAttach") form.querySelector('input[name="autoAttach"]:enabled')?.focus();
+    else if (field) form.elements.namedItem(field)?.focus();
   }
   function save(event) {
     event.preventDefault();

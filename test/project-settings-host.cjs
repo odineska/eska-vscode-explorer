@@ -21,6 +21,7 @@ const themes = [
 ];
 const input = name => `document.querySelector('[name="${name}"]')`;
 const fieldValue = (ui, name) => ui.evaluate(input(name) + ".value");
+const checkedAutoAttach = ui => ui.evaluate("Array.from(document.querySelectorAll('input[name=autoAttach]:checked'), input => input.value)");
 const click = (ui, selector) => ui.evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
 const selectProfile = (ui, name) => click(ui, `button[data-profile="${name}"]`);
 const save = ui => click(ui, "button[type=submit]");
@@ -188,8 +189,14 @@ exports.run = async function () {
     await selectProfile(first, "prod");
     await fill(first, "user", "Demo");
     await fill(first, "secret", "ESKA_DEMO_PASSWORD");
+    assert.equal(await first.evaluate("document.querySelectorAll('input[name=autoAttach]:disabled').length"), 16);
+    assert.deepEqual(await checkedAutoAttach(first), ["ManagedClient", "Client", "Server", "ServerEmulation"]);
+    assert.equal(await first.evaluate("document.querySelector('input[value=ManagedClient]').closest('label').textContent.trim()"),
+      text("Managed client", "Управляемый клиент"));
     await first.evaluate(input("customAutoAttach") + ".click()");
-    await fill(first, "autoAttach", "ManagedClient, ServerEmulation");
+    await click(first, 'input[name=autoAttach][value=Client]');
+    await click(first, 'input[name=autoAttach][value=Server]');
+    assert.deepEqual(await checkedAutoAttach(first), ["ManagedClient", "ServerEmulation"]);
     if (processing) {
       await fill(first, "epfArtifact", "artifacts/Демо.epf");
       await fill(first, "epfDebugUrl", epfUrl);
@@ -223,7 +230,7 @@ exports.run = async function () {
   try {
     await selectProfile(restored, "prod");
     assert.equal(await fieldValue(restored, "path"), base);
-    assert.equal(await fieldValue(restored, "autoAttach"), "ManagedClient, ServerEmulation");
+    assert.deepEqual(await checkedAutoAttach(restored), ["ManagedClient", "ServerEmulation"]);
     if (processing) assert.equal(await fieldValue(restored, "epfDebugUrl"), epfUrl);
     await click(restored, "input[name=managedDebug]");
     await fill(restored, "debugPort", "0");

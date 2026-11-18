@@ -261,3 +261,30 @@
 @media (max-height: 440px) {
   .settings-footer { position: static; }
 }
+
+.settings-auto-attach,
+.settings-auto-attach-groups > fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.settings-auto-attach > .settings-hint {
+  margin: 0 0 var(--settings-gap);
+}
+
+.settings-auto-attach-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: var(--settings-gap);
+}
+
+.settings-auto-attach-groups > fieldset {
+  border-inline-start: 1px solid var(--settings-border);
+  padding-inline-start: 8px;
+}
+
+.settings-auto-attach-groups > fieldset:disabled .settings-toggle {
+  color: var(--vscode-disabledForeground, var(--settings-muted));
+}
