@@ -3,7 +3,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import { findTool } from "./tooling/inspect.js";
-import { runtimeOutput } from "./runtime-tools.js";
+import { runtimeJson, runtimeOutput } from "./runtime-tools.js";
 
 const en = {
   title: "Start a 1C project", new: "Create a new project", artifact: "Create from CF / CFE / EPF / ERF", init: "Connect Designer XML sources", clone: "Clone a Git project",
@@ -12,7 +12,7 @@ const en = {
   exists: "The destination already exists. Choose a new directory; existing projects are never overwritten.", manifest: "This directory already has eska.toml. Open the existing project instead.",
   confirm: "Run this project setup?", apply: "Set up project", failed: "Project setup failed or was interrupted. Check the destination before retrying. The selected ESKA CLI and required platform must be installed and configured.",
   missing: "ESKA CLI is unavailable. Install ESKA or configure the eska-project executable path.", trust: "Trust this workspace before setting up projects.", running: "ESKA: Setting up project…", busy: "Project setup is already running.", unsupported: "Select a local file or directory.",
-  platform: "Installed 1C platform version for unpacking (for example 8.3.27.2325)", platformInvalid: "Enter the exact installed platform version: four numbers separated by dots.",
+  platform: "Choose the 1C platform", later: "Choose later", laterArtifact: "Use an installed platform for unpacking without saving a version", host: "Host", distrobox: "Distrobox",
   workflow: "Choose the project workflow", trunk: "Trunk", githubFlow: "GitHub Flow", gitFlow: "Git Flow", custom: "Custom",
   cancelled: "Project setup was cancelled. Check the destination before retrying.",
 };
@@ -23,7 +23,7 @@ const ru: Record<keyof typeof en, string> = {
   exists: "Целевой каталог уже существует. Выберите новый каталог: существующие проекты не перезаписываются.", manifest: "В каталоге уже есть eska.toml. Откройте существующий проект.",
   confirm: "Выполнить настройку проекта?", apply: "Настроить проект", failed: "Настройка проекта завершилась ошибкой или была прервана. Проверьте целевой каталог перед повтором. Выбранная ESKA CLI и необходимая платформа должны быть установлены и настроены.",
   missing: "Не найдена ESKA CLI. Установите ESKA или настройте путь к eska-project.", trust: "Для настройки проектов разрешите доверие к рабочей области.", running: "ESKA: Настройка проекта…", busy: "Настройка проекта уже выполняется.", unsupported: "Выберите локальный файл или каталог.",
-  platform: "Установленная версия платформы 1С для распаковки (например 8.3.27.2325)", platformInvalid: "Введите точную установленную версию платформы: четыре числа через точку.",
+  platform: "Выберите платформу 1С", later: "Выбрать позже", laterArtifact: "Использовать установленную платформу для распаковки без сохранения версии", host: "Хост", distrobox: "Distrobox",
   workflow: "Выберите процесс работы с проектом", trunk: "Trunk", githubFlow: "GitHub Flow", gitFlow: "Git Flow", custom: "Свой процесс",
   cancelled: "Настройка отменена. Проверьте целевой каталог перед повтором.",
 };
@@ -41,6 +41,21 @@ export function onboardingArguments(plan: OnboardingPlan): string[] {
     case "init": return ["init", plan.target, "--source", relative(plan.target, plan.source!) || "."];
     case "clone": return ["clone", plan.repository!, plan.target];
   }
+}
+interface PlatformChoice { label: string; description?: string; detail?: string; version: string; ibcmd?: string; container?: string }
+/** Interpret only the versioned Rust inventory contract; discovery belongs to eska-build. */
+export function installedPlatformChoices(value: unknown, host: string, distrobox: string): PlatformChoice[] {
+  const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+  if (!record(value) || value.schema_version !== 1 || value.kind !== "installed-platforms" || !Array.isArray(value.platforms)) return [];
+  return value.platforms.flatMap((entry: unknown) => {
+    if (!record(entry) || typeof entry.version !== "string" || !/^\d+\.\d+\.\d+\.\d+$/.test(entry.version)
+      || typeof entry.ibcmd !== "string" || !entry.ibcmd || !record(entry.source)) return [];
+    const source = entry.source;
+    if (source.kind !== "host" && !(source.kind === "distrobox" && typeof source.container === "string" && source.container)) return [];
+    const container = source.kind === "distrobox" ? source.container as string : undefined;
+    return [{ label: entry.version, description: container ? `${distrobox} (${container})` : host,
+      detail: entry.ibcmd, version: entry.version, ibcmd: entry.ibcmd, ...(container ? { container } : {}) }];
+  });
 }
 async function exists(path: string): Promise<boolean> {
   try { await lstat(path); return true; }
@@ -111,12 +126,20 @@ export function registerProjectOnboarding(_context: vscode.ExtensionContext): vs
         workflow = selected.value; args.push("--workflow", workflow);
       }
       let platformVersion: string | undefined;
-      if (plan.action === "artifact") {
-        platformVersion = await vscode.window.showInputBox({ title: text("platform"), ignoreFocusOut: true,
-          validateInput: value => /^\d+\.\d+\.\d+\.\d+$/.test(value) ? undefined : text("platformInvalid") });
-        if (!platformVersion) return;
-        if (!/^\d+\.\d+\.\d+\.\d+$/.test(platformVersion)) throw new Error(text("platformInvalid"));
+      if (plan.action !== "clone") {
+        const buildConfigured = settings.get<string>("buildExecutable", "eska-build");
+        const build = await findTool(buildConfigured, "eska-build", sibling).catch(() => undefined);
+        const inventory = build ? await runtimeJson(build, ["--lang", vscode.env.language.startsWith("ru") ? "ru-RU" : "en-US",
+          "platform", "list", "--include-distrobox", "--format", "json"], { timeout: 20_000, signal: operation.signal }).catch(() => undefined) : undefined;
+        if (disposed || operation.signal.aborted) return;
+        const items = installedPlatformChoices(inventory, text("host"), text("distrobox"));
+        items.push({ label: text("later"), ...(plan.action === "artifact" ? { description: text("laterArtifact") } : {}), version: "" });
+        const platform = await vscode.window.showQuickPick(items, { title: text("platform"), matchOnDescription: true, matchOnDetail: true });
+        if (!platform) return;
+        platformVersion = platform.version;
         args.push("--platform-version", platformVersion);
+        if (wrapper && platform.ibcmd) args.push("--ibcmd", platform.ibcmd);
+        if (wrapper && platform.container) args.push("--distrobox", platform.container);
       }
       const detail = [plan.target, workflow, platformVersion, plan.type ? text(plan.type) : undefined, plan.source, plan.artifact, plan.repository].filter(Boolean).join("\n");
       if (await vscode.window.showWarningMessage(text("confirm"), { modal: true, detail }, text("apply")) !== text("apply")) return;

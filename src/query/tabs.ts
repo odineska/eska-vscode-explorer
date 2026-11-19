@@ -20,7 +20,7 @@ import type { CommentDecision } from "./protocol.js";
 import type { SourceCommentState } from "./comments.js";
 import type { QueryOwnerFacts } from "./session-protocol.js";
 import type { QueryLanguageProjection } from "./projections.js";
-import { QueryModalParent } from "./modal-parent.js";
+import { QueryModalParent, unlockQueryOwner } from "./modal-parent.js";
 
 export const QUERY_SCHEME = "eska-query";
 interface Session {
@@ -36,6 +36,8 @@ interface Session {
   design?: NativeQueryConstructor;
   placements?: { draft: string; owner: string; decisions: CommentDecision[] };
   parent?: QueryModalParent;
+  inheritedBslReadonly?: boolean;
+  nativeSave?: vscode.TextDocument;
   guarding?: Promise<void>;
 }
 
@@ -75,6 +77,12 @@ export class QueryTabs implements vscode.FileSystemProvider {
           this.persist(session);
           this.languageEvents.fire(event.document.uri);
         }
+      }), vscode.workspace.onWillSaveTextDocument(({ document }) => {
+        const session = this.session(document.uri);
+        // VS Code starts a text-editor save only when its effective editor mode is writable.
+        // Remember that approval for this provider write, including the native session override.
+        if (session?.record.identity.kind === "bslLiteral" && session.record.writable && !session.design && !this.isOwnerSnapshot(document.uri)
+          && (session.inheritedBslReadonly || configuredReadOnly(document))) session.nativeSave = document;
       }), vscode.workspace.onDidOpenTextDocument(document => {
         if (document.uri.scheme === QUERY_SCHEME) void this.restore(document).catch(error => this.failure(error));
       }), vscode.window.tabGroups.onDidChangeTabs(event => {
@@ -191,7 +199,8 @@ export class QueryTabs implements vscode.FileSystemProvider {
         if (!endpoint || tree !== this.currentTree() || endpoint !== this.recoveryEndpoint || this.disposed) {
           await source.close().catch(() => {}); throw new ExplorerError("obsolete");
         }
-        session = { record: source.record, source, endpoint, resumed: source.header.resumed, mtime: Date.now(), parent };
+        const inheritedBslReadonly = configuredReadOnly(owner.document, this.ownedReadonlyRule(owner.document.uri));
+        session = { record: source.record, source, endpoint, resumed: source.header.resumed, mtime: Date.now(), parent, inheritedBslReadonly };
         this.sessions.set(session.record.id, session);
         await this.focus(session);
       } catch (error) {
@@ -366,10 +375,12 @@ export class QueryTabs implements vscode.FileSystemProvider {
     const session = this.required(uri);
     const snapshot = this.isOwnerSnapshot(uri);
     const text = this.isCurrentOwner(uri) ? await this.currentOwnerText(session) : snapshot ? session.record.ownerText : session.design?.before ?? session.record.base;
-    // VS Code caches file permissions in its text model. A constructor lease is transient and is enforced by writeFile.
-    const writable = !snapshot && session.record.writable && !session.source?.header.protection.userReadOnly
-      && !(session.parent && configuredReadOnlyResource(session.parent.source, session.record.identity.kind === "bslLiteral" ? "bsl" : "xml",
+    // Keep the inherited editor restriction in the text model. During an approved native save, VS Code
+    // also uses stat for its filesystem check, where it would otherwise reject the session override.
+    const editorReadOnly = session.source?.header.protection.userReadOnly
+      || (session.parent && configuredReadOnlyResource(session.parent.source, session.record.identity.kind === "bslLiteral" ? "bsl" : "xml",
         this.sessionReadonlyRule(session, session.parent.source)));
+    const writable = !snapshot && session.record.writable && (!editorReadOnly || session.nativeSave?.isClosed === false);
     return { type: vscode.FileType.File, ctime: 1, mtime: snapshot ? session.ownerMtime ?? session.mtime : session.mtime,
       size: Buffer.byteLength(text), ...(writable ? {} : { permissions: vscode.FilePermission.Readonly }) };
   }
@@ -380,7 +391,10 @@ export class QueryTabs implements vscode.FileSystemProvider {
     const session = this.required(uri);
     if (session.design || this.isOwnerSnapshot(uri)) throw vscode.FileSystemError.NoPermissions(this.text("queryReadonly"));
     const draft = canonical(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content));
-    const saving = this.serial(uri.toString(), () => this.save(session, draft));
+    const native = session.nativeSave;
+    delete session.nativeSave;
+    const nativeUnlock = !!native && !native.isClosed && canonical(native.getText()) === draft;
+    const saving = this.serial(uri.toString(), () => this.save(session, draft, nativeUnlock));
     session.saving = saving;
     try {
       await saving;
@@ -567,7 +581,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
   }
 
   /** Native CAS, Undo/Redo and optional disk save implement a plan whose lifecycle is owned by ESKA. */
-  private async save(session: Session, draft: string): Promise<void> {
+  private async save(session: Session, draft: string, nativeUnlock: boolean): Promise<void> {
     const tree = this.currentTree();
     if (!tree || this.disposed) throw new ExplorerError("obsolete");
     const selection = this.application();
@@ -575,13 +589,18 @@ export class QueryTabs implements vscode.FileSystemProvider {
     if (tree !== this.currentTree() || this.disposed) throw new ExplorerError("obsolete");
     const source = await this.source(session, tree);
     const owner = await this.owner(session, tree);
-    const facts = this.ownerFacts(owner.document, owner.userReadOnly);
+    const ignoredRule = this.sessionReadonlyRule(session, owner.document.uri);
+    const unlockOwner = nativeUnlock && owner.userReadOnly
+      && configuredReadOnly(owner.document, ignoredRule ?? this.ownedReadonlyRule(owner.document.uri));
     let attempted = false;
     try {
-      if (owner.userReadOnly || !session.record.writable) throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
+      if (!session.record.writable || (unlockOwner ? await nativeReadOnly(owner.document, ignoredRule, true) : owner.userReadOnly)) {
+        throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
+      }
+      const facts = this.ownerFacts(owner.document, false);
       if (session.record.draft !== draft) throw new ExplorerError("requestFailed", "query_failed", { reason: "stale_draft" });
       await this.requiredRecovery().saveDraft(session.record.id, draft);
-      if (!session.resumed || !source.header.resumed || source.header.applyPending) {
+      if (!session.resumed || !source.header.resumed || source.header.applyPending || source.header.protection.userReadOnly) {
         await source.resume(facts);
         this.accept(session, source);
       }
@@ -592,9 +611,14 @@ export class QueryTabs implements vscode.FileSystemProvider {
       const plan = await source.prepare(facts, draft, decisions, lineEnding, true);
       session.pending = true;
       if (this.disposed || tree !== this.currentTree() || !session.resumed || selection !== this.application()) throw new ExplorerError("obsolete");
-      const ignoredRule = this.sessionReadonlyRule(session, owner.document.uri);
-      if (await nativeReadOnly(owner.document, ignoredRule)) throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
-      this.assertOwner(owner.document, facts, ignoredRule);
+      const currentRule = this.sessionReadonlyRule(session, owner.document.uri);
+      if (await nativeReadOnly(owner.document, currentRule, unlockOwner)) throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
+      this.assertOwner(owner.document, facts, currentRule, unlockOwner);
+      if (unlockOwner) {
+        await unlockQueryOwner(owner.document);
+        if (this.disposed || tree !== this.currentTree() || !session.resumed || selection !== this.application()) throw new ExplorerError("obsolete");
+        this.assertOwner(owner.document, facts, currentRule, true);
+      }
       if (!plan.noOp) {
         const edit = new vscode.WorkspaceEdit();
         for (const replacement of plan.replacements) edit.replace(owner.document.uri,
@@ -606,7 +630,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
         if (plan.saveOwner && !await owner.document.save()) throw new ExplorerError("sourceChanged");
       }
       if (querySnapshot(owner.document.getText()) !== plan.outputSnapshot) throw new ExplorerError("sourceChanged");
-      const receipt = this.ownerFacts(owner.document, await nativeReadOnly(owner.document, this.sessionReadonlyRule(session, owner.document.uri)));
+      const receipt = this.ownerFacts(owner.document, await nativeReadOnly(owner.document, currentRule, unlockOwner));
       if (plan.saveOwner) receipt.isDirty = owner.document.isDirty;
       await source.applied(plan.applyToken, receipt);
       this.accept(session, source, true);
@@ -667,8 +691,9 @@ export class QueryTabs implements vscode.FileSystemProvider {
   }
 
   /** A text plan can touch only the native version that supplied its preflight facts. */
-  private assertOwner(document: vscode.TextDocument, facts: QueryOwnerFacts, ignoredRule?: string): void {
-    if (configuredReadOnly(document, ignoredRule) || document.isClosed || String(document.version) !== facts.version || querySnapshot(document.getText()) !== facts.snapshot) {
+  private assertOwner(document: vscode.TextDocument, facts: QueryOwnerFacts, ignoredRule?: string, allowConfiguredWrite = false): void {
+    if ((!allowConfiguredWrite && configuredReadOnly(document, ignoredRule)) || document.isClosed
+      || String(document.version) !== facts.version || querySnapshot(document.getText()) !== facts.snapshot) {
       throw new ExplorerError("sourceChanged");
     }
   }

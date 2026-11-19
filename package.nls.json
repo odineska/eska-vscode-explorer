@@ -63,7 +63,7 @@
   "buildExecutable": "Path or command name for the separately installed eska-build.",
   "debugExecutable": "Path or command name for the optional eska-debug tool.",
   "selectAnalysisContext": "Choose analysis application",
-  "queryEditBsl": "Edit query separately",
+  "queryEditBsl": "Open Query Separately",
   "command.queryConstructor": "Query constructor",
   "command.placeQueryComments": "Assign source comment positions",
   "formatterExecutable": "Path to eska-fmt. The default eska-fmt resolves the standard component.",

@@ -50,6 +50,27 @@ export class QueryModalParent {
   }
 }
 
+/** VS Code's session override targets the active text editor. Release the temporary view before applying the edit. */
+export async function unlockQueryOwner(document: vscode.TextDocument): Promise<void> {
+  const previous = vscode.window.activeTextEditor;
+  const group = vscode.window.tabGroups.activeTabGroup;
+  const preview = group.activeTab?.isPreview ?? false;
+  const matches = (tab: vscode.Tab) => tab.input instanceof vscode.TabInputText
+    && tab.input.uri.toString() === document.uri.toString();
+  const hadView = group.tabs.some(matches);
+  const editor = await vscode.window.showTextDocument(document, { viewColumn: group.viewColumn, preview: false });
+  try {
+    if (vscode.window.activeTextEditor !== editor) throw new ExplorerError("sourceChanged");
+    await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
+  } finally {
+    if (previous && previous !== editor && !previous.document.isClosed && vscode.window.activeTextEditor === editor) {
+      await vscode.window.showTextDocument(previous.document, { viewColumn: group.viewColumn, preview });
+    }
+    const temporary = !hadView && group.tabs.find(matches);
+    if (temporary && !temporary.isDirty) await vscode.window.tabGroups.close(temporary, true);
+  }
+}
+
 /** Only an acknowledged private query may be reverted to its provider checkpoint when replacing its native views. */
 export async function hideOwnedQuery(uri: vscode.Uri): Promise<void> {
   const key = uri.toString();
