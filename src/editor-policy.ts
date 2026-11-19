@@ -12,8 +12,8 @@ export function configuredReadOnlyResource(uri: vscode.Uri, languageId = "", ign
   const configuration = vscode.workspace.getConfiguration("files", document.uri);
   const folder = vscode.workspace.getWorkspaceFolder(document.uri);
   const matches = (rules: Record<string, boolean>): boolean => Object.entries(rules).some(([pattern, value]) => value === true
-    && (vscode.languages.match({ scheme: "file", pattern }, document) > 0
-      || !!folder && vscode.languages.match({ scheme: "file", pattern: new vscode.RelativePattern(folder, pattern) }, document) > 0));
+    && (vscode.languages.match({ scheme: uri.scheme, pattern }, document) > 0
+      || !!folder && vscode.languages.match({ scheme: uri.scheme, pattern: new vscode.RelativePattern(folder, pattern) }, document) > 0));
   const include = configuration.get<Record<string, boolean>>("readonlyInclude", {});
   const excludes = configuration.get<Record<string, boolean>>("readonlyExclude", {});
   if (uri.scheme === "file" && ignoredWorkspaceRule === readonlyPattern(uri.fsPath)
