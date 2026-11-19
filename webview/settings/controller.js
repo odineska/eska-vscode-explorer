@@ -8,8 +8,18 @@ function recover(value) {
   if (typeof value?.baseline !== "string" || !value.draft) return;
   const fields = draft();
   for (const name of Object.keys(fields)) {
-    if (typeof value.draft[name] !== typeof fields[name]) return;
-    fields[name] = value.draft[name];
+    const saved = value.draft[name];
+    if (name === "autoAttach") {
+      // Version 1 webview drafts stored a comma-separated string.
+      if (typeof saved === "string") {
+        if (fields.customAutoAttach) fields.autoAttach = saved.split(",").map(type => type.trim()).filter(Boolean);
+      } else if (Array.isArray(saved) && saved.every(type => typeof type === "string")) {
+        fields.autoAttach = [...saved];
+      } else return;
+    } else {
+      if (typeof saved !== typeof fields[name]) return;
+      fields[name] = saved;
+    }
   }
   if (!["file", "cluster", "standalone"].includes(fields.kind) || !["local", "distrobox"].includes(fields.runner)) return;
   return { draft: fields, baseline: value.baseline };
@@ -48,7 +58,7 @@ export function settingsController(api) {
     if (!loaded()) return;
     const drafts = {};
     for (const name of profiles) if (dirty[name]()) {
-      drafts[name] = { draft: { ...state[name].draft }, baseline: snapshot(state[name].saved) };
+      drafts[name] = { draft: { ...state[name].draft, autoAttach: [...state[name].draft.autoAttach] }, baseline: snapshot(state[name].saved) };
     }
     return { version: 1, active: active(), profiles: drafts };
   }, value => { if (value) api.setState(value); });
@@ -80,6 +90,7 @@ export function settingsController(api) {
 
   function edit(field, value) {
     if (field === "enabled" && !value) cancelPick();
+    if ((field === "runner" || field === "container") && current().draft[field] !== value) cancelPick();
     editFields(active(), { [field]: value });
   }
 
@@ -130,11 +141,22 @@ export function settingsController(api) {
   }
 
   function pickInfobase() {
-    if (!loaded() || !current().draft.enabled || picker()) return;
+    const { enabled, runner, container } = current().draft;
+    if (!loaded() || !enabled || picker()) return;
     const request = newRequest("pickInfobase");
     setPicker(request);
     set(profiles => { profiles[request.profile].notice = null; });
-    api.postMessage(request);
+    const box = runner === "distrobox" ? container.trim() : "";
+    api.postMessage(box ? { ...request, container: box } : request);
+  }
+
+  function pickPlatform() {
+    const { enabled, container } = current().draft;
+    if (!loaded() || !enabled || picker()) return;
+    const request = newRequest("pickPlatform");
+    setPicker(request);
+    set(profiles => { profiles[request.profile].notice = null; });
+    api.postMessage({ ...request, ...(container.trim() ? { container: container.trim() } : {}) });
   }
 
   function acceptSettings(data, pending) {
@@ -185,6 +207,13 @@ export function settingsController(api) {
           detail: data.detail, field: inputField(data.field),
         };
       });
+    } else if (data.type === "platform") {
+      if (!sameRequest(picker(), data)) return;
+      setPicker(null);
+      if (profile !== active() || !current().draft.enabled) return;
+      if (data.runner) editFields(profile, { runner: data.runner.kind, version: data.runner.version,
+        ibcmd: data.runner.ibcmd, container: data.runner.container ?? "" });
+      else if (data.detail) set(profiles => { profiles[profile].notice = { kind: "error", detail: data.detail }; });
     } else if (data.type === "infobase") {
       if (!sameRequest(picker(), data)) return;
       setPicker(null);
@@ -222,7 +251,7 @@ export function settingsController(api) {
   return {
     active, current, loaded, write, warning, loadError, requiresReload, picker, result, saving, canSave,
     dirty: name => dirty[name](),
-    select, edit, discard, load, save, probe, pickInfobase, receive, fieldError,
+    select, edit, discard, load, save, probe, pickInfobase, pickPlatform, receive, fieldError,
     visit: field => set(profiles => { profiles[active()].visited[field] = true; }),
   };
 }

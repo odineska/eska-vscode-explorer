@@ -2,7 +2,7 @@
 
 Расширение для Designer XML в VS Code и VSCodium. **Проект в активной разработке.** Для дерева и редактирования исходников нужен `eska-project`. Платформа 1С требуется для запуска клиента, обновления базы и отладки.
 
-[Руководство на сайте](https://odineska.github.io/eska/docs/) · [Настройки и команды](https://odineska.github.io/eska/docs/#settings) · [Быстрый старт](#быстрый-старт)
+[Руководство на сайте](https://odineska.tech/eska/docs/) · [Настройки и команды](https://odineska.tech/eska/docs/#settings) · [Быстрый старт](#быстрый-старт)
 
 ## Метаданные и управляемые формы
 
@@ -18,14 +18,26 @@
 
 Через **Настройки проекта → Настроить проект** заполните профиль `test` или `prod`. В панели **Запуск и отладка** доступны запуск клиента и подключение к HTTP-серверу отладки 1С. Для тестовой базы можно предварительно просмотреть и подтвердить обновление проекта или приложения, установить или удалить расширение. Адаптер поддерживает условные точки, логпоинты, стек, переменные, Watch, Debug Console и **Set Value**. [Настройка запуска](https://github.com/odineska/eska/blob/main/docs/run-debug.md)
 
+В блоке **Платформа** кнопка **Из установленных…** показывает версии 1С и пути к `ibcmd` на хосте и в выбранном или настроенном Distrobox. Выбор заполняет черновик профиля. Для списка нужен `eska-build` с поддержкой `platform list --include-distrobox`.
+
+## Команды проекта
+
+- **Начать проект 1С** открывает мастер. Можно выбрать тип нового проекта, создать проект из CF/CFE/EPF/ERF, подключить готовую выгрузку Designer XML или клонировать Git-репозиторий. Для импорта из файла требуются команда `eska` и точная версия установленной платформы.
+- **Собрать файл 1С…** в меню проекта показывает путь, платформу и возможную замену старого файла. После подтверждения `eska-build` создаёт CF, CFE, EPF или ERF. Из сообщения о результате открывается его папка.
+- **Проверить окружение** на вкладке **Проект и сборка** запускает `eska-project doctor` и показывает полный отчёт в настройках.
+- **Проверить проект** на вкладке **Проверки** и в меню проекта запускает `eska-check` по сохранённым настройкам и публикует диагностику XML и BSL в панели **Проблемы**.
+- **Показать на примере** на вкладке **Форматирование** открывает выбранный модуль до и после применения черновика стиля. Пример обновляется при изменении пресета или отдельных параметров. Для примера нужны `eska-project` с методом `format/settingsPreview` и установленный `eska-fmt`.
+
 ## Git и изменения объектов
 
 В панели **Система управления версиями → ESKA: изменения 1С** файлы модулей и XML подписаны именами объектов. Можно открыть diff или версию из HEAD, индексировать отдельные файлы и группы, снять их с индекса и создать коммит. Для работы панели требуется встроенное расширение Git. [Команды панели](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#изменения-в-обозначениях-1с)
 
+Действие **Сравнить две версии** в меню панели позволяет выбрать два коммита из последних 1000 в истории проекта. `eska-vcs` показывает изменения объектов, свойств, форм и методов между выбранными снимками.
+
 ## Запросы, BSL и рабочая область
 
 - Отдельные SDBL-вкладки для запросов XML и BSL с сохранением в исходник через **Ctrl+S**, визуальный конструктор с таблицами, соединениями, условиями, группировками, UNION, пакетами и итогами. [Работа с запросами](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md)
-- Автодополнение, диагностика, переходы, ссылки, подсказки параметров, переименование и текстовые правки через BSL Analyzer. Форматирование BSL и SDBL выполняет `eska-fmt` по настройкам `eska.toml`. [Языковой сервис](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) · [Форматирование](https://odineska.github.io/eska/docs/formatting/)
+- Автодополнение, диагностика, переходы, ссылки, подсказки параметров, переименование и текстовые правки через BSL Analyzer. Форматирование BSL и SDBL выполняет `eska-fmt` по настройкам `eska.toml`. [Языковой сервис](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) · [Форматирование](https://odineska.tech/eska/docs/formatting/)
 - Выбор приложения для анализа, подключение БСП и отключение подпроектов. Источники под поддержкой открываются с учётом прав на изменение. [Рабочая область](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md) · [Правила поддержки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md)
 
 ## Explorer в работе
@@ -35,49 +47,49 @@
 <details>
 <summary>Настроить проводник</summary>
 
-[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-setup.gif)](https://odineska.github.io/eska/docs/#demo-setup)
+[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-setup.gif)](https://odineska.tech/eska/docs/#demo-setup)
 
 </details>
 
 <details>
 <summary>Найти объект и открыть модуль</summary>
 
-[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-tree.gif)](https://odineska.github.io/eska/docs/#demo-tree)
+[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-tree.gif)](https://odineska.tech/eska/docs/#demo-tree)
 
 </details>
 
 <details>
 <summary>Перейти из свойств к XML</summary>
 
-[![Перейти из свойств к XML — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-properties.gif)](https://odineska.github.io/eska/docs/#demo-properties)
+[![Перейти из свойств к XML — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
 
 </details>
 
 <details>
 <summary>Открыть управляемую форму</summary>
 
-[![Открыть управляемую форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-forms.gif)](https://odineska.github.io/eska/docs/#demo-forms)
+[![Открыть управляемую форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-forms.gif)](https://odineska.tech/eska/docs/#demo-forms)
 
 </details>
 
 <details>
 <summary>Изменить заголовок поля формы</summary>
 
-[![Изменить заголовок поля формы — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-form-edit.gif)](https://odineska.github.io/eska/docs/#demo-form-edit)
+[![Изменить заголовок поля формы — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
 
 </details>
 
 <details>
 <summary>Сравнить изменения модулей по именам объектов</summary>
 
-[![Сравнить изменения модулей по именам объектов — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-scm.gif)](https://odineska.github.io/eska/docs/#demo-scm)
+[![Сравнить изменения модулей по именам объектов — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
 
 </details>
 
 <details>
 <summary>Изменить запрос и сохранить через Ctrl+S</summary>
 
-[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.github.io/eska/docs/#demo-query)
+[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
 
 </details>
 
@@ -120,7 +132,7 @@
 [BSL и выравнивание подсказок](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) ·
 [Компоненты и обновление](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Поддержка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md).
 
-[Все настройки и команды](https://odineska.github.io/eska/docs/#settings) · [Видео и руководство](https://odineska.github.io/eska/docs/#explorer).
+[Все настройки и команды](https://odineska.tech/eska/docs/#settings) · [Видео и руководство](https://odineska.tech/eska/docs/#explorer).
 
 [Разработка и проверки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/development.md) · [Упаковка VSIX](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) ·
 [Публикация](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/publishing.md) · [Релизы](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/releases.md) ·

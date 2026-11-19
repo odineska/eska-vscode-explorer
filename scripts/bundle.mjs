@@ -11,7 +11,7 @@ for (const [file, expected] of [["scripts/form-font-raster.c", raster.bridgeSha2
 }
 
 // Preserve license comments in both targets and readable names in extension-host stack traces.
-const bundleOptions = { bundle: true, metafile: true, legalComments: "inline", minifyWhitespace: true };
+const bundleOptions = { bundle: true, metafile: true, legalComments: "inline", minifyWhitespace: true, minifySyntax: true };
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
 const result = await build({ ...bundleOptions, entryPoints: ["src/extension.ts"], outfile: "out/extension.js",
   platform: "node", target: "node22", format: "cjs", external: ["vscode"] });

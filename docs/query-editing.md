@@ -162,7 +162,7 @@
 Ролик показывает сохранение изменённого запроса через **Ctrl+S** и возврат
 в модуль после закрытия вкладки.
 
-[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.github.io/eska/docs/#demo-query)
+[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
 
 Историческая приёмка T104 выполнена в установленном VSIX на Linux/VSCodium в ru/en: шесть разделов,
 opaque-части пакета, комментарии, один Undo/Redo, dirty XML/BSL, read-only,

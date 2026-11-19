@@ -36,6 +36,16 @@ try {
     "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  if (basename(suite) === "project-commands-host.cjs" && process.env.ESKA_HOST_PROJECT_COMMANDS_EMPTY === "1") {
+    await rm(join(fixture.root, "eska.toml"));
+  } else if (basename(suite) === "project-commands-host.cjs") {
+    const template = process.env.ESKA_HOST_PROJECT_COMMANDS_TEMPLATE;
+    if (!template || !isAbsolute(template)) throw new Error("Set ESKA_HOST_PROJECT_COMMANDS_TEMPLATE to an absolute path to the imported 1C test project.");
+    await rm(fixture.source, { recursive: true });
+    await cp(join(template, "src"), fixture.source, { recursive: true });
+    await cp(join(template, "eska.toml"), join(fixture.root, "eska.toml"));
+    await cp(join(template, ".gitignore"), join(fixture.root, ".gitignore"));
+  }
   if (["run-debug-view-host.cjs", "run-debug-presence-normal-host.cjs"].includes(basename(suite)) && process.env.ESKA_HOST_RUN_DEBUG_EMPTY) {
     fixture.manifest = await readFile(join(fixture.root, "eska.toml"), "utf8");
     await rm(join(fixture.root, "eska.toml"));

@@ -1,11 +1,13 @@
-import { For, Match, onSettled, Show, Switch } from "solid-js";
+import { createEffect, createSignal, For, Match, onSettled, Show, Switch } from "solid-js";
 import { render } from "@solidjs/web";
 import { Button } from "../ui/controls.jsx";
 import { settingsController } from "./controller.js";
-import { profileContext, profiles, usesManagedDebug } from "./profile.mjs";
+import { autoAttachGroups, defaultAutoAttachTypes, profileContext, profiles, usesManagedDebug } from "./profile.mjs";
+import { projectController } from "./project-controller.js";
+import { ProjectPage, settingsSections } from "./project-page.jsx";
 
 const api = acquireVsCodeApi();
-const { labels, project, externalProcessing } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
+const { labels, project, externalProcessing, title, locale, scope } = JSON.parse(document.getElementById("settings-bootstrap").textContent);
 
 function Icon(props) {
   return <span class="settings-icon" data-icon={props.name} aria-hidden="true"/>;
@@ -74,6 +76,40 @@ function Toggle(props) {
   </label>;
 }
 
+function AutoAttachTypes(props) {
+  const selection = () => props.model.current().draft;
+  const selected = () => selection().customAutoAttach ? selection().autoAttach : defaultAutoAttachTypes;
+  const error = () => props.model.fieldError("autoAttach", labels);
+
+  function change(type, checked) {
+    const types = selection().autoAttach;
+    props.model.edit("autoAttach", checked ? [...types, type] : types.filter(value => value !== type));
+  }
+
+  return <fieldset class="settings-auto-attach" aria-describedby="settings-auto-attach-hint">
+    <legend class="settings-label">{labels.autoAttach}</legend>
+    <Toggle model={props.model} name="customAutoAttach"/>
+    <p class="settings-hint" id="settings-auto-attach-hint">
+      {selection().customAutoAttach ? labels.autoAttachCustomHint : labels.autoAttachDefaultHint}
+    </p>
+    <div class="settings-auto-attach-groups">
+      <For each={Object.entries(autoAttachGroups)}>{([group, types]) =>
+        <fieldset disabled={!selection().customAutoAttach}>
+          <legend class="settings-label">{labels[group]}</legend>
+          <For each={types}>{type => <label class="settings-toggle">
+            <input type="checkbox" name="autoAttach" value={type} checked={selected().includes(type)}
+              aria-invalid={error() ? "true" : undefined}
+              aria-describedby={error() ? "settings-auto-attach-error" : undefined}
+              onChange={event => change(type, event.currentTarget.checked)}/>
+            <span>{labels[type]}</span>
+          </label>}</For>
+        </fieldset>
+      }</For>
+    </div>
+    <Show when={error()}><span class="settings-field-error" id="settings-auto-attach-error">{error()}</span></Show>
+  </fieldset>;
+}
+
 function Fields(props) {
   const model = props.model;
   const profile = () => model.current().draft;
@@ -109,7 +145,11 @@ function Fields(props) {
         </Section>
       </div>
       <div class="settings-column">
-        <Section id="platform" icon="configuration" title={labels.platform}>
+        <Section id="platform" icon="configuration" title={labels.platform} action={
+          <Button quiet class="settings-import" disabled={!!model.picker()} title={labels.installedPlatformHint} onClick={model.pickPlatform}>
+            <Icon name="configuration"/>{labels.installedPlatform}
+          </Button>
+        }>
           <div class="settings-pair">
             {select("runner", labels.runner, ["local", "distrobox"])}{text("version")}
           </div>
@@ -122,8 +162,7 @@ function Fields(props) {
             {text("debugPort", { numeric: true })}
           </Show>
           <Show when={managed() || profile().endpoint}>
-            {toggle("customAutoAttach")}
-            <Show when={profile().customAutoAttach}>{text("autoAttach")}</Show>
+            <AutoAttachTypes model={model}/>
             <Show when={externalProcessing || profile().epfArtifact || profile().epfDebugUrl}>
               {text("epfArtifact")}{text("epfDebugUrl")}
             </Show>
@@ -177,18 +216,13 @@ function Actions(props) {
   </footer>;
 }
 
-function App() {
-  const model = settingsController(api);
+function RunSettings(props) {
+  const model = props.model;
   let form;
-  const receive = event => model.receive(event.data);
-  onSettled(() => {
-    window.addEventListener("message", receive);
-    model.load();
-    return () => window.removeEventListener("message", receive);
-  });
 
   function focusError(field) {
-    if (field) form.elements.namedItem(field)?.focus();
+    if (field === "autoAttach") form.querySelector('input[name="autoAttach"]:enabled')?.focus();
+    else if (field) form.elements.namedItem(field)?.focus();
   }
   function save(event) {
     event.preventDefault();
@@ -199,14 +233,7 @@ function App() {
     if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") save(event);
   }
 
-  return <article class="settings-page" aria-busy={String(model.write()?.type === "load")} onKeyDown={keyboardSave}>
-    <header class="settings-heading">
-      <div>
-        <h1>{labels.title}</h1>
-        <p>{labels.projectCaption} <code>{project}</code></p>
-      </div>
-      <Button quiet disabled={!!model.write()} onClick={model.load}>{labels.reload}</Button>
-    </header>
+  return <div aria-busy={String(model.write()?.type === "load")} onKeyDown={keyboardSave}>
     <Show when={model.write()?.type === "load"}><p class="settings-load" role="status">{labels.loading}</p></Show>
     <Show when={model.loadError()}><p class="settings-warning settings-error" role="alert">{model.loadError()}</p></Show>
     <Show when={model.loaded()}>
@@ -229,6 +256,58 @@ function App() {
         <Actions model={model}/>
       </form>
     </Show>
+  </div>;
+}
+
+function App() {
+  const local = settingsController(api);
+  const shared = projectController(api);
+  const [section, setSection] = createSignal(scope === "workspace" ? "general" : "run");
+  const [gitFile, setGitFile] = createSignal(scope === "member" ? "ignore" : "manifest");
+  const file = () => section() === "git" ? gitFile() : "manifest";
+  const receive = event => {
+    if (event.data?.type === "project-file") shared.receive(event.data);
+    else local.receive(event.data);
+  };
+  onSettled(() => {
+    window.addEventListener("message", receive);
+    if (section() === "run") local.load();
+    else shared.ensure(file());
+    return () => window.removeEventListener("message", receive);
+  });
+  createEffect(() => section() === "run" ? null : file(), active => {
+    if (active) shared.ensure(active);
+  });
+  const visible = settingsSections.filter(([id]) =>
+    !(scope === "workspace" && id === "run" || scope === "member" && (id === "analyzer" || id === "check")));
+  function dirty(id) {
+    if (id === "run") return profiles.some(name => local.dirty(name));
+    return id === "git" ? ["manifest", "ignore", "attributes"].some(shared.dirty) : shared.dirty("manifest");
+  }
+  function reload() {
+    if (section() === "run") local.load();
+    else shared.request(file(), "show");
+  }
+  return <article class="settings-page">
+    <header class="settings-heading">
+      <div>
+        <h1>{title}</h1>
+        <p><code>{project}</code></p>
+      </div>
+      <Button quiet disabled={section() === "run" ? !!local.write() : !!shared.read(file()).pending} onClick={reload}>{labels.reload}</Button>
+    </header>
+    <nav class="settings-profiles" aria-label={title}>
+      <For each={visible}>{([id, label]) =>
+        <Button quiet class="settings-profile" data-settings-section={id} aria-pressed={String(section() === id)}
+          onClick={() => setSection(id)}>
+          {label[locale]}
+          <Show when={dirty(id)}><span class="settings-dirty-dot is-dirty" title={labels.dirty} aria-hidden="true"/></Show>
+        </Button>}</For>
+    </nav>
+    <Show when={section() === "run"} fallback={
+      <ProjectPage section={section()} file={file()} openGitFile={setGitFile} member={scope === "member"}
+        controller={shared} locale={locale} api={api}/>
+    }><RunSettings model={local}/></Show>
   </article>;
 }
 

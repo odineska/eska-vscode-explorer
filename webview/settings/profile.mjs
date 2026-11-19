@@ -1,5 +1,15 @@
 export const profiles = ["test", "prod"];
 
+// Keep the IDs and defaults aligned with eska-project-core's local settings contract.
+export const defaultAutoAttachTypes = ["ManagedClient", "Client", "Server", "ServerEmulation"];
+
+export const autoAttachGroups = {
+  attachClients: ["ManagedClient", "Client", "WEBClient", "COMConnector"],
+  attachServers: ["Server", "ServerEmulation", "JOB", "JobFileMode"],
+  attachServices: ["WEBService", "HTTPService", "OData"],
+  attachMobile: ["MobileClient", "MobileServer", "MobileJobFileMode", "MobileManagedClient", "MobileManagedServer"],
+};
+
 export function draft(profile) {
   return {
     enabled: !!profile, kind: profile?.infobase.kind ?? "file",
@@ -12,7 +22,7 @@ export function draft(profile) {
     epfArtifact: profile?.debug?.external_processing?.artifact ?? "",
     epfDebugUrl: profile?.debug?.external_processing?.debug_url ?? "",
     customAutoAttach: Array.isArray(profile?.debug?.auto_attach_types),
-    autoAttach: profile?.debug?.auto_attach_types?.join(", ") ?? "",
+    autoAttach: [...(profile?.debug?.auto_attach_types ?? defaultAutoAttachTypes)],
   };
 }
 
@@ -33,7 +43,7 @@ export function serialize(value) {
     debug.external_processing = { artifact: value.epfArtifact };
     if (value.epfDebugUrl) debug.external_processing.debug_url = value.epfDebugUrl;
   }
-  if (debug && value.customAutoAttach) debug.auto_attach_types = value.autoAttach.split(",").map(kind => kind.trim()).filter(Boolean);
+  if (debug && value.customAutoAttach) debug.auto_attach_types = [...value.autoAttach];
   return { infobase, runner, debug,
     authentication: value.user || value.secret ? { user: value.user, password_env: value.secret || null } : null };
 }

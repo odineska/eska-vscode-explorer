@@ -43,6 +43,10 @@ import { basename, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
+import { ProjectBuild } from "./project-build.js";
+import { ProjectCheck } from "./project-check.js";
+import type { AnalyzerSettingsHost } from "./project-file-settings.js";
+import { registerProjectOnboarding } from "./project-onboarding.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
@@ -57,7 +61,7 @@ let active: Explorer | undefined;
 /** Activation starts workspace protection independently of whether the tree is expanded. */
 export function activate(context: vscode.ExtensionContext): unknown {
   active = new Explorer(context);
-  context.subscriptions.push(active);
+  context.subscriptions.push(active, registerProjectOnboarding(context));
   return context.extensionMode === vscode.ExtensionMode.Test ? active : undefined;
 }
 
@@ -83,6 +87,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly queryDesigner: QueryDesigner;
   private readonly formPreview: FormPreviewService;
   private readonly projectSettings: ProjectSettings;
+  private readonly projectCheck: ProjectCheck;
   private readonly projectRuntime: ProjectRuntime;
   private readonly projects = new WorkspaceProjects();
   private readonly runDebug = new RunDebugView(this.projects);
@@ -183,10 +188,33 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       () => this.connection.disconnect(), () => this.connect(false));
     this.disposables.push(this.setup);
     this.view = vscode.window.createTreeView("eska.explorer.projects", { treeDataProvider: this });
-    this.projectSettings = new ProjectSettings(context);
+    const analyzerHost: AnalyzerSettingsHost = {
+      executable: () => this.tooling.findAnalyzerExecutable(),
+      application: root => {
+        const state = this.connection.state;
+        if (state.kind === "ready" && (relative(state.target.path, root) === "" || relativeFile(state.target.path, root))) {
+          return this.language.selectedApplication;
+        }
+      },
+      release: root => this.language.releaseForSettings(root),
+    };
+    this.projectCheck = new ProjectCheck(analyzerHost);
+    this.projectSettings = new ProjectSettings(context, analyzerHost, this.projectCheck, {
+      formatter: async (root, signal) => {
+        const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get("formatterExecutable", "eska-fmt");
+        return (await this.tooling.ensureFormatter(signal, true, configured))?.path;
+      },
+    });
+    const projectBuild = new ProjectBuild();
     this.projectRuntime = new ProjectRuntime((root, folder) => this.runtimeProject(undefined, root, folder));
     this.disposables.push(this.projectSettings, this.projectRuntime, vscode.commands.registerCommand("eska.explorer.configureProject",
       (entry?: Element) => this.configureProject(entry)));
+    this.disposables.push(this.projectCheck, projectBuild,
+      vscode.commands.registerCommand("eska.explorer.checkProject", (entry?: Element) => this.checkProject(entry)),
+      vscode.commands.registerCommand("eska.explorer.buildArtifact", async (entry?: Element) => {
+        const project = await this.runtimeProject(entry);
+        if (project) await projectBuild.run(project);
+      }));
     for (const [name, action] of [
       ["runTest", (project: RuntimeProject) => this.projectRuntime.run(project)],
       ["applyTest", (project: RuntimeProject) => this.projectRuntime.apply(project)],
@@ -441,6 +469,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       }
     }
     const state = this.connection.state;
+    if (state.kind === "disconnected" && !this.projects.folders.length) return [];
     return entry ? [] : [{ label: this.text(state.kind === "error" ? state.error.code : state.kind === "ready" ? "connecting" : state.kind) }];
   }
 
@@ -943,18 +972,37 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   }
 
   private async configureProject(entry?: Element): Promise<void> {
+    if (entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" && !entry.scope.project) {
+      const state = this.connection.state;
+      if (state.kind === "ready" && state.target.backend === "project" && vscode.workspace.isTrusted
+        && this.files?.scopes.includes(entry.scope)) this.projectSettings.show(entry.scope.path, state.target.executable, false, "workspace");
+      return;
+    }
     const project = await this.runtimeProject(entry);
-    if (project) this.projectSettings.show(project.root, project.executable, project.externalProcessing);
+    if (project) {
+      const member = this.tree?.projects.some(item => item.info.scope.kind === "member"
+        && relative(nativePath(item.info.rootPath), project.root) === "");
+      this.projectSettings.show(project.root, project.executable, project.externalProcessing, member ? "member" : "project");
+    }
+  }
+
+  private async checkProject(entry?: Element): Promise<void> {
+    const target = await this.runtimeProject(entry);
+    if (!target) return;
+    const result = await this.projectCheck.run(target);
+    if (result?.error) void vscode.window.showErrorMessage(result.text);
+    else if (result) void vscode.window.showInformationMessage(result.text);
   }
 
   private async runtimeProject(entry?: Element, root?: string, folder?: string, type?: "extension"): Promise<RuntimeProject | undefined> {
-    const fromTree = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings";
+    const explicit = entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project
+      : entry && "node" in entry && !entry.node.parent ? entry.project : undefined;
+    const fromTree = explicit || entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings";
     if (fromTree) { if (!this.tree) await this.connect(false); }
     else if (!await this.runtimeWorkspace(root ?? folder)) return;
     const state = this.connection.state, tree = this.tree;
     if (state.kind !== "ready" || state.target.backend !== "project" || !tree || !vscode.workspace.isTrusted) return;
-    let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "")
-      : entry && "fileKind" in entry && entry.fileKind === "group" && entry.kind === "settings" ? entry.scope.project : undefined;
+    let project = root ? tree.projects.find(item => relative(nativePath(item.info.rootPath), root) === "") : explicit;
     if (root && !project) return undefined;
     if (!project) {
       const projects = this.visibleProjects(tree).filter(item => projectEnabled(item.info) && (!type || item.info.type === type)

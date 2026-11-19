@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createContext, runInContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { draft, formatErrors, serialize } from "../webview/settings/profile.mjs";
+import { autoAttachGroups, defaultAutoAttachTypes, draft, formatErrors, serialize } from "../webview/settings/profile.mjs";
 import { settingsRequest } from "../out/project-settings-protocol.js";
 
 const repository = fileURLToPath(new URL("../", import.meta.url));
@@ -20,7 +20,7 @@ const bundle = build({
           getState: () => saved, setState: value => { saved = value; },
         });
         // Each operation models a DOM event or an incoming host message.
-        const events = ["load", "select", "edit", "discard", "save", "probe", "pickInfobase", "receive", "visit"];
+        const events = ["load", "select", "edit", "discard", "save", "probe", "pickInfobase", "pickPlatform", "receive", "visit"];
         const actions = Object.fromEntries(events.map(name => [name, (...args) => {
           const result = model[name](...args);
           flush();
@@ -75,6 +75,49 @@ test("runtime fields round-trip both runners, all infobases, and existing debug 
   const disabled = { ...draft(fixture()), enabled: false };
   assert.equal(serialize(disabled), null);
   assert.equal(disabled.path, "test-base");
+});
+
+test("automatic attachment distinguishes standard targets, explicit targets and disabled attachment", () => {
+  const standard = { ...fixture(), debug: { managed: true } };
+  const types = Object.values(autoAttachGroups).flat();
+  assert.deepEqual(types, [
+    "ManagedClient", "Client", "WEBClient", "COMConnector",
+    "Server", "ServerEmulation", "JOB", "JobFileMode",
+    "WEBService", "HTTPService", "OData",
+    "MobileClient", "MobileServer", "MobileJobFileMode", "MobileManagedClient", "MobileManagedServer",
+  ]);
+  assert.deepEqual(draft(standard).autoAttach, defaultAutoAttachTypes);
+  assert.deepEqual(serialize(draft(standard)), standard);
+  for (const selection of [[], defaultAutoAttachTypes, [...types].reverse()]) {
+    const profile = { ...standard, debug: { ...standard.debug, auto_attach_types: selection } };
+    assert.deepEqual(serialize(draft(profile)), profile);
+  }
+});
+
+test("automatic attachment recovers old drafts and saves each profile independently", async t => {
+  const testProfile = { ...fixture(), debug: { managed: true } };
+  const prodProfile = { ...fixture("prod-base"), debug: { url: "http://localhost:1550", auto_attach_types: ["MobileManagedServer"] } };
+  const settings = { test: testProfile, prod: prodProfile };
+  const previous = {
+    version: 1, active: "test",
+    profiles: {
+      test: { baseline: JSON.stringify(testProfile), draft: { ...draft(testProfile), customAutoAttach: true, autoAttach: "" } },
+      prod: { baseline: JSON.stringify(prodProfile), draft: { ...draft(prodProfile), autoAttach: "WEBClient, JOB" } },
+    },
+  };
+  const h = await open(t, previous);
+  h.reply(h.load, settings);
+  h.model.save();
+  const saving = h.last();
+  assert.deepEqual(saving.value.debug.auto_attach_types, []);
+  h.reply(saving, { ...settings, test: saving.value });
+  const savedSettings = { ...settings, test: saving.value };
+  h.model.select("prod");
+  const reopened = await open(t, h.persisted());
+  reopened.reply(reopened.load, savedSettings);
+  assert.equal(reopened.model.active(), "prod");
+  reopened.model.save();
+  assert.deepEqual(reopened.last().value.debug.auto_attach_types, ["WEBClient", "JOB"]);
 });
 
 test("format feedback follows the distinction between client URLs and dbgs origins", () => {
@@ -196,4 +239,62 @@ test("settings messages accept only known operations and profiles", () => {
   assert.equal(settingsRequest({ type: "save", id, profile: "extra", value: {} }), undefined);
   assert.equal(settingsRequest({ type: "probe", id, profile: "test", value: null }), undefined);
   assert.equal(settingsRequest({ type: "load", id: 1, profile: "test" }), undefined);
+  const pick = { type: "pickInfobase", id, profile: "test" };
+  assert.deepEqual(settingsRequest({ ...pick, container: " dev-box " }), { ...pick, container: "dev-box" });
+  assert.deepEqual(settingsRequest({ ...pick, container: " " }), pick);
+  assert.equal(settingsRequest({ ...pick, container: ["dev-box"] }), undefined);
+});
+
+test("launcher lookup uses the draft container and updates only the infobase", async t => {
+  const h = await open(t);
+  h.reply(h.load, original);
+  h.model.edit("runner", "distrobox");
+  h.model.pickInfobase();
+  const automatic = h.last();
+  assert.equal(automatic.container, undefined);
+  h.model.edit("container", "dev-box");
+  assert.equal(h.last().type, "cancelPick");
+  h.model.pickInfobase();
+  const explicit = h.last();
+  assert.equal(explicit.container, "dev-box");
+  h.receive({ type: "infobase", id: automatic.id, profile: "test", infobase: { kind: "file", path: "stale" } });
+  assert.equal(h.model.current().draft.path, "test-base");
+  h.receive({ type: "infobase", id: explicit.id, profile: "test",
+    infobase: { kind: "cluster", host: "demo.invalid:1541", name: "Demo" } });
+  const profile = h.model.current().draft;
+  assert.equal(profile.kind, "cluster");
+  assert.equal(profile.host, "demo.invalid:1541");
+  assert.equal(profile.name, "Demo");
+  assert.equal(profile.runner, "distrobox");
+  assert.equal(profile.container, "dev-box");
+  h.model.edit("runner", "local");
+  h.model.pickInfobase();
+  assert.equal(h.last().container, undefined);
+});
+
+test("installed platform choice updates the complete runner only in the current draft", async t => {
+  const h = await open(t);
+  h.reply(h.load, original);
+  h.model.edit("container", "draft-box");
+  h.model.pickPlatform();
+  const choosing = h.last();
+  assert.equal(choosing.type, "pickPlatform");
+  assert.equal(choosing.container, "draft-box");
+  const runner = { kind: "distrobox", container: "draft-box", version: "8.3.27.2342", ibcmd: "/opt/1cv8/x86_64/8.3.27.2342/ibcmd" };
+  h.receive({ ...choosing, type: "platform", runner });
+  assert.equal(h.model.current().draft.runner, "distrobox");
+  assert.equal(h.model.current().draft.version, runner.version);
+  assert.equal(h.model.current().draft.ibcmd, runner.ibcmd);
+  assert.equal(h.model.current().draft.container, runner.container);
+  assert.equal(h.last().type, "pickPlatform", "choosing does not save");
+  h.model.pickPlatform();
+  const host = h.last();
+  h.receive({ ...host, type: "platform", runner: { kind: "local", version: "8.5.1.1", ibcmd: "/host/ibcmd" } });
+  assert.equal(h.model.current().draft.runner, "local");
+  assert.equal(h.model.current().draft.container, "");
+  h.model.pickPlatform();
+  const late = h.last();
+  h.model.select("prod");
+  h.receive({ ...late, type: "platform", runner });
+  assert.equal(h.model.current().draft.runner, "local");
 });

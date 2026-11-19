@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import * as vscode from "vscode";
+import { formatPreviewRequest, handleFormatPreview, type FormatPreviewHost } from "./format-preview.js";
 import { message, type MessageKey } from "./messages.js";
+import { diagnoseProject, type ProjectCheck, type ProjectCheckResult } from "./project-check.js";
+import { handleProjectFile, projectFileRequest, type AnalyzerSettingsHost } from "./project-file-settings.js";
 import { isRecord } from "./protocol.js";
 import { settingsRequest, type Infobase, type LocalSettings, type ProfileName, type SettingsResponse } from "./project-settings-protocol.js";
 import { runtimeJson } from "./runtime-tools.js";
@@ -12,6 +15,7 @@ const labels = {
   registeredInfobase: "runtimeRegisteredInfobase", registeredInfobaseHint: "runtimeRegisteredInfobaseHint", test: "runtimeTestTab", prod: "runtimeProdTab",
   enabled: "runtimeEnabled", disabledProfile: "runtimeDisabledProfile", prodNotice: "runtimeProdNotice",
   profiles: "runtimeProfiles", database: "runtimeDatabase", authentication: "runtimeAuthentication",
+  installedPlatform: "runtimeInstalledPlatform", installedPlatformHint: "runtimeInstalledPlatformHint",
   platform: "runtimePlatform", debugging: "runtimeDebugging",
   infobase: "runtimeInfobase", file: "runtimeFile", cluster: "runtimeCluster", standalone: "runtimeStandalone",
   path: "runtimePath", host: "runtimeHost", hostHint: "runtimeHostHint", name: "runtimeName",
@@ -20,6 +24,17 @@ const labels = {
   ibcmd: "runtimeIbcmd", ibcmdHint: "runtimeIbcmdHint", endpoint: "runtimeEndpoint", endpointHint: "runtimeEndpointHint",
   user: "runtimeUser", managedDebug: "runtimeManagedDebug", debugPort: "runtimeDebugPort",
   customAutoAttach: "runtimeCustomAutoAttach", autoAttach: "runtimeAutoAttach",
+  autoAttachDefaultHint: "runtimeAutoAttachDefaultHint", autoAttachCustomHint: "runtimeAutoAttachCustomHint",
+  attachClients: "runtimeAttachClients", attachServers: "runtimeAttachServers",
+  attachServices: "runtimeAttachServices", attachMobile: "runtimeAttachMobile",
+  ManagedClient: "runtimeAttachManagedClient", Client: "runtimeAttachClient",
+  WEBClient: "runtimeAttachWEBClient", COMConnector: "runtimeAttachCOMConnector",
+  Server: "runtimeAttachServer", ServerEmulation: "runtimeAttachServerEmulation",
+  JOB: "runtimeAttachJOB", JobFileMode: "runtimeAttachJobFileMode",
+  WEBService: "runtimeAttachWEBService", HTTPService: "runtimeAttachHTTPService", OData: "runtimeAttachOData",
+  MobileClient: "runtimeAttachMobileClient", MobileServer: "runtimeAttachMobileServer",
+  MobileJobFileMode: "runtimeAttachMobileJobFileMode", MobileManagedClient: "runtimeAttachMobileManagedClient",
+  MobileManagedServer: "runtimeAttachMobileManagedServer",
   epfArtifact: "runtimeEpfArtifact", epfDebugUrl: "runtimeEpfDebugUrl",
   secret: "runtimeSecret", secretHint: "runtimeSecretHint", save: "runtimeSave", saved: "runtimeSaved",
   dirty: "runtimeDirty", unchanged: "runtimeProfileUnchanged", saving: "runtimeSaving", discard: "runtimeDiscard",
@@ -47,15 +62,16 @@ interface Snapshot {
 export class ProjectSettings implements vscode.Disposable {
   private readonly panels = new Map<string, vscode.WebviewPanel>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext, private readonly analyzer: AnalyzerSettingsHost,
+    private readonly check: ProjectCheck, private readonly formatting: FormatPreviewHost) {}
 
-  show(root: string, executable: string, externalProcessing: boolean): void {
+  show(root: string, executable: string, externalProcessing: boolean, scope: "project" | "workspace" | "member" = "project"): void {
     const existing = this.panels.get(root);
     if (existing) { existing.reveal(); return; }
     const language = vscode.env.language;
     const text = (key: MessageKey, ...args: string[]) => message(language, key, ...args);
     const strings = Object.fromEntries(Object.entries(labels).map(([id, key]) => [id, text(key)]));
-    const panel = vscode.window.createWebviewPanel("eska.projectSettings", `${text("runtimeTitle")} · ${basename(root)}`,
+    const panel = vscode.window.createWebviewPanel("eska.projectSettings", `${text("projectSettingsTitle")} · ${basename(root)}`,
       vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [
         vscode.Uri.joinPath(this.context.extensionUri, "out"), vscode.Uri.joinPath(this.context.extensionUri, "resources"),
       ] });
@@ -63,6 +79,9 @@ export class ProjectSettings implements vscode.Disposable {
     const abort = new AbortController();
     let snapshot: Snapshot | undefined;
     let pendingWrite = false;
+    const pendingFiles = new Set<string>();
+    const pendingActions = new Set<string>();
+    let formatPreview: AbortController | undefined;
     const probes: Partial<Record<ProfileName, AbortController>> = {};
     let picker: { id: string; profile: ProfileName; cancellation: vscode.CancellationTokenSource } | undefined;
     const post = (response: SettingsResponse) => {
@@ -73,26 +92,89 @@ export class ProjectSettings implements vscode.Disposable {
       picker = undefined;
     };
     const incoming = panel.webview.onDidReceiveMessage(async (value: unknown) => {
+      if (abort.signal.aborted || !vscode.workspace.isTrusted) return;
+      const preview = formatPreviewRequest(value);
+      if (preview) {
+        formatPreview?.abort();
+        const operation = new AbortController();
+        formatPreview = operation;
+        try {
+          const result = await handleFormatPreview(preview, root, executable, language, String(this.context.extension.packageJSON.version),
+            this.formatting, AbortSignal.any([abort.signal, operation.signal]));
+          if (result && !abort.signal.aborted && formatPreview === operation) await panel.webview.postMessage(result);
+        } finally {
+          if (formatPreview === operation) formatPreview = undefined;
+        }
+        return;
+      }
+      if (isRecord(value) && value.type === "project-action" && typeof value.id === "string" && /^[0-9a-f-]{36}$/.test(value.id)
+        && (value.action === "doctor" || value.action === "check" && scope !== "member")) {
+        const { action, id } = value;
+        if (pendingActions.has(action)) {
+          await panel.webview.postMessage({ type: "project-action-result", action, id, text: text("projectActionBusy") });
+          return;
+        }
+        pendingActions.add(action);
+        const target = { root, executable, workspace: scope === "workspace" };
+        try {
+          let report: ProjectCheckResult | undefined;
+          if (action === "doctor") {
+            const diagnosis = await diagnoseProject(target, abort.signal);
+            report = diagnosis ? { text: diagnosis } : { text: text("projectDoctorFailed"), error: true };
+          } else {
+            report = await this.check.run(target, abort.signal) ?? { text: text("projectActionCancelled") };
+          }
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "project-action-result", action, id, ...report });
+        } catch {
+          const failed = action === "doctor" ? "projectDoctorFailed" : "projectCheckFailed";
+          if (!abort.signal.aborted) await panel.webview.postMessage({ type: "project-action-result", action, id, text: text(failed), error: true });
+        } finally { pendingActions.delete(action); }
+        return;
+      }
+      const shared = projectFileRequest(value);
+      if (shared) {
+        if (pendingFiles.has(shared.file)) return;
+        pendingFiles.add(shared.file);
+        try {
+          const result = await handleProjectFile(shared, root, executable, language, this.analyzer, abort.signal)
+            .catch(() => ({ ...shared, update: undefined, error: { code: "unavailable" } }));
+          if (result && !abort.signal.aborted) await panel.webview.postMessage(result);
+        } finally {
+          pendingFiles.delete(shared.file);
+        }
+        return;
+      }
       const request = settingsRequest(value);
-      if (!request || abort.signal.aborted || !vscode.workspace.isTrusted) return;
+      if (!request || scope === "workspace") return;
       const { id, profile, type } = request;
       if (type === "cancelPick") {
         if (picker?.id === id && picker.profile === profile) cancelPick();
         return;
       }
-      if (type === "pickInfobase") {
+      if (type === "pickInfobase" || type === "pickPlatform") {
         cancelPick();
         const operation = { id, profile, cancellation: new vscode.CancellationTokenSource() };
         picker = operation;
+        const token = operation.cancellation.token;
+        const lookup = new AbortController();
+        const cancellation = token.onCancellationRequested(() => lookup.abort());
         try {
-          const infobase = await pickInfobase(root, executable, language, abort.signal, operation.cancellation.token)
+          const chosen = await (type === "pickPlatform" ? pickPlatform : pickInfobase)(root, executable, language, request.container,
+            AbortSignal.any([abort.signal, lookup.signal]), token)
             .catch(() => null);
           if (picker !== operation) return;
-          if (infobase) await post({ type: "infobase", id, profile, infobase });
-          else await post({ type: "infobase", id, profile,
-            ...(infobase === null ? { detail: text("runtimeRegisteredInfobasesUnavailable") } : {}) });
+          if (type === "pickPlatform") {
+            await post({ type: "platform", id, profile,
+              ...(chosen ? { runner: chosen as import("./project-settings-protocol.js").Runner } : {}),
+              ...(chosen === null ? { detail: text("runtimeInstalledPlatformsUnavailable") } : {}) });
+          } else {
+            if (chosen) await post({ type: "infobase", id, profile, infobase: chosen as Exclude<Infobase, { kind: "standalone" }> });
+            else await post({ type: "infobase", id, profile,
+              ...(chosen === null ? { detail: text("runtimeRegisteredInfobasesUnavailable") } : {}) });
+          }
         } finally {
           if (picker === operation) picker = undefined;
+          cancellation.dispose();
           operation.cancellation.dispose();
         }
         return;
@@ -159,7 +241,8 @@ export class ProjectSettings implements vscode.Disposable {
       incoming.dispose();
       this.panels.delete(root);
     });
-    panel.webview.html = this.html(panel.webview, { labels: strings, project: basename(root), externalProcessing });
+    panel.webview.html = this.html(panel.webview, { labels: strings, project: basename(root), externalProcessing,
+      title: text("projectSettingsTitle"), locale: language.startsWith("ru") ? "ru" : "en", scope });
   }
 
   private html(webview: vscode.Webview, bootstrap: unknown): string {
@@ -224,30 +307,88 @@ async function probeProfile(root: string, executable: string, language: string,
   return { ready: false, detail: text(key) };
 }
 
-async function pickInfobase(root: string, executable: string, language: string, signal: AbortSignal,
+function registeredInfobases(value: unknown): { entries: unknown[]; sources: unknown } | undefined {
+  if (isRecord(value) && value.schema_version === 1 && value.kind === "registered-infobases" && Array.isArray(value.entries)) {
+    return { entries: value.entries, sources: value.sources };
+  }
+}
+
+async function pickInfobase(root: string, executable: string, language: string, container: string | undefined, signal: AbortSignal,
   token: vscode.CancellationToken) {
   const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("debugExecutable", "eska-debug");
   const binary = await findTool(configured, "eska-debug", dirname(executable)).catch(() => undefined);
   if (!binary) return null;
   if (signal.aborted || token.isCancellationRequested) return;
-  const result = await runtimeJson(binary, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US", "infobases"],
-    { signal, timeout: 10_000 });
-  if (signal.aborted || token.isCancellationRequested) return;
-  if (!isRecord(result) || result.schema_version !== 1 || result.kind !== "registered-infobases"
-    || !Array.isArray(result.entries)) return null;
-  const choices = result.entries.flatMap<{ label: string; infobase: Exclude<Infobase, { kind: "standalone" }> }>(entry => {
-    if (!isRecord(entry) || typeof entry.name !== "string" || !isRecord(entry.infobase)) return [];
+  const args = ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US", "infobases"];
+  const options = { signal, timeout: 12_000 };
+  const result = await runtimeJson(binary, [...args, "--include-distrobox", ...(container ? [`--distrobox=${container}`] : [])],
+    options);
+  if (signal.aborted) return;
+  // Previously installed debuggers only understand the local list command.
+  const lists = registeredInfobases(result) ?? registeredInfobases(await runtimeJson(binary, args, options));
+  if (signal.aborted) return;
+  if (!lists) return null;
+  const text = (key: MessageKey, ...values: string[]) => message(language, key, ...values);
+  const choices = new Map<string, { label: string; detail: string;
+    infobase: Exclude<Infobase, { kind: "standalone" }>; sources: Set<string> }>();
+  for (const entry of lists.entries) {
+    if (!isRecord(entry) || typeof entry.name !== "string" || !isRecord(entry.infobase)) continue;
     const base = entry.infobase;
-    if (base.kind === "file" && typeof base.path === "string") {
-      return [{ label: entry.name, infobase: { kind: "file", path: base.path } }];
+    const infobase: Exclude<Infobase, { kind: "standalone" }> | undefined =
+      base.kind === "file" && typeof base.path === "string" ? { kind: base.kind, path: base.path }
+      : base.kind === "cluster" && typeof base.host === "string" && typeof base.name === "string"
+        ? { kind: base.kind, host: base.host, name: base.name } : undefined;
+    if (!infobase) continue;
+    const origin = entry.source;
+    const source = isRecord(origin) && origin.kind === "distrobox" && typeof origin.container === "string"
+      ? `${text("runtimeDistrobox")} (${origin.container})` : text("runtimeRegisteredInfobaseHost");
+    const key = JSON.stringify([entry.name, infobase]);
+    const previous = choices.get(key);
+    if (previous) previous.sources.add(source);
+    else choices.set(key, { label: entry.name, infobase, sources: new Set([source]),
+      detail: infobase.kind === "file" ? infobase.path : `${infobase.host} / ${infobase.name}` });
+  }
+  if (!choices.size) return null;
+  let placeHolder = text("runtimeRegisteredInfobase");
+  if (isRecord(lists.sources)) {
+    const box = lists.sources.distrobox;
+    if (lists.sources.host === "unavailable") placeHolder = text("runtimeRegisteredInfobaseHostUnavailable");
+    if (isRecord(box) && box.status === "unavailable" && typeof box.container === "string") {
+      placeHolder = text("runtimeRegisteredInfobaseDistroboxUnavailable", box.container);
     }
-    if (base.kind === "cluster" && typeof base.host === "string" && typeof base.name === "string") {
-      return [{ label: entry.name, infobase: { kind: "cluster", host: base.host, name: base.name } }];
-    }
-    return [];
-  });
-  if (!choices.length) return null;
-  return (await vscode.window.showQuickPick(choices, {
-    placeHolder: message(language, "runtimeRegisteredInfobase"),
+  }
+  const items = [...choices.values()].map(({ sources, ...choice }) => ({ ...choice, description: [...sources].join(" · ") }));
+  return (await vscode.window.showQuickPick(items, {
+    placeHolder, matchOnDescription: true, matchOnDetail: true,
   }, token))?.infobase;
+}
+
+async function pickPlatform(root: string, executable: string, language: string, container: string | undefined,
+  signal: AbortSignal, token: vscode.CancellationToken) {
+  const configured = vscode.workspace.getConfiguration("eska.explorer", vscode.Uri.file(root)).get<string>("buildExecutable", "eska-build");
+  const binary = await findTool(configured, "eska-build", dirname(executable)).catch(() => undefined);
+  if (!binary) return null;
+  if (signal.aborted || token.isCancellationRequested) return;
+  const result = await runtimeJson(binary, ["--lang", language.startsWith("ru") ? "ru-RU" : "en-US",
+    "platform", "list", "--include-distrobox", "--format", "json", ...(container ? [`--distrobox=${container}`] : [])],
+  { signal, timeout: 20_000 });
+  if (signal.aborted) return;
+  if (!isRecord(result) || result.schema_version !== 1 || result.kind !== "installed-platforms" || !Array.isArray(result.platforms)) return null;
+  const text = (key: MessageKey, ...values: string[]) => message(language, key, ...values);
+  const items = result.platforms.flatMap((entry: unknown) => {
+    if (!isRecord(entry) || typeof entry.version !== "string" || typeof entry.ibcmd !== "string" || !isRecord(entry.source)) return [];
+    const source = entry.source;
+    if (source.kind !== "host" && !(source.kind === "distrobox" && typeof source.container === "string")) return [];
+    const runner = source.kind === "host" ? { kind: "local" as const, version: entry.version, ibcmd: entry.ibcmd }
+      : { kind: "distrobox" as const, container: source.container as string, version: entry.version, ibcmd: entry.ibcmd };
+    return [{ label: entry.version, description: source.kind === "host" ? text("runtimeRegisteredInfobaseHost")
+      : `${text("runtimeDistrobox")} (${source.container})`, detail: entry.ibcmd, runner }];
+  });
+  let placeHolder = text("runtimeInstalledPlatformHint");
+  if (isRecord(result.sources) && (result.sources.host === "unavailable" ||
+      isRecord(result.sources.distrobox) && result.sources.distrobox.status === "unavailable")) {
+    placeHolder = text("runtimeInstalledPlatformPartial");
+  }
+  if (!items.length) return null;
+  return (await vscode.window.showQuickPick(items, { placeHolder, matchOnDescription: true, matchOnDetail: true }, token))?.runner;
 }

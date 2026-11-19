@@ -63,7 +63,19 @@
     "typescript": "7.0.2"
   },
   "contributes": {
+    "viewsWelcome": [
+      {
+        "view": "eska.explorer.projects",
+        "contents": "%projectOnboardingWelcome%"
+      }
+    ],
     "commands": [
+      {
+        "command": "eska.explorer.projectOnboarding",
+        "title": "%projectOnboarding%",
+        "category": "ESKA",
+        "icon": "$(new-folder)"
+      },
       {
         "command": "eska.explorer.checkDebuggerUpdates",
         "title": "%checkDebuggerUpdates%",
@@ -212,6 +224,18 @@
         "command": "eska.explorer.configureProject",
         "title": "%configureProject%",
         "category": "ESKA Explorer"
+      },
+      {
+        "command": "eska.explorer.checkProject",
+        "title": "%checkProject%",
+        "category": "ESKA Explorer",
+        "icon": "$(check)"
+      },
+      {
+        "command": "eska.explorer.buildArtifact",
+        "title": "%buildArtifact%",
+        "category": "ESKA Explorer",
+        "icon": "$(package)"
       },
       {
         "command": "eska.explorer.runTest",
@@ -413,6 +437,11 @@
         "icon": "$(discard)"
       },
       {
+        "command": "eska.explorer.scm.compareRevisions",
+        "title": "%scmCompareRevisions%",
+        "category": "ESKA"
+      },
+      {
         "command": "eska.explorer.scm.refresh",
         "title": "%scmRefresh%",
         "category": "ESKA",
@@ -573,6 +602,16 @@
       ],
       "view/title": [
         {
+          "command": "eska.explorer.projectOnboarding",
+          "when": "view == eska.explorer.projects",
+          "group": "onboarding@1"
+        },
+        {
+          "command": "eska.explorer.scm.compareRevisions",
+          "when": "view == eska.explorer.scm",
+          "group": "versions@1"
+        },
+        {
           "command": "eska.explorer.applyApplicationTest",
           "when": "view == eska.explorer.projects && eska.explorer.workspaceApplication && isWorkspaceTrusted",
           "group": "runtime@1"
@@ -639,6 +678,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "eska.explorer.checkProject",
+          "when": "view == eska.explorer.projects && viewItem =~ /^eskaRoot/ && isWorkspaceTrusted",
+          "group": "project@1"
+        },
+        {
+          "command": "eska.explorer.buildArtifact",
+          "when": "view == eska.explorer.projects && viewItem =~ /^eskaRoot/ && isWorkspaceTrusted",
+          "group": "project@2"
+        },
         {
           "command": "eska.explorer.configureProject",
           "when": "view == eska.explorer.projects && viewItem == eskaProjectSettings && isWorkspaceTrusted",
@@ -726,6 +775,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "eska.explorer.scm.compareRevisions",
+          "when": "eska.hasProject"
+        },
         {
           "command": "eska.explorer.openQuery",
           "when": "false"

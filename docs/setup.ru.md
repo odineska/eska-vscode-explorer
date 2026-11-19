@@ -2,14 +2,14 @@
 
 После открытия папки с `eska.toml` перетащите **ESKA: 1C Explorer** в начало
 проводника и сверните остальные группы. Затем раскройте дерево метаданных.
-[Скринкаст настройки проводника без звука](https://odineska.github.io/eska/docs/#demo-setup).
+[Скринкаст настройки проводника без звука](https://odineska.tech/eska/docs/#demo-setup).
 
 ## Установить компоненты
 
 Установите VSIX через **Extensions → Install from VSIX…**. Идентификатор —
 `1c-tooling.eska-explorer`, минимальная версия VS Code API — **1.109.0**.
 Репозитории и опубликованные файлы проекта находятся в организации `odineska`.
-[Упаковка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [Установка ESKA](https://odineska.github.io/eska/).
+[Упаковка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) · [Установка ESKA](https://odineska.tech/eska/).
 
 По умолчанию запускается `eska-project serve --stdio`. Для дерева нужны только
 Explorer и `eska-project`; Git, полная ESKA, платформа и Analyzer необязательны.
@@ -51,7 +51,7 @@ eska-project --project-dir ./my-project validate --format json
 не инициализирует Git и не запускает платформу. Не запускайте его поверх
 существующего manifest. Для EPF/ERF с БСП после подключения можно выполнить
 `eska add ssl_3_1`: библиотека хранится в пользовательской `~/.eska/lib`.
-[Проекты и workspace](https://odineska.github.io/eska/docs/#workspace).
+[Проекты и workspace](https://odineska.tech/eska/docs/#workspace).
 
 Откройте папку с manifest и раскройте **ESKA: 1C Explorer**. При нескольких
 независимых папках выберите одну командой **Выбрать проект и подключиться**.
@@ -70,7 +70,7 @@ BSL/SDBL-подсветка доступна без Analyzer. При откры�
 Используйте стандартные Format Document / Format Selection с ESKA как formatter.
 `eska.explorer.formatOnSave` по умолчанию выключен. Отсутствующий `eska-fmt`
 не подменяется форматированием через Analyzer.
-[Все параметры](https://odineska.github.io/eska/docs/formatting/).
+[Все параметры](https://odineska.tech/eska/docs/formatting/).
 
 С API 1.34 многострочные строковые аргументы получают точное выравнивание:
 связанные подписи и отступы используют шрифт редактора. Независимые однострочные

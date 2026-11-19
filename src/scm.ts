@@ -52,7 +52,8 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     for (const alias of ["revealWindows", "revealMac", "revealLinux"]) {
       this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.${alias}`, (entry?: unknown) => this.execute("revealOs", entry)));
     }
-    this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.refresh`, () => this.refresh()));
+    this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.refresh`, () => this.refresh()),
+      vscode.commands.registerCommand(`${prefix}.compareRevisions`, () => this.compareRevisions()));
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -398,6 +399,29 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       api, repository, entries: entries.map(row => ({ group: row.parent.group, change: row.change, label: row.label })),
       text: (key, ...args) => this.text(key, ...args), validate: () => { validateGroup?.(); for (const row of entries) this.validate(row); },
     });
+  }
+
+  private async compareRevisions(): Promise<void> {
+    try {
+      await this.connect();
+      const projects = this.contexts().flatMap(context => {
+        const repositoryRoot = this.git.api?.getRepository(vscode.Uri.file(context.root))?.rootUri.fsPath;
+        const repository = repositoryRoot && this.git.repositories.find(candidate =>
+          sourceKey(candidate.rootUri.fsPath) === sourceKey(repositoryRoot));
+        const state = context.tree.connection.state;
+        const target = state.kind === "ready" ? state.target : undefined;
+        if (!repository || !target
+          || sourceKey(repository.rootUri.fsPath) !== sourceKey(context.root) && relativeFile(repository.rootUri.fsPath, context.root) === undefined) return [];
+        return [{ root: context.root, name: context.project.info.displayName ?? (context.project.info.scope?.kind === "member" ? context.project.info.scope.name : basename(context.root)), executable: target.executable, validate: () => {
+          const currentRoot = this.git.api?.getRepository(vscode.Uri.file(context.root))?.rootUri.fsPath;
+          if (this.disposed || context.tree.connection.state !== state || !this.contexts().some(current => current.tree === context.tree && current.project === context.project)
+            || !currentRoot || sourceKey(currentRoot) !== sourceKey(repository.rootUri.fsPath)
+            || !this.git.repositories.includes(repository)) throw new Error(this.text("scmChanged"));
+        } }];
+      });
+      const { compareRevisions } = await import("./scm-compare.js");
+      await compareRevisions(projects);
+    } catch (error) { this.report(error); }
   }
 
   private async refresh(): Promise<void> {

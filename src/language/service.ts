@@ -106,6 +106,19 @@ export class LanguageService implements vscode.Disposable {
     return state.kind === "ready" ? this.context.workspaceState.get<string>(this.selectionKey(state)) || undefined : undefined;
   }
 
+  /** Let a settings save refresh the derived file after releasing this window's shared lease. */
+  async releaseForSettings(root: string): Promise<(() => void) | undefined> {
+    const session = this.session;
+    if (!session || relative(session.context.root, root) !== ""
+      && !session.context.sources.some(source => relative(source.root, root) === "")) return;
+    const stopped = this.stop();
+    const revision = this.revision;
+    await stopped;
+    return () => {
+      if (this.target === session.state && this.revision === revision && !this.disposed) void this.restart(false);
+    };
+  }
+
   /** Query UI can attach after construction; its analysis shares this client's context, process and lifecycle. */
   attachQueries(language: QueryLanguage): void {
     this.queryLanguage = language;

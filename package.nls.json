@@ -1,4 +1,7 @@
 {
+  "projectOnboarding": "Start a 1C project",
+  "projectOnboardingWelcome": "Create a project, import a 1C artifact, connect Designer XML sources or clone a Git repository.\n[Start a 1C project](command:eska.explorer.projectOnboarding)",
+  "scmCompareRevisions": "Compare two versions",
   "runDebugView": "ESKA: Run 1C",
   "queryOpen": "Open query",
   "hideEmptyGroups": "Hide Empty Groups",
@@ -42,6 +45,8 @@
   "languageFeatures": "Run Explorer’s own BSL language client for the selected ESKA application. Grammar remains available when disabled.",
   "restartLanguage": "Restart BSL Analyzer and Reanalyze",
   "configureProject": "Configure Project",
+  "checkProject": "Check Project",
+  "buildArtifact": "Build 1C File…",
   "runTest": "Run Test Infobase",
   "applyTest": "Update Test Infobase",
   "installExtensionTest": "Install Extension in Test Infobase",
