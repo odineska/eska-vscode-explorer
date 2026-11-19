@@ -263,6 +263,7 @@ function App() {
   const local = settingsController(api);
   const shared = projectController(api);
   const [section, setSection] = createSignal(scope === "workspace" ? "general" : "run");
+  const [listening, setListening] = createSignal(false);
   const [gitFile, setGitFile] = createSignal(scope === "member" ? "ignore" : "manifest");
   const file = () => section() === "git" ? gitFile() : "manifest";
   const receive = event => {
@@ -271,11 +272,11 @@ function App() {
   };
   onSettled(() => {
     window.addEventListener("message", receive);
+    setListening(true);
     if (section() === "run") local.load();
-    else shared.ensure(file());
     return () => window.removeEventListener("message", receive);
   });
-  createEffect(() => section() === "run" ? null : file(), active => {
+  createEffect(() => !listening() || section() === "run" ? null : file(), active => {
     if (active) shared.ensure(active);
   });
   const visible = settingsSections.filter(([id]) =>

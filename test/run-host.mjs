@@ -147,7 +147,7 @@ try {
   if (basename(suite) === "form-pictures-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createPictureFormSource(fixture);
   if (basename(suite) === "form-dependencies-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createDependencyFormSource(fixture);
   if (basename(suite) === "project-activity-host.cjs") fixture.activity = await (await import("./activity-fixture.mjs")).createActivitySource(fixture, root);
-  if (basename(suite) === "project-groups-host.cjs") fixture.grouping = await (await import("./fixture.mjs")).createProjectGroupingSource(fixture);
+  if (["project-groups-host.cjs", "settings-workspace-host.cjs"].includes(basename(suite))) fixture.grouping = await (await import("./fixture.mjs")).createProjectGroupingSource(fixture);
   if (basename(suite) === "formatting-host.cjs") {
     if (process.env.ESKA_TEST_LANGUAGE === "1") fixture.languageSource = await (await import("./language-fixture.mjs")).createLanguageSource(fixture);
     fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
