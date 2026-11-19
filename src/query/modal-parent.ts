@@ -50,8 +50,10 @@ export class QueryModalParent {
   }
 }
 
-/** VS Code's session override targets the active text editor. Release the temporary view before applying the edit. */
-export async function unlockQueryOwner(document: vscode.TextDocument): Promise<void> {
+/** Commands target the active editor; a temporary view must retain the exact checked native version. */
+async function withActiveQueryOwner(document: vscode.TextDocument, action: () => Promise<void>): Promise<void> {
+  const version = document.version;
+  if (document.isClosed) throw new ExplorerError("sourceChanged");
   const previous = vscode.window.activeTextEditor;
   const group = vscode.window.tabGroups.activeTabGroup;
   const preview = group.activeTab?.isPreview ?? false;
@@ -60,8 +62,9 @@ export async function unlockQueryOwner(document: vscode.TextDocument): Promise<v
   const hadView = group.tabs.some(matches);
   const editor = await vscode.window.showTextDocument(document, { viewColumn: group.viewColumn, preview: false });
   try {
-    if (vscode.window.activeTextEditor !== editor) throw new ExplorerError("sourceChanged");
-    await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
+    if (vscode.window.activeTextEditor !== editor || document.isClosed || document.version !== version) throw new ExplorerError("sourceChanged");
+    await action();
+    if (document.isClosed || document.version !== version) throw new ExplorerError("sourceChanged");
   } finally {
     if (previous && previous !== editor && !previous.document.isClosed && vscode.window.activeTextEditor === editor) {
       await vscode.window.showTextDocument(previous.document, { viewColumn: group.viewColumn, preview });
@@ -69,6 +72,21 @@ export async function unlockQueryOwner(document: vscode.TextDocument): Promise<v
     const temporary = !hadView && group.tabs.find(matches);
     if (temporary && !temporary.isDirty) await vscode.window.tabGroups.close(temporary, true);
   }
+}
+
+/** A native session override grants only the editor restriction selected by the user. */
+export async function unlockQueryOwner(document: vscode.TextDocument): Promise<void> {
+  await withActiveQueryOwner(document, async () => {
+    await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
+  });
+}
+
+/** The backend plan already owns exact source text; native persistence must not run save participants again. */
+export async function saveQueryOwner(document: vscode.TextDocument): Promise<void> {
+  await withActiveQueryOwner(document, async () => {
+    await vscode.commands.executeCommand("workbench.action.files.saveWithoutFormatting");
+    if (document.isDirty) throw new ExplorerError("sourceChanged");
+  });
 }
 
 /** Only an acknowledged private query may be reverted to its provider checkpoint when replacing its native views. */

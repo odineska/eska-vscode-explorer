@@ -8,7 +8,8 @@ const { connectWorkbench } = require('./query-constructor-dom.cjs');
 /** Installed-window regression: native input and actual Ctrl+S, without private provider access. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [];
-  let ui;
+  let ui, sourceParticipant;
+  let sourceSaveParticipants = 0;
   try {
     assert.equal(process.env.ESKA_HOST_NORMAL, '1', 'requires an ordinary installed window');
     assert.ok(process.env.ESKA_TEST_VSIX, 'requires the installed VSIX');
@@ -18,6 +19,16 @@ exports.run = async function () {
     await until(async () => /^ESKA v[0-9.]+$/.test(await ui.evaluate('[...document.querySelectorAll(".statusbar-item")].find(node=>node.id.endsWith("eska.explorer.connection"))?.textContent.trim() ?? ""')), 'backend ready');
     const uri = vscode.Uri.file(fixture.module), original = await fs.readFile(fixture.module);
     let expected = original.toString('utf8'), previous = 'SELECT 1\r\n|AS Value';
+    // A native source save participant would mutate code outside the checked query plan.
+    sourceParticipant = vscode.workspace.onWillSaveTextDocument(event => {
+      if (event.document.uri.toString() !== uri.toString()) return;
+      sourceSaveParticipants++;
+      const start = event.document.getText().indexOf('Other = 42;');
+      assert.ok(start >= 0);
+      event.waitUntil(Promise.resolve([vscode.TextEdit.replace(new vscode.Range(
+        event.document.positionAt(start), event.document.positionAt(start + 'Other = 42;'.length)), 'Other = 999;')]));
+    });
+
     const files = vscode.workspace.getConfiguration('files');
     // Parent participants are deliberately separate from query participants: a source plan owns exact output.
     await files.update('trimTrailingWhitespace', false, vscode.ConfigurationTarget.Global);
@@ -55,6 +66,7 @@ exports.run = async function () {
         const literal = query.replaceAll('"', '""').replaceAll('\n', '\r\n|');
         expected = expected.replace(previous, literal);
         await until(async () => !draft.isDirty && (await fs.readFile(fixture.module)).equals(Buffer.from(expected)), 'Ctrl+S persists exact UTF8 BOM owner bytes: ' + scenario.name + '/' + iteration);
+        assert.equal(sourceSaveParticipants, 0, 'query-owned persistence skips every source save participant');
         assert.equal(vscode.window.activeTextEditor?.document, draft, 'Ctrl+S retains query focus');
         assert.equal(draft.getText().replaceAll('\r\n', '\n'), query, 'save preserves the full Unicode native draft');
         previous = literal;
@@ -75,5 +87,5 @@ exports.run = async function () {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: false, accepted, error: String(error.stack ?? error), notifications,
       active: vscode.window.activeTextEditor && { encoding: vscode.window.activeTextEditor.document.encoding, text: vscode.window.activeTextEditor.document.getText(), dirty: vscode.window.activeTextEditor.document.isDirty } }));
     throw error;
-  } finally { ui?.close(); }
+  } finally { sourceParticipant?.dispose(); ui?.close(); }
 };
