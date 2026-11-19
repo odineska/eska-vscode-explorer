@@ -63,7 +63,7 @@
   "buildExecutable": "Путь или имя команды отдельно установленного eska-build.",
   "debugExecutable": "Путь или имя команды опционального eska-debug.",
   "selectAnalysisContext": "Выбрать приложение для анализа",
-  "queryEditBsl": "Редактировать запрос отдельно",
+  "queryEditBsl": "Открыть запрос отдельно",
   "command.queryConstructor": "Конструктор запросов",
   "command.placeQueryComments": "Назначить позиции исходных комментариев",
   "formatterExecutable": "Путь к eska-fmt. Значение eska-fmt включает поиск стандартного компонента.",
