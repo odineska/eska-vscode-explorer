@@ -178,7 +178,7 @@ try {
     await writeFile(fixture.module, '\ufeff// owner 😀\r\nQ = "SELECT T.Ref AS Value FROM Catalog.Товары AS T";\r\nOther = 42;\r\n');
   }
   if (["query-tabs-host.cjs", "query-session-host.cjs", "query-bsl-host.cjs", "query-bsl-restore-host.cjs", "query-bsl-windows-host.cjs", "query-modal-host.cjs", "query-modal-normal-host.cjs", "query-modal-restore-host.cjs", "query-builder-host.cjs"].includes(basename(suite))) fixture.query = await (await import("./query-fixture.mjs")).createQuerySource(fixture);
-  if (["query-bsl-host.cjs", "query-user-readonly-host.cjs", "query-bsl-restore-host.cjs", "query-bsl-windows-host.cjs", "query-modal-host.cjs", "query-modal-normal-host.cjs", "query-modal-restore-host.cjs", "query-builder-host.cjs"].includes(basename(suite))) {
+  if (["query-save-encoding-host.cjs", "query-bsl-host.cjs", "query-user-readonly-host.cjs", "query-bsl-restore-host.cjs", "query-bsl-windows-host.cjs", "query-modal-host.cjs", "query-modal-normal-host.cjs", "query-modal-restore-host.cjs", "query-builder-host.cjs"].includes(basename(suite))) {
     await writeFile(fixture.module, '\ufeff// owner 😀\r\nQ = "SELECT 1\r\n|AS Value";\r\nOther = 42;\r\nSecond = "SELECT 9";\r\nComputed = "SELECT " + "1";\r\n');
   }
   if (basename(suite) === "query-language-context-host.cjs") fixture.applications = await (await import("./query-language-fixture.mjs")).createQueryLanguageContexts(fixture);

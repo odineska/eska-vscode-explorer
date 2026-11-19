@@ -390,11 +390,14 @@ export class QueryTabs implements vscode.FileSystemProvider {
     await this.ready;
     const session = this.required(uri);
     if (session.design || this.isOwnerSnapshot(uri)) throw vscode.FileSystemError.NoPermissions(this.text("queryReadonly"));
-    const draft = canonical(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content));
+    const key = uri.toString();
+    const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === key);
     const native = session.nativeSave;
     delete session.nativeSave;
-    const nativeUnlock = !!native && !native.isClosed && canonical(native.getText()) === draft;
-    const saving = this.serial(uri.toString(), () => this.save(session, draft, nativeUnlock));
+    const saving = this.serial(key, async () => {
+      const draft = await savedQueryText(content, document);
+      await this.save(session, draft, !!native && native === document && !native.isClosed);
+    });
     session.saving = saving;
     try {
       await saving;
@@ -790,7 +793,9 @@ export class QueryTabs implements vscode.FileSystemProvider {
         if (!await session.parent.hide()) { session.parent.active = false; return; }
       }
     }
-    const document = await vscode.workspace.openTextDocument(this.uri(session.record));
+    const uri = this.uri(session.record);
+    const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString())
+      ?? await vscode.workspace.openTextDocument(uri, { encoding: "utf8" });
     await this.restore(document);
     await vscode.window.showTextDocument(document, { preview: false });
     if (canonical(document.getText()) !== session.record.base && canonical(document.getText()) !== session.record.draft) {
@@ -889,6 +894,8 @@ export class QueryTabs implements vscode.FileSystemProvider {
       : reason === "constructor_unavailable" ? "constructorUnavailable"
       : error instanceof ExplorerError && error.code === "incompatible" ? "queryUnavailable"
       : ["unsupported_expression", "invalid_literal", "not_found"].includes(String(reason)) ? "queryUnsupported"
+      : reason === "unsupported_structure" ? "queryStructureUnsupported"
+      : reason === "stale_draft" ? "queryDraftChanged"
       : reason === "comment_position" ? "queryCommentInvalid"
       : error instanceof ExplorerError && (error.code === "sourceChanged" || ["conflict", "context_changed", "source_changed", "owner_changed", "disk_changed", "stale_version", "stale_owner", "stale_revision"].includes(String(reason))) ? "queryOwnerChanged"
       : ["read_only", "user_read_only"].includes(String(reason)) ? "queryReadonly" : reason === "comments_require_decision" ? "queryComments" : "querySaveFailed";
@@ -905,3 +912,14 @@ export class QueryTabs implements vscode.FileSystemProvider {
 
 /** SDBL editor line endings are logical LF; source physical lines are chosen separately in query/plan. */
 function canonical(text: string): string { return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n"); }
+
+/** VS Code writes in the tab's encoding. Keep the native Unicode text, including characters a legacy encoding cannot represent. */
+async function savedQueryText(content: Uint8Array, document: vscode.TextDocument | undefined): Promise<string> {
+  if (!document) return canonical(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content));
+  const text = document.getText(), version = document.version, encoding = document.encoding;
+  const encoded = encoding === "utf8" ? Buffer.from(text) : await vscode.workspace.encode(text, { encoding });
+  if (document.isClosed || document.version !== version || document.encoding !== encoding || !Buffer.from(content).equals(encoded)) {
+    throw new ExplorerError("requestFailed", "query_failed", { reason: "stale_draft" });
+  }
+  return canonical(text);
+}
