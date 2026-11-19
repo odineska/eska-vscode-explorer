@@ -240,3 +240,55 @@ test("closing an owned query stops if the editor refuses to close or focus is re
     assert.equal(value.groups[2].activeTab, value.foreign);
   }
 });
+
+/** Only the source's temporary native view is exposed to the save command. */
+function sourceSaveFixture({ changeOnShow = false, refuseSave = false } = {}) {
+  class TabInputText { constructor(uri) { this.uri = uri; } }
+  const owner = { uri: { toString: () => 'file:///owner.bsl' }, version: 7, isClosed: false, isDirty: true };
+  const query = { uri: { toString: () => 'eska-query:/draft' }, isClosed: false };
+  const previous = { document: query };
+  const group = { viewColumn: 1, activeTab: { isPreview: false }, tabs: [{ input: new TabInputText(query.uri), isDirty: true }] };
+  const commands = [], closed = [];
+  const window = { activeTextEditor: previous, tabGroups: { activeTabGroup: group, async close(tab) {
+    closed.push(tab); group.tabs.splice(group.tabs.indexOf(tab), 1); return true;
+  } }, async showTextDocument(document) {
+    const editor = { document }; window.activeTextEditor = editor;
+    if (document === owner) {
+      group.tabs.push({ input: new TabInputText(owner.uri), get isDirty() { return owner.isDirty; } });
+      if (changeOnShow) owner.version++;
+    }
+    return editor;
+  } };
+  const { saveQueryOwner } = nativeAdapters({ TabInputText, window, commands: { async executeCommand(command) {
+    assert.equal(window.activeTextEditor.document, owner);
+    commands.push(command);
+    if (!refuseSave) owner.isDirty = false;
+  } } })('modal-parent');
+  return { save: () => saveQueryOwner(owner), owner, query, group, window, commands, closed };
+}
+
+test('clean-owner persistence skips participants and restores query focus without an extra source tab', async () => {
+  const f = sourceSaveFixture();
+  await f.save();
+  assert.deepEqual(f.commands, ['workbench.action.files.saveWithoutFormatting']);
+  assert.equal(f.owner.isDirty, false);
+  assert.equal(f.window.activeTextEditor.document, f.query);
+  assert.equal(f.closed.length, 1);
+  assert.equal(f.group.tabs.length, 1);
+});
+
+test('source changes while activating its temporary view prevent persistence', async () => {
+  const f = sourceSaveFixture({ changeOnShow: true });
+  await assert.rejects(f.save(), { code: 'sourceChanged' });
+  assert.equal(f.commands.length, 0);
+  assert.equal(f.window.activeTextEditor.document, f.query);
+  assert.equal(f.owner.isDirty, true);
+});
+
+test('failed native source persistence retains its dirty model and reports failure', async () => {
+  const f = sourceSaveFixture({ refuseSave: true });
+  await assert.rejects(f.save(), { code: 'sourceChanged' });
+  assert.equal(f.owner.isDirty, true);
+  assert.equal(f.closed.length, 0);
+  assert.equal(f.window.activeTextEditor.document, f.query);
+});

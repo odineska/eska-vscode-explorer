@@ -40,8 +40,8 @@ export async function xmlQueryOwner(tree: MetadataTree, entry: TreeEntry): Promi
 export async function nativeReadOnly(document: vscode.TextDocument, ignoredWorkspaceRule?: string, allowConfiguredWrite = false): Promise<boolean> {
   const stat = await vscode.workspace.fs.stat(document.uri);
   if (stat.permissions === vscode.FilePermission.Readonly) return true;
-  if (!allowConfiguredWrite) return configuredReadOnly(document, ignoredWorkspaceRule);
-  return access(document.uri.fsPath, constants.W_OK).then(() => false, () => true);
+  if (document.uri.scheme === "file" && !await access(document.uri.fsPath, constants.W_OK).then(() => true, () => false)) return true;
+  return !allowConfiguredWrite && configuredReadOnly(document, ignoredWorkspaceRule);
 }
 
 /** Native tabs retain dirty state when a concurrent save notification clears the extension-host document flag. */
@@ -54,17 +54,34 @@ export function nativeDirty(document: vscode.TextDocument): boolean {
 /** Resolve the active module through backend source roles; the adapter never infers a BSL owner from its filename. */
 export async function bslQueryOwner(tree: MetadataTree, document: vscode.TextDocument): Promise<QueryOwnerView> {
   const version = document.version;
-  const revealed = await revealFile(tree, document.uri.fsPath);
-  if (!revealed) throw new ExplorerError("sourceMissing");
-  const entry = "target" in revealed ? revealed.owner : revealed;
-  const result = await tree.request(entry.project, "metadata/source", { node: entry.node.id });
-  if (!Array.isArray(result.sources)) throw new ExplorerError("protocolInvalid");
-  for (const value of result.sources) {
-    if (!isRecord(value) || !isRecord(value.role) || value.role.kind !== "module" || !isWirePath(value.path)) continue;
-    const path = await existingSource(entry.project.info.sourcePath, value.path);
-    if (vscode.Uri.file(path).toString() !== document.uri.toString()) continue;
-    if (document.isClosed || document.version !== version) throw new ExplorerError("sourceChanged");
-    return { entry, source: value.path, path, document };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await tree.synchronizeInputs();
+    const revealed = await revealFile(tree, document.uri.fsPath);
+    if (!revealed) throw new ExplorerError("sourceMissing");
+    const entry = "target" in revealed ? revealed.owner : revealed;
+    const generation = entry.project.info.generation, sequence = entry.project.info.eventSequence;
+    try {
+      // metadata/source drains native events again. If that invalidates the lazy module,
+      // repeat reverse navigation rather than retrying its now-unmaterialized node ID.
+      const result = await tree.request(entry.project, "metadata/source", { node: entry.node.id });
+      if (!Array.isArray(result.sources)) throw new ExplorerError("protocolInvalid");
+      for (const value of result.sources) {
+        if (!isRecord(value) || !isRecord(value.role) || value.role.kind !== "module" || !isWirePath(value.path)) continue;
+        const path = await existingSource(entry.project.info.sourcePath, value.path);
+        if (vscode.Uri.file(path).toString() !== document.uri.toString()) continue;
+        if (document.isClosed || document.version !== version) throw new ExplorerError("sourceChanged");
+        return { entry, source: value.path, path, document };
+      }
+      throw new ExplorerError("sourceMissing");
+    } catch (error) {
+      if (!document.isClosed && document.version === version
+        && (generation !== entry.project.info.generation || sequence !== entry.project.info.eventSequence)
+        && error instanceof ExplorerError && (error.code === "sourceChanged" || error.domain === "unknown_node" || error.domain === "stale_generation")) {
+        if (attempt === 2) throw new ExplorerError("sourceChanged");
+        continue;
+      }
+      throw error;
+    }
   }
-  throw new ExplorerError("sourceMissing");
+  throw new ExplorerError("sourceChanged");
 }
