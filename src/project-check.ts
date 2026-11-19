@@ -42,9 +42,13 @@ export class ProjectCheck implements vscode.Disposable {
   private readonly lifetime = new AbortController();
   private readonly diagnostics = vscode.languages.createDiagnosticCollection("eska-project-check");
   private readonly changes = vscode.workspace.onDidChangeTextDocument(event => {
-    if (event.contentChanges.length) this.diagnostics.delete(event.document.uri);
+    if (event.contentChanges.length) {
+      this.diagnostics.delete(event.document.uri);
+      this.changedDuringRun?.add(vscode.Uri.file(event.document.uri.fsPath).fsPath);
+    }
   });
   private running = false;
+  private changedDuringRun: Set<string> | undefined;
 
   constructor(private readonly analyzer: AnalyzerSettingsHost) {}
 
@@ -57,6 +61,7 @@ export class ProjectCheck implements vscode.Disposable {
       const binary = await projectComponent(target, "check");
       if (!binary) return this.result("projectToolMissing", true, "eska-check");
       if (!await saveProjectFiles(target.root) || owner.aborted) return;
+      this.changedDuringRun = new Set();
       const args = projectArgs(target.root, "--format", "json");
       const application = this.analyzer.application(target.root);
       if (application) args.push("--application", application);
@@ -77,7 +82,10 @@ export class ProjectCheck implements vscode.Disposable {
       }, owner);
       if (response === undefined || owner.aborted) return;
       return this.publish(response);
-    } finally { this.running = false; }
+    } finally {
+      this.changedDuringRun = undefined;
+      this.running = false;
+    }
   }
 
   private publish(value: unknown): ProjectCheckResult {
@@ -112,7 +120,7 @@ export class ProjectCheck implements vscode.Disposable {
       if (!path) return this.result("projectCheckFailed", true);
       if (!file.diagnostics.length) continue;
       const uri = vscode.Uri.file(path);
-      if (dirty.has(uri.fsPath)) return this.result("projectCheckChanged", true);
+      if (dirty.has(uri.fsPath) || this.changedDuringRun?.has(uri.fsPath)) return this.result("projectCheckChanged", true);
       const diagnostics = file.diagnostics.map(item => checkDiagnostic(item, label));
       if (diagnostics.some(entry => entry === undefined)) return this.result("projectCheckFailed", true);
       rows.push([uri, diagnostics as vscode.Diagnostic[]]);
