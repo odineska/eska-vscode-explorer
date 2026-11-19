@@ -286,6 +286,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     }
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.refreshNode", (entry: Element) => this.refresh(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openSource", (entry: TreeEntry) => this.open(entry)));
+    this.disposables.push(vscode.commands.registerCommand("eska.explorer.openInNewTab", (entry: Element) => this.openInNewTab(entry)));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.openXml", (entry: TreeEntry) => this.open(entry, "xml")));
     this.disposables.push(vscode.commands.registerCommand("eska.explorer.createMetadata", (entry?: Element) => this.createMetadata(entry)));
     for (const operation of ["create", "copy", "delete"] as const) this.disposables.push(vscode.commands.registerCommand(`eska.explorer.${operation}Object`, (entry?: Element) => this.authorObject(operation, entry)));
@@ -514,7 +515,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         : this.expanded.get(entry.key)
           ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
       item.id = entry.key;
-      item.contextValue = entry.fileKind === "group" && entry.kind === "settings" ? "eskaProjectSettings" : "eskaFiles";
+      item.contextValue = entry.fileKind === "group" && entry.kind === "settings" ? "eskaProjectSettings"
+        : entry.fileKind === "entry" && !entry.directory ? "eskaFilesFile" : "eskaFiles";
       if (entry.fileKind === "entry") {
         item.resourceUri = vscode.Uri.file(entry.path);
         item.tooltip = entry.path;
@@ -530,7 +532,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if ("owner" in entry) {
       const item = new vscode.TreeItem(message(this.treeLanguage, entry.target === "form" ? "formSource" : "formModule"));
       item.id = `${entry.owner.key}:source:${entry.target}`;
-      item.contextValue = "eskaFormSource";
+      item.contextValue = "eskaFormSourceFile";
       item.resourceUri = this.decorations.resource(entry);
       item.tooltip = message(this.treeLanguage, entry.target === "form" ? "formSource" : "formModule");
       item.iconPath = this.metadataIcon(entry.owner, entry.target === "form" ? "form" : "module");
@@ -582,6 +584,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     if (!node.parent && this.sorting.order(entry.project) === "alphabetical") item.contextValue += "Sorted";
     if (node.creationKinds?.length && this.connection.state.kind === "ready" && this.connection.state.metadataCreation) item.contextValue += "Creatable";
     else if (node.parent && node.objectCreation && this.connection.state.kind === "ready" && this.connection.state.metadataObjects) item.contextValue += "Parent";
+    if (node.id.kind === "module" || directModuleRole(entry)) item.contextValue += "File";
     item.accessibilityInformation = { label: support ? `${label}. ${this.support.explanation(entry)}` : label };
     item.iconPath = node.state === "error" ? new vscode.ThemeIcon("warning") : this.metadataIcon(entry);
     if (!node.parent) item.description = entry.project.info.scope.kind === "member"
@@ -931,7 +934,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   }
 
   /** Activate properties or a resolved source, preserving unsaved buffers and rejecting stale positions. */
-  private async open(entry: TreeEntry, target: SourceTarget = "default", property?: PropertyChoice): Promise<void> {
+  private async open(entry: TreeEntry, target: SourceTarget = "default", property?: PropertyChoice, preview = true): Promise<void> {
     if (target === "default" && entry && isForm(entry)) { await this.openForm(entry); return; }
     const tree = this.tree;
     if (!tree || !entry || !("node" in entry) || !tree.projects.includes(entry.project)) return;
@@ -949,7 +952,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       const document = await vscode.workspace.openTextDocument(uri);
       if (opening !== this.opening || tree !== this.tree) return;
       if (source.position && (document.isDirty || document.getText() !== source.position.text)) throw new ExplorerError("sourceChanged");
-      const editor = await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+      const editor = await vscode.window.showTextDocument(document, { preview, preserveFocus: false });
       if (source.position) {
         editor.selection = new vscode.Selection(document.positionAt(source.position.start), document.positionAt(source.position.end));
         editor.revealRange(editor.selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
@@ -1108,13 +1111,26 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     }
   }
 
+  /** Pin only file-backed rows through the same source and support checks as ordinary navigation. */
+  private async openInNewTab(entry: Element): Promise<void> {
+    if (!entry) return;
+    if ("fileKind" in entry) { await this.openFile(entry, false); return; }
+    if ("owner" in entry && "target" in entry) { await this.open(entry.owner, entry.target, undefined, false); return; }
+    if ("node" in entry && (entry.node.id.kind === "module" || directModuleRole(entry))) {
+      await this.open(entry, "default", undefined, false);
+    }
+  }
+
   /** File groups use the same protected route as metadata nodes. */
-  private async openFile(entry: WorkspaceEntry): Promise<void> {
+  private async openFile(entry: WorkspaceEntry, preview?: boolean): Promise<void> {
     if (entry?.fileKind !== "entry" || entry.directory || !this.files?.scopes.some(scope =>
       relativeFile(scope.path, entry.path) !== undefined)) return;
     const uri = await this.support.resolveUri(entry.path);
-    if (uri.scheme === "file") await vscode.commands.executeCommand("vscode.open", uri);
-    else await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: true });
+    if (uri.scheme === "file") {
+      if (preview === undefined) await vscode.commands.executeCommand("vscode.open", uri);
+      else await vscode.commands.executeCommand("vscode.open", uri, { preview });
+    }
+    else await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), { preview: preview ?? true });
   }
 
   /** Restoration waits for the existing process; unclassified views remain rooted read-only previews owned by ESKA. */
