@@ -20,7 +20,7 @@ import type { CommentDecision } from "./protocol.js";
 import type { SourceCommentState } from "./comments.js";
 import type { QueryOwnerFacts } from "./session-protocol.js";
 import type { QueryLanguageProjection } from "./projections.js";
-import { QueryModalParent, unlockQueryOwner } from "./modal-parent.js";
+import { QueryModalParent, saveQueryOwner, unlockQueryOwner } from "./modal-parent.js";
 
 export const QUERY_SCHEME = "eska-query";
 interface Session {
@@ -630,7 +630,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
         attempted = true;
         if (!await vscode.workspace.applyEdit(edit)) throw new ExplorerError("sourceChanged");
         if (querySnapshot(owner.document.getText()) !== plan.outputSnapshot) throw new ExplorerError("sourceChanged");
-        if (plan.saveOwner && !await owner.document.save()) throw new ExplorerError("sourceChanged");
+        if (plan.saveOwner) await saveQueryOwner(owner.document);
       }
       if (querySnapshot(owner.document.getText()) !== plan.outputSnapshot) throw new ExplorerError("sourceChanged");
       const receipt = this.ownerFacts(owner.document, await nativeReadOnly(owner.document, currentRule, unlockOwner));
