@@ -1,3 +1,5 @@
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import * as vscode from "vscode";
 import { configuredReadOnly } from "../editor-policy.js";
 import { ExplorerError, isRecord, isWirePath, type WirePath } from "../protocol.js";
@@ -34,10 +36,12 @@ export async function xmlQueryOwner(tree: MetadataTree, entry: TreeEntry): Promi
   return { entry, source, path, document };
 }
 
-/** XML editing reports provider restrictions and never changes the user's native session-readonly override. */
-export async function nativeReadOnly(document: vscode.TextDocument, ignoredWorkspaceRule?: string): Promise<boolean> {
+/** A native session override can waive editor rules, while filesystem permissions still apply. */
+export async function nativeReadOnly(document: vscode.TextDocument, ignoredWorkspaceRule?: string, allowConfiguredWrite = false): Promise<boolean> {
   const stat = await vscode.workspace.fs.stat(document.uri);
-  return stat.permissions === vscode.FilePermission.Readonly || configuredReadOnly(document, ignoredWorkspaceRule);
+  if (stat.permissions === vscode.FilePermission.Readonly) return true;
+  if (!allowConfiguredWrite) return configuredReadOnly(document, ignoredWorkspaceRule);
+  return access(document.uri.fsPath, constants.W_OK).then(() => false, () => true);
 }
 
 /** Native tabs retain dirty state when a concurrent save notification clears the extension-host document flag. */
