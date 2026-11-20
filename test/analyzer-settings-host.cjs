@@ -18,12 +18,6 @@ async function until(check, label) {
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const root = fixture.root;
-  const template = process.env.ESKA_ANALYZER_UI_TEMPLATE;
-  assert.ok(template && path.isAbsolute(template), 'supply a read-only configuration template');
-  assert.ok(process.env.ESKA_ANALYZER_UI_CHECK_BINARY && path.isAbsolute(process.env.ESKA_ANALYZER_UI_CHECK_BINARY));
-  await fs.rm(path.join(root, 'src'), {recursive:true});
-  await fs.cp(path.join(template, 'src'), path.join(root, 'src'), {recursive:true});
-  await fs.writeFile(path.join(root, 'eska.toml'), "[project]\ntype='configuration'\nsource='src'\n[tools.bsl-analyzer.platform_help]\nsource='bundled'\n# UI acceptance preserves this comment\n[tools.bsl-analyzer.diagnostics.metadataOverrides.QueryOrderByDocumentDate]\ntags=[\"sql\"]\n");
   const artifacts = process.env.ESKA_ANALYZER_UI_ARTIFACTS;
   assert.ok(artifacts && path.isAbsolute(artifacts));
   const manifest = path.join(root, 'eska.toml');

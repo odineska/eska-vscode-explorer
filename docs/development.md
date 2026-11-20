@@ -44,7 +44,7 @@ node --test test/*.test.mjs
 которая выдаёт `QueryOrderByDocumentDate` (минимальный пример —
 [`query_rules.rs`](../../eska/crates/eska-analyzer/tests/check/query_rules.rs)).
 Шаблон только читается: исходники копируются в собственный fixture runner внутри
-playground. Пути исполняемых файлов также задаются абсолютными:
+playground до запуска редактора и автоматического подключения backend. Пути исполняемых файлов также задаются абсолютными:
 
 ```bash
 ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
