@@ -36,6 +36,17 @@ try {
     "extensions.autoCheckUpdates": false, "update.mode": "none",
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  // Auto-activation can open metadata before the suite starts; publish this fixture first.
+  if (basename(suite) === "analyzer-settings-host.cjs") {
+    const template = process.env.ESKA_ANALYZER_UI_TEMPLATE;
+    if (!template || !isAbsolute(template)) throw new Error("Set ESKA_ANALYZER_UI_TEMPLATE to an absolute read-only configuration template.");
+    if (!process.env.ESKA_ANALYZER_UI_CHECK_BINARY || !isAbsolute(process.env.ESKA_ANALYZER_UI_CHECK_BINARY)) {
+      throw new Error("Set ESKA_ANALYZER_UI_CHECK_BINARY to an absolute eska-check executable.");
+    }
+    await rm(fixture.source, { recursive: true });
+    await cp(join(template, "src"), fixture.source, { recursive: true });
+    await writeFile(join(fixture.root, "eska.toml"), "[project]\ntype='configuration'\nsource='src'\n[tools.bsl-analyzer.platform_help]\nsource='bundled'\n# UI acceptance preserves this comment\n[tools.bsl-analyzer.diagnostics.metadataOverrides.QueryOrderByDocumentDate]\ntags=[\"sql\"]\n");
+  }
   if (basename(suite) === "project-commands-host.cjs" && process.env.ESKA_HOST_PROJECT_COMMANDS_EMPTY === "1") {
     await rm(join(fixture.root, "eska.toml"));
   } else if (basename(suite) === "project-commands-host.cjs") {

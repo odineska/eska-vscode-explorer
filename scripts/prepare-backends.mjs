@@ -8,6 +8,7 @@ import { downloadAsset, fetchBytes, hostTarget, parseRelease } from "../out/tool
 import { installAnalyzer, installComponent } from "../out/tooling/install.js";
 import { inspectAnalyzer } from "../out/tooling/inspect.js";
 import { prepareFormReferences } from "./form-references.mjs";
+import { verifyReviewedBackends } from "./release-compatibility.mjs";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const playground = resolve(process.env.ESKA_TEST_ROOT ?? join(repository, "../eska-playground"));
@@ -66,6 +67,10 @@ if (local && process.env.ESKA_TEST_ANALYZER_BINARY) {
 }
 const analyzer = await installAnalyzer(prefix, analyzerData, analyzerRelease, join(repository, "resources/analyzer-notices"));
 assert.deepEqual(await installAnalyzer(prefix, analyzerData, analyzerRelease, join(repository, "resources/analyzer-notices")), analyzer);
+if (process.env.ESKA_REQUIRE_BACKEND_REVIEW === "1") {
+  const reviewed = JSON.parse(await readFile(join(repository, "docs/reviewed-backends.json"), "utf8"));
+  verifyReviewedBackends(reviewed, project.version, analyzer.version);
+}
 const references = !local || process.env.ESKA_TEST_REFERENCE_ROOT
   ? await prepareFormReferences(root, projectRelease.version, process.env.ESKA_TEST_REFERENCE_ROOT)
   : undefined;

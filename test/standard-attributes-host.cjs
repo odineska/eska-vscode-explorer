@@ -17,8 +17,26 @@ exports.run = async function () {
   await vscode.commands.executeCommand('eska.explorer.connect');
   const [root] = (await explorer.getChildren()).filter(entry => entry.node);
   const catalogs = (await explorer.getChildren(root)).find(entry => entry.node.id.collection?.metadataKind === 'catalog');
-  const goods = (await explorer.getChildren(catalogs)).find(entry => entry.node.label.text === 'Товары');
-  const group = (await explorer.getChildren(goods)).find(entry => entry.node.id.collection?.kind === 'standardAttributes');
+  const objects = await explorer.getChildren(catalogs);
+  const goods = objects.find(entry => entry.node.label.text === 'Товары');
+  const buyers = objects.find(entry => entry.node.label.text === 'Покупатели');
+  const children = await explorer.getChildren(goods);
+  const group = children.find(entry => entry.node.id.collection?.kind === 'standardAttributes');
+  const assertGroupOrder = async (language) => {
+    const rows = await explorer.getChildren(goods);
+    assert.deepEqual(rows.slice(0, 2).map(entry => entry.node.id.collection?.kind),
+      ['modules', 'standardAttributes'], `${language}: standard attributes immediately follow modules`);
+    assert.equal(explorer.getTreeItem(rows[0]).label, language === 'ru-RU' ? 'Модули' : 'Modules');
+    assert.equal(explorer.getTreeItem(rows[1]).label, language === 'ru-RU' ? 'Стандартные реквизиты' : 'Standard attributes');
+    const predefined = rows.findIndex(entry => entry.node.id.collection?.metadataKind === 'predefined-item');
+    assert.ok(predefined > 1, 'predefined data follows standard attributes');
+    const withoutModules = await explorer.getChildren(buyers);
+    assert.equal(withoutModules[0].node.id.collection?.kind, 'standardAttributes',
+      `${language}: standard attributes come first when modules are absent`);
+    assert.ok(rows.slice(2).some(entry => entry.node.id.collection?.metadataKind === 'attribute'),
+      'ordinary attributes follow standard attributes');
+  };
+  await assertGroupOrder('ru-RU');
   assert.ok(group, 'implicit standard attribute group exists');
   assert.equal(explorer.getTreeItem(group).label, 'Стандартные реквизиты');
   const attributes = await explorer.getChildren(group);
@@ -53,9 +71,10 @@ exports.run = async function () {
   }
   await vscode.workspace.getConfiguration('eska.explorer').update('treeLanguage', 'en-US', vscode.ConfigurationTarget.Workspace);
   await until(() => tab.state.language === 'en-US', 'properties follow metadata language');
+  await assertGroupOrder('en-US');
   assert.equal(explorer.getTreeItem(group).label, 'Standard attributes');
   assert.equal(tab.state.properties.find(value => value.key.name === 'Name').value.caption['en-US'], 'Deletion mark');
   for (let index = 0; index < files.length; index++) assert.deepEqual(await fs.readFile(files[index]), before[index]);
   await vscode.commands.executeCommand('eska.explorer.disconnect');
-  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'standard-attributes', vscode: vscode.version, implicit: true, readOnly: true, inspected, sourceUnchanged: true }));
+  await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({ passed: true, suite: 'standard-attributes', vscode: vscode.version, implicit: true, standardAttributesAfterModules: ['ru-RU', 'en-US'], readOnly: true, inspected, sourceUnchanged: true }));
 };

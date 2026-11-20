@@ -30,6 +30,36 @@ ESKA_TEST_ROOT="$(realpath ../eska-playground)" bun test
 node --test test/*.test.mjs
 ```
 
+### Каталог диагностик и уровень находок BSL Analyzer
+
+`node --test test/analyzer-settings-catalog.test.mjs` проверяет версионирование
+правил 0.2.67 и 0.4.0–0.4.6, включение новых правил по умолчанию и точечное
+редактирование `diagnostics.metadataOverrides.<rule>.lspSeverity` без потери
+параметров, неизвестных правил и дополнительных полей.
+
+Настоящий webview и сохранение через ESKA с опубликованным Analyzer 0.4.6
+проверяет `analyzer-settings-host.cjs`. Нужны собранный bundle расширения,
+`eska-project`, `eska-check`, анализатор и VS Code с поддержкой CDP.
+`QUERY_RULES_PROJECT` задаёт абсолютный путь к конфигурации Designer XML,
+которая выдаёт `QueryOrderByDocumentDate` (минимальный пример —
+[`query_rules.rs`](../../eska/crates/eska-analyzer/tests/check/query_rules.rs)).
+Шаблон только читается: исходники копируются в собственный fixture runner внутри
+playground до запуска редактора и автоматического подключения backend. Пути исполняемых файлов также задаются абсолютными:
+
+```bash
+ESKA_TEST_ROOT="$(realpath ../eska-playground)" \
+ESKA_TEST_BINARY="$(realpath ../eska/target/debug/eska-project)" \
+ESKA_TEST_ANALYZER_BINARY="$BSL_ANALYZER" \
+ESKA_ANALYZER_UI_CHECK_BINARY="$(realpath ../eska/target/debug/eska-check)" \
+ESKA_ANALYZER_UI_TEMPLATE="$QUERY_RULES_PROJECT" \
+ESKA_ANALYZER_UI_ARTIFACTS="$(mktemp -d "$(realpath ../eska-playground)/analyzer-ui-XXXXXX")" \
+ESKA_HOST_DEBUG_PORT=9437 \
+ESKA_HOST_LOCALE=en node test/run-host.mjs test/analyzer-settings-host.cjs
+```
+
+Для русской формы повторите с `ESKA_HOST_LOCALE=ru` и установленным языковым
+пакетом. `VSCODE_EXECUTABLE` позволяет выбрать отдельный исполняемый файл Code.
+
 ### Секция запуска и отладки до первого F5
 
 Регрессия `test/run-debug-view-host.cjs` проверяет настоящее представление в

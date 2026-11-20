@@ -2,8 +2,9 @@ import { deferCleanup } from "./cleanup.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 
@@ -381,4 +382,82 @@ for (const kind of ["formatter", "debugger"]) test(`${kind} checks keep full-bun
   await setup.check(kind);
   assert.equal(installed, 1);
   assert.deepEqual(actions, [["stop", "debugger"], ["restart", "project"]]);
+});
+
+/** A new stable Analyzer is accepted by its executable contract, independently of catalog and ESKA releases. */
+test("update entrypoint installs an uncatalogued Analyzer and preserves policy and installation on incompatible follow-up", {
+  skip: process.platform === "win32",
+}, async t => {
+  const { setup, actions, requests } = await fixture(t);
+  const target = "x86_64-unknown-linux-gnu", future = "0.4.99", rejected = "0.4.100";
+  const { analyzerCatalogForVersion } = await import("../webview/settings/analyzer-catalog.mjs");
+  assert.equal(analyzerCatalogForVersion(future), undefined);
+  // The script is a host-executable fixture for a supported release target, including on ARM test hosts.
+  replace(t, releases, "hostTarget", () => target);
+  replace(t, installation, "managedVersion", async (root, kind) => {
+    if (kind === "analyzer") return originalManagedVersion(root, kind, target);
+    return kind === "project" ? "0.37.1" : "0.35.1";
+  });
+  ui.settings = { checkForUpdates: false, checkForAnalyzerUpdates: false, checkForFormatterUpdates: false };
+  const workspace = join(setup.root, "..", "workspace"), probeLog = join(setup.root, "..", "analyzer-probes.log");
+  await mkdir(join(workspace, "src"), { recursive: true });
+  const policy = Buffer.from('[project]\ntype="configuration"\n[tools.bsl-analyzer.future_policy]\nunknown_key="must survive"\n');
+  const source = Buffer.from('// unchanged user source\r\n');
+  await writeFile(join(workspace, "eska.toml"), policy);
+  await writeFile(join(workspace, "src/Module.bsl"), source);
+  const executable = (version, compatible = true) => Buffer.from(`#!${process.execPath}\n`
+    + `require("node:fs").appendFileSync(${JSON.stringify(probeLog)}, process.argv[2] + " ${version}\\n");\n`
+    + `if (process.argv[2] === "--version") console.log("bsl-analyzer ${version}");\n`
+    + `else if (process.argv[2] === "contract") console.log(JSON.stringify(${JSON.stringify({ build_version: version, cli: { commands: [
+      { name: "check-config", args: [{ name: "config", required: true, takes_value: true }] },
+      { name: "analyze", args: [{ name: "format", takes_value: true, values: ["jsonl"] }] },
+      { name: "lsp", args: [{ name: "mode", takes_value: true, values: compatible ? ["stdio"] : ["unsupported"] }] },
+    ] } })}));\nelse process.exit(2);\n`);
+  const proposal = (version, bytes) => releases.parseRelease("analyzer", target, {
+    draft: false, prerelease: false, tag_name: `v${version}`, assets: [{ name: "bsl-analyzer-app-linux-amd64",
+      size: bytes.length, state: "uploaded", digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      browser_download_url: `https://github.com/itrous/bsl-analyzer/releases/download/v${version}/bsl-analyzer-app-linux-amd64` }],
+  });
+  const old = executable("0.4.6");
+  const previous = await installation.installAnalyzer(setup.root, old, proposal("0.4.6", old), resolve("resources/analyzer-notices"));
+  setup.states.analyzer = { phase: "ready", info: previous };
+  setup.states.project.info = { kind: "project", version: "0.37.1", path: join(setup.root, "bin/eska-project") };
+  const candidate = executable(future);
+  let offered = proposal(future, candidate), downloaded = candidate;
+  replace(t, releases, "latestToolRelease", async kind => {
+    requests.push(kind);
+    return kind === "analyzer" ? offered : { kind, version: kind === "project" ? "0.37.1" : "0.35.1", target };
+  });
+  replace(t, releases, "downloadAsset", async asset => {
+    assert.equal(asset.sha256, createHash("sha256").update(downloaded).digest("hex"));
+    return downloaded;
+  });
+  replace(t, installation, "installComponent", async () => assert.fail("current ESKA must not be reinstalled"));
+  ui.approved = true;
+  await setup.check("analyzer");
+  assert.equal(await originalManagedVersion(setup.root, "analyzer", target), future);
+  assert.equal(setup.states.project.info.version, "0.37.1");
+  assert.equal(setup.states.analyzer.info.version, future);
+  assert.deepEqual(actions, [["stop", "analyzer"], ["restart", "analyzer"]]);
+  assert.deepEqual(requests, ["analyzer"]);
+  assert.equal((await setup.ensureAnalyzer(new AbortController().signal, false)).version, future);
+  const binary = installation.managedPath(setup.root, "analyzer", target);
+  const receipt = join(setup.root, "analyzer/components/bsl-analyzer-app.json");
+  const installedBytes = await readFile(binary), receiptBytes = await readFile(receipt);
+  downloaded = executable(rejected, false); offered = proposal(rejected, downloaded);
+  actions.length = 0; requests.length = 0;
+  await setup.updateAll();
+  assert.deepEqual(requests, ["project", "formatter", "debugger", "analyzer"]);
+  assert.equal(await originalManagedVersion(setup.root, "analyzer", target), future);
+  assert.equal(setup.states.analyzer.info.version, future);
+  assert.deepEqual(await readFile(binary), installedBytes);
+  assert.deepEqual(await readFile(receipt), receiptBytes);
+  assert.deepEqual(await readFile(join(workspace, "eska.toml")), policy);
+  assert.deepEqual(await readFile(join(workspace, "src/Module.bsl")), source);
+  assert.deepEqual((await readdir(workspace)).sort(), ["eska.toml", "src"]);
+  assert.deepEqual(await readdir(join(workspace, "src")), ["Module.bsl"]);
+  assert.deepEqual(actions, [["stop", "analyzer"], ["restart", "analyzer"]]);
+  assert.match(await readFile(probeLog, "utf8"), /contract 0\.4\.99/);
+  assert.match(await readFile(probeLog, "utf8"), /contract 0\.4\.100/);
+  assert.ok(ui.messages.some(text => /incompatible/i.test(text)));
 });

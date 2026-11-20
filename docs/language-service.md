@@ -9,6 +9,39 @@ TypeScript читает его DTO, без собственного разбор
 Текущий библиотечный контекст и активность проверены также на Linux ARM64 /
 VS Code 1.144.0 с Analyzer 0.4.2. Приёмка Windows текущей ветки проходит отдельно.
 
+## Каталог настроек анализатора
+
+В разделе **Настройки проекта → Анализ BSL** доступны каталоги опубликованных
+версий 0.2.67 и 0.4.0–0.4.6. Для неизвестной версии форма показывает каталог
+0.4.6 и сохраняет неизвестные поля политики. Совместимость итогового конфига
+проверяет установленный анализатор через backend ESKA.
+
+Каталоги сохраняют состав правил прежних версий. В 0.4.3 добавлено
+`OrdinaryFormDialogUnread`; в 0.4.4 — `BuiltinFunctionNameAsDeclaration`,
+`LocalCallWithQueryInCycle`, `PossiblyUndefinedValue`, `UnknownQueryFunction`
+и `UnavailableAliasInQuery`; в 0.4.5 — `ObjectModifiedInOnWrite`
+и `RegisterRecorderFieldInQuery`; в 0.4.6 — `QueryOrderByDocumentDate`
+и `QueryConditionWithoutIndex`. Все десять правил включены по умолчанию
+и не имеют настраиваемых параметров. Существующие параметры правил сохраняются.
+Источники — [официальные релизы](https://github.com/itrous/bsl-analyzer/releases/tag/v0.4.6)
+и их `crates/ide-diagnostics/src/handlers`. Отдельного генератора каталога нет:
+версионированные данные находятся в `webview/settings/analyzer-catalog.mjs`.
+
+Начиная с 0.4.4 у каждого правила доступен **Уровень диагностики**:
+ошибка, предупреждение, информация, подсказка или наследование уровня анализатора.
+Настройка сохраняется отдельно от включения и параметров правила:
+
+```toml
+[tools.bsl-analyzer.diagnostics.metadataOverrides.QueryOrderByDocumentDate]
+lspSeverity = "hint"
+```
+
+Сброс уровня удаляет только `lspSeverity`; другие поля записи, неизвестные правила
+и разделы политики сохраняются. У выключенного правила выбор уровня не включает
+проверку. В старых каталогах этот элемент не показывается: до 0.4.4 upstream
+игнорировал `metadataOverrides`. Поля `severity` и `diagnosticType` в форме не
+предлагаются, поскольку они не меняют уровень находок.
+
 ## Запуск и контекст
 
 Windows-пути, полученные от backend после канонизации, перед созданием `file:` URI

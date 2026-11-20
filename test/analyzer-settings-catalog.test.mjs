@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   analyzerCatalogForVersion,
-  analyzerCatalogVersions
+  analyzerCatalogVersions, diagnosticSeverityField
 } from '../webview/settings/analyzer-catalog.mjs';
 
 test('analyzer settings catalogs preserve supported project keys and rule parameter paths', () => {
@@ -38,5 +38,55 @@ test('analyzer catalog gates settings that differ between confirmed releases', (
   assert.equal(ruleFor('0.4.1', 'CalculationRegisterVirtualTableWithoutRecorder'), undefined);
   assert.deepEqual(ruleFor('0.4.2', 'CalculationRegisterVirtualTableWithoutRecorder').parameters[0].path,
     ['onlyInModulesWritingRegister']);
-  assert.equal(analyzerCatalogForVersion('0.4.3'), undefined);
+  assert.equal(analyzerCatalogForVersion('0.4.7'), undefined);
+});
+
+
+test('published 0.4.3–0.4.6 diagnostic additions preserve every historical catalog', () => {
+  const additions = {
+    '0.4.3': ['OrdinaryFormDialogUnread'],
+    '0.4.4': ['BuiltinFunctionNameAsDeclaration', 'LocalCallWithQueryInCycle', 'PossiblyUndefinedValue',
+      'UnknownQueryFunction', 'UnavailableAliasInQuery'],
+    '0.4.5': ['ObjectModifiedInOnWrite', 'RegisterRecorderFieldInQuery'],
+    '0.4.6': ['QueryOrderByDocumentDate', 'QueryConditionWithoutIndex']
+  };
+  for (const [introduced, ids] of Object.entries(additions)) {
+    for (const version of analyzerCatalogVersions) {
+      const rules = analyzerCatalogForVersion(version).diagnosticCatalog;
+      for (const id of ids) {
+        const rule = rules.find(rule => rule.id === id);
+        assert.equal(Boolean(rule), analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf(introduced), `${version}: ${id}`);
+        if (rule) {
+          assert.equal(rule.defaultEnabled, true);
+          assert.deepEqual(rule.parameters, []);
+        }
+      }
+    }
+  }
+  for (let index = analyzerCatalogVersions.indexOf('0.4.3'); index < analyzerCatalogVersions.length; index++) {
+    const before = analyzerCatalogForVersion(analyzerCatalogVersions[index - 1]).diagnosticCatalog;
+    const after = analyzerCatalogForVersion(analyzerCatalogVersions[index]).diagnosticCatalog;
+    assert.ok(before.every(rule => after.some(next => next.id === rule.id)), 'no published diagnostics removed');
+  }
+});
+
+
+test('effective severity controls are gated at 0.4.4 and edit only their canonical leaf', async () => {
+  const { withValue, manifestEdits } = await import('../webview/settings/project-draft.mjs');
+  for (const version of analyzerCatalogVersions) {
+    assert.equal(analyzerCatalogForVersion(version).severityOverrides,
+      analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf('0.4.4'));
+  }
+  const option = diagnosticSeverityField('QueryOrderByDocumentDate');
+  assert.deepEqual(option.path, ['diagnostics', 'metadataOverrides', 'QueryOrderByDocumentDate', 'lspSeverity']);
+  assert.deepEqual(option.choices, ['error', 'warning', 'information', 'hint']);
+  const before = { diagnostics: { parameters: { QueryOrderByDocumentDate: false },
+    metadataOverrides: { QueryOrderByDocumentDate: { tags: ['sql'], future: 'keep' },
+      FutureRule: { lspSeverity: 'information' } } }, futureSection: { keep: true } };
+  const after = withValue(before, option.path, 'hint');
+  assert.deepEqual(manifestEdits(before, after), [{ path: option.path, value: 'hint' }]);
+  const reset = withValue(after, option.path, undefined);
+  assert.deepEqual(reset, before);
+  assert.equal(after.diagnostics.parameters.QueryOrderByDocumentDate, false);
+  assert.deepEqual(before.diagnostics.metadataOverrides.QueryOrderByDocumentDate, { tags: ['sql'], future: 'keep' });
 });

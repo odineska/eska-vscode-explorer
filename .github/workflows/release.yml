@@ -60,6 +60,7 @@ jobs:
         if: steps.plan.outputs.build == 'true'
         env:
           ESKA_TEST_RELEASE_INPUTS: ${{ runner.temp }}/explorer-release-inputs.json
+          ESKA_REQUIRE_BACKEND_REVIEW: '1'
         run: |
           bun install --frozen-lockfile --ignore-scripts
           bun run --bun compile
