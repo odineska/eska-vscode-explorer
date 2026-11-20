@@ -72,7 +72,9 @@ exports.run = async function () {
   assert.equal(folder.node.label.text, 'ГруппаДанных');
   assert.equal(explorer.getTreeItem(group).label, 'Предопределённые данные');
   const siblings = await explorer.getChildren(owner);
-  assert.equal(siblings[1], group, 'predefined collection follows modules');
+  assert.deepEqual(siblings.slice(0, 2).map(entry => entry.node.id.collection?.kind),
+    ['modules', 'standardAttributes'], 'standard attributes immediately follow modules');
+  assert.equal(siblings[2], group, 'predefined collection follows standard attributes');
   const command = explorer.getTreeItem(item).command;
   await vscode.commands.executeCommand(command.command, ...command.arguments);
   const properties = [...explorer.propertiesTabs.tabs.values()].find(tab => tab.entry.node.id.objectId === item.node.id.objectId);
