@@ -1,6 +1,6 @@
 // Canonical TOML keys from upstream project-model for these releases.
 // Diagnostic parameters come from the rules' settings readers.
-export const analyzerCatalogVersion = '0.4.2';
+export const analyzerCatalogVersion = '0.4.6';
 
 const label = (ru, en) => ({ ru, en });
 const field = (path, type, ru, en, options) => ({
@@ -153,6 +153,16 @@ export const analyzerGroups = [
 
 // Each rule is a boolean or a table of its parameters. A table enables the rule.
 const diagnosticRows = [
+  ["OrdinaryFormDialogUnread", "Не удалось прочитать диалог обычной формы", "Ordinary form dialog could not be read", true],
+  ["BuiltinFunctionNameAsDeclaration", "Имя встроенной функции в объявлении", "Built-in function name in a declaration", true],
+  ["LocalCallWithQueryInCycle", "Вызов локального метода с запросом в цикле", "Local method with a query called inside a loop", true],
+  ["PossiblyUndefinedValue", "Возможно неопределённое значение", "Possibly undefined value", true],
+  ["UnknownQueryFunction", "Неизвестная функция запроса", "Unknown query function", true],
+  ["UnavailableAliasInQuery", "Недоступный псевдоним в запросе", "Unavailable alias in a query", true],
+  ["ObjectModifiedInOnWrite", "Изменение объекта в обработчике ПриЗаписи", "Object modified in OnWrite handler", true],
+  ["RegisterRecorderFieldInQuery", "Чтение реквизита регистратора в запросе", "Register recorder field in a query", true],
+  ["QueryOrderByDocumentDate", "Упорядочивание по дате документа", "Ordering by document date", true],
+  ["QueryConditionWithoutIndex", "Условие виртуальной таблицы без опоры на индекс", "Virtual table condition without index coverage", true],
   ["UnknownSuppressionCode", "Неизвестный код подавления", "Unknown suppression code", true, true],
   ["SuppressionWithoutCode", "Подавление без кода", "Suppression without a code", true, true],
   ["ParseError", "Ошибка разбора исходного кода", "Source code parse error", true, true],
@@ -549,7 +559,7 @@ export const diagnosticCatalog = diagnosticRows.map(([id, ru, en, defaultEnabled
 }));
 
 // Upstream 0.2.67 reads a smaller project-model TOML contract. The default data
-// above tracks 0.4.2. The 0.4.0–0.4.1 settings use the same project-model fields.
+// above tracks 0.4.6. The 0.4.x releases use the same project-model fields.
 const fieldsUnavailableIn0267 = new Set([
   'source.exclude', 'source.exclude_globs', 'min_platform_version', 'compatibility_mode',
   'source.configuration', 'source.externals', 'platform_help.source', 'platform_help.path',
@@ -558,11 +568,25 @@ const fieldsUnavailableIn0267 = new Set([
   `${embedding}.queryPrefix`, `${embedding}.documentPrefix`, `${embedding}.maxInputTokens`,
   `${embedding}.tokenizerFile`, `${embedding}.tokenizerSha256`
 ]);
-const rulesIntroducedIn041 = new Set([
-  'IteratorCollidesCollection', 'UnknownTypeInNew', 'UninitializedLocalVariable'
-]);
+// Introduction versions follow DiagnosticCode and activated_by_default in the published tags.
+const introduced = {
+  IteratorCollidesCollection: '0.4.1', UnknownTypeInNew: '0.4.1', UninitializedLocalVariable: '0.4.1',
+  CalculationRegisterVirtualTableWithoutRecorder: '0.4.2',
+  OrdinaryFormDialogUnread: '0.4.3',
+  BuiltinFunctionNameAsDeclaration: '0.4.4',
+  LocalCallWithQueryInCycle: '0.4.4',
+  PossiblyUndefinedValue: '0.4.4',
+  UnknownQueryFunction: '0.4.4',
+  UnavailableAliasInQuery: '0.4.4',
+  ObjectModifiedInOnWrite: '0.4.5',
+  RegisterRecorderFieldInQuery: '0.4.5',
+  QueryOrderByDocumentDate: '0.4.6',
+  QueryConditionWithoutIndex: '0.4.6',
+};
 
-export const analyzerCatalogVersions = Object.freeze(['0.2.67', '0.4.0', '0.4.1', '0.4.2']);
+export const analyzerCatalogVersions = Object.freeze([
+  '0.2.67', '0.4.0', '0.4.1', '0.4.2', '0.4.3', '0.4.4', '0.4.5', '0.4.6'
+]);
 
 export function analyzerCatalogForVersion(version) {
   if (!analyzerCatalogVersions.includes(version)) return undefined;
@@ -584,10 +608,9 @@ export function analyzerCatalogForVersion(version) {
 
   return {
     analyzerGroups,
-    diagnosticCatalog: diagnosticCatalog.filter(({ id }) => {
-      return id !== 'CalculationRegisterVirtualTableWithoutRecorder' &&
-        (version !== '0.4.0' || !rulesIntroducedIn041.has(id));
-    }).map(rule => rule.id === 'FieldsFromJoinsWithoutIsNull'
+    diagnosticCatalog: diagnosticCatalog.filter(({ id }) =>
+      !introduced[id] || analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf(introduced[id])
+    ).map(rule => rule.id === 'FieldsFromJoinsWithoutIsNull' && ['0.4.0', '0.4.1'].includes(version)
       ? { ...rule, defaultEnabled: false }
       : rule)
   };
