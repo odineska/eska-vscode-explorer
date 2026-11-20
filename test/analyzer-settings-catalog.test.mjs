@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   analyzerCatalogForVersion,
-  analyzerCatalogVersions
+  analyzerCatalogVersions, diagnosticSeverityField
 } from '../webview/settings/analyzer-catalog.mjs';
 
 test('analyzer settings catalogs preserve supported project keys and rule parameter paths', () => {
@@ -68,4 +68,25 @@ test('published 0.4.3–0.4.6 diagnostic additions preserve every historical cat
     const after = analyzerCatalogForVersion(analyzerCatalogVersions[index]).diagnosticCatalog;
     assert.ok(before.every(rule => after.some(next => next.id === rule.id)), 'no published diagnostics removed');
   }
+});
+
+
+test('effective severity controls are gated at 0.4.4 and edit only their canonical leaf', async () => {
+  const { withValue, manifestEdits } = await import('../webview/settings/project-draft.mjs');
+  for (const version of analyzerCatalogVersions) {
+    assert.equal(analyzerCatalogForVersion(version).severityOverrides,
+      analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf('0.4.4'));
+  }
+  const option = diagnosticSeverityField('QueryOrderByDocumentDate');
+  assert.deepEqual(option.path, ['diagnostics', 'metadataOverrides', 'QueryOrderByDocumentDate', 'lspSeverity']);
+  assert.deepEqual(option.choices, ['error', 'warning', 'information', 'hint']);
+  const before = { diagnostics: { parameters: { QueryOrderByDocumentDate: false },
+    metadataOverrides: { QueryOrderByDocumentDate: { tags: ['sql'], future: 'keep' },
+      FutureRule: { lspSeverity: 'information' } } }, futureSection: { keep: true } };
+  const after = withValue(before, option.path, 'hint');
+  assert.deepEqual(manifestEdits(before, after), [{ path: option.path, value: 'hint' }]);
+  const reset = withValue(after, option.path, undefined);
+  assert.deepEqual(reset, before);
+  assert.equal(after.diagnostics.parameters.QueryOrderByDocumentDate, false);
+  assert.deepEqual(before.diagnostics.metadataOverrides.QueryOrderByDocumentDate, { tags: ['sql'], future: 'keep' });
 });

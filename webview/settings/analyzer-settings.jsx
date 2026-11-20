@@ -1,6 +1,6 @@
 import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
-  analyzerCatalogForVersion, analyzerCatalogVersion
+  analyzerCatalogForVersion, analyzerCatalogVersion, diagnosticSeverityField
 } from "./analyzer-catalog.mjs";
 import { at, withValue } from "./project-draft.mjs";
 import { childModel, SettingsFields, SettingsGroup, word } from "./project-controls.jsx";
@@ -58,6 +58,9 @@ function DiagnosticRule(props) {
         </select>
       </div>
     </div>
+    <Show when={props.severityOverrides}>
+      <SettingsFields locale={props.locale} model={props.model} fields={[diagnosticSeverityField(rule.id)]}/>
+    </Show>
     <Show when={rule.parameters.length > 0 && mode() !== "off"}>
       <div class="settings-option-grid settings-grouped-fields">
         <SettingsFields locale={props.locale} model={parameters} fields={rule.parameters}/>
@@ -126,9 +129,9 @@ export function AnalyzerSettings(props) {
     <Show when={rules().length}>
       <SettingsGroup title={word(props.locale, "Правила диагностики", "Diagnostic rules")} icon="check">
         <p class="settings-hint">{word(props.locale,
-          "Изменение параметра включает правило. Выключение или сброс правила удаляет его переопределения.",
-          "Editing a parameter enables its rule. Turning a rule off or resetting it removes its overrides.")}</p>
-        <For each={rules()}>{rule => <DiagnosticRule rule={rule} model={policy} locale={props.locale} stashedParameters={stashedParameters}/>}</For>
+          "Изменение параметра включает правило. Выключение или сброс правила удаляет его параметры. Настройка уровня хранится отдельно.",
+          "Editing a parameter enables its rule. Turning a rule off or resetting it removes its parameters. The severity setting is stored separately.")}</p>
+        <For each={rules()}>{rule => <DiagnosticRule rule={rule} model={policy} locale={props.locale} severityOverrides={catalog().severityOverrides} stashedParameters={stashedParameters}/>}</For>
       </SettingsGroup>
     </Show>
   </>;

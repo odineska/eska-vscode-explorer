@@ -588,12 +588,26 @@ export const analyzerCatalogVersions = Object.freeze([
   '0.2.67', '0.4.0', '0.4.1', '0.4.2', '0.4.3', '0.4.4', '0.4.5', '0.4.6'
 ]);
 
+// Only these presentation levels affect findings; upstream grade/type are not effective overrides.
+export function diagnosticSeverityField(id) {
+  return field(`diagnostics.metadataOverrides.${id}.lspSeverity`, 'enum', 'Уровень диагностики', 'Diagnostic severity', {
+    choices: ['error', 'warning', 'information', 'hint'],
+    choiceLabels: {
+      error: label('Ошибка', 'Error'), warning: label('Предупреждение', 'Warning'),
+      information: label('Информация', 'Information'), hint: label('Подсказка', 'Hint')
+    },
+    hint: label('Наследовать — использовать уровень анализатора. Не включает выключенное правило.',
+      'Inherit uses the analyzer level. Does not enable a disabled rule.')
+  });
+}
+
 export function analyzerCatalogForVersion(version) {
   if (!analyzerCatalogVersions.includes(version)) return undefined;
-  if (version === analyzerCatalogVersion) return { analyzerGroups, diagnosticCatalog };
+  if (version === analyzerCatalogVersion) return { analyzerGroups, diagnosticCatalog, severityOverrides: true };
 
   if (version === '0.2.67') {
     return {
+      severityOverrides: false,
       analyzerGroups: analyzerGroups.map(group => ({
         ...group,
         fields: group.fields.filter(field => !fieldsUnavailableIn0267.has(field.path.join('.')))
@@ -607,6 +621,7 @@ export function analyzerCatalogForVersion(version) {
   }
 
   return {
+    severityOverrides: analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf('0.4.4'),
     analyzerGroups,
     diagnosticCatalog: diagnosticCatalog.filter(({ id }) =>
       !introduced[id] || analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf(introduced[id])
