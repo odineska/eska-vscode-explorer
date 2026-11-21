@@ -1,148 +1,53 @@
 # ESKA: 1C Explorer
 
-Расширение для Designer XML в VS Code и VSCodium. **Проект в активной разработке.** Для дерева и редактирования исходников нужен `eska-project`. Платформа 1С требуется для запуска клиента, обновления базы и отладки.
+Расширение для работы с конфигурациями, расширениями, обработками и отчётами 1С в VS Code и VSCodium. Откройте выгрузку Designer XML в виде дерева метаданных. Из карточки объекта можно перейти к модулю, из формы открыть обработчик события, а из строки BSL вынести запрос в отдельную вкладку.
 
-[Руководство на сайте](https://odineska.tech/eska/docs/) · [Настройки и команды](https://odineska.tech/eska/docs/#settings) · [Быстрый старт](#быстрый-старт)
+Проект в активной разработке. [Установить из Open VSX](https://open-vsx.org/extension/1c-tooling/eska-explorer) · [Скачать VSIX](https://github.com/odineska/eska-vscode-explorer/releases) · [Пошаговое руководство](https://odineska.tech/eska/docs/explorer/)
 
-## Метаданные и управляемые формы
+## Пять действий в редакторе
 
-В дереве доступны поиск, переход от файла к объекту, свойства, предопределённые элементы и стандартные реквизиты. **Добавить…** предлагает допустимые объекты, формы и отсутствующие модули для выбранного владельца. Копирование назначает новые UUID. Перед удалением можно проверить затронутые файлы и ссылки. [Действия в дереве](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#создание-копирование-и-удаление-объектов)
+Нажмите на изображение для просмотра с паузой и перемоткой. В первом ролике показаны Explorer 0.1.32 и ESKA 0.38.0, в остальных четырёх — Explorer 0.1.23 и ESKA 0.32.0.
 
-Редактор управляемых форм позволяет менять свойства, типы и условное оформление, добавлять и перетаскивать элементы, открывать или создавать обработчики BSL. Правки автоматически сохраняются в исходники. Отмена и повтор действуют в основном и откреплённом окнах. Предпросмотр интерфейса «Такси» 8.3.27 имеет статус beta. [Работа с формой](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/form-preview.md)
+### Посмотреть тип стандартного реквизита
 
-Для стандартной картинки «Провести» и команды «Пометить на удаление» в меню
-таблицы предпросмотр использует значки из 1C:Jet. Источник — Библиотека стандартных подсистем, © 2024 ООО «1С-Софт»,
-лицензия CC BY 4.0. [Исходные файлы и лицензии](resources/forms/jet/NOTICE.md)
+В справочнике «Товары» раскройте стандартные реквизиты. В свойствах «Пометки удаления» виден тип «Булево» и доступность поля для редактирования.
 
-## Запуск и отладка 1С
+[![Посмотреть тип стандартного реквизита. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-standard-attributes.gif)](https://odineska.tech/eska/docs/#demo-standard-attributes)
 
-Через **Настройки проекта → Настроить проект** заполните профиль `test` или `prod`. В панели **Запуск и отладка** доступны запуск клиента и подключение к HTTP-серверу отладки 1С. Для тестовой базы можно предварительно просмотреть и подтвердить обновление проекта или приложения, установить или удалить расширение. Адаптер поддерживает условные точки, логпоинты, стек, переменные, Watch, Debug Console и **Set Value**. [Настройка запуска](https://github.com/odineska/eska/blob/main/docs/run-debug.md)
+### Перейти от свойства к его записи в XML
 
-В блоке **Платформа** кнопка **Из установленных…** показывает версии 1С и пути к `ibcmd` на хосте и в выбранном или настроенном Distrobox. Выбор заполняет черновик профиля. Для списка нужен `eska-build` с поддержкой `platform list --include-distrobox`.
+Выберите свойство «Имя» в карточке документа и откройте его определение в выгрузке.
 
-## Команды проекта
+[![Перейти от свойства к его записи в XML. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
 
-- **Начать проект 1С** открывает мастер. Можно выбрать тип нового проекта, создать проект из CF/CFE/EPF/ERF, подключить готовую выгрузку Designer XML или клонировать Git-репозиторий. Мастер предлагает установленные платформы и последним пунктом «Выбрать позже»: версия останется незаданной. Для импорта из файла требуются команда `eska` и установленная платформа; при выборе «Выбрать позже» ESKA автоматически использует установленную платформу для распаковки.
-- **Собрать файл 1С…** в меню проекта показывает путь, платформу и возможную замену старого файла. После подтверждения `eska-build` создаёт CF, CFE, EPF или ERF. Из сообщения о результате открывается его папка.
-- **Проверить окружение** на вкладке **Проект и сборка** запускает `eska-project doctor` и показывает полный отчёт в настройках.
-- **Проверить проект** на вкладке **Проверки** и в меню проекта запускает `eska-check` по сохранённым настройкам и публикует диагностику XML и BSL в панели **Проблемы**.
-- **Показать на примере** на вкладке **Форматирование** открывает выбранный модуль до и после применения черновика стиля. Пример обновляется при изменении пресета или отдельных параметров. Для примера нужны `eska-project` с методом `format/settingsPreview` и установленный `eska-fmt`.
+### Переименовать поле на форме и увидеть результат
 
-## Git и изменения объектов
+Измените заголовок «Покупатель» на «Клиент» в редакторе формы. В ролике видно, как меняется предпросмотр при правке, отмене и повторе.
 
-В панели **Система управления версиями → ESKA: изменения 1С** файлы модулей и XML подписаны именами объектов. Можно открыть diff или версию из HEAD, индексировать отдельные файлы и группы, снять их с индекса и создать коммит. Для работы панели требуется встроенное расширение Git. [Команды панели](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md#изменения-в-обозначениях-1с)
+[![Переименовать поле на форме и увидеть результат. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
 
-Действие **Сравнить две версии** в меню панели позволяет выбрать два коммита из последних 1000 в истории проекта. `eska-vcs` показывает изменения объектов, свойств, форм и методов между выбранными снимками.
+### Отредактировать запрос внутри модуля BSL
 
-## Запросы, BSL и рабочая область
+Откройте текст запроса в отдельной вкладке, измените сортировку и нажмите Ctrl+S. Изменение появится в строковом литерале модуля.
 
-- Отдельные SDBL-вкладки для запросов XML и BSL с сохранением в исходник через **Ctrl+S**, визуальный конструктор с таблицами, соединениями, условиями, группировками, UNION, пакетами и итогами. [Работа с запросами](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md)
-- Автодополнение, диагностика, переходы, ссылки, подсказки параметров, переименование и текстовые правки через BSL Analyzer. Форматирование BSL и SDBL выполняет `eska-fmt` по настройкам `eska.toml`. [Языковой сервис](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) · [Форматирование](https://odineska.tech/eska/docs/formatting/)
-- Выбор приложения для анализа, подключение БСП и отключение подпроектов. Источники под поддержкой открываются с учётом прав на изменение. [Рабочая область](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md) · [Правила поддержки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md)
+[![Отредактировать запрос внутри модуля BSL. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
 
-## Explorer в работе
+### Различить два изменённых файла ObjectModule.bsl
 
-Скринкасты записаны в VS Code с Explorer 0.1.23 и ESKA 0.32.0. Нажмите на изображение, чтобы открыть видео с элементами управления.
+Панель Git показывает имена объектов 1С. Выберите объект и откройте изменения именно его модуля.
 
-<details>
-<summary>Настроить проводник</summary>
+[![Различить два изменённых файла ObjectModule.bsl. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
 
-[![Настроить проводник — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-setup.gif)](https://odineska.tech/eska/docs/#demo-setup)
+## Первый проект
 
-</details>
+1. Установите расширение в VS Code или VSCodium версии 1.109.0 или новее. Если скачали VSIX, выберите **Extensions → Install from VSIX…**.
+2. Выполните **Подготовить project, форматтер и языковой компонент** в палитре команд. Для просмотра дерева достаточно `eska-project`.
+3. Откройте папку с `eska.toml` в доверенной рабочей области. Для готовой выгрузки без манифеста вызовите **Начать проект 1С** и выберите подключение исходников Designer XML.
 
-<details>
-<summary>Найти объект и открыть модуль</summary>
+[Дерево и свойства](https://odineska.tech/eska/docs/explorer/#tree) · [Запросы](https://odineska.tech/eska/docs/explorer/#queries) · [Запуск и отладка](https://odineska.tech/eska/docs/explorer/#runtime) · [Соответствующие команды CLI](https://odineska.tech/eska/docs/cli/)
 
-[![Найти объект и открыть модуль — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-tree.gif)](https://odineska.tech/eska/docs/#demo-tree)
+Спасибо команде [bsl-analyzer](https://github.com/itrous/bsl-analyzer) за открытый анализатор BSL. Его языковой сервер даёт Explorer переходы к определениям, подсказки и диагностику. Тот же анализатор проверяет код при запуске `eska check`. [Выпуски bsl-analyzer](https://github.com/itrous/bsl-analyzer/releases)
 
-</details>
+В предпросмотре форм используются два значка БСП из 1C:Jet, © 2024 ООО «1С-Софт», CC BY 4.0. [Источники и лицензии](https://github.com/odineska/eska-vscode-explorer/blob/main/resources/forms/jet/NOTICE.md)
 
-<details>
-<summary>Перейти из свойств к XML</summary>
-
-[![Перейти из свойств к XML — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
-
-</details>
-
-<details>
-<summary>Открыть управляемую форму</summary>
-
-[![Открыть управляемую форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-forms.gif)](https://odineska.tech/eska/docs/#demo-forms)
-
-</details>
-
-<details>
-<summary>Изменить заголовок поля формы</summary>
-
-[![Изменить заголовок поля формы — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
-
-</details>
-
-<details>
-<summary>Сравнить изменения модулей по именам объектов</summary>
-
-[![Сравнить изменения модулей по именам объектов — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
-
-</details>
-
-<details>
-<summary>Изменить запрос и сохранить через Ctrl+S</summary>
-
-[![Изменить запрос и сохранить через Ctrl+S — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18-query/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
-
-</details>
-
-## Быстрый старт
-
-1. Установите VSIX **ESKA: 1C Explorer** в VS Code / VSCodium 1.109.0 или новее.
-   Идентификатор — `1c-tooling.eska-explorer`; репозитории проекта — в `odineska`.
-2. Установите `eska-project`. Общий CLI, Git и 1С для дерева необязательны.
-   Для BSL нужен совместимый `bsl-analyzer-app`, для форматирования — `eska-fmt`,
-   для отладки — `eska-debug`. Команда **Обновить все компоненты ESKA и BSL Analyzer** устанавливает
-   отладчик и при обновлении старой установки. Нативные компоненты скачиваются
-   отдельно и не увеличивают размер VSIX. Перед обновлением завершите сессии отладки ESKA.
-3. Для существующей выгрузки без manifest выполните:
-
-   ```sh
-   eska-project init ./my-project --source src
-   ```
-
-4. Откройте папку с `eska.toml` в доверенном workspace и раскройте
-   **ESKA: 1C Explorer**. При необходимости задайте абсолютные пути:
-
-   ```json
-   {
-     "eska.explorer.executable": "/path/to/eska-project",
-     "eska.explorer.analyzerExecutable": "/path/to/bsl-analyzer-app",
-     "eska.explorer.formatterExecutable": "/path/to/eska-fmt"
-   }
-   ```
-
-Пути относятся к машине проекта, включая Remote. Стандартные имена ищутся
-в управляемой установке и PATH. Команда **Подготовить project, форматтер и
-языковой компонент** помогает установить отсутствующие инструменты.
-[Пошаговая настройка](docs/setup.ru.md) · [English setup](docs/setup.md).
-
-Возможности зависят от версии `eska-project`. Для дерева требуется Metadata API 1.12, для редактирования формы — 1.53, для создания обработчиков, стандартных реквизитов и обозначений Git — 1.54. [Совместимость компонентов](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/cli-management.md)
-
-## Документация
-
-[Дерево и активность](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/usage.md) · [Запросы и конструктор](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/query-editing.md) ·
-[BSL и выравнивание подсказок](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/language-service.md) ·
-[Компоненты и обновление](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/component-setup.md) · [Поддержка](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/support-policy.md).
-
-[Все настройки и команды](https://odineska.tech/eska/docs/#settings) · [Видео и руководство](https://odineska.tech/eska/docs/#explorer).
-
-[Разработка и проверки](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/development.md) · [Упаковка VSIX](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/packaging.md) ·
-[Публикация](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/publishing.md) · [Релизы](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/releases.md) ·
-[Apache License 2.0](https://github.com/odineska/eska-vscode-explorer/blob/main/LICENSE).
-
-## Эталоны форм в тестах
-
-Локальные тесты используют соседний checkout `../eska`. Другой каталог эталонов
-задаётся абсолютным путём `ESKA_TEST_REFERENCE_ROOT`. Штатная подготовка CI
-загружает исходники из точного тега установленного выпуска `eska-project`
-в собственный каталог playground и передаёт этот путь последующим проверкам.
-Существующий checkout разработчика не изменяется. Отсутствующие или не совпавшие
-с тегом эталоны останавливают проверку; тесты визуального совпадения не пропускаются.
+[English setup](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/setup.md) · [Код ESKA](https://github.com/odineska/eska) · [Разработка расширения](https://github.com/odineska/eska-vscode-explorer/blob/main/docs/development.md) · [Apache-2.0](https://github.com/odineska/eska-vscode-explorer/blob/main/LICENSE)
