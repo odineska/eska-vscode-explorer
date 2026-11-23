@@ -172,6 +172,7 @@ exports.run = async function () {
     let owner=await returned(uri);
     assert.equal(owner.getText(),original.replace('SELECT 1','SELECT 3'));
     assert.equal(owner.isDirty,false);
+    await until(()=>explorer.queries.sessions.size===0,'query release lifecycle ends before native Undo');
     await vscode.commands.executeCommand('undo');
     assert.equal(owner.getText(),original.replace('SELECT 1','SELECT 2'));
     await vscode.commands.executeCommand('undo');
@@ -188,19 +189,84 @@ exports.run = async function () {
 
     for(const [kind,file] of [['common-template',fixture.query.schemaPath],['common-form',fixture.query.formPath]]){
       const xmlUri=vscode.Uri.file(file),before=await fs.readFile(file,'utf8');
-      await vscode.window.showTextDocument(xmlUri,{preview:false});
+      const files=vscode.workspace.getConfiguration('files',xmlUri);
+      const rules={'**/*.xml':true,...(kind==='common-form'?{'**/*.sdbl':true}:{})};
+      await files.update('readonlyInclude',rules,vscode.ConfigurationTarget.Global);
+      const settingsBefore=JSON.stringify(files.inspect('readonlyInclude'));
+      const source=await vscode.workspace.openTextDocument(xmlUri);
+      await vscode.window.showTextDocument(source,{preview:false});
+      await vscode.commands.executeCommand('type',{text:'must remain readonly'});
+      await new Promise(resolve=>setTimeout(resolve,150));
+      assert.equal(source.getText(),before.replace(/^\ufeff/,''),'XML source is natively readonly before query open');
       await vscode.commands.executeCommand('eska.explorer.openQuery',await firstXmlQuery(explorer,kind));
       draft=vscode.window.activeTextEditor.document;assert.equal(draft.uri.scheme,'eska-query');assert.equal(parentTabs(xmlUri).length,0);
-      await replace(draft,'SELECT 1','SELECT 8');
+      const editor=vscode.window.activeTextEditor,start=draft.getText().indexOf('SELECT 1');
+      assert.ok(start>=0);
+      editor.selection=new vscode.Selection(draft.positionAt(start),draft.positionAt(start+'SELECT 1'.length));
+      await vscode.commands.executeCommand('type',{text:'SELECT 8'});
+      await until(()=>draft.getText().includes('SELECT 8'),'native XML query input succeeds under readonly rules');
       if (!draft.isDirty) assert.fail(kind + ' query edit did not become dirty: ' + JSON.stringify(await queryWriteEvidence(explorer, draft)));
       await assertQuerySave(explorer, draft);
       assert.equal(vscode.window.activeTextEditor?.document,draft);
       await closeQueryTabs(draft);
       const xml=await returned(xmlUri);assert.equal(xml.isDirty,false);
-      const after=await fs.readFile(file,'utf8');assert.ok(after.includes('SELECT 8'), kind + ' query was written to disk');assert.ok(before.includes('SELECT 1'));
+      await until(()=>explorer.queries.sessions.size===0,'XML query release lifecycle ends');
+      const after=await fs.readFile(file,'utf8');
+      const expectedXml=before.replace('SELECT 1','SELECT 8');
+      const serializedXml=kind==='common-template'?expectedXml.replace('<![CDATA[','').replace(']]>',''):expectedXml;
+      assert.equal(after,serializedXml,'exact XML owner bytes follow selected query serialization only');
+      await vscode.commands.executeCommand('type',{text:'must remain readonly'});
+      await new Promise(resolve=>setTimeout(resolve,150));
+      assert.equal(xml.getText(),after.replace(/^\ufeff/,''),'XML source remains natively readonly after query Save');
+      assert.equal(JSON.stringify(files.inspect('readonlyInclude')),settingsBefore,'XML readonly settings remain unchanged');
+      await files.update('readonlyInclude',undefined,vscode.ConfigurationTarget.Global);
       assert.ok(after.includes(kind==='common-template'?'SELECT 2':'<QueryText>SELECT 2</QueryText>'));
     }
     accepted.push('scd_and_dynamic_list_save_stays_open_then_close_returns_each_owner');
+    const conflictUri=vscode.Uri.file(fixture.query.schemaPath);
+    const conflictBefore=await fs.readFile(fixture.query.schemaPath,'utf8');
+    await vscode.commands.executeCommand('eska.explorer.openQuery',await firstXmlQuery(explorer,'common-template'));
+    draft=vscode.window.activeTextEditor.document;
+    await replace(draft,'SELECT 8','SELECT 18');
+    const conflicting=conflictBefore.replace('SELECT 8','SELECT 88');
+    await fs.writeFile(fixture.query.schemaPath,conflicting);
+    await until(async()=> (await vscode.workspace.openTextDocument(conflictUri)).getText()===conflicting.replace(/^\ufeff/,''),'external XML edit reaches native owner');
+    assert.equal(await draft.save(),false,'external query conflict must reject Save');
+    assert.ok(draft.getText().includes('SELECT 18'));
+    assert.equal(draft.isDirty,true);
+    assert.equal(await fs.readFile(fixture.query.schemaPath,'utf8'),conflicting);
+    await closeQueryTabs(draft,true);await returned(conflictUri);
+    accepted.push('external_xml_query_conflict_retains_native_draft_and_disk_change');
+
+    draft=await openQuery(uri);await replace(draft,'SELECT 1','SELECT 6');
+    const beforeReadonly=await fs.readFile(fixture.module),mode=(await fs.stat(fixture.module)).mode;
+    try{
+      if(process.platform!=='win32'){
+        await fs.chmod(fixture.module,mode & ~0o222);
+        assert.equal(await draft.save(),false,'filesystem read-only owner rejects query Save');
+        assert.ok(draft.getText().includes('SELECT 6'));assert.equal(draft.isDirty,true);
+        assert.deepEqual(await fs.readFile(fixture.module),beforeReadonly);
+      }
+    }finally{if(process.platform!=='win32')await fs.chmod(fixture.module,mode);}
+    await assertQuerySave(explorer,draft);
+    await closeQueryTabs(draft);await returned(uri);
+    accepted.push(process.platform==='win32'?'filesystem_readonly_unix_permissions_skipped_on_windows':'filesystem_readonly_rejects_save_and_retry_after_permission_restore_succeeds');
+
+    draft=await openQuery(uri);await replace(draft,'SELECT 6','SELECT 7');
+    const beforeSupport=await fs.readFile(fixture.module);
+    const rules=path.join(fixture.source,'Ext','ParentConfigurations.bin');
+    const id='11111111-1111-1111-1111-111111111111',attribute='22222222-2222-2222-2222-222222222222';
+    await fs.mkdir(path.dirname(rules),{recursive:true});
+    await fs.writeFile(rules,`{6,0,1,${id},0,${id},"1","Vendor","Fixture",2,0,0,${id},${id},0,0,${attribute},${attribute},0,0,0,1,0,0,0,1,0,1,0,1,1,1,1}`);
+    await vscode.workspace.getConfiguration('eska.explorer').update('supportPolicy',true,vscode.ConfigurationTarget.Workspace);
+    await vscode.commands.executeCommand('eska.explorer.restart');
+    await until(()=>explorer.connection.state.kind==='ready'&&!explorer.support.loading&&explorer.support.provideFileDecoration(uri)?.badge==='🔒','real backend locks owner through support policy');
+    assert.equal(await draft.save(),false,'support policy rejects the pending native query save');
+    assert.ok(draft.getText().includes('SELECT 7'));assert.equal(draft.isDirty,true);
+    assert.deepEqual(await fs.readFile(fixture.module),beforeSupport);
+    await closeQueryTabs(draft,true);
+    accepted.push('backend_support_policy_rejects_save_without_losing_native_draft_or_source');
+
     await until(()=>explorer.queries.sessions.size===0,'closed sessions release source ownership');
     await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:true,suite:'query-modal',locale:vscode.env.language,accepted}));
   } catch(error) {await fs.writeFile(path.join(fixture.root,'host-result.json'),JSON.stringify({passed:false,suite:'query-modal',error:String(error.stack??error),accepted,

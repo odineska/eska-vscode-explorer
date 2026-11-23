@@ -32,18 +32,31 @@ async function openQuery(owner) {
   return vscode.window.activeTextEditor.document;
 }
 
-const { closeQueryTabs, returned, assertQuerySave } = require('./query-modal-host.cjs');
+const { closeQueryTabs, returned, queryWriteEvidence } = require('./query-modal-host.cjs');
+const { connectWorkbench } = require('./query-constructor-dom.cjs');
 
 /** Native query saves rebase the same tab, respect source edits and preserve recovery. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
   const errors = [], methods = [], accepted = [];
+  let ui;
   try {
     assert.equal(vscode.env.language, process.env.ESKA_HOST_LOCALE ?? "en");
     const extension = vscode.extensions.all.find(value => value.packageJSON.name === "eska-explorer");
     const explorer = await extension.activate();
     await until(() => explorer.tree && explorer.connection.state.kind === "ready" && !explorer.support.loading, "backend ready");
     assert.equal(explorer.connection.recovery.sessions.capabilities.bslEditing, true);
+    if (process.env.ESKA_HOST_DEBUG_PORT) ui = await connectWorkbench(until);
+    const nativeSave = async (draft, owner) => {
+      await vscode.window.showTextDocument(draft, { preview: false });
+      await vscode.commands.executeCommand("workbench.action.focusActiveEditorGroup");
+      if (ui) {
+        await ui.focus();
+        await ui.key("s", "KeyS", 83, 2);
+      } else await vscode.commands.executeCommand("workbench.action.files.save");
+      await until(() => !draft.isDirty, "native Ctrl+S acknowledged")
+        .catch(async error => { throw new Error(error.message + ": " + JSON.stringify(await queryWriteEvidence(explorer, draft, owner))); });
+    };
     const originalFailure = explorer.queries.failure.bind(explorer.queries);
     explorer.queries.failure = error => { errors.push({ code: error?.code, domain: error?.domain, details: error?.details, message: String(error?.stack ?? error) }); originalFailure(error); };
     const peer = explorer.connection.child, request = peer.request.bind(peer);
@@ -66,7 +79,7 @@ exports.run = async function () {
     await assert.rejects(vscode.workspace.fs.writeFile(protectedUri, Buffer.from("bad")));
     accepted.push("dirty_owner_snapshot_and_provider_write_denial");
     await replace(draft, "SELECT 1", "SELECT 2");
-    await assertQuerySave(explorer, draft, owner);
+    await nativeSave(draft, owner);
     assert.equal(vscode.window.activeTextEditor.document, draft);
     assert.equal(owner.getText(), dirty.replace("SELECT 1", "SELECT 2"));
     assert.equal(owner.isDirty, true);
@@ -87,22 +100,23 @@ exports.run = async function () {
     assert.equal(owner.getText(), concurrent);
     draft = await openQuery(owner);
     await replace(draft, "SELECT 2", "SELECT 3");
-    await assertQuerySave(explorer, draft, owner);
+    await nativeSave(draft, owner);
     assert.equal(vscode.window.activeTextEditor.document, draft);
     await replace(draft, "SELECT 3", "SELECT 5");
-    await assertQuerySave(explorer, draft, owner);
+    await nativeSave(draft, owner);
     assert.equal(vscode.window.activeTextEditor.document, draft);
     await closeQueryTabs(draft);
     await returned(owner.uri);
+    await until(() => explorer.queries.sessions.size === 0, "query release finishes before owner Undo");
     const applied = concurrent.replace("SELECT 2", "SELECT 5");
     assert.equal(owner.getText(), applied);
     assert.equal(owner.isDirty, true);
     assert.deepEqual(await fs.readFile(fixture.module), disk);
     await vscode.window.showTextDocument(owner, { preview: false });
     await vscode.commands.executeCommand("undo");
-    assert.equal(owner.getText(), concurrent.replace("SELECT 2", "SELECT 3"));
+    await until(() => owner.getText() === concurrent.replace("SELECT 2", "SELECT 3"), "native owner Undo acknowledged");
     await vscode.commands.executeCommand("redo");
-    assert.equal(owner.getText(), applied);
+    await until(() => owner.getText() === applied, "native owner Redo acknowledged");
     accepted.push("consecutive_saves_keep_dirty_owner_bom_crlf_and_independent_undo");
     // A late real native edit after the server's prepare reply must abort its durable intent before any query replacement.
     draft = await openQuery(owner);
@@ -134,24 +148,25 @@ exports.run = async function () {
     await vscode.window.showTextDocument(owner, { preview: false });
     const beforeReadonlyType = owner.getText();
     await vscode.commands.executeCommand("type", { text: "blocked" });
+    await new Promise(resolve => setTimeout(resolve, 150));
     assert.equal(owner.getText(), beforeReadonlyType);
     await vscode.commands.executeCommand("workbench.action.files.setActiveEditorWriteableInSession");
     const files = vscode.workspace.getConfiguration("files", owner.uri);
     await files.update("readonlyInclude", { "**/ObjectModule.bsl": true }, vscode.ConfigurationTarget.Workspace);
     draft = await openQuery(owner);
-    assert.equal((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
+    assert.notEqual((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
     const readonlyQuery = draft.getText();
-    await vscode.commands.executeCommand("type", { text: "blocked" });
-    assert.equal(draft.getText(), readonlyQuery);
+    await vscode.commands.executeCommand("type", { text: "// editable query draft\n" });
+    await until(() => draft.getText() !== readonlyQuery && draft.isDirty, "configured readonly owner permits native query input");
     await closeQueryTabs(draft, true);
     await vscode.window.showTextDocument(owner, { preview: false });
     const end = owner.positionAt(owner.getText().length);
     vscode.window.activeTextEditor.selection = new vscode.Selection(end, end);
     await vscode.commands.executeCommand("type", { text: "// prior native grant\r\n" });
-    assert.notEqual(owner.getText(), beforeReadonlyType);
+    await until(() => owner.getText() !== beforeReadonlyType, "native writable override still permits owner input");
     await files.update("readonlyInclude", undefined, vscode.ConfigurationTarget.Workspace);
     await vscode.commands.executeCommand("workbench.action.files.resetActiveEditorReadonlyInSession");
-    accepted.push("prior_readonly_and_writeable_overrides_preserved_configured_restriction_blocks_query_typing");
+    accepted.push("prior_readonly_and_writeable_overrides_preserved_query_remains_editable");
     const unsupportedEditor = await vscode.window.showTextDocument(owner, { preview: false });
     const computed = owner.positionAt(owner.getText().indexOf('"SELECT " +') + 3);
     unsupportedEditor.selection = new vscode.Selection(computed, computed);
@@ -175,12 +190,11 @@ exports.run = async function () {
     assert.equal([...explorer.queries.sessions.values()][0].resumed, false);
     await vscode.window.showTextDocument(draft, { preview: false });
     await files.update("readonlyInclude", { "**/ObjectModule.bsl": true }, vscode.ConfigurationTarget.Workspace);
-    assert.equal(await draft.save(), false);
-    assert.equal([...explorer.queries.sessions.values()][0].resumed, false);
-    assert.equal([...explorer.queries.sessions.values()][0].source, undefined, "failed Save releases its own backend lease");
+    await nativeSave(draft, owner);
     assert.equal(draft.getText(), "SELECT 7\nAS Value");
+    assert.equal(owner.getText(), retained.replace("SELECT 5", "SELECT 7"));
+    assert.deepEqual(await fs.readFile(fixture.module), disk);
     await files.update("readonlyInclude", undefined, vscode.ConfigurationTarget.Workspace);
-    await assertQuerySave(explorer, draft, owner);
     assert.equal(vscode.window.activeTextEditor?.document, draft);
     await closeQueryTabs(draft);
     await until(() => explorer.queries.sessions.size === 0, "closed recovered query releases the session");
@@ -197,5 +211,5 @@ exports.run = async function () {
   } catch (error) {
     await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({ passed: false, error: String(error.stack ?? error), accepted, errors }));
     throw error;
-  }
+  } finally { ui?.close(); }
 };

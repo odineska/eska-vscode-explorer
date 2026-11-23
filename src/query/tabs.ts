@@ -5,13 +5,13 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { Connection } from "../connection.js";
 import { ExplorerError } from "../protocol.js";
+import { configuredReadOnly } from "../editor-policy.js";
 import { existingSource } from "../source.js";
-import { configuredReadOnly, configuredReadOnlyResource } from "../editor-policy.js";
 import { ProtectedSources } from "../protected-source.js";
 import { nodeKey, type MetadataTree, type ProjectTree, type TreeEntry } from "../tree.js";
 import { message, type MessageKey } from "../messages.js";
 import { QueryClient, queryKey, querySnapshot, type QueryDocument } from "./client.js";
-import { xmlQueryOwner, bslQueryOwner, nativeReadOnly, nativeDirty, type QueryOwnerView } from "./owner.js";
+import { xmlQueryOwner, bslQueryOwner, nativeReadOnly, nativeDirty, writeCleanQueryOwner, type QueryOwnerView } from "./owner.js";
 import { QueryRecovery, type QueryDraftRecord } from "./recovery.js";
 import type { QueryHeader, QueryIdentity } from "./protocol.js";
 import type { RecoveryEndpoint } from "./recovery-protocol.js";
@@ -20,7 +20,7 @@ import type { CommentDecision } from "./protocol.js";
 import type { SourceCommentState } from "./comments.js";
 import type { QueryOwnerFacts } from "./session-protocol.js";
 import type { QueryLanguageProjection } from "./projections.js";
-import { QueryModalParent, saveQueryOwner, unlockQueryOwner } from "./modal-parent.js";
+import { QueryModalParent } from "./modal-parent.js";
 
 export const QUERY_SCHEME = "eska-query";
 interface Session {
@@ -36,8 +36,6 @@ interface Session {
   design?: NativeQueryConstructor;
   placements?: { draft: string; owner: string; decisions: CommentDecision[] };
   parent?: QueryModalParent;
-  inheritedBslReadonly?: boolean;
-  nativeSave?: vscode.TextDocument;
   guarding?: Promise<void>;
 }
 
@@ -48,6 +46,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
   private readonly languageEvents = new vscode.EventEmitter<vscode.Uri | undefined>();
   readonly onDidChangeLanguage = this.languageEvents.event;
   private readonly sessions = new Map<string, Session>();
+  private readonly inputGrants = new WeakMap<vscode.TextDocument, Thenable<void>>();
   private readonly removals = new Set<string>();
   private readonly gates = new Map<string, Promise<unknown>>();
   private recovery: QueryRecovery | undefined;
@@ -62,7 +61,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
 
   constructor(context: vscode.ExtensionContext, private readonly connection: Connection, private readonly currentTree: () => MetadataTree | undefined,
     private readonly application: () => string | undefined, private readonly changed: (entry: TreeEntry) => void,
-    private readonly log: (value: string) => void, private readonly ownedReadonlyRule: (uri: vscode.Uri) => string | undefined,
+    private readonly log: (value: string) => void,
     private readonly settleReadonlyRule: (uri: vscode.Uri) => Promise<string | undefined>) {
     this.directory = join(context.globalStorageUri.fsPath, "query-drafts-v1");
     this.ready = new Promise<void>((resolve, reject) => { this.initial = { resolve, reject }; });
@@ -77,23 +76,16 @@ export class QueryTabs implements vscode.FileSystemProvider {
           this.persist(session);
           this.languageEvents.fire(event.document.uri);
         }
-      }), vscode.workspace.onWillSaveTextDocument(({ document }) => {
-        const session = this.session(document.uri);
-        // VS Code starts a text-editor save only when its effective editor mode is writable.
-        // Remember that approval for this provider write, including the native session override.
-        if (session?.record.identity.kind === "bslLiteral" && session.record.writable && !session.design && !this.isOwnerSnapshot(document.uri)
-          && (session.inheritedBslReadonly || configuredReadOnly(document))) session.nativeSave = document;
       }), vscode.workspace.onDidOpenTextDocument(document => {
         if (document.uri.scheme === QUERY_SCHEME) void this.restore(document).catch(error => this.failure(error));
       }), vscode.window.tabGroups.onDidChangeTabs(event => {
         for (const tab of event.closed) if (tab.input instanceof vscode.TabInputText) void this.closeView(tab.input.uri).catch(error => this.failure(error));
         this.guardConstructorTabs();
-      }), vscode.window.onDidChangeActiveTextEditor(() => this.guardConstructorTabs()),
-      vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration("files.readonlyInclude") || event.affectsConfiguration("files.readonlyExclude")) {
-          this.events.fire([...this.sessions.values()].map(session => ({ type: vscode.FileChangeType.Changed, uri: this.uri(session.record) })));
-        }
-      }), connection.onRecovery(endpoint => this.connected(endpoint)), connection.beforeStop(async () => {
+      }), vscode.window.onDidChangeActiveTextEditor(editor => {
+        this.guardConstructorTabs();
+        void this.enableDraftInput(editor).catch(error => this.failure(error));
+      }),
+      connection.onRecovery(endpoint => this.connected(endpoint)), connection.beforeStop(async () => {
         try {
           await Promise.allSettled([...this.sessions.values()].map(session => session.saving));
           await this.recovery?.settled();
@@ -199,8 +191,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
         if (!endpoint || tree !== this.currentTree() || endpoint !== this.recoveryEndpoint || this.disposed) {
           await source.close().catch(() => {}); throw new ExplorerError("obsolete");
         }
-        const inheritedBslReadonly = configuredReadOnly(owner.document, this.ownedReadonlyRule(owner.document.uri));
-        session = { record: source.record, source, endpoint, resumed: source.header.resumed, mtime: Date.now(), parent, inheritedBslReadonly };
+        session = { record: source.record, source, endpoint, resumed: source.header.resumed, mtime: Date.now(), parent };
         this.sessions.set(session.record.id, session);
         await this.focus(session);
       } catch (error) {
@@ -211,10 +202,9 @@ export class QueryTabs implements vscode.FileSystemProvider {
     });
   }
 
-  /** The backend checks source policy independently before an extension-managed editor rule can be discounted. */
+  /** Editor-only locks belong to the source view. ESKA and the filesystem authorize the actual write. */
   private async openSourceSession(tree: MetadataTree, document: QueryDocument, owner: QueryOwnerView, identity: QueryIdentity): Promise<QuerySourceSession> {
-    const ignoredRule = document.writable ? this.ownedReadonlyRule(owner.document.uri) : undefined;
-    const userReadOnly = await nativeReadOnly(owner.document, ignoredRule);
+    const userReadOnly = await nativeReadOnly(owner.document);
     return this.client(tree, owner.entry.project).open(document, randomUUID(), identity, userReadOnly);
   }
 
@@ -375,12 +365,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
     const session = this.required(uri);
     const snapshot = this.isOwnerSnapshot(uri);
     const text = this.isCurrentOwner(uri) ? await this.currentOwnerText(session) : snapshot ? session.record.ownerText : session.design?.before ?? session.record.base;
-    // Keep the inherited editor restriction in the text model. During an approved native save, VS Code
-    // also uses stat for its filesystem check, where it would otherwise reject the session override.
-    const editorReadOnly = session.source?.header.protection.userReadOnly
-      || (session.parent && configuredReadOnlyResource(session.parent.source, session.record.identity.kind === "bslLiteral" ? "bsl" : "xml",
-        this.sessionReadonlyRule(session, session.parent.source)));
-    const writable = !snapshot && session.record.writable && (!editorReadOnly || session.nativeSave?.isClosed === false);
+    const writable = !snapshot && session.record.writable && !session.source?.header.protection.userReadOnly;
     return { type: vscode.FileType.File, ctime: 1, mtime: snapshot ? session.ownerMtime ?? session.mtime : session.mtime,
       size: Buffer.byteLength(text), ...(writable ? {} : { permissions: vscode.FilePermission.Readonly }) };
   }
@@ -392,20 +377,19 @@ export class QueryTabs implements vscode.FileSystemProvider {
     if (session.design || this.isOwnerSnapshot(uri)) throw vscode.FileSystemError.NoPermissions(this.text("queryReadonly"));
     const key = uri.toString();
     const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === key);
-    const native = session.nativeSave;
-    delete session.nativeSave;
     const saving = this.serial(key, async () => {
       const draft = await savedQueryText(content, document);
-      await this.save(session, draft, !!native && native === document && !native.isClosed);
+      await this.save(session, draft);
     });
     session.saving = saving;
     try {
       await saving;
     } catch (error) {
-      this.log(`query_save_failed ${error instanceof ExplorerError ? error.details?.reason ?? error.code : String(error)}`);
+      const reason = error instanceof ExplorerError ? [error.code, error.domain, error.details?.reason].filter(Boolean).join("/") : String(error);
+      this.log(`query_save_failed ${reason}`);
       const key = this.failureKey(error);
       if (key === "queryReadonly") throw vscode.FileSystemError.NoPermissions(this.text(key));
-      throw vscode.FileSystemError.Unavailable(this.text(key));
+      throw vscode.FileSystemError.Unavailable(this.text(key, reason));
     } finally {
       if (session.saving === saving) delete session.saving;
       this.languageEvents.fire(uri);
@@ -493,7 +477,10 @@ export class QueryTabs implements vscode.FileSystemProvider {
     this.ready = this.load(recovery);
     const initial = this.initial;
     this.initial = undefined;
-    void this.ready.then(() => initial?.resolve(), error => {
+    void this.ready.then(() => {
+      initial?.resolve();
+      if (this.recovery === recovery) void this.enableDraftInput(vscode.window.activeTextEditor).catch(error => this.failure(error));
+    }, error => {
       initial?.reject(error);
       if (this.recovery === recovery && this.recoveryAvailable) this.failure(error);
     });
@@ -584,7 +571,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
   }
 
   /** Native CAS, Undo/Redo and optional disk save implement a plan whose lifecycle is owned by ESKA. */
-  private async save(session: Session, draft: string, nativeUnlock: boolean): Promise<void> {
+  private async save(session: Session, draft: string): Promise<void> {
     const tree = this.currentTree();
     if (!tree || this.disposed) throw new ExplorerError("obsolete");
     const selection = this.application();
@@ -592,12 +579,9 @@ export class QueryTabs implements vscode.FileSystemProvider {
     if (tree !== this.currentTree() || this.disposed) throw new ExplorerError("obsolete");
     const source = await this.source(session, tree);
     const owner = await this.owner(session, tree);
-    const ignoredRule = this.sessionReadonlyRule(session, owner.document.uri);
-    const unlockOwner = nativeUnlock && owner.userReadOnly
-      && configuredReadOnly(owner.document, ignoredRule ?? this.ownedReadonlyRule(owner.document.uri));
     let attempted = false;
     try {
-      if (!session.record.writable || (unlockOwner ? await nativeReadOnly(owner.document, ignoredRule, true) : owner.userReadOnly)) {
+      if (!session.record.writable || owner.userReadOnly) {
         throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
       }
       const facts = this.ownerFacts(owner.document, false);
@@ -614,26 +598,22 @@ export class QueryTabs implements vscode.FileSystemProvider {
       const plan = await source.prepare(facts, draft, decisions, lineEnding, true);
       session.pending = true;
       if (this.disposed || tree !== this.currentTree() || !session.resumed || selection !== this.application()) throw new ExplorerError("obsolete");
-      const currentRule = this.sessionReadonlyRule(session, owner.document.uri);
-      if (await nativeReadOnly(owner.document, currentRule, unlockOwner)) throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
-      this.assertOwner(owner.document, facts, currentRule, unlockOwner);
-      if (unlockOwner) {
-        await unlockQueryOwner(owner.document);
-        if (this.disposed || tree !== this.currentTree() || !session.resumed || selection !== this.application()) throw new ExplorerError("obsolete");
-        this.assertOwner(owner.document, facts, currentRule, true);
+      if (await nativeReadOnly(owner.document)) throw new ExplorerError("requestFailed", "query_failed", { reason: "user_read_only" });
+      if (owner.document.isClosed || String(owner.document.version) !== facts.version || querySnapshot(owner.document.getText()) !== facts.snapshot) {
+        throw new ExplorerError("sourceChanged");
       }
-      if (!plan.noOp) {
+      if (plan.saveOwner) {
+        await writeCleanQueryOwner(owner.document, facts.version, plan.output, () => { attempted = true; });
+      } else if (!plan.noOp) {
         const edit = new vscode.WorkspaceEdit();
         for (const replacement of plan.replacements) edit.replace(owner.document.uri,
           new vscode.Range(replacement.rangeUtf16.start.line, replacement.rangeUtf16.start.character,
             replacement.rangeUtf16.end.line, replacement.rangeUtf16.end.character), replacement.text);
         attempted = true;
         if (!await vscode.workspace.applyEdit(edit)) throw new ExplorerError("sourceChanged");
-        if (querySnapshot(owner.document.getText()) !== plan.outputSnapshot) throw new ExplorerError("sourceChanged");
-        if (plan.saveOwner) await saveQueryOwner(owner.document);
       }
       if (querySnapshot(owner.document.getText()) !== plan.outputSnapshot) throw new ExplorerError("sourceChanged");
-      const receipt = this.ownerFacts(owner.document, await nativeReadOnly(owner.document, currentRule, unlockOwner));
+      const receipt = this.ownerFacts(owner.document, await nativeReadOnly(owner.document));
       if (plan.saveOwner) receipt.isDirty = owner.document.isDirty;
       await source.applied(plan.applyToken, receipt);
       this.accept(session, source, true);
@@ -675,15 +655,7 @@ export class QueryTabs implements vscode.FileSystemProvider {
     if (!project) throw new ExplorerError("sourceChanged");
     const path = await existingSource(project.info.sourcePath, session.record.source);
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path));
-    return { project, document, userReadOnly: await nativeReadOnly(document, this.sessionReadonlyRule(session, document.uri)) };
-  }
-
-  /** The query may use its own source lease. All other editor rules still apply. */
-  private sessionReadonlyRule(session: Session, uri: vscode.Uri): string | undefined {
-    const protection = session.source?.header.protection;
-    if (!this.recoveryAvailable || session.endpoint !== this.recoveryEndpoint || !protection?.sourceRestriction
-      || protection.userReadOnly || !protection.capturedSourceWritable) return undefined;
-    return this.ownedReadonlyRule(uri);
+    return { project, document, userReadOnly: await nativeReadOnly(document) };
   }
 
   /** These are exact native facts; disk, descriptor, source policy and context are checked by the core. */
@@ -691,14 +663,6 @@ export class QueryTabs implements vscode.FileSystemProvider {
     if (document.isClosed) throw new ExplorerError("sourceChanged");
     return { version: String(document.version), snapshot: querySnapshot(document.getText()), isDirty: nativeDirty(document),
       userReadOnly, application: this.application() ?? null };
-  }
-
-  /** A text plan can touch only the native version that supplied its preflight facts. */
-  private assertOwner(document: vscode.TextDocument, facts: QueryOwnerFacts, ignoredRule?: string, allowConfiguredWrite = false): void {
-    if ((!allowConfiguredWrite && configuredReadOnly(document, ignoredRule)) || document.isClosed
-      || String(document.version) !== facts.version || querySnapshot(document.getText()) !== facts.snapshot) {
-      throw new ExplorerError("sourceChanged");
-    }
   }
 
   /** Cached presentation follows acknowledged backend state and the queue's rebased native draft. */
@@ -797,10 +761,28 @@ export class QueryTabs implements vscode.FileSystemProvider {
     const document = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString())
       ?? await vscode.workspace.openTextDocument(uri, { encoding: "utf8" });
     await this.restore(document);
-    await vscode.window.showTextDocument(document, { preview: false });
+    const editor = await vscode.window.showTextDocument(document, { preview: false });
+    await this.enableDraftInput(editor);
     if (canonical(document.getText()) !== session.record.base && canonical(document.getText()) !== session.record.draft) {
       throw new ExplorerError("sourceChanged");
     }
+  }
+
+  /** A restored tab can become active without passing through the Open Query command. */
+  private async enableDraftInput(editor: vscode.TextEditor | undefined): Promise<void> {
+    const document = editor?.document;
+    if (!document || document.uri.scheme !== QUERY_SCHEME || this.isOwnerSnapshot(document.uri)) return;
+    await this.ready;
+    const session = this.session(document.uri);
+    if (this.disposed || document.isClosed || editor !== vscode.window.activeTextEditor
+      || !session?.record.writable || session.source?.header.protection.userReadOnly || session.design) return;
+    const opening = this.inputGrants.get(document);
+    if (opening) return opening;
+    if (!configuredReadOnly(document)) return;
+    const grant = vscode.commands.executeCommand<void>("workbench.action.files.setActiveEditorWriteableInSession");
+    this.inputGrants.set(document, grant);
+    try { await grant; }
+    catch (error) { this.inputGrants.delete(document); throw error; }
   }
 
   /** The visual constructor owns all splits of its query until it returns control to the text editor. */
@@ -894,6 +876,8 @@ export class QueryTabs implements vscode.FileSystemProvider {
       : reason === "constructor_unavailable" ? "constructorUnavailable"
       : error instanceof ExplorerError && error.code === "incompatible" ? "queryUnavailable"
       : ["unsupported_expression", "invalid_literal", "not_found"].includes(String(reason)) ? "queryUnsupported"
+      : error instanceof ExplorerError && (error.code === "protocolInvalid" || error.code === "timeout" || error.code === "connectionLost") ? error.code
+      : reason === "invalid_receipt" || reason === "pending_apply" ? "querySaveUnconfirmed"
       : reason === "unsupported_structure" ? "queryStructureUnsupported"
       : reason === "stale_draft" ? "queryDraftChanged"
       : reason === "comment_position" ? "queryCommentInvalid"
@@ -903,11 +887,12 @@ export class QueryTabs implements vscode.FileSystemProvider {
 
   private failure(error: unknown): void {
     this.log(`query_error code=${error instanceof ExplorerError ? error.code : "io"} reason=${error instanceof ExplorerError ? error.details?.reason ?? "none" : "none"}`);
-    if (!this.disposed) void vscode.window.showWarningMessage(this.text(this.failureKey(error)));
+    if (!this.disposed) void vscode.window.showWarningMessage(this.text(this.failureKey(error),
+      error instanceof ExplorerError ? String(error.details?.reason ?? error.code) : String(error)));
   }
 
   /** Localize only UI, never persisted identities or protocol fields. */
-  private text(key: MessageKey): string { return message(vscode.env.language, key); }
+  private text(key: MessageKey, ...values: string[]): string { return message(vscode.env.language, key, ...values); }
 }
 
 /** SDBL editor line endings are logical LF; source physical lines are chosen separately in query/plan. */

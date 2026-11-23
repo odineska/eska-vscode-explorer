@@ -47,6 +47,13 @@ exports.run = async function () {
     await replace(owner, 'Other = 42', 'Other = 99');
     assert.equal(await owner.save(), true);
     await publish(written, { pid: process.pid, source: owner.getText(), disk: (await fs.readFile(fixture.module)).toString('hex') });
+    await until(() => fs.readFile(path.join(fixture.root, 'cleanup-ready.json'), 'utf8').then(JSON.parse).catch(() => undefined), 'first window completed its conflict assertions');
+    await vscode.commands.executeCommand('eska.explorer.disconnect');
+    await until(() => !vscode.workspace.textDocuments.some(document => document.isDirty), 'second window configuration writes finished');
+    await publish(path.join(fixture.root, 'second-window-clean.json'), { clean: true });
+    // The normal-window probe reads this shared result immediately after the suite returns.
+    const result = await until(() => fs.readFile(path.join(fixture.root, 'host-result.json'), 'utf8').then(JSON.parse).catch(() => undefined), 'first window published its final result');
+    assert.equal(result.passed, true);
     return;
   }
   const owner = await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module));
@@ -74,7 +81,23 @@ exports.run = async function () {
   assert.equal((await fs.readFile(fixture.module)).toString('hex'), second.disk, 'second window source stays intact');
   assert.ok(second.source.includes('Other = 99'));
   await closeQueryTabs(draft, true);
+  assert.equal(owner.isDirty, true, 'the conflict left our test parent dirty');
+  assert.equal(owner.getText(), captured, 'closing the query preserved our test parent');
+  // With another normal window open, hotExit=onExit asks about this intentionally dirty buffer.
+  // Discard only our fixture edit after every preservation assertion, then let both probes close cleanly.
+  await vscode.window.showTextDocument(owner, { preview: false });
+  assert.equal(vscode.window.activeTextEditor?.document, owner);
+  await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  await until(() => !owner.isDirty, 'test parent was discarded after the conflict assertions');
+  assert.equal((await fs.readFile(fixture.module)).toString('hex'), second.disk, 'test cleanup preserves the second window source');
+  await publish(path.join(fixture.root, 'cleanup-ready.json'), { assertionsComplete: true });
+  await until(() => fs.readFile(path.join(fixture.root, 'second-window-clean.json'), 'utf8').then(JSON.parse).catch(() => undefined), 'second window disconnected');
+  await vscode.commands.executeCommand('eska.explorer.disconnect');
+  // Disconnect removes this fixture's native readonly rules asynchronously; finish their saves before closing.
+  await until(() => !Object.keys(vscode.workspace.getConfiguration('files', owner.uri).get('readonlyInclude', {}))
+    .some(pattern => pattern.startsWith(fixture.source.replaceAll('\\', '/')))
+    && !vscode.workspace.textDocuments.some(document => document.isDirty), 'first window configuration writes finished');
   await publish(path.join(fixture.root, 'host-result.json'), { passed: true, suite: 'bsl-two-native-windows',
     locale: vscode.env.language, vscode: vscode.version, extensionHosts: [process.pid, second.pid], dirtyParentPreserved: true,
-    externalSourcePreserved: true, draftPreservedOnConflict: true });
+    externalSourcePreserved: true, draftPreservedOnConflict: true, testOwnerDiscardedAfterAssertions: true });
 };
