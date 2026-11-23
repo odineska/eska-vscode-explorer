@@ -12,7 +12,11 @@ test("contributions include owned BSL/SDBL syntax and the optional HTTP debugger
   assert.deepEqual(manifest.extensionKind, ["workspace"]);
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
   assert.equal(manifest.capabilities.virtualWorkspaces.supported, false);
-  assert.equal(manifest.contributes.configurationDefaults, undefined);
+  assert.deepEqual(Object.keys(manifest.contributes.configurationDefaults), ["workbench.editor.customLabels.patterns"]);
+  for (const [pattern, label] of Object.entries(manifest.contributes.configurationDefaults["workbench.editor.customLabels.patterns"])) {
+    assert.ok(pattern.endsWith(".bsl"), pattern);
+    assert.match(label, /^%tabLabel[A-Za-z]+%$/);
+  }
   assert.deepEqual(manifest.contributes.breakpoints, [{ language: "bsl" }]);
   const [debuggerEntry] = manifest.contributes.debuggers;
   assert.equal(manifest.contributes.debuggers.length, 1);
@@ -49,7 +53,16 @@ test("all manifest localization references resolve in both languages", async () 
 test("keyboard overrides are scoped and have native macOS equivalents", async () => {
   const manifest = await json("package.json");
   const bindings = manifest.contributes.keybindings;
+  const lineBelow = bindings.find(binding => binding.key === "ctrl+enter");
+  assert.equal(lineBelow?.command, "runCommands");
+  assert.equal(lineBelow.mac, "cmd+enter");
+  assert.equal(lineBelow.when, "editorTextFocus && editorLangId == bsl && !editorReadonly && !renameInputVisible");
+  assert.deepEqual(lineBelow.args.commands, [
+    "cursorLineEnd", { command: "editor.action.insertSnippet", args: { snippet: "\n" } },
+  ]);
+
   for (const binding of bindings) {
+    if (binding === lineBelow) continue;
     assert.ok(manifest.contributes.commands.some(command => command.command === binding.command));
     if (binding.key.startsWith("ctrl+k")) {
       assert.equal(binding.mac, binding.key.replace("ctrl", "cmd"));

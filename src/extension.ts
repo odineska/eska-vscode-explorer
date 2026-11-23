@@ -13,11 +13,13 @@ import { ProtectedLanguageFeatures } from "./protected-language.js";
 import * as vscode from "vscode";
 import { BackendSetup } from "./backend-setup.js";
 import { ToolingSetup } from "./tooling/setup.js";
+import { managedPath } from "./tooling/install.js";
+import { findTool } from "./tooling/inspect.js";
 import { ToolFailure } from "./tooling/contracts.js";
 import { LanguageService } from "./language/service.js";
 import { QueryLanguage } from "./query/language.js";
 import { GitDecorations } from "./decorations.js";
-import { GitRepositories } from "./git-api.js";
+import { GitRepositories, type ScmMode } from "./git-api.js";
 import { MetadataChanges } from "./scm.js";
 import { revealFile, relativeFile } from "./reveal.js";
 import { iconName } from "./icons.js";
@@ -39,7 +41,7 @@ import { isXmlQueryOwner } from "./query/owner.js";
 import { queryBranches, queryLabel, queryLeaf, type QueryEntry } from "./query/tree.js";
 import { WorkspaceFiles, fileName, type WorkspaceEntry } from "./workspace-files.js";
 import { ProjectWatcher, watchManifests, watchDirectory } from "./watch.js";
-import { basename, relative } from "node:path";
+import { basename, dirname, relative } from "node:path";
 import { projectEnabled, parseWorkspace, isRecord } from "./protocol.js";
 import { ProjectGroups, type ProjectGroup } from "./project-groups.js";
 import { ProjectSettings } from "./project-settings.js";
@@ -50,6 +52,7 @@ import { registerProjectOnboarding } from "./project-onboarding.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
+import { registerBslEnterRules } from "./language/bsl-newline.js";
 
 const collectionContexts = { standardAttributes: "eskaGroup", metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
 
@@ -61,7 +64,7 @@ let active: Explorer | undefined;
 /** Activation starts workspace protection independently of whether the tree is expanded. */
 export function activate(context: vscode.ExtensionContext): unknown {
   active = new Explorer(context);
-  context.subscriptions.push(active, registerProjectOnboarding(context));
+  context.subscriptions.push(active, registerProjectOnboarding(context), registerBslEnterRules(vscode));
   return context.extensionMode === vscode.ExtensionMode.Test ? active : undefined;
 }
 
@@ -78,6 +81,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private readonly git = new GitRepositories();
   private readonly decorations = new GitDecorations(this.git);
   private readonly scm: MetadataChanges;
+  private scmGeneration = 0;
   private readonly output = vscode.window.createOutputChannel("ESKA Explorer", { log: true });
   private readonly connection: Connection;
   private readonly setup: BackendSetup;
@@ -137,6 +141,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
   private supportContextsPending: Promise<void> = Promise.resolve();
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.git.configureScm(context, (key, ...values) => this.text(key, ...values), text => this.output.warn(text));
     this.scm = new MetadataChanges(context, this.git, () => this.treeLanguage, async () => {
       await this.projects.settled();
       if (!this.projects.folders.length || this.tree) return;
@@ -152,7 +157,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     }, () => { this.support.invalidate(); this.scm.invalidate(); }, text => this.output.info(text));
     this.status.name = "ESKA Explorer";
     this.status.command = "eska.explorer.updateTools";
-    this.disposables.push(this.status, this.scm, this.decorations, this.git, this.protectedSources, this.projects, this.runDebug,
+    this.disposables.push(this.status, this.scm, this.decorations, this.protectedSources, this.projects, this.runDebug,
       vscode.window.registerTreeDataProvider("eska.explorer.runDebug", this.runDebug));
     this.disposables.push(new ProtectedLanguageFeatures(error => this.output.warn(String(error))));
     this.filters = new ProjectFilters(context.workspaceState);
@@ -170,7 +175,9 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         else if (kind === "debugger") { if (this.projectRuntime.debugging) throw new ToolFailure("busy", "eska-debug"); }
         else await this.language.stop();
       }, async kind => {
-        if (kind === "project") await this.connect(false); else if (kind === "formatter") await this.formatting.stop(); else if (kind === "analyzer") await this.language.restart(false);
+        if (kind === "project") { await this.connect(false); this.git.retryScm(); }
+        else if (kind === "formatter") await this.formatting.stop();
+        else if (kind === "analyzer") await this.language.restart(false);
       });
     this.disposables.push(this.tooling);
     this.language = new LanguageService(context, this.connection, this.tooling, this.output, (text, level) => this.output[level ?? "info"](text),
@@ -339,9 +346,14 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
         void this.refreshSupportContexts();
       }
     }));
-    this.disposables.push(this.projects.onDidChange(() => this.startProject()));
+    this.disposables.push(this.projects.onDidChange(() => {
+      this.syncScmProjects();
+      this.startProject();
+    }), vscode.workspace.onDidGrantWorkspaceTrust(() => this.syncScmProjects()));
     this.disposables.push(vscode.workspace.onDidOpenTextDocument(document => this.startDocument(document)));
     this.disposables.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("eska.explorer.scm.mode") || event.affectsConfiguration("eska.explorer.executable")
+        || event.affectsConfiguration("eska.explorer.backend")) this.syncScmProjects();
       if (event.affectsConfiguration("eska.explorer.analyzerExecutable")) {
         void this.language.restart(false);
       }
@@ -372,6 +384,31 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.renderProjectStatus();
     // onStartupFinished registers providers, but only roots or existing language/view triggers start tools.
     for (const document of vscode.workspace.textDocuments) this.startDocument(document);
+  }
+
+  private syncScmProjects(): void {
+    const generation = ++this.scmGeneration;
+    const folders = this.projects.folders.filter(folder => folder.uri.scheme === "file");
+    const fallback = managedPath(this.tooling.root, "project");
+    const targets = folders.map(async folder => {
+      const config = vscode.workspace.getConfiguration("eska.explorer", folder.uri);
+      const selected = config.get<string>("scm.mode", "eska");
+      const mode: ScmMode = selected === "both" || selected === "vscode" ? selected : "eska";
+      const root = folder.uri.fsPath;
+      if (mode === "vscode" || !vscode.workspace.isTrusted) return { root, projectExecutable: fallback, mode };
+      const backend = config.get<string>("backend", "project");
+      const name = backend === "legacy" ? "eska" : "eska-project";
+      const configured = config.get<string>("executable", "eska-project");
+      const executable = await findTool(configured === "eska-project" ? name : configured, name, dirname(fallback)).catch(() => undefined);
+      return { root, projectExecutable: executable ?? fallback, mode };
+    });
+    void Promise.all(targets).then(projects => {
+      if (this.disposed || generation !== this.scmGeneration) return;
+      this.git.setScmProjects(projects);
+      this.scm.setProjects(projects);
+      return vscode.commands.executeCommand("setContext", "eska.scmNativeOnly",
+        projects.length > 0 && projects.every(project => project.mode === "vscode"));
+    }).catch(error => { if (!this.disposed) this.output.warn(String(error)); });
   }
 
   private startProject(): void {
@@ -1361,6 +1398,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     for (const watcher of this.projectWatchers.values()) watcher.dispose(); this.projectWatchers.clear();
     this.opening++;
     if (state.kind === "ready") {
+      this.syncScmProjects();
       const tree = new MetadataTree(this.connection, state.session,
         (entries) => { this.support.invalidate(); this.decorations.invalidate(); this.scm.invalidate(); this.propertiesTabs.changed(tree, entries);
           this.protectedSources.refresh(); this.formPreview.changed(tree);
@@ -1438,6 +1476,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       this.connecting?.abort();
       void vscode.commands.executeCommand("setContext", "eska.explorer.activeProject", false);
       void vscode.commands.executeCommand("setContext", "eska.explorer.connected", false);
+      const release = this.git.releaseScm().finally(() => this.git.dispose());
+      void vscode.commands.executeCommand("setContext", "eska.scmNativeOnly", false);
       for (const disposable of this.disposables) disposable.dispose();
       this.searchView?.dispose();
       this.tree?.dispose();
@@ -1446,7 +1486,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       for (const watcher of this.projectWatchers.values()) watcher.dispose(); this.projectWatchers.clear();
       this.view.dispose();
       this.changed.dispose();
-      const other = Promise.allSettled([this.formPreview.shutdown(), this.formatting.shutdown(), this.supportContexts.stop(), this.support.shutdown(), this.setup.shutdown(), this.tooling.shutdown()]);
+      const other = Promise.allSettled([release, this.formPreview.shutdown(), this.formatting.shutdown(), this.supportContexts.stop(), this.support.shutdown(), this.setup.shutdown(), this.tooling.shutdown()]);
       const queries = this.queryDesigner.shutdown().then(() => Promise.allSettled([this.queries.shutdown()]));
       this.stopping = (async () => {
         const language = await Promise.allSettled([this.language.shutdown()]);

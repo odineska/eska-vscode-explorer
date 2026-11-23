@@ -36,11 +36,15 @@ function visibleCommands(menu, scope) {
 
 test("1C changes retain their SCM view identity and use native webview menus", async () => {
   const { contributes } = await json("package.json");
+  const mode = contributes.configuration.properties["eska.explorer.scm.mode"];
+  assert.equal(mode.default, "eska");
+  assert.equal(mode.scope, "resource");
+  assert.deepEqual(mode.enum, ["eska", "vscode", "both"]);
   const view = contributes.views.scm.find(entry => entry.id === viewId);
   assert.deepEqual(view, {
     id: viewId,
     name: "%scmView%",
-    when: "eska.hasProject",
+    when: "eska.hasProject && !eska.scmNativeOnly",
     visibility: "visible",
     type: "webview",
   });
@@ -51,7 +55,7 @@ test("1C changes retain their SCM view identity and use native webview menus", a
   const palette = contributes.menus.commandPalette.filter(scmItem);
   assert.equal(palette.length, scmCommands.length);
   for (const { command } of scmCommands) {
-    const when = [commandId("refresh"), commandId("compareRevisions")].includes(command) ? "eska.hasProject" : "false";
+    const when = [commandId("refresh"), commandId("compareRevisions")].includes(command) ? "eska.hasProject && !eska.scmNativeOnly" : "false";
     assert.deepEqual(palette.filter(item => item.command === command), [{ command, when }]);
   }
   assert.ok(contributes.menus["view/title"].some(entry =>

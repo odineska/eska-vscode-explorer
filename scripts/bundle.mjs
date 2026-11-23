@@ -10,10 +10,11 @@ for (const [file, expected] of [["scripts/form-font-raster.c", raster.bridgeSha2
   if (createHash("sha256").update(await readFile(file)).digest("hex") !== expected) throw new Error(`Stale caption rasterizer: ${file}`);
 }
 
-// Preserve license comments in both targets and readable names in extension-host stack traces.
 const bundleOptions = { bundle: true, metafile: true, legalComments: "inline", minifyWhitespace: true, minifySyntax: true };
 // The installed VSIX must never resolve runtime dependencies from the development checkout.
 const result = await build({ ...bundleOptions, entryPoints: ["src/extension.ts"], outfile: "out/extension.js",
+  // Keep function and class names available in extension-host stack traces.
+  minifyIdentifiers: true, keepNames: true,
   platform: "node", target: "node22", format: "cjs", external: ["vscode"] });
 const browserOptions = { ...bundleOptions, outdir: "out", minifyIdentifiers: true,
   platform: "browser", target: "chrome140", format: "iife",

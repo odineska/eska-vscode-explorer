@@ -193,3 +193,15 @@ test("a missing file selected to Keep blocks conflict staging before any writes"
   await assert.rejects(setup.execute("stage"), { message: "scmChanged" });
   assert.deepEqual(setup.calls, []);
 });
+
+test("autonomous ESKA conflicts compare raw ours/theirs revisions without Git extension commands", async () => {
+  const value = fixture([entry("merge", 18, "conflict.bsl")]);
+  value.context.repository.scmProvider = "eska";
+  value.context.api.toGitUri = (uri, ref) => ({ ...uri, scheme: "eska-scm", ref });
+  await value.execute("diff");
+  assert.equal(value.calls.length, 1);
+  assert.equal(value.calls[0][0], "vscode.diff");
+  assert.equal(value.calls[0][1].scheme, "eska-scm");
+  assert.equal(value.calls[0][1].ref, "~2");
+  assert.equal(value.calls[0][2].ref, "~3");
+});

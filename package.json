@@ -63,6 +63,93 @@
     "typescript": "7.0.2"
   },
   "contributes": {
+    "configurationDefaults": {
+      "workbench.editor.customLabels.patterns": {
+        "**/Ext/ExternalConnectionModule.bsl": "%tabLabelConfigurationExternalConnectionModule%",
+        "**/Ext/ManagedApplicationModule.bsl": "%tabLabelConfigurationManagedApplicationModule%",
+        "**/Ext/OrdinaryApplicationModule.bsl": "%tabLabelConfigurationOrdinaryApplicationModule%",
+        "**/Ext/SessionModule.bsl": "%tabLabelConfigurationSessionModule%",
+        "**/CommonCommands/*/Ext/CommandModule.bsl": "%tabLabelCommonCommand%",
+        "**/CommonForms/*/Ext/Form/Module.bsl": "%tabLabelCommonForm%",
+        "**/CommonModules/*/Ext/Module.bsl": "%tabLabelCommonModule%",
+        "**/AccountingRegisters/*/Ext/ManagerModule.bsl": "%tabLabelAccountingRegistersManagerModule%",
+        "**/AccountingRegisters/*/Ext/RecordSetModule.bsl": "%tabLabelAccountingRegistersRecordSetModule%",
+        "**/AccountingRegisters/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelAccountingRegistersForm%",
+        "**/AccountingRegisters/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelAccountingRegistersCommand%",
+        "**/AccumulationRegisters/*/Ext/ManagerModule.bsl": "%tabLabelAccumulationRegistersManagerModule%",
+        "**/AccumulationRegisters/*/Ext/RecordSetModule.bsl": "%tabLabelAccumulationRegistersRecordSetModule%",
+        "**/AccumulationRegisters/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelAccumulationRegistersForm%",
+        "**/AccumulationRegisters/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelAccumulationRegistersCommand%",
+        "**/Bots/*/Ext/Module.bsl": "%tabLabelBotsModule%",
+        "**/BusinessProcesses/*/Ext/ManagerModule.bsl": "%tabLabelBusinessProcessesManagerModule%",
+        "**/BusinessProcesses/*/Ext/ObjectModule.bsl": "%tabLabelBusinessProcessesObjectModule%",
+        "**/BusinessProcesses/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelBusinessProcessesForm%",
+        "**/BusinessProcesses/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelBusinessProcessesCommand%",
+        "**/CalculationRegisters/*/Ext/ManagerModule.bsl": "%tabLabelCalculationRegistersManagerModule%",
+        "**/CalculationRegisters/*/Ext/RecordSetModule.bsl": "%tabLabelCalculationRegistersRecordSetModule%",
+        "**/CalculationRegisters/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelCalculationRegistersForm%",
+        "**/CalculationRegisters/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelCalculationRegistersCommand%",
+        "**/CalculationRegisters/*/Recalculations/*/Ext/RecordSetModule.bsl": "%tabLabelRecalculationRecordSetModule%",
+        "**/Catalogs/*/Ext/ManagerModule.bsl": "%tabLabelCatalogsManagerModule%",
+        "**/Catalogs/*/Ext/ObjectModule.bsl": "%tabLabelCatalogsObjectModule%",
+        "**/Catalogs/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelCatalogsForm%",
+        "**/Catalogs/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelCatalogsCommand%",
+        "**/ChartsOfAccounts/*/Ext/ManagerModule.bsl": "%tabLabelChartsOfAccountsManagerModule%",
+        "**/ChartsOfAccounts/*/Ext/ObjectModule.bsl": "%tabLabelChartsOfAccountsObjectModule%",
+        "**/ChartsOfAccounts/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelChartsOfAccountsForm%",
+        "**/ChartsOfAccounts/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelChartsOfAccountsCommand%",
+        "**/ChartsOfCalculationTypes/*/Ext/ManagerModule.bsl": "%tabLabelChartsOfCalculationTypesManagerModule%",
+        "**/ChartsOfCalculationTypes/*/Ext/ObjectModule.bsl": "%tabLabelChartsOfCalculationTypesObjectModule%",
+        "**/ChartsOfCalculationTypes/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelChartsOfCalculationTypesForm%",
+        "**/ChartsOfCalculationTypes/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelChartsOfCalculationTypesCommand%",
+        "**/ChartsOfCharacteristicTypes/*/Ext/ManagerModule.bsl": "%tabLabelChartsOfCharacteristicTypesManagerModule%",
+        "**/ChartsOfCharacteristicTypes/*/Ext/ObjectModule.bsl": "%tabLabelChartsOfCharacteristicTypesObjectModule%",
+        "**/ChartsOfCharacteristicTypes/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelChartsOfCharacteristicTypesForm%",
+        "**/ChartsOfCharacteristicTypes/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelChartsOfCharacteristicTypesCommand%",
+        "**/Constants/*/Ext/ManagerModule.bsl": "%tabLabelConstantsManagerModule%",
+        "**/Constants/*/Ext/ValueManagerModule.bsl": "%tabLabelConstantsValueManagerModule%",
+        "**/DataProcessors/*/Ext/ManagerModule.bsl": "%tabLabelDataProcessorsManagerModule%",
+        "**/DataProcessors/*/Ext/ObjectModule.bsl": "%tabLabelDataProcessorsObjectModule%",
+        "**/DataProcessors/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelDataProcessorsForm%",
+        "**/DataProcessors/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelDataProcessorsCommand%",
+        "**/DocumentJournals/*/Ext/ManagerModule.bsl": "%tabLabelDocumentJournalsManagerModule%",
+        "**/DocumentJournals/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelDocumentJournalsForm%",
+        "**/DocumentJournals/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelDocumentJournalsCommand%",
+        "**/Documents/*/Ext/ManagerModule.bsl": "%tabLabelDocumentsManagerModule%",
+        "**/Documents/*/Ext/ObjectModule.bsl": "%tabLabelDocumentsObjectModule%",
+        "**/Documents/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelDocumentsForm%",
+        "**/Documents/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelDocumentsCommand%",
+        "**/Enums/*/Ext/ManagerModule.bsl": "%tabLabelEnumsManagerModule%",
+        "**/Enums/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelEnumsForm%",
+        "**/Enums/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelEnumsCommand%",
+        "**/ExchangePlans/*/Ext/ManagerModule.bsl": "%tabLabelExchangePlansManagerModule%",
+        "**/ExchangePlans/*/Ext/ObjectModule.bsl": "%tabLabelExchangePlansObjectModule%",
+        "**/ExchangePlans/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelExchangePlansForm%",
+        "**/ExchangePlans/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelExchangePlansCommand%",
+        "**/FilterCriteria/*/Ext/ManagerModule.bsl": "%tabLabelFilterCriteriaManagerModule%",
+        "**/FilterCriteria/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelFilterCriteriaForm%",
+        "**/FilterCriteria/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelFilterCriteriaCommand%",
+        "**/HTTPServices/*/Ext/Module.bsl": "%tabLabelHTTPServicesModule%",
+        "**/InformationRegisters/*/Ext/ManagerModule.bsl": "%tabLabelInformationRegistersManagerModule%",
+        "**/InformationRegisters/*/Ext/RecordSetModule.bsl": "%tabLabelInformationRegistersRecordSetModule%",
+        "**/InformationRegisters/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelInformationRegistersForm%",
+        "**/InformationRegisters/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelInformationRegistersCommand%",
+        "**/IntegrationServices/*/Ext/Module.bsl": "%tabLabelIntegrationServicesModule%",
+        "**/Reports/*/Ext/ManagerModule.bsl": "%tabLabelReportsManagerModule%",
+        "**/Reports/*/Ext/ObjectModule.bsl": "%tabLabelReportsObjectModule%",
+        "**/Reports/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelReportsForm%",
+        "**/Reports/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelReportsCommand%",
+        "**/Sequences/*/Ext/RecordSetModule.bsl": "%tabLabelSequencesRecordSetModule%",
+        "**/SettingsStorages/*/Ext/ManagerModule.bsl": "%tabLabelSettingsStoragesManagerModule%",
+        "**/SettingsStorages/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelSettingsStoragesForm%",
+        "**/Tasks/*/Ext/ManagerModule.bsl": "%tabLabelTasksManagerModule%",
+        "**/Tasks/*/Ext/ObjectModule.bsl": "%tabLabelTasksObjectModule%",
+        "**/Tasks/*/Forms/*/Ext/Form/Module.bsl": "%tabLabelTasksForm%",
+        "**/Tasks/*/Commands/*/Ext/CommandModule.bsl": "%tabLabelTasksCommand%",
+        "**/WebServices/*/Ext/Module.bsl": "%tabLabelWebServicesModule%",
+        "**/WebSocketClients/*/Ext/Module.bsl": "%tabLabelWebSocketClientsModule%"
+      }
+    },
     "viewsWelcome": [
       {
         "view": "eska.explorer.projects",
@@ -586,7 +673,7 @@
         {
           "id": "eska.explorer.scm",
           "name": "%scmView%",
-          "when": "eska.hasProject",
+          "when": "eska.hasProject && !eska.scmNativeOnly",
           "visibility": "visible",
           "type": "webview"
         }
@@ -787,7 +874,7 @@
       "commandPalette": [
         {
           "command": "eska.explorer.scm.compareRevisions",
-          "when": "eska.hasProject"
+          "when": "eska.hasProject && !eska.scmNativeOnly"
         },
         {
           "command": "eska.explorer.openQuery",
@@ -887,7 +974,7 @@
         },
         {
           "command": "eska.explorer.scm.refresh",
-          "when": "eska.hasProject"
+          "when": "eska.hasProject && !eska.scmNativeOnly"
         },
         {
           "command": "eska.explorer.scm.head",
@@ -1200,6 +1287,22 @@
           "scope": "machine-overridable",
           "description": "%executable%"
         },
+        "eska.explorer.scm.mode": {
+          "type": "string",
+          "enum": [
+            "eska",
+            "vscode",
+            "both"
+          ],
+          "default": "eska",
+          "scope": "resource",
+          "description": "%scmMode%",
+          "enumDescriptions": [
+            "%scmModeEska%",
+            "%scmModeVscode%",
+            "%scmModeBoth%"
+          ]
+        },
         "eska.explorer.treeLanguage": {
           "type": "string",
           "enum": [
@@ -1289,6 +1392,18 @@
         "command": "eska.explorer.refresh",
         "key": "f5",
         "when": "focusedView == eska.explorer.projects"
+      },
+      {
+        "command": "runCommands",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == bsl && !editorReadonly && !renameInputVisible",
+        "args": {
+          "commands": [
+            "cursorLineEnd",
+            { "command": "editor.action.insertSnippet", "args": { "snippet": "\n" } }
+          ]
+        }
       }
     ],
     "languages": [

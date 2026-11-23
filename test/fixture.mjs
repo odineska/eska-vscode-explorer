@@ -51,6 +51,22 @@ export async function addCommonModules(fixture) {
   }
 }
 
+/** Add two editable modules with identical filenames to those of other metadata types. */
+export async function addDocumentModules(fixture) {
+  const { readFile } = await import("node:fs/promises");
+  const name = "ВыдачаЗайма";
+  const configuration = join(fixture.source, "Configuration.xml");
+  await writeFile(configuration, (await readFile(configuration, "utf8"))
+    .replace("<ChildObjects>", `<ChildObjects><Document>${name}</Document>`));
+  const documents = join(fixture.source, "Documents");
+  const modules = join(documents, name, "Ext");
+  await mkdir(modules, { recursive: true });
+  await writeFile(join(documents, `${name}.xml`), descriptor("Document", name));
+  const manager = join(modules, "ManagerModule.bsl"), object = join(modules, "ObjectModule.bsl");
+  await Promise.all([writeFile(manager, "// Manager\n"), writeFile(object, "// Object\n")]);
+  return { name, manager, object };
+}
+
 /** Prepare every member before activation; tests change only their own workspace membership. */
 export async function createProjectGroupingSource(fixture) {
   const members = {};

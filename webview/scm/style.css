@@ -229,3 +229,7 @@ body {
 .scm-row-target .scm-description {
   min-width: 0;
 }
+
+.scm-rows { position: relative; }
+.scm-rows > .scm-row { position: absolute; inset-inline: 0; height: var(--scm-row-height); min-height: var(--scm-row-height); }
+.scm-row-target { height: var(--scm-row-height); min-height: var(--scm-row-height); }
