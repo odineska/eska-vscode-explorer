@@ -6,16 +6,19 @@ const pipe = String.raw`[ \t]*\|`;
 const codeTokens = `(?:[^"'/]|/(?!/)|'[^']*'|"${stringBody}${closeQuote})*`;
 // A line can resume code after closing a continued literal. Slashes inside its body are text.
 const code = `^(?:${pipe}${stringBody}${closeQuote}|(?!${pipe}))${codeTokens}`;
+const { increaseIndentPattern: blockStart }: { increaseIndentPattern: { pattern: string; flags: string } } =
+  require("../../resources/language/bsl-language-configuration.json").indentationRules;
 
 export const bslContinuationRules = [
+  { beforeText: new RegExp(`(?=${blockStart.pattern})${code}//`, blockStart.flags), appendText: "// ", indent: true },
   { beforeText: new RegExp(`${code}//`), appendText: "// " },
   { beforeText: new RegExp(`${code}"${stringBody}$|^${pipe}${stringBody}$`), appendText: "|" },
 ];
 
 export function registerBslEnterRules(vscode: typeof VSCode): VSCode.Disposable {
   const install = () => vscode.languages.setLanguageConfiguration("bsl", {
-    onEnterRules: bslContinuationRules.map(({ beforeText, appendText }) => ({
-      beforeText, action: { indentAction: vscode.IndentAction.None, appendText },
+    onEnterRules: bslContinuationRules.map(({ beforeText, appendText, indent }) => ({
+      beforeText, action: { indentAction: indent ? vscode.IndentAction.Indent : vscode.IndentAction.None, appendText },
     })),
   });
   let rules = install();

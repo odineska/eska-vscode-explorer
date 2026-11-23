@@ -29,3 +29,12 @@ test("BSL continuation uses the comment or string at the split point", () => {
     assert.equal(bslContinuationRules.find(rule => rule.beforeText.test(before))?.appendText ?? "", expected, source);
   }
 });
+
+test("inline comments preserve block-header indentation", () => {
+  for (const source of ["Если Истина Тогда // описание", "Процедура Тест() // описание", "Async Procedure Test() // comment", "Else // comment"]) {
+    assert.equal(bslContinuationRules.find(rule => rule.beforeText.test(source))?.indent, true, source);
+  }
+  for (const source of ["// Если Истина Тогда", 'Текст = "Если Истина Тогда"; // описание', "Значение = 1; // описание"]) {
+    assert.notEqual(bslContinuationRules.find(rule => rule.beforeText.test(source))?.indent, true, source);
+  }
+});

@@ -63,7 +63,9 @@ while keeping the tree. Resolve conflicts with other BSL extensions explicitly.
 
 In a BSL editor, **Enter** continues a comment with `// ` or a string literal
 with `|`. **Ctrl+Enter** (**Cmd+Enter** on macOS) inserts a new line below the
-current one with the same indentation and no prefix.
+current one with the current line's indentation and no continuation prefix.
+Multiple cursors on the same line merge before insertion. Enter after a block
+header with an inline comment increases the indentation of the continued comment.
 
 Use Format Document / Format Selection and ESKA as the formatter. Configure style
 in `[format]` in `eska.toml`; editor indentation does not override it.
