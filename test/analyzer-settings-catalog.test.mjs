@@ -38,7 +38,7 @@ test('analyzer catalog gates settings that differ between confirmed releases', (
   assert.equal(ruleFor('0.4.1', 'CalculationRegisterVirtualTableWithoutRecorder'), undefined);
   assert.deepEqual(ruleFor('0.4.2', 'CalculationRegisterVirtualTableWithoutRecorder').parameters[0].path,
     ['onlyInModulesWritingRegister']);
-  assert.equal(analyzerCatalogForVersion('0.4.7'), undefined);
+  assert.equal(analyzerCatalogForVersion('0.4.8'), undefined);
 });
 
 
@@ -89,4 +89,29 @@ test('effective severity controls are gated at 0.4.4 and edit only their canonic
   assert.deepEqual(reset, before);
   assert.equal(after.diagnostics.parameters.QueryOrderByDocumentDate, false);
   assert.deepEqual(before.diagnostics.metadataOverrides.QueryOrderByDocumentDate, { tags: ['sql'], future: 'keep' });
+});
+
+
+test('0.4.7 settings match published defaults without changing previous catalogs', () => {
+  const current = analyzerCatalogForVersion('0.4.7');
+  const previous = analyzerCatalogForVersion('0.4.6');
+  const additions = current.diagnosticCatalog.filter(rule => !previous.diagnosticCatalog.some(old => old.id === rule.id));
+  assert.deepEqual(Object.fromEntries(additions.map(rule => [rule.id, rule.defaultEnabled])), {
+    AtClientAtServerFormMethod: true,
+    PostingWhileDataExchangeLoading: true,
+    UnboundFormEventHandler: true,
+    FormEventHandlerDirective: true,
+    StructureKeyIsNotIdentifier: true,
+    MultilingualStringHasEmptyTranslation: true,
+    FormDataHasNoMetadataMethod: true,
+    ValueIsFilledOfBoolean: true,
+    TypeNameComparedAsText: false,
+  });
+  assert.ok(additions.every(rule => rule.parameters.length === 0));
+  for (const version of analyzerCatalogVersions) {
+    const option = analyzerCatalogForVersion(version).analyzerGroups.flatMap(group => group.fields)
+      .find(field => field.path.join('.') === 'features.map_key_types');
+    assert.equal(Boolean(option), version === '0.4.7', version);
+    if (option) assert.equal(option.default, true);
+  }
 });

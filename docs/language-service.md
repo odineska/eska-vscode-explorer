@@ -12,8 +12,8 @@ VS Code 1.144.0 с Analyzer 0.4.2. Приёмка Windows текущей вет�
 ## Каталог настроек анализатора
 
 В разделе **Настройки проекта → Анализ BSL** доступны каталоги опубликованных
-версий 0.2.67 и 0.4.0–0.4.6. Для неизвестной версии форма показывает каталог
-0.4.6 и сохраняет неизвестные поля политики. Совместимость итогового конфига
+версий 0.2.67 и 0.4.0–0.4.7. Для неизвестной версии форма показывает каталог
+0.4.7 и сохраняет неизвестные поля политики. Совместимость итогового конфига
 проверяет установленный анализатор через backend ESKA.
 
 Каталоги сохраняют состав правил прежних версий. В 0.4.3 добавлено
@@ -24,7 +24,22 @@ VS Code 1.144.0 с Analyzer 0.4.2. Приёмка Windows текущей вет�
 и `QueryConditionWithoutIndex`. Все десять правил включены по умолчанию
 и не имеют настраиваемых параметров. Существующие параметры правил сохраняются.
 Источники — [официальные релизы](https://github.com/itrous/bsl-analyzer/releases/tag/v0.4.6)
-и их `crates/ide-diagnostics/src/handlers`. Отдельного генератора каталога нет:
+и их `crates/ide-diagnostics/src/handlers`.
+
+В версии 0.4.7 каталог вырос с 219 до 228 правил. Добавлены
+`AtClientAtServerFormMethod`, `PostingWhileDataExchangeLoading`,
+`UnboundFormEventHandler`, `FormEventHandlerDirective`, `StructureKeyIsNotIdentifier`,
+`MultilingualStringHasEmptyTranslation`, `FormDataHasNoMetadataMethod`,
+`ValueIsFilledOfBoolean` и `TypeNameComparedAsText`. Последнее правило выключено
+по умолчанию, остальные восемь включены.
+Для пустого перевода НСтр список языков берётся из `declaredLanguages` правила
+`MultilingualStringHasAllDeclaredLanguages`. Новый флаг `features.map_key_types`
+включает вывод типов значений соответствия по статически известным ключам и
+включён по умолчанию. Эти настройки отсутствуют в каталогах прежних версий.
+Основание — [релиз 0.4.7](https://github.com/itrous/bsl-analyzer/releases/tag/v0.4.7)
+и [изменения после 0.4.6](https://github.com/itrous/bsl-analyzer/compare/v0.4.6...v0.4.7).
+
+Отдельного генератора каталога нет:
 версионированные данные находятся в `webview/settings/analyzer-catalog.mjs`.
 
 Начиная с 0.4.4 у каждого правила доступен **Уровень диагностики**:
