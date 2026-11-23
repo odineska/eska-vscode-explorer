@@ -78,6 +78,14 @@ exports.run = async function () {
   let editor = vscode.window.activeTextEditor;
   assert.equal(editor.document.uri.scheme, 'eska-protected');
   assert.equal(editor.document.getText(), original);
+  const moduleLabel = vscode.env.language.startsWith('ru') ? 'Справочник.Товары.МодульОбъекта' : 'Catalog.Товары.ObjectModule';
+  async function checkModuleTab(uri) {
+    await until(() => {
+      const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+      return tab?.label === moduleLabel && tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uri.toString();
+    }, `Expected ${moduleLabel} on ${uri.scheme} tab`);
+  }
+  await checkModuleTab(moduleUri.with({ scheme: 'eska-protected' }));
   for (const watcher of explorer.watchers) if (typeof watcher.flush === 'function') await watcher.flush();
   const generation = explorer.tree.projects[0].info.generation;
   const eventCount = trace.filter(value => value?.fileEvent).length;
@@ -129,6 +137,7 @@ exports.run = async function () {
   await vscode.commands.executeCommand('eska.explorer.openSource', entry);
   editor = vscode.window.activeTextEditor;
   assert.equal(editor.document.uri.scheme, 'file');
+  await checkModuleTab(moduleUri);
   assert.equal(editor.document.getText(), updated);
   await vscode.commands.executeCommand('type', { text: '// user blocked\n' });
   assert.equal(editor.document.getText(), updated, 'voluntary BSL lock remains active');
