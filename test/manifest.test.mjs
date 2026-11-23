@@ -49,7 +49,16 @@ test("all manifest localization references resolve in both languages", async () 
 test("keyboard overrides are scoped and have native macOS equivalents", async () => {
   const manifest = await json("package.json");
   const bindings = manifest.contributes.keybindings;
+  const lineBelow = bindings.find(binding => binding.key === "ctrl+enter");
+  assert.equal(lineBelow?.command, "runCommands");
+  assert.equal(lineBelow.mac, "cmd+enter");
+  assert.equal(lineBelow.when, "editorTextFocus && editorLangId == bsl && !editorReadonly && !renameInputVisible");
+  assert.deepEqual(lineBelow.args.commands, [
+    "cursorLineEnd", { command: "editor.action.insertSnippet", args: { snippet: "\n" } },
+  ]);
+
   for (const binding of bindings) {
+    if (binding === lineBelow) continue;
     assert.ok(manifest.contributes.commands.some(command => command.command === binding.command));
     if (binding.key.startsWith("ctrl+k")) {
       assert.equal(binding.mac, binding.key.replace("ctrl", "cmd"));

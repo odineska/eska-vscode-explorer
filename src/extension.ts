@@ -50,6 +50,7 @@ import { registerProjectOnboarding } from "./project-onboarding.js";
 import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
+import { registerBslEnterRules } from "./language/bsl-newline.js";
 
 const collectionContexts = { standardAttributes: "eskaGroup", metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
 
@@ -61,7 +62,7 @@ let active: Explorer | undefined;
 /** Activation starts workspace protection independently of whether the tree is expanded. */
 export function activate(context: vscode.ExtensionContext): unknown {
   active = new Explorer(context);
-  context.subscriptions.push(active, registerProjectOnboarding(context));
+  context.subscriptions.push(active, registerProjectOnboarding(context), registerBslEnterRules(vscode));
   return context.extensionMode === vscode.ExtensionMode.Test ? active : undefined;
 }
 

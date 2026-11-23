@@ -1289,6 +1289,18 @@
         "command": "eska.explorer.refresh",
         "key": "f5",
         "when": "focusedView == eska.explorer.projects"
+      },
+      {
+        "command": "runCommands",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == bsl && !editorReadonly && !renameInputVisible",
+        "args": {
+          "commands": [
+            "cursorLineEnd",
+            { "command": "editor.action.insertSnippet", "args": { "snippet": "\n" } }
+          ]
+        }
       }
     ],
     "languages": [
