@@ -12,7 +12,11 @@ test("contributions include owned BSL/SDBL syntax and the optional HTTP debugger
   assert.deepEqual(manifest.extensionKind, ["workspace"]);
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
   assert.equal(manifest.capabilities.virtualWorkspaces.supported, false);
-  assert.equal(manifest.contributes.configurationDefaults, undefined);
+  assert.deepEqual(Object.keys(manifest.contributes.configurationDefaults), ["workbench.editor.customLabels.patterns"]);
+  for (const [pattern, label] of Object.entries(manifest.contributes.configurationDefaults["workbench.editor.customLabels.patterns"])) {
+    assert.ok(pattern.endsWith(".bsl"), pattern);
+    assert.match(label, /^%tabLabel[A-Za-z]+%$/);
+  }
   assert.deepEqual(manifest.contributes.breakpoints, [{ language: "bsl" }]);
   const [debuggerEntry] = manifest.contributes.debuggers;
   assert.equal(manifest.contributes.debuggers.length, 1);
