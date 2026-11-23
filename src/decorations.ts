@@ -9,9 +9,8 @@ import { GitRepositories } from "./git-api.js";
 import type { FormSource } from "./forms.js";
 import { nodeKey, type MetadataTree, type ProjectTree, type TreeEntry } from "./tree.js";
 
-interface FileChange { path: string; status: GitStatus }
 type Entry = TreeEntry | FormSource;
-interface Snapshot { files: FileChange[]; names: Map<string, FileChange[]> }
+interface Snapshot { files: Map<string, GitStatus>; names: Set<string>; sortedPaths?: string[] }
 
 /** Compare paths using the same host rules as source navigation. */
 function comparable(value: string): string { return process.platform === "win32" ? value.toLowerCase() : value; }
@@ -109,7 +108,7 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
   private snapshot(project: ProjectTree): Snapshot {
     const cached = this.snapshots.get(project);
     if (cached) return cached;
-    const files = new Map<string, FileChange>();
+    const files = new Map<string, GitStatus>();
     const root = nativePath(project.info.sourcePath);
     for (const repository of this.git.api?.repositories ?? []) {
       const state = repository.state;
@@ -123,15 +122,12 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
           if (!path) continue;
           const key = comparable(path);
           const previous = files.get(key);
-          if (!previous || previous.status.priority <= status.priority) files.set(key, { path: key, status });
+          if (!previous || previous.priority <= status.priority) files.set(key, status);
         }
       }
     }
-    const snapshot: Snapshot = { files: [...files.values()], names: new Map() };
-    for (const file of snapshot.files) for (const name of new Set(file.path.split(sep).map(part => part.replace(/\.xml$/i, "")))) {
-      const matches = snapshot.names.get(name) ?? [];
-      matches.push(file); snapshot.names.set(name, matches);
-    }
+    const snapshot: Snapshot = { files, names: new Set() };
+    for (const path of files.keys()) for (const part of path.split(sep)) snapshot.names.add(part.replace(/\.xml$/i, ""));
     this.snapshots.set(project, snapshot);
     return snapshot;
   }
@@ -142,7 +138,7 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
     if (epoch !== this.epoch) return undefined;
     const owner = "owner" in entry ? entry.owner : entry;
     const snapshot = this.snapshot(owner.project);
-    if (!snapshot.files.length) return undefined;
+    if (!snapshot.files.size) return undefined;
     if (!owner.node.parent) return this.descendant();
     if (!("owner" in entry) && owner.node.id.kind === "collection") {
       for (const child of await tree.children(owner)) {
@@ -170,10 +166,19 @@ export class GitDecorations implements vscode.FileDecorationProvider, vscode.Dis
       if (!isRecord(source) || !isWirePath(source.path) || !isRecord(source.role)) continue;
       if ("owner" in entry && !(entry.target === "form" ? isFormPayload(source) : source.role.kind === "module" && source.role.role === "module")) continue;
       const path = comparable(nativePath(source.path));
-      for (const change of snapshot.files) {
-        if (change.path === path) exact.push(change.status);
-        if (!("owner" in entry) && owner.node.id.kind === "object" && source.role.kind === "descriptor" && path.endsWith(".xml")
-          && change.path.startsWith(path.slice(0, -4) + sep)) descendants = true;
+      const status = snapshot.files.get(path);
+      if (status) exact.push(status);
+      if (!("owner" in entry) && owner.node.id.kind === "object" && source.role.kind === "descriptor" && path.endsWith(".xml")) {
+        // Exact-file decorations need no ordering. Build this shared index only for an object query.
+        const paths = snapshot.sortedPaths ??= [...snapshot.files.keys()].sort();
+        const prefix = path.slice(0, -4) + sep;
+        let low = 0, high = paths.length;
+        while (low < high) {
+          const middle = low + Math.floor((high - low) / 2);
+          if (paths[middle]! < prefix) low = middle + 1;
+          else high = middle;
+        }
+        descendants ||= paths[low]?.startsWith(prefix) ?? false;
       }
     }
     const status = exact.sort((a, b) => b.priority - a.priority)[0];
