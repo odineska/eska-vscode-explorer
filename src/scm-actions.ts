@@ -26,6 +26,9 @@ export function button(action: Exclude<ScmAction, "openChange">, text: (key: Mes
 }
 
 export function isFileAction(value: string): value is FileAction { return (fileActions as readonly string[]).includes(value); }
+export function isFileMutation(action: ScmAction): boolean {
+  return action === "stage" || action === "unstage" || action === "discard" || action === "ignore";
+}
 export function isGroupAction(value: string): value is GroupAction { return Object.hasOwn(groupCommands, value); }
 
 /** Mirror stock Git's resource menus; file paths and operations remain owned by its public API. */

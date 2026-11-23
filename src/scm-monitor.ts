@@ -4,6 +4,7 @@ import { dirname, isAbsolute } from "node:path";
 import { isRecord, MAX_RESPONSE, ExplorerError } from "./protocol.js";
 import { nativePath, resolveSourcePath, sourceKey } from "./source.js";
 import { findTool } from "./tooling/inspect.js";
+import { Status } from "./git-status.js";
 import type { GitChange } from "./git-api.js";
 
 export interface ScmMonitorSnapshot {
@@ -46,11 +47,11 @@ export function parseScmSnapshot(value: unknown, root: string): ScmMonitorSnapsh
     catch (error) { if (error instanceof ExplorerError && error.code === "unsupportedPath") continue; throw error; }
     const uri = vscode.Uri.file(path);
     const add = (items: GitChange[], status: number): void => { items.push({ uri, originalUri: uri, status }); };
-    if (change.index === "conflict" || change.worktree === "conflict") { add(mergeChanges, 18); continue; }
-    if (change.index !== null) add(indexChanges, change.index === "added" || change.index === "intent_to_add" ? 1 : change.index === "deleted" ? 2 : 0);
-    if (change.worktree === "untracked") add(untrackedChanges, 7);
-    else if (change.worktree !== null) add(workingTreeChanges, change.worktree === "deleted" ? 6 : change.worktree === "type_changed" ? 11
-      : change.worktree === "added" || change.worktree === "intent_to_add" ? 9 : 5);
+    if (change.index === "conflict" || change.worktree === "conflict") { add(mergeChanges, Status.BothModified); continue; }
+    if (change.index !== null) add(indexChanges, change.index === "added" || change.index === "intent_to_add" ? Status.IndexAdded : change.index === "deleted" ? Status.IndexDeleted : Status.IndexModified);
+    if (change.worktree === "untracked") add(untrackedChanges, Status.Untracked);
+    else if (change.worktree !== null) add(workingTreeChanges, change.worktree === "deleted" ? Status.Deleted : change.worktree === "type_changed" ? Status.TypeChanged
+      : change.worktree === "added" || change.worktree === "intent_to_add" ? Status.IntentToAdd : Status.Modified);
   }
   return { branch, mergeChanges, indexChanges, workingTreeChanges, untrackedChanges };
 }

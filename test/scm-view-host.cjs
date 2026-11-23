@@ -208,11 +208,27 @@ exports.run = async function () {
     await input('ESKA button save');
     await ui.pointer('.scm-commit', 'left');
     await verifySave('ESKA button save', [fixture.module, note], 'button');
+    const renamedNote = path.join(fixture.root, 'Renamed monitor note.txt');
+    await fs.rename(note, renamedNote);
+    await git('add', '-A', '--', relative(note), relative(renamedNote));
+    await until(() => hasLabel(path.basename(renamedNote)), 'monitor-only staged rename appears');
+    await settleSnapshots();
+    assert.equal(repo.state.indexChanges.some(change => [note, renamedNote].includes(change.uri.fsPath)), false,
+      'native Git has not refreshed the staged rename');
+    const renameContext = await ui.webview(`JSON.parse([...document.querySelectorAll('.scm-row')]
+      .find(row => row.querySelector('.scm-label')?.textContent === ${JSON.stringify(path.basename(renamedNote))}).dataset.vscodeContext)`);
+    await command('eska.explorer.scm.unstage', { ...renameContext, webview: 'eska.explorer.scm' });
+    assert.equal(await git('diff', '--cached', '--name-only', '--', relative(note), relative(renamedNote)), '',
+      'first unstage handles both rename endpoints');
+    assert.equal(await git('ls-files', '--stage', '--', path.basename(outside)), outsideIndex);
+    await fs.rename(renamedNote, note);
+    await until(async () => !(await hasLabel(path.basename(renamedNote))), 'rename fixture restored');
+
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
       gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
       keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true,
-      monitorWithoutManualGitRefresh: true, semanticLabel, latencyMs, commitFiles,
+      monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, semanticLabel, latencyMs, commitFiles,
       latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));
   } catch (error) {

@@ -2,7 +2,8 @@ import * as vscode from "vscode";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import type { GitApi, GitChange, GitRepository } from "./git-api.js";
-import type { FileAction } from "./scm-actions.js";
+import { Status } from "./git-status.js";
+import { isFileMutation, type FileAction } from "./scm-actions.js";
 import type { MessageKey } from "./messages.js";
 import { relativeFile } from "./reveal.js";
 import { hasDirtySource, sourceKey } from "./source.js";
@@ -19,23 +20,19 @@ export interface ScmFileActionsContext {
   readonly entries: readonly ScmFileEntry[];
   readonly text: (key: MessageKey, ...values: string[]) => string;
   readonly validate: () => void;
+  readonly statusFresh?: boolean;
 }
-
-// Status values belong to the built-in Git API v1.
-const Status = {
-  IndexModified: 0, IndexAdded: 1, IndexDeleted: 2, IndexRenamed: 3, IndexCopied: 4,
-  Modified: 5, Deleted: 6, Untracked: 7, Ignored: 8, IntentToAdd: 9, IntentToRename: 10, TypeChanged: 11,
-  DeletedByUs: 14, DeletedByThem: 15, BothAdded: 16, BothModified: 18,
-} as const;
 
 export async function executeFileAction(action: FileAction, context: ScmFileActionsContext): Promise<void> {
   if (!context.entries.length) return;
   context.validate();
+  if (!context.statusFresh && isFileMutation(action)) {
+    await context.repository.status();
+    context.validate();
+  }
   switch (action) {
     case "stage": await stage(context); break;
     case "unstage": {
-      await context.repository.status();
-      context.validate();
       const paths = context.entries.filter(entry => entry.group === "index").flatMap(({ change }) =>
         change.status === Status.IndexRenamed ? [change.originalUri.fsPath, change.uri.fsPath] : [change.uri.fsPath]);
       if (paths.length) await context.repository.revert([...new Set(paths)]);
@@ -98,8 +95,6 @@ async function destructivePreflight(context: ScmFileActionsContext, paths: reado
 async function discard(context: ScmFileActionsContext): Promise<void> {
   const entries = modifiedEntries(context);
   if (!entries.length) return;
-  await context.repository.status();
-  context.validate();
   const check = await destructivePreflight(context, filePaths(entries));
   const restoring = entries.every(({ change }) => change.status === Status.Deleted);
   const untracked = entries.filter(({ change }) => change.status === Status.Untracked || change.status === Status.Ignored).length;
@@ -117,8 +112,6 @@ async function discard(context: ScmFileActionsContext): Promise<void> {
 async function stage(context: ScmFileActionsContext): Promise<void> {
   const entries = context.entries.filter(entry => entry.group !== "index");
   if (!entries.length) return;
-  await context.repository.status();
-  context.validate();
   const merge = entries.filter(entry => entry.group === "merge");
   const deletions = merge.filter(({ change }) => change.status === Status.DeletedByUs || change.status === Status.DeletedByThem);
   const paths = filePaths(merge);
@@ -180,8 +173,6 @@ async function stage(context: ScmFileActionsContext): Promise<void> {
 async function ignore(context: ScmFileActionsContext): Promise<void> {
   const entries = modifiedEntries(context);
   if (!entries.length) return;
-  await context.repository.status();
-  context.validate();
   const root = context.repository.rootUri.fsPath;
   const patterns = [...new Set(entries.map(({ change }) => {
     const path = relativeFile(root, change.uri.fsPath);

@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { resolve, join, win32 } from 'node:path';
 import { sourceKey } from '../out/source.js';
-import { changeCaption, changeIdentity, insideRepository } from '../out/scm-model.js';
+import { message } from '../out/messages.js';
+import { changeCaption, changeIdentity, insideRepository, matchChanges, monitoredChanges } from '../out/scm-model.js';
+import { Status } from '../out/git-status.js';
 
 class EventEmitter {
   callbacks = new Set();
@@ -409,4 +412,110 @@ test('one Git observer follows enablement, repository lifetime and disposal with
   extension.enabled = false; enabled.fire(false); assert.equal(observer.api, undefined); assert.equal(state.callbacks.size, 0);
   extension.enabled = true; enabled.fire(true); assert.equal(state.callbacks.size, 1);
   observer.dispose(); assert.equal(state.callbacks.size, 0); assert.equal(enabled.callbacks.size, 0); assert.equal(opened.callbacks.size, 0);
+});
+
+test('monitor rename endpoints reconcile after native status without widening discard selection', async t => {
+  for (const action of ['unstage', 'discard']) {
+    const repo = repository(root, []), h = setup([repo]);
+    t.after(() => h.provider.dispose());
+    await h.ready();
+    const index = action === 'unstage';
+    const old = change('old.bsl', index ? 2 : 6), added = change('new.bsl', index ? 1 : 9);
+    h.monitor.update(root, { branch: 'main', mergeChanges: [], indexChanges: index ? [old, added] : [],
+      workingTreeChanges: index ? [] : [old, added], untrackedChanges: [] });
+    await h.provider.publish();
+    repo.status = async () => { repo.state[index ? 'indexChanges' : 'workingTreeChanges'] = [change('new.bsl', index ? 3 : 10, 'old.bsl')]; };
+    await h.command(action, h.rows().find(row => row.description.endsWith('new.bsl')));
+    if (index) {
+      assert.deepEqual(repo.calls, [['revert', join(source, 'old.bsl'), join(source, 'new.bsl')]]);
+      assert.deepEqual(h.errors, []);
+    } else {
+      assert.deepEqual(repo.calls, []);
+      assert.equal(h.errors.length, 1);
+      assert.equal(h.warnings.length, 0);
+    }
+  }
+});
+
+test('monitor conflict refinement keeps native conflict details available to stage', async t => {
+  const base = await mkdtemp(join(process.env.ESKA_TEST_ROOT ?? resolve('../eska-playground'), 'scm-conflict-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const repo = repository(base, []), h = setup([repo], [context(base)]);
+  t.after(() => h.provider.dispose()); await h.ready();
+  h.monitor.update(base, { branch: 'main', mergeChanges: [change('deleted.bsl', 18, 'deleted.bsl', base)], indexChanges: [], workingTreeChanges: [], untrackedChanges: [] });
+  await h.provider.publish();
+  repo.status = async () => { repo.state.mergeChanges = [change('deleted.bsl', 14, 'deleted.bsl', base)]; };
+  // Cancellation proves refinement reached the native deletion-conflict prompt, without touching disk.
+  h.vscode.window.showWarningMessage = async (...args) => { h.warnings.push(args); return undefined; };
+  await h.command('stage', h.rows()[0]);
+  assert.deepEqual(h.errors, []);
+  assert.equal(h.warnings.length, 1);
+  assert.deepEqual(repo.calls, []);
+});
+
+test('group unstage reconciles a complete rename but rejects newly discovered native files', async t => {
+  for (const extra of [false, true]) {
+    const repo = repository(root, []), h = setup([repo]);
+    t.after(() => h.provider.dispose()); await h.ready();
+    h.monitor.update(root, { branch: 'main', mergeChanges: [], indexChanges: [change('old.bsl', 2), change('new.bsl', 1)],
+      workingTreeChanges: [], untrackedChanges: [] });
+    await h.provider.publish();
+    let statuses = 0;
+    repo.status = async () => { statuses++; repo.state.indexChanges = [change('new.bsl', 3, 'old.bsl'), ...(extra ? [change('extra.bsl', 1)] : [])]; };
+    await h.command('unstageAll', h.snapshot().repositories[0].groups[0]);
+    assert.equal(statuses, 1);
+    assert.equal(h.errors.length, extra ? 1 : 0);
+    assert.equal(repo.calls.length, extra ? 0 : 1);
+    if (!extra) assert.deepEqual(repo.calls[0], ['revert', join(source, 'old.bsl'), join(source, 'new.bsl')]);
+  }
+});
+
+test('a previously confirmed native conflict changing type makes the selection stale', async t => {
+  for (const monitored of [false, true]) {
+    const repo = repository(root, []), h = setup([repo]);
+    t.after(() => h.provider.dispose());
+    repo.state.mergeChanges = [change('conflict.bsl', Status.BothModified)];
+    await h.ready();
+    if (monitored) {
+      h.monitor.update(root, { mergeChanges: [change('conflict.bsl', Status.BothModified)],
+        indexChanges: [], workingTreeChanges: [], untrackedChanges: [] });
+      await h.provider.publish();
+    }
+    repo.status = async () => { repo.state.mergeChanges = [change('conflict.bsl', Status.DeletedByUs)]; };
+    await h.command('stage', h.rows()[0]);
+    assert.deepEqual(h.errors, [message(h.vscode.env.language, 'scmChanged')]);
+    assert.equal(h.warnings.length, 0);
+    assert.deepEqual(repo.calls, []);
+  }
+});
+
+test('indexed matches keep independent renames, exact rows, renameUri and repository ownership', () => {
+  const repo = repository(root, []);
+  const first = { ...change('b.bsl', Status.IndexRenamed, 'a.bsl'), renameUri: uri(join(source, 'b.bsl')) };
+  const second = change('d.bsl', Status.IndexRenamed, 'c.bsl');
+  const exact = change('other.bsl', Status.IndexModified);
+  repo.state.indexChanges = [first, second, exact];
+  const available = [change('a.bsl', Status.IndexDeleted), change('b.bsl', Status.IndexAdded),
+    change('c.bsl', Status.IndexDeleted), change('d.bsl', Status.IndexAdded), exact];
+  const matched = matchChanges(repo, 'index', available);
+  assert.equal(matched.get(changeIdentity(available[0], 'index')), first);
+  assert.equal(matched.get(changeIdentity(available[1], 'index')), first);
+  assert.equal(matched.get(changeIdentity(available[2], 'index')), second);
+  assert.equal(matched.get(changeIdentity(exact, 'index')), exact);
+  assert.equal(matchChanges(repo, 'index', available, path => !path.endsWith('b.bsl')).has(changeIdentity(available[0], 'index')), false);
+  repo.state.indexChanges = [{ ...first, renameUri: uri(join(source, 'other-destination.bsl')) }];
+  assert.equal(matchChanges(repo, 'index', available).size, 0, 'a different native destination cannot expand selection');
+  repo.state.indexChanges = [first, change('b.bsl', Status.IndexRenamed, 'c.bsl')];
+  assert.equal(matchChanges(repo, 'index', available).size, 0, 'competing destination invalidates both inferred renames');
+});
+
+test('separate untracked paths cannot complete a rename in the working group', () => {
+  const repo = repository(root, []), old = change('old.bsl', Status.Deleted), added = change('new.bsl', Status.Untracked);
+  const rename = change('new.bsl', Status.IntentToRename, 'old.bsl');
+  repo.state.workingTreeChanges = [rename];
+  const snapshot = { mergeChanges: [], indexChanges: [], workingTreeChanges: [old], untrackedChanges: [added] };
+  assert.deepEqual(monitoredChanges(repo, 'working', snapshot, 'separate'), [old]);
+  assert.deepEqual(monitoredChanges(repo, 'untracked', snapshot, 'separate'), [added]);
+  assert.deepEqual(monitoredChanges(repo, 'working', snapshot, 'mixed'), [rename]);
+  assert.equal(matchChanges(repo, 'working', [old]).size, 0);
 });
