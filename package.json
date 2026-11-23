@@ -2,7 +2,7 @@
   "name": "eska-explorer",
   "displayName": "ESKA: 1C Explorer",
   "description": "%description%",
-  "version": "0.1.34",
+  "version": "0.1.35",
   "private": true,
   "license": "Apache-2.0",
   "engines": {
@@ -1401,7 +1401,12 @@
         "args": {
           "commands": [
             "cursorLineEnd",
-            { "command": "editor.action.insertSnippet", "args": { "snippet": "\n" } }
+            {
+              "command": "editor.action.insertSnippet",
+              "args": {
+                "snippet": "\n"
+              }
+            }
           ]
         }
       }
