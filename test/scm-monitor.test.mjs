@@ -172,3 +172,86 @@ for (const [platform, paths, repositoryRoot, local, foreign, expected] of [
     assert.deepEqual(writes, [{ schema_version: 1, paths: [expected] }]);
   } finally { monitors.dispose(); }
 });
+
+test('preserves authoritative attached, detached and unborn HEAD identity', () => {
+  const { parseScmSnapshot } = load(), value = snapshot();
+  let parsed = parseScmSnapshot(value, root);
+  assert.equal(parsed.head, 'attached'); assert.equal(parsed.commit, 'a'.repeat(40));
+  value.repository.head = 'detached'; value.repository.branch = null; value.repository.branch_encoding = null;
+  parsed = parseScmSnapshot(value, root);
+  assert.equal(parsed.head, 'detached'); assert.equal(parsed.branch, undefined); assert.equal(parsed.commit, 'a'.repeat(40));
+  value.repository.head = 'unborn'; value.repository.commit = null;
+  parsed = parseScmSnapshot(value, root);
+  assert.equal(parsed.head, 'unborn'); assert.equal(parsed.commit, undefined);
+  value.repository.commit = 'a'.repeat(40); assert.throws(() => parseScmSnapshot(value, root));
+  value.repository.head = 'attached'; value.repository.commit = null;
+  value.repository.branch = 'main'; value.repository.branch_encoding = 'utf-8';
+  assert.throws(() => parseScmSnapshot(value, root));
+});
+test('pairs validated index renames without dropping independent worktree changes', () => {
+  const { parseScmSnapshot } = load(), value = snapshot();
+  value.changes = [
+    { path: 'old #😀.bsl', path_encoding: 'utf-8', index: 'deleted', worktree: null },
+    { path: 'new #😀.bsl', path_encoding: 'utf-8', index: 'added', worktree: 'modified' },
+  ];
+  value.renames = [{ stage: 'index', from: 'old #😀.bsl', from_encoding: 'utf-8', to: 'new #😀.bsl', to_encoding: 'utf-8' }];
+  const result = parseScmSnapshot(value, root);
+  assert.equal(result.indexChanges.length, 1);
+  const change = result.indexChanges[0];
+  assert.equal(change.status, 3);
+  assert.equal(change.uri.fsPath, resolve(root, 'new #😀.bsl'));
+  assert.equal(change.originalUri.fsPath, resolve(root, 'old #😀.bsl'));
+  assert.equal(change.renameUri.fsPath, change.uri.fsPath);
+  assert.equal(result.workingTreeChanges.length, 1); assert.equal(result.workingTreeChanges[0].status, 5);
+  for (const mutate of [
+    data => data.renames.push(data.renames[0]),
+    data => { data.renames[0].from = '../outside'; },
+    data => { data.renames[0].to = 'unrelated'; },
+    data => { data.renames[0].stage = 'worktree'; },
+    data => { data.changes[0].index = 'modified'; },
+    data => { data.renames = {}; },
+  ]) { const invalid = structuredClone(value); mutate(invalid); assert.throws(() => parseScmSnapshot(invalid, root)); }
+});
+test('maps every index conflict stage combination to native Git status', () => {
+  const { parseScmSnapshot } = load(), statuses = [undefined, 17, 12, 15, 13, 14, 16, 18];
+  for (let mask = 1; mask < 8; mask++) {
+    const value = snapshot();
+    value.changes = [{ path: 'conflict', path_encoding: 'utf-8', index: 'conflict', worktree: 'modified' }];
+    value.conflicts = [{ path: 'conflict', path_encoding: 'utf-8', base: Boolean(mask & 1), ours: Boolean(mask & 2), theirs: Boolean(mask & 4) }];
+    const result = parseScmSnapshot(value, root);
+    assert.equal(result.mergeChanges[0].status, statuses[mask]);
+    assert.equal(result.mergeChanges[0].originalUri.fsPath, resolve(root, 'conflict'));
+    assert.equal(result.indexChanges.length, 0); assert.equal(result.workingTreeChanges.length, 0);
+  }
+});
+test('rejects optional metadata not justified by complete snapshot paths and states', () => {
+  const { parseScmSnapshot } = load(), value = snapshot();
+  value.changes = [{ path: 'conflict', path_encoding: 'utf-8', index: 'conflict', worktree: null }];
+  value.conflicts = [{ path: 'conflict', path_encoding: 'utf-8', base: true, ours: true, theirs: true }];
+  for (const mutate of [
+    data => { data.conflicts[0].path = 'unrelated'; },
+    data => { data.conflicts[0].path = '../escape'; },
+    data => { data.conflicts[0].ours = 1; },
+    data => { Object.assign(data.conflicts[0], {base:false,ours:false,theirs:false}); },
+    data => { data.conflicts.push(data.conflicts[0]); },
+    data => { data.changes[0].index = 'modified'; },
+    data => { data.conflicts = {}; },
+    data => { data.changes.push(data.changes[0]); },
+  ]) { const invalid = structuredClone(value); mutate(invalid); assert.throws(() => parseScmSnapshot(invalid, root)); }
+  // Older monitor snapshots have no metadata and retain conservative conflict status.
+  delete value.conflicts;
+  assert.equal(parseScmSnapshot(value, root).mergeChanges[0].status, 18);
+});
+
+test('maps several independent rename pairs regardless of snapshot ordering', () => {
+  const { parseScmSnapshot } = load(), value = snapshot();
+  value.changes = ['new-a', 'old-b', 'old-a', 'new-b'].map(path => ({ path, path_encoding: 'utf-8', index: path.startsWith('old') ? 'deleted' : 'added', worktree: null }));
+  value.renames = ['a', 'b'].map(suffix => ({stage:'index',from:`old-${suffix}`,from_encoding:'utf-8',to:`new-${suffix}`,to_encoding:'utf-8'}));
+  const parsed = parseScmSnapshot(value, root);
+  assert.equal(parsed.indexChanges.length, 2);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(parsed.indexChanges[i].status, 3);
+    assert.equal(parsed.indexChanges[i].uri.fsPath, resolve(root, `new-${i === 0 ? 'a' : 'b'}`));
+    assert.equal(parsed.indexChanges[i].originalUri.fsPath, resolve(root, `old-${i === 0 ? 'a' : 'b'}`));
+  }
+});

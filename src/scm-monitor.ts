@@ -9,6 +9,8 @@ import type { GitChange } from "./git-api.js";
 
 export interface ScmMonitorSnapshot {
   readonly branch: string | undefined;
+  readonly commit: string | undefined;
+  readonly head: "attached" | "detached" | "unborn";
   readonly mergeChanges: readonly GitChange[];
   readonly indexChanges: readonly GitChange[];
   readonly workingTreeChanges: readonly GitChange[];
@@ -37,14 +39,26 @@ export function parseScmSnapshot(value: unknown, root: string): ScmMonitorSnapsh
     try { branch = nativePath({ value: repository.branch, encoding: repository.branch_encoding as "utf-8" | "percent" }); }
     catch (error) { if (!(error instanceof ExplorerError && error.code === "unsupportedPath")) throw error; }
   }
+  const commit = repository.commit === null ? undefined : repository.commit as string;
+  if ((repository.head === "unborn") !== (commit === undefined)) return invalid();
+  const pathOf = (value: Record<string, unknown>, field: string, encodingField: string): string | undefined => {
+    if (typeof value[field] !== "string" || !pathEncodings.has(value[encodingField])) return invalid();
+    try { return resolveSourcePath({ value: nativeRoot, encoding: "utf-8" }, { value: value[field] as string, encoding: value[encodingField] as "utf-8" | "percent" }); }
+    catch (error) { if (error instanceof ExplorerError && error.code === "unsupportedPath") return undefined; throw error; }
+  };
+  const entryKey = (value: Record<string, unknown>, field: string, encoding: string): string => JSON.stringify([value[encoding], value[field]]);
+  const entries = new Map<string, { value: Record<string, unknown>; path: string | undefined }>();
+  const decodedPaths = new Set<string>();
   const mergeChanges: GitChange[] = [], indexChanges: GitChange[] = [], workingTreeChanges: GitChange[] = [], untrackedChanges: GitChange[] = [];
   for (const change of value.changes) {
     if (!isRecord(change) || typeof change.path !== "string" || !pathEncodings.has(change.path_encoding)
       || !(change.index === null || kinds.has(change.index)) || !(change.worktree === null || kinds.has(change.worktree))
       || change.index === null && change.worktree === null) return invalid();
-    let path: string;
-    try { path = resolveSourcePath({ value: nativeRoot, encoding: "utf-8" }, { value: change.path, encoding: change.path_encoding as "utf-8" | "percent" }); }
-    catch (error) { if (error instanceof ExplorerError && error.code === "unsupportedPath") continue; throw error; }
+    const path = pathOf(change, "path", "path_encoding"), key = entryKey(change, "path", "path_encoding");
+    if (entries.has(key) || path !== undefined && decodedPaths.has(sourceKey(path))) return invalid();
+    entries.set(key, { value: change, path });
+    if (path === undefined) continue;
+    decodedPaths.add(sourceKey(path));
     const uri = vscode.Uri.file(path);
     const add = (items: GitChange[], status: number): void => { items.push({ uri, originalUri: uri, status }); };
     if (change.index === "conflict" || change.worktree === "conflict") { add(mergeChanges, Status.BothModified); continue; }
@@ -53,7 +67,48 @@ export function parseScmSnapshot(value: unknown, root: string): ScmMonitorSnapsh
     else if (change.worktree !== null) add(workingTreeChanges, change.worktree === "deleted" ? Status.Deleted : change.worktree === "type_changed" ? Status.TypeChanged
       : change.worktree === "added" || change.worktree === "intent_to_add" ? Status.IntentToAdd : Status.Modified);
   }
-  return { branch, mergeChanges, indexChanges, workingTreeChanges, untrackedChanges };
+  const indexPositions = new Map(indexChanges.map((change, index) => [sourceKey(change.uri.fsPath), index]));
+  const mergePositions = new Map(mergeChanges.map((change, index) => [sourceKey(change.uri.fsPath), index]));
+  const removedIndex = new Set<number>();
+  if (value.renames !== undefined) {
+    if (!Array.isArray(value.renames)) return invalid();
+    const used = new Set<string>();
+    for (const rename of value.renames) {
+      if (!isRecord(rename) || rename.stage !== "index") return invalid();
+      const from = pathOf(rename, "from", "from_encoding"), to = pathOf(rename, "to", "to_encoding");
+      const fromKey = entryKey(rename, "from", "from_encoding"), toKey = entryKey(rename, "to", "to_encoding");
+      const old = entries.get(fromKey), current = entries.get(toKey);
+      if (!old || !current || old.value.index !== "deleted" || current.value.index !== "added"
+        || fromKey === toKey || used.has(fromKey) || used.has(toKey)) return invalid();
+      used.add(fromKey); used.add(toKey);
+      if (from === undefined || to === undefined) continue;
+      const oldIndex = indexPositions.get(sourceKey(from)), newIndex = indexPositions.get(sourceKey(to));
+      if (oldIndex === undefined || newIndex === undefined) return invalid();
+      const uri = vscode.Uri.file(to), originalUri = vscode.Uri.file(from);
+      indexChanges[newIndex] = { uri, originalUri, renameUri: uri, status: Status.IndexRenamed };
+      removedIndex.add(oldIndex);
+    }
+  }
+  if (value.conflicts !== undefined) {
+    if (!Array.isArray(value.conflicts)) return invalid();
+    const used = new Set<string>();
+    const statuses = [undefined, Status.BothDeleted, Status.AddedByUs, Status.DeletedByThem,
+      Status.AddedByThem, Status.DeletedByUs, Status.BothAdded, Status.BothModified];
+    for (const conflict of value.conflicts) {
+      if (!isRecord(conflict) || typeof conflict.base !== "boolean" || typeof conflict.ours !== "boolean" || typeof conflict.theirs !== "boolean") return invalid();
+      const path = pathOf(conflict, "path", "path_encoding"), key = entryKey(conflict, "path", "path_encoding");
+      const entry = entries.get(key), mask = Number(conflict.base) + 2 * Number(conflict.ours) + 4 * Number(conflict.theirs);
+      const status = statuses[mask];
+      if (!entry || entry.value.index !== "conflict" && entry.value.worktree !== "conflict" || used.has(key) || status === undefined) return invalid();
+      used.add(key);
+      if (path === undefined) continue;
+      const index = mergePositions.get(sourceKey(path));
+      if (index === undefined) return invalid();
+      const uri = vscode.Uri.file(path);
+      mergeChanges[index] = { uri, originalUri: uri, status };
+    }
+  }
+  return { branch, commit, head: repository.head as ScmMonitorSnapshot["head"], mergeChanges, indexChanges: removedIndex.size ? indexChanges.filter((_change, index) => !removedIndex.has(index)) : indexChanges, workingTreeChanges, untrackedChanges };
 }
 
 /** Byte-bounded NDJSON framing, including when a chunk contains several complete lines. */

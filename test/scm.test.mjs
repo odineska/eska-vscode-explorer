@@ -52,7 +52,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 function setup(repositories = [repository()], trees = [context()]) {
   const registered = new Map(), invoked = [], warnings = [], errors = [], snapshots = [];
   const gitChanged = new EventEmitter(), received = new EventEmitter();
-  const git = { onDidChange: gitChanged.event, get repositories() { return this.api.repositories; },
+  const projects = trees.map(tree => tree.connection.state.target).map(target => ({ root: target.path, projectExecutable: target.executable, mode: 'both' }));
+  const git = { retryScm() {}, modeFor: root => projects.find(project => project.root === root || project.root.startsWith(root + '/'))?.mode, onDidChange: gitChanged.event, get repositories() { return this.api.repositories; },
     api: { repositories, getRepository(value) {
       return [...this.repositories].sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length).find(repo =>
         value.fsPath === repo.rootUri.fsPath || value.fsPath.startsWith(repo.rootUri.fsPath + '/'));
@@ -88,6 +89,7 @@ function setup(repositories = [repository()], trees = [context()]) {
   const provider = new MetadataChanges({ extensionUri: uri(resolve('.')) }, git, () => 'ru-RU', async () => {}, () => {});
   assert.equal(registeredView.id, viewId);
   registeredView.provider.setTrees(trees);
+  registeredView.provider.setProjects(projects);
   registeredView.provider.resolveWebviewView(view);
   const send = async value => { received.fire(value); await flush(); };
   const snapshot = () => snapshots.findLast(value => value.type === 'snapshot');
@@ -103,7 +105,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     repositoryToken: snapshot().repositories.find(repo => repo.key === repository)?.repositoryToken,
     revision: snapshot().revision,
   });
-  return { provider, vscode, git, invoked, warnings, errors, view, trees, snapshot, input, rows, command, send, save, monitor, visibility,
+  return { provider, vscode, git, gitChanged, invoked, warnings, errors, view, trees, snapshot, input, rows, command, send, save, monitor, visibility,
     ready: () => send({ type: 'ready' }),
     refresh: () => registered.get(`${viewId}.refresh`)(),
     edit: (repository, value, editId, overrides) => send({ type: 'message', ...payload(repository, value, editId), ...overrides }),
@@ -218,6 +220,8 @@ test('semantic requests are bounded and a late response cannot resurrect a close
   const old = h.refresh();
   await flush();
   assert.equal(typeof release, 'function');
+  h.git.modeFor = () => undefined;
+  h.provider.setProjects([]);
   h.provider.setTrees([]);
   const current = h.refresh();
   await current;
@@ -404,14 +408,17 @@ test('one Git observer follows enablement, repository lifetime and disposal with
   const enabled = new EventEmitter(), opened = new EventEmitter(), closed = new EventEmitter(), state = new EventEmitter();
   const repo = { rootUri: uri(root), state: { onDidChange: state.event } }, api = { repositories: [repo], onDidOpenRepository: opened.event, onDidCloseRepository: closed.event };
   const extension = { enabled: true, onDidChangeEnablement: enabled.event, getAPI: () => api };
-  const { GitRepositories } = load('git-api', { vscode: { EventEmitter, extensions: { getExtension: () => ({ activate: async () => extension }) } } });
+  const { GitRepositories } = load('git-api', {
+    vscode: { EventEmitter, extensions: { getExtension: () => ({ activate: async () => extension }) } },
+    './scm-repository.js': {}, './scm-monitor.js': { ScmMonitors: class { dispose() {} } },
+  }, { AbortController });
   const observer = new GitRepositories(); await new Promise(resolve => setImmediate(resolve));
-  assert.equal(observer.api, api); assert.equal(state.callbacks.size, 1);
+  const facade = observer.api; assert.deepEqual(Array.from(facade.repositories), [repo]); assert.equal(state.callbacks.size, 1);
   opened.fire({ ...repo }); assert.equal(state.callbacks.size, 1);
   assert.equal(observer.repositories[0], repo);
   closed.fire({ ...repo }); assert.equal(state.callbacks.size, 0); opened.fire({ ...repo }); assert.equal(state.callbacks.size, 1);
   assert.notEqual(observer.repositories[0], repo);
-  extension.enabled = false; enabled.fire(false); assert.equal(observer.api, undefined); assert.equal(state.callbacks.size, 0);
+  extension.enabled = false; enabled.fire(false); assert.equal(observer.api, facade); assert.equal(facade.repositories.length, 0); assert.equal(state.callbacks.size, 0);
   extension.enabled = true; enabled.fire(true); assert.equal(state.callbacks.size, 1);
   observer.dispose(); assert.equal(state.callbacks.size, 0); assert.equal(enabled.callbacks.size, 0); assert.equal(opened.callbacks.size, 0);
 });
@@ -580,4 +587,31 @@ test('failed initial native status cancels before scope or message prompts and p
   assert.deepEqual(h.errors, ['initial status failed']);
   assert.equal(h.save.calls.length, 0);
   assert.equal(repo.inputBox.value, 'Existing draft');
+});
+
+test('ordinary Git status does not invalidate an action in the ESKA panel', async t => {
+  const repo = repository(), ordinary = repository(resolve('ordinary'), []);
+  const h = setup([repo, ordinary]); t.after(() => h.provider.dispose());
+  await h.ready();
+  const [row] = h.rows();
+  h.gitChanged.fire(ordinary);
+  await h.command('stage', row);
+  assert.deepEqual(repo.calls, [['add', join(source, file)]]);
+  assert.deepEqual(h.errors, []);
+});
+
+test('autonomous group opens one changes editor for modified, added and deleted paths', async t => {
+  const repo = repository(root, [change('a.bsl'), change('b.bsl', Status.Untracked), change('c.bsl', Status.Deleted)]);
+  repo.scmProvider = 'eska';
+  const h = setup([repo]); t.after(() => h.provider.dispose());
+  h.git.api.toGitUri = (uri, ref) => ({ ...uri, scheme: 'eska-scm', ref });
+  await h.ready();
+  await h.command('openAll', h.snapshot().repositories[0].groups[0]);
+  assert.deepEqual(h.errors, []);
+  assert.equal(h.invoked.length, 1);
+  const [command, , rows] = h.invoked[0];
+  assert.equal(command, 'vscode.changes');
+  assert.deepEqual(Array.from(rows, ([uri, left, right]) => [uri.fsPath, left?.ref, right?.scheme]), [
+    [join(source, 'a.bsl'), '~', 'file'], [join(source, 'b.bsl'), undefined, 'file'], [join(source, 'c.bsl'), '~', undefined],
+  ]);
 });

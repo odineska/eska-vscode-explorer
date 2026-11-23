@@ -34,6 +34,8 @@ try {
     "workbench.startupEditor": "none", "onboarding.enabled": false,
     "telemetry.telemetryLevel": "off", "extensions.autoUpdate": false,
     "extensions.autoCheckUpdates": false, "update.mode": "none",
+    ...(["scm-view-host.cjs", "scm-host.cjs", "decorations-host.cjs", "project-commands-host.cjs", "support-visual-host.cjs"].includes(basename(suite))
+      ? { "eska.explorer.scm.mode": "both" } : {}),
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
   // Auto-activation can open metadata before the suite starts; publish this fixture first.
@@ -307,6 +309,31 @@ try {
       "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false,
       "eska.explorer.checkForFormatterUpdates": false, "eska.explorer.checkForDebuggerUpdates": false,
       "eska.explorer.languageFeatures": false, "eska.explorer.analyzerExecutable": join(root, "missing-analyzer"), ...nativeToolSettings,
+    } }));
+  }
+  if (basename(suite) === "scm-modes-host.cjs") {
+    const ordinary = join(root, "ordinary");
+    await mkdir(ordinary);
+    await writeFile(join(ordinary, "ordinary.txt"), "ordinary baseline\n");
+    await writeFile(join(fixture.root, ".gitignore"), ".eska/\n.vscode/\nhost-result.json\n");
+    // Repositories exist before extension activation, as in a normal multi-root startup.
+    const git = promisify(execFile);
+    for (const directory of [fixture.root, ordinary]) {
+      const options = { cwd: directory };
+      await git("git", ["init"], options);
+      await git("git", ["config", "user.name", "ESKA modes test"], options);
+      await git("git", ["config", "user.email", "modes@example.invalid"], options);
+      await git("git", ["config", "core.hooksPath", "/dev/null"], options);
+      await git("git", ["add", "."], options);
+      await git("git", ["commit", "-m", "SCM modes baseline"], options);
+    }
+    fixture.ordinary = ordinary;
+    workspace = join(root, "scm-modes.code-workspace");
+    await writeFile(workspace, JSON.stringify({ folders: [{ path: fixture.root }, { path: ordinary }], settings: {
+      "eska.explorer.executable": binary, "eska.explorer.backend": backend,
+      "eska.explorer.checkForUpdates": false, "eska.explorer.checkForAnalyzerUpdates": false,
+      "eska.explorer.checkForFormatterUpdates": false, "eska.explorer.checkForDebuggerUpdates": false,
+      "eska.explorer.languageFeatures": false, "eska.explorer.supportPolicy": false, ...nativeToolSettings,
     } }));
   }
   if (process.env.ESKA_HOST_MULTI_ROOT) {

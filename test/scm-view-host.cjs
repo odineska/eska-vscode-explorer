@@ -259,18 +259,19 @@ exports.run = async function () {
     const renamedNote = path.join(fixture.root, 'Renamed monitor note.txt');
     await fs.rename(note, renamedNote);
     await git('add', '-A', '--', relative(note), relative(renamedNote));
-    await until(() => hasLabel(path.basename(renamedNote)), 'monitor-only staged rename appears');
+    const renameLabel = `${path.basename(note)} → ${path.basename(renamedNote)}`;
+    await until(() => hasLabel(renameLabel), 'monitor identifies both endpoints of staged rename');
     await settleSnapshots();
     assert.equal(repo.state.indexChanges.some(change => [note, renamedNote].includes(change.uri.fsPath)), false,
       'native Git has not refreshed the staged rename');
     const renameContext = await ui.webview(`JSON.parse([...document.querySelectorAll('.scm-row')]
-      .find(row => row.querySelector('.scm-label')?.textContent === ${JSON.stringify(path.basename(renamedNote))}).dataset.vscodeContext)`);
+      .find(row => row.querySelector('.scm-label')?.textContent === ${JSON.stringify(renameLabel)}).dataset.vscodeContext)`);
     await command('eska.explorer.scm.unstage', { ...renameContext, webview: 'eska.explorer.scm' });
     assert.equal(await git('diff', '--cached', '--name-only', '--', relative(note), relative(renamedNote)), '',
       'first unstage handles both rename endpoints');
     assert.equal(await git('ls-files', '--stage', '--', path.basename(outside)), outsideIndex);
     await fs.rename(renamedNote, note);
-    await until(async () => !(await hasLabel(path.basename(renamedNote))), 'rename fixture restored');
+    await until(async () => !(await hasLabel(renameLabel)) && !(await hasLabel(path.basename(renamedNote))), 'rename fixture restored');
 
     const hooks = path.join(repositoryRoot, '.git', 'fixture-hooks');
     const hook = path.join(hooks, 'pre-commit');
@@ -334,3 +335,5 @@ exports.run = async function () {
     throw error;
   } finally { ui.close(); }
 };
+
+exports.attachScm = attachScm;

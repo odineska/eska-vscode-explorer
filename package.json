@@ -673,7 +673,7 @@
         {
           "id": "eska.explorer.scm",
           "name": "%scmView%",
-          "when": "eska.hasProject",
+          "when": "eska.hasProject && !eska.scmNativeOnly",
           "visibility": "visible",
           "type": "webview"
         }
@@ -874,7 +874,7 @@
       "commandPalette": [
         {
           "command": "eska.explorer.scm.compareRevisions",
-          "when": "eska.hasProject"
+          "when": "eska.hasProject && !eska.scmNativeOnly"
         },
         {
           "command": "eska.explorer.openQuery",
@@ -974,7 +974,7 @@
         },
         {
           "command": "eska.explorer.scm.refresh",
-          "when": "eska.hasProject"
+          "when": "eska.hasProject && !eska.scmNativeOnly"
         },
         {
           "command": "eska.explorer.scm.head",
@@ -1286,6 +1286,22 @@
           "default": "eska-project",
           "scope": "machine-overridable",
           "description": "%executable%"
+        },
+        "eska.explorer.scm.mode": {
+          "type": "string",
+          "enum": [
+            "eska",
+            "vscode",
+            "both"
+          ],
+          "default": "eska",
+          "scope": "resource",
+          "description": "%scmMode%",
+          "enumDescriptions": [
+            "%scmModeEska%",
+            "%scmModeVscode%",
+            "%scmModeBoth%"
+          ]
         },
         "eska.explorer.treeLanguage": {
           "type": "string",

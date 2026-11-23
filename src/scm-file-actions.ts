@@ -200,7 +200,20 @@ async function ignore(context: ScmFileActionsContext): Promise<void> {
   if (!await vscode.workspace.applyEdit(edit) || !await document.save()) throw new Error(context.text("scmFailed"));
 }
 
-function diffUris(entry: ScmFileEntry, { api, repository }: ScmFileActionsContext): {
+/** Open a group in one changes editor, including one-sided additions and deletions. */
+export function openGroupChanges(entries: readonly ScmFileEntry[], api: GitApi, repository: GitRepository, title: string): Thenable<void> {
+  const resources = entries.map(entry => {
+    const { uri, status } = entry.change;
+    if (status === Status.Deleted || status === Status.IndexDeleted) {
+      return [uri, api.toGitUri(uri, status === Status.Deleted ? "~" : "HEAD"), undefined];
+    }
+    const { left, right } = diffUris(entry, { api, repository });
+    return [uri, left, right];
+  });
+  return vscode.commands.executeCommand("vscode.changes", title, resources);
+}
+
+function diffUris(entry: ScmFileEntry, { api, repository }: Pick<ScmFileActionsContext, "api" | "repository">): {
   left?: vscode.Uri; right?: vscode.Uri;
 } {
   const { change, group } = entry;
@@ -255,6 +268,11 @@ async function open(action: "open" | "diff" | "head" | "revealOs" | "revealExplo
     });
     return;
   }
+  if (context.repository.scmProvider === "eska" && entry.group === "merge" && action === "diff") {
+    await vscode.commands.executeCommand("vscode.diff", context.api.toGitUri(uri, "~2"),
+      context.api.toGitUri(uri, "~3"), entry.label);
+    return;
+  }
   let { left, right } = diffUris(entry, context);
   if (action === "compareWorkspace") {
     const main = context.repository.state.worktrees?.find(worktree => worktree.main);
@@ -269,6 +287,7 @@ async function open(action: "open" | "diff" | "head" | "revealOs" | "revealExplo
   if (left) {
     await vscode.commands.executeCommand("vscode.diff", left, right, entry.label);
   } else if ((status === Status.BothAdded || status === Status.BothModified)
+    && context.repository.scmProvider !== "eska"
     && vscode.workspace.getConfiguration("git", uri).get("mergeEditor", false)) {
     await vscode.commands.executeCommand("git.openMergeEditor", right);
   } else {
