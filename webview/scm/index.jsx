@@ -136,7 +136,7 @@ function Repository(props) {
             commit();
           }
         }} />
-      <Button primary class="scm-commit" aria-keyshortcuts="Control+Enter Meta+Enter" disabled={disabled()} onClick={commit}>
+      <Button primary class="scm-commit" title={state.labels.commitHint} aria-keyshortcuts="Control+Enter Meta+Enter" disabled={disabled()} onClick={commit}>
         <Icon name="check" />{state.labels.commit}
       </Button>
     </div>

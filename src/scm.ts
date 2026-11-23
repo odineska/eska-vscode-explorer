@@ -3,24 +3,28 @@ import { basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import { GitRepositories, type GitRepository } from "./git-api.js";
 import { gitStatus } from "./git-status.js";
-import { changeCaption, changeGroups, changeIdentity, changes, insideRepository, type ChangeGroup } from "./scm-model.js";
+import { changeCaption, changeGroups, changeIdentity, changes, insideRepository, monitoredChanges, type ChangeGroup } from "./scm-model.js";
 import { button, fileActions, fileInline, fileMenu, groupActions, groupCommands, isFileAction, isGroupAction, type FileAction, type ScmAction } from "./scm-actions.js";
 import { executeFileAction } from "./scm-file-actions.js";
+import { ScmMonitors } from "./scm-monitor.js";
+import { saveScmScope, ScmSaveError, type ScmSaveScope } from "./scm-save.js";
 import { message, type MessageKey } from "./messages.js";
 import { isRecord, isWirePath, projectEnabled } from "./protocol.js";
 import { nativePath, resolveSourcePath, sourceKey } from "./source.js";
 import { relativeFile } from "./reveal.js";
 import type { MetadataTree, ProjectTree } from "./tree.js";
 
-interface RepositoryEntry { kind: "repository"; key: string; repository: GitRepository; groups: GroupEntry[] }
+interface RepositoryEntry { kind: "repository"; key: string; repository: GitRepository; groups: GroupEntry[]; branch: string | undefined }
 interface GroupEntry { kind: "group"; key: string; parent: RepositoryEntry; group: ChangeGroup; entries: ChangeEntry[] }
 export interface ChangeEntry { kind: "change"; key: string; parent: GroupEntry; change: import("./git-api.js").GitChange; label: string }
 type Entry = RepositoryEntry | GroupEntry | ChangeEntry;
 interface ProjectContext { tree: MetadataTree; project: ProjectTree; root: string; source: string }
+interface SaveScope extends Omit<ScmSaveScope, "validate" | "repositoryRoot"> { tree: MetadataTree; name: string }
+type Captions = Record<"ru-RU" | "en-US", string>;
 const groupLabels: Record<ChangeGroup, MessageKey> = { merge: "scmMerge", index: "scmIndex", working: "scmWorking", untracked: "scmUntracked" };
 const prefix = "eska.explorer.scm";
 
-/** One semantic view over the existing Git connection, input box and repository operations. */
+/** Monitor Git state through ESKA while sharing the editor's repository handles and input box. */
 export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[] = [];
   private viewSubscriptions: vscode.Disposable[] = [];
@@ -33,6 +37,8 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
   private revision = 0;
   private readonly repositoryTokens = new WeakMap<GitRepository, string>();
   private readonly deferredDrafts = new Map<GitRepository, { value: string; editId: number }>();
+  private readonly monitors: ScmMonitors;
+  private labelCache = new WeakMap<ProjectTree, { source: string; names: Map<string, Captions | null> }>();
   private pending: Promise<RepositoryEntry[]> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
@@ -42,7 +48,8 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly git: GitRepositories, private readonly language: () => string,
     private readonly ensureTree: () => Promise<void>, private readonly log: (text: string) => void) {
-    this.subscriptions.push(vscode.window.registerWebviewViewProvider(prefix, this), git.onDidChange(() => this.invalidate()),
+    this.monitors = new ScmMonitors(() => this.invalidate(), log);
+    this.subscriptions.push(this.monitors, vscode.window.registerWebviewViewProvider(prefix, this), git.onDidChange(() => this.invalidate()),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("eska.explorer.treeLanguage") || event.affectsConfiguration("git")) this.invalidate();
       }));
@@ -62,8 +69,13 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "out"),
       vscode.Uri.joinPath(this.context.extensionUri, "resources", "shared")] };
     this.viewSubscriptions.push(view.webview.onDidReceiveMessage(value => { void this.receive(value); }),
-      view.onDidChangeVisibility(() => { if (view.visible) { void this.connect(); void this.publish(); } }),
-      view.onDidDispose(() => { if (this.view === view) { this.view = undefined; this.ready = false; } }));
+      view.onDidChangeVisibility(() => {
+        if (view.visible) { void this.connect(); this.invalidate(); }
+        else this.monitors.synchronize([]);
+      }),
+      view.onDidDispose(() => { if (this.view === view) {
+        this.view = undefined; this.ready = false; this.monitors.synchronize([]); this.invalidate();
+      } }));
     const nonce = randomBytes(16).toString("hex");
     const uri = (...parts: string[]) => view.webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, ...parts));
     view.webview.html = `<!doctype html><html lang="${vscode.env.language.startsWith("ru") ? "ru" : "en"}"><head>
@@ -81,8 +93,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
   invalidate(): void {
     if (this.disposed) return;
     this.revision++; this.roots = undefined; this.pending = undefined;
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => { void this.publish(); }, 75);
+    this.timer ??= setTimeout(() => { this.timer = undefined; void this.publish(); }, 35);
   }
 
   private async connect(): Promise<void> {
@@ -119,16 +130,38 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       || relativeFile(context.root, repository.rootUri.fsPath) !== undefined);
   }
 
+  private owns(repository: GitRepository, path: string): boolean {
+    const root = repository.rootUri.fsPath;
+    if (sourceKey(root) !== sourceKey(path) && relativeFile(root, path) === undefined) return false;
+    const owner = this.git.api?.getRepository(vscode.Uri.file(path));
+    return owner?.rootUri.scheme === "file" && sourceKey(owner.rootUri.fsPath) === sourceKey(root);
+  }
+
+  private displayedChanges(repository: GitRepository, group: ChangeGroup) {
+    const snapshot = this.monitors.get(repository.rootUri.fsPath);
+    if (!snapshot) return changes(repository, group);
+    const mode = vscode.workspace.getConfiguration("git", repository.rootUri).get<string>("untrackedChanges", "mixed");
+    return monitoredChanges(repository, group, snapshot, mode);
+  }
+
   private async load(revision: number): Promise<RepositoryEntry[]> {
     const contexts = this.contexts(), api = this.git.api;
     const roots: RepositoryEntry[] = [];
-    if (api) for (const repository of this.git.repositories) {
-      if (!this.relevant(repository, contexts)) continue;
-      const root: RepositoryEntry = { kind: "repository", key: repository.rootUri.toString(), repository, groups: [] };
+    const repositories = api ? this.git.repositories.filter(repository => this.relevant(repository, contexts)) : [];
+    this.monitors.synchronize(this.view?.visible && vscode.workspace.isTrusted ? repositories.flatMap(repository => {
+      const context = contexts.find(candidate => this.relevant(repository, [candidate])
+        && candidate.tree.connection.state.kind === "ready");
+      const state = context?.tree.connection.state;
+      return state?.kind === "ready" && state.target ? [{ root: repository.rootUri.fsPath, projectExecutable: state.target.executable }] : [];
+    }) : []);
+    for (const repository of repositories) {
+      const snapshot = this.monitors.get(repository.rootUri.fsPath);
+      const root: RepositoryEntry = { kind: "repository", key: repository.rootUri.toString(), repository, groups: [],
+        branch: snapshot ? snapshot.branch : repository.state.HEAD?.name };
       for (const group of changeGroups) {
         const parent: GroupEntry = { kind: "group", key: `${root.key}:${group}`, parent: root, group, entries: [] };
         const seen = new Set<string>();
-        for (const change of changes(repository, group)) {
+        for (const change of this.displayedChanges(repository, group)) {
           if (!insideRepository(repository, change)) continue;
           const identity = changeIdentity(change, group);
           if (seen.has(identity)) continue;
@@ -160,6 +193,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
   /** Only changed paths are sent, in bounded batches; removed files need no XML or filesystem read. */
   private async labels(entries: ChangeEntry[], contexts: ProjectContext[], revision: number): Promise<Map<string, string>> {
     const result = new Map<string, string>(), requests = new Map<ProjectContext, Set<string>>();
+    const language = this.language().startsWith("ru") ? "ru-RU" : "en-US";
     for (const entry of entries) for (const uri of [entry.change.uri, entry.change.originalUri]) {
       const context = contexts.find(context => relativeFile(context.source, uri.fsPath) !== undefined);
       if (!context) continue;
@@ -171,7 +205,15 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       paths.add(path); requests.set(context, paths);
     }
     for (const [context, paths] of requests) {
-      const names = [...paths];
+      const previous = this.labelCache.get(context.project);
+      const cached = previous?.source === context.source ? previous.names : undefined;
+      const captions = new Map<string, Captions | null>();
+      const names: string[] = [];
+      for (const path of paths) {
+        const caption = cached?.get(path);
+        if (caption === undefined) names.push(path);
+        else captions.set(path, caption);
+      }
       for (let offset = 0; offset < names.length; offset += 512) {
         if (revision !== this.revision || this.disposed) return result;
         const batch = names.slice(offset, offset + 512);
@@ -179,18 +221,22 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
           const response = await context.tree.request(context.project, "metadata/sourceLabels", { paths: batch.map(value => ({ value, encoding: "utf-8" })) });
           if (revision !== this.revision || this.disposed || !this.trees.includes(context.tree)) return result;
           if (!Array.isArray(response.labels) || response.labels.length !== batch.length) throw new Error("Invalid source labels response");
-          const captions = new Map<string, string>();
+          const accepted = new Map<string, Captions | null>();
           for (let index = 0; index < batch.length; index++) {
             const item = response.labels[index];
             if (!isRecord(item) || !isWirePath(item.path) || nativePath(item.path) !== batch[index]) throw new Error("Invalid source label path");
-            if (item.translations === null) continue;
-            if (!isRecord(item.translations) || typeof item.translations["ru-RU"] !== "string" || typeof item.translations["en-US"] !== "string") throw new Error("Invalid source label caption");
-            const file = resolveSourcePath(context.project.info.sourcePath, item.path);
-            captions.set(sourceKey(file), item.translations[this.language().startsWith("ru") ? "ru-RU" : "en-US"] as string);
+            if (item.translations !== null && (!isRecord(item.translations) || typeof item.translations["ru-RU"] !== "string"
+              || typeof item.translations["en-US"] !== "string")) throw new Error("Invalid source label caption");
+            accepted.set(batch[index]!, item.translations as Captions | null);
           }
-          for (const [file, caption] of captions) result.set(file, caption);
+          for (const [path, caption] of accepted) captions.set(path, caption);
         } catch (error) { this.log(`scm_source_labels_failed: ${String(error)}`); }
       }
+      for (const [path, caption] of captions) if (caption) {
+        const file = resolveSourcePath(context.project.info.sourcePath, { value: path, encoding: "utf-8" });
+        result.set(sourceKey(file), caption[language]);
+      }
+      this.labelCache.set(context.project, { source: context.source, names: captions });
     }
     return result;
   }
@@ -202,10 +248,11 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     return repository;
   }
 
-  private validate(entry: ChangeEntry): GitRepository {
+  private validate(entry: ChangeEntry, native = false): GitRepository {
     const repository = this.validRepository(entry.parent.parent), selected = this.git.api?.getRepository(entry.change.uri);
+    const current = native ? changes(repository, entry.parent.group) : this.displayedChanges(repository, entry.parent.group);
     if (!insideRepository(repository, entry.change) || !selected || sourceKey(selected.rootUri.fsPath) !== sourceKey(repository.rootUri.fsPath)
-      || !changes(repository, entry.parent.group).some(change => changeIdentity(change, entry.parent.group) === changeIdentity(entry.change, entry.parent.group))) {
+      || !current.some(change => changeIdentity(change, entry.parent.group) === changeIdentity(entry.change, entry.parent.group))) {
       throw new Error(this.text("scmChanged"));
     }
     return repository;
@@ -242,7 +289,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       const options = this.options(root), repository = root.repository;
       const context = { webviewSection: "scmRepository", eskaScmKey: root.key };
       return { key: root.key, label: basename(repository.rootUri.fsPath), description: repository.rootUri.fsPath,
-        repositoryToken: this.token(repository), branch: repository.state.HEAD?.name, message: this.deferredDrafts.get(repository)?.value ?? repository.inputBox.value, acknowledgedEditId: this.draftAcks.get(repository) ?? 0,
+        repositoryToken: this.token(repository), branch: root.branch, message: this.deferredDrafts.get(repository)?.value ?? repository.inputBox.value, acknowledgedEditId: this.draftAcks.get(repository) ?? 0,
         acknowledgedCommitId: this.commitAcks.get(repository) ?? 0, busy: this.busy || !vscode.workspace.isTrusted,
         actions: [button("refresh", text)], context, groups: root.groups.map(group => {
           const common = { eskaScmGroup: group.group, eskaScmUntrackedMixed: options.mixed };
@@ -263,7 +310,8 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     });
     await this.view.webview.postMessage({ type: "snapshot", revision, busy: this.busy, notice: this.notice, repositories,
       labels: { commit: this.text("scmCommit"), message: this.text("scmMessage"), repository: this.text("scmRepository"),
-        noChanges: this.text("scmNoChanges"), changes: this.text("scmWorking"), collapse: this.text("scmCollapse"), expand: this.text("scmExpand") } });
+        commitHint: this.text("scmSaveHint"), noChanges: this.text("scmNoChanges"), changes: this.text("scmWorking"),
+        collapse: this.text("scmCollapse"), expand: this.text("scmExpand") } });
   }
 
   private async receive(value: unknown): Promise<void> {
@@ -328,9 +376,9 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       void this.publish();
       if (action === "commit") {
         if (entry.kind !== "repository") throw new Error(this.text("scmChanged"));
-        await vscode.commands.executeCommand("git.commit", repository.rootUri); return;
+        await this.commit(root); return;
       }
-      if (action === "refresh") { await repository.status(); return; }
+      if (action === "refresh") { this.monitors.restart(repository.rootUri.fsPath); await repository.status(); return; }
       if (entry.kind === "repository") return;
       if (entry.kind === "group") {
         const options = this.options(root), available = groupActions(entry.group, options.mixed);
@@ -395,10 +443,53 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     if (!api) throw new Error(this.text("scmGitUnavailable"));
     const repositories = new Map<GitRepository, ChangeEntry[]>();
     for (const row of rows) { const repository = this.validate(row), list = repositories.get(repository) ?? []; list.push(row); repositories.set(repository, list); }
-    for (const [repository, entries] of repositories) await executeFileAction(action, {
-      api, repository, entries: entries.map(row => ({ group: row.parent.group, change: row.change, label: row.label })),
-      text: (key, ...args) => this.text(key, ...args), validate: () => { validateGroup?.(); for (const row of entries) this.validate(row); },
-    });
+    const mutation = action === "stage" || action === "unstage" || action === "discard" || action === "ignore";
+    for (const [repository, entries] of repositories) {
+      if (mutation && this.monitors.get(repository.rootUri.fsPath)) await repository.status();
+      await executeFileAction(action, {
+        api, repository, entries: entries.map(row => ({ group: row.parent.group, change: row.change, label: row.label })),
+        text: (key, ...args) => this.text(key, ...args),
+        validate: () => { validateGroup?.(); for (const row of entries) this.validate(row, mutation); },
+      });
+    }
+  }
+
+  private saveScopes(repository: GitRepository): SaveScope[] {
+    const scopes = new Map<string, SaveScope>();
+    for (const { tree, project, root } of this.contexts()) {
+      const state = tree.connection.state;
+      if (!this.owns(repository, root) || state.kind !== "ready" || !state.target) continue;
+      const workspace = project.info.scope.kind === "member"
+        && sourceKey(state.target.path) === sourceKey(repository.rootUri.fsPath)
+        && tree.projects.every(member => this.owns(repository, nativePath(member.info.rootPath)));
+      const path = workspace ? state.target.path : root;
+      const name = workspace ? basename(path) : project.info.displayName
+        ?? (project.info.scope.kind === "member" ? project.info.scope.name : basename(path));
+      scopes.set(sourceKey(path), { tree, root: path, executable: state.target.executable, workspace, name });
+    }
+    return [...scopes.values()];
+  }
+
+  private async commit(entry: RepositoryEntry): Promise<void> {
+    const { repository } = entry, candidates = this.saveScopes(repository);
+    if (!candidates.length) throw new Error(this.text("scmSaveNoProject"));
+    const draft = repository.inputBox.value;
+    const head = () => JSON.stringify([repository.state.HEAD?.name, repository.state.HEAD?.commit]);
+    const before = head();
+    const scope = candidates.length === 1 ? candidates[0] : (await vscode.window.showQuickPick(candidates.map(candidate => ({
+      label: candidate.name, description: candidate.root, candidate,
+    })), { title: this.text("scmSaveScope") }))?.candidate;
+    if (!scope) return;
+    const validate = () => {
+      this.validRepository(entry);
+      if (this.disposed || before !== head() || !this.saveScopes(repository).some(candidate => candidate.tree === scope.tree
+        && candidate.root === scope.root && candidate.executable === scope.executable && candidate.workspace === scope.workspace)) {
+        throw new Error(this.text("scmChanged"));
+      }
+    };
+    if (!await saveScmScope({ ...scope, repositoryRoot: repository.rootUri.fsPath, validate }, draft)) return;
+    if (repository.inputBox.value === draft) repository.inputBox.value = "";
+    try { await repository.status(); } catch { this.log("scm_status_after_save_failed"); }
   }
 
   private async compareRevisions(): Promise<void> {
@@ -426,12 +517,20 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
 
   private async refresh(): Promise<void> {
     await this.connect();
-    try { for (const repository of this.git.repositories) if (this.relevant(repository)) await repository.status(); }
+    this.labelCache = new WeakMap();
+    try { for (const repository of this.git.repositories) if (this.relevant(repository)) {
+      this.monitors.restart(repository.rootUri.fsPath);
+      await repository.status();
+    } }
     catch (error) { this.report(error); }
     this.invalidate(); await this.publish();
   }
 
-  private report(error: unknown): void { this.log(String(error)); void vscode.window.showErrorMessage(error instanceof Error ? error.message : this.text("scmFailed")); }
+  private report(error: unknown): void {
+    this.log(String(error));
+    const message = error instanceof Error ? error.message : this.text("scmFailed");
+    void vscode.window.showErrorMessage(error instanceof ScmSaveError && error.diagnostic ? `${message}\n${error.diagnostic}` : message);
+  }
   private text(key: MessageKey, ...values: string[]): string { return message(vscode.env.language, key, ...values); }
 
   dispose(): void {

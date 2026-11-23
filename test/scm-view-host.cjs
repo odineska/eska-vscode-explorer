@@ -104,37 +104,51 @@ async function attachScm() {
   }
 }
 
-/** Exercise trusted workbench input and built-in Git in the runner's owned project. */
+/** Native input proves save semantics independently of Git smart commit and auto-refresh. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE);
-  const git = async (...args) => (await execFile('git', args, { cwd: fixture.root })).stdout.trim();
+  // run-host owns this unique playground directory; the project is deliberately nested.
+  const repositoryRoot = path.dirname(fixture.root);
+  const relative = file => path.relative(repositoryRoot, file).split(path.sep).join('/');
+  // VS Code can remove injected config values while retaining GIT_CONFIG_COUNT.
+  const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(key)));
+  const git = async (...args) => (await execFile('git', args, { cwd: repositoryRoot, env: gitEnv })).stdout.trim();
   const command = (id, ...args) => vscode.commands.executeCommand(id, ...args);
   const russian = vscode.env.language.startsWith('ru');
-  const stageTitle = russian ? 'Индексировать изменения' : 'Stage Changes';
   const semanticLabel = russian ? 'Справочник.Товары.МодульОбъекта' : 'Catalog.Товары.ObjectModule';
-
+  const outside = path.join(repositoryRoot, 'outside-scope.txt');
+  const note = path.join(fixture.root, 'Заметка #1.txt');
+  const latencyMs = {};
+  const commitFiles = {};
+  await vscode.workspace.getConfiguration('git').update('enableSmartCommit', false, vscode.ConfigurationTarget.Workspace);
+  await vscode.workspace.getConfiguration('git').update('autorefresh', false, vscode.ConfigurationTarget.Workspace);
+  assert.equal(vscode.workspace.getConfiguration('git').get('enableSmartCommit'), false);
+  assert.equal(vscode.workspace.getConfiguration('git').get('autorefresh'), false);
+  await fs.writeFile(path.join(repositoryRoot, '.gitignore'), `/*\n!/${path.basename(fixture.root)}/\n!/outside-scope.txt\n`);
   await fs.writeFile(path.join(fixture.root, '.gitignore'), '.eska/\n.vscode/\nhost-result.json\n');
+  await fs.writeFile(outside, 'baseline outside project\n');
   await git('init');
   await git('config', 'user.name', 'ESKA SCM Test');
   await git('config', 'user.email', 'scm@example.invalid');
-  await git('add', '.');
+  await git('add', path.basename(fixture.root), path.basename(outside));
   await git('commit', '-m', 'SCM fixture');
+  await fs.appendFile(outside, 'staged outside project must survive\n');
+  await git('add', path.basename(outside));
+  const outsideIndex = await git('ls-files', '--stage', '--', path.basename(outside));
   const gitApi = (await vscode.extensions.getExtension('vscode.git').activate()).getAPI(1);
-  const repo = await gitApi.openRepository(vscode.Uri.file(fixture.root));
+  const repo = await gitApi.openRepository(vscode.Uri.file(repositoryRoot));
   assert.ok(repo);
   const explorer = await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate();
   await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module)));
-  await until(() => explorer.tree?.connection.state.kind === 'ready', 'ESKA project connected');
-  await fs.appendFile(fixture.module, '// SCM test worktree\n');
-  await repo.status();
+  if (explorer) await until(() => explorer.tree?.connection.state.kind === 'ready', 'ESKA project connected');
+  else await command('eska.explorer.connect'); // Installed production activation deliberately exposes no test internals.
   await command('workbench.view.scm');
   await command('eska.explorer.scm.focus');
   await command('workbench.action.closeAuxiliaryBar');
-
   const ui = await attachScm();
   const query = (selector, property) => ui.webview(`document.querySelector(${JSON.stringify(selector)})?.${property}`);
   const revision = async () => JSON.parse(await query('.scm-repository', 'dataset.vscodeContext')).eskaScmRevision;
-  // Git/configuration events can invalidate the host before a refreshed view is painted.
+  const hasLabel = label => ui.webview(`[...document.querySelectorAll('.scm-row .scm-label')].some(node => node.textContent === ${JSON.stringify(label)})`);
   async function settleSnapshots() {
     let last = await revision(), stableSince = Date.now();
     await until(async () => {
@@ -143,11 +157,29 @@ exports.run = async function () {
       return Date.now() - stableSince >= 300;
     }, 'stable SCM snapshot');
   }
+  async function measure(name, mutation, condition) {
+    const started = performance.now();
+    await mutation();
+    await until(condition, `monitor publishes ${name} without repository.status`);
+    latencyMs[name] = Math.round(performance.now() - started);
+    assert.ok(latencyMs[name] < 5000, `${name} latency ${latencyMs[name]} ms`);
+  }
+  async function input(message) {
+    await ui.pointer('textarea', 'left');
+    await ui.insertText(message);
+    await until(() => repo.inputBox.value === message, 'ESKA input reaches native Git draft');
+    await settleSnapshots();
+  }
+  async function verifySave(message, files, receiptKey) {
+    await until(async () => await git('log', '-1', '--format=%s') === message, `eska save commits ${receiptKey}`);
+    await until(async () => await query('textarea', 'value') === '' && !(await query('textarea', 'disabled')), 'save acknowledged and draft cleared');
+    commitFiles[receiptKey] = (await git('diff-tree', '--no-commit-id', '--name-only', '-z', '-r', 'HEAD')).split('\0').filter(Boolean).sort();
+    assert.deepEqual(commitFiles[receiptKey], files.map(relative).sort());
+    assert.equal(await git('ls-files', '--stage', '--', path.basename(outside)), outsideIndex, 'outside scope index blob survives eska save');
+    assert.equal(await git('diff', '--cached', '--name-only'), path.basename(outside), 'only pre-existing outside scope stage remains');
+  }
   try {
-    await until(async () => (await query('.scm-row .scm-label', 'textContent')) === semanticLabel, 'semantic worktree row');
-    assert.equal(await query('.scm-commit', 'disabled'), false, 'empty commit is available');
-
-    // Place the ESKA pane in the visible viewport without disabling built-in Git.
+    // Close unrelated built-in SCM panes so actual mouse coordinates reach ESKA.
     await ui.workbench(`(async () => {
       for (const header of document.querySelectorAll('.part.sidebar .pane-header')) {
         const title = header.querySelector('h3')?.textContent;
@@ -157,55 +189,38 @@ exports.run = async function () {
     })()`);
     await command('eska.explorer.scm.focus');
     await settleSnapshots();
-
-    await ui.pointer('.scm-row-target', 'right');
-    const menuStage = `document.activeElement?.textContent.trim() === ${JSON.stringify(stageTitle)}`;
-    await until(() => ui.workbench(`[...document.querySelectorAll('.context-view .action-label')].some(node => node.textContent.trim() === ${JSON.stringify(stageTitle)})`), 'VS Code context menu offers Stage Changes');
-    for (let step = 0; step < 10 && !(await ui.workbench(menuStage)); step++) await ui.key('ArrowDown', 40);
-    assert.equal(await ui.workbench(menuStage), true);
-    await ui.key('Enter', 13);
-    await until(() => repo.state.indexChanges.some(change => change.uri.fsPath === fixture.module), 'stage through VS Code context menu');
-
-    await ui.pointer('textarea', 'left');
-    await ui.insertText('native SCM commit');
-    await until(() => repo.inputBox.value === 'native SCM commit', 'ESKA edits reach the native Git input box');
-    const previousRevision = await revision();
-    await repo.status();
-    await until(async () => await revision() > previousRevision, 'status snapshot published');
-    assert.equal(await query('textarea', 'value'), 'native SCM commit');
+    await measure('modifiedSemanticModule', () => fs.appendFile(fixture.module, '// SCM keyboard save worktree\n'), () => hasLabel(semanticLabel));
+    assert.equal(await git('diff', '--cached', '--name-only', '--', relative(fixture.module)), '', 'module is unstaged before keyboard save');
+    await input('ESKA keyboard save');
     assert.equal(await ui.webview("document.hasFocus() && document.activeElement.matches('textarea')"), true);
-    await settleSnapshots();
     await ui.key('Enter', 13, process.platform === 'darwin' ? 4 : 2);
-    await until(async () => await git('log', '-1', '--format=%s') === 'native SCM commit', 'keyboard shortcut commits through Git');
-    await until(async () => await query('textarea', 'value') === '' && !(await query('textarea', 'disabled')), 'commit acknowledged and input cleared');
+    await verifySave('ESKA keyboard save', [fixture.module], 'keyboard');
+    await until(async () => !(await hasLabel(semanticLabel)), 'saved module row disappears');
 
-    const note = path.join(fixture.root, 'Заметка #1.txt');
-    await fs.writeFile(note, 'untracked\n');
-    await repo.status();
-    await until(async () => (await query('.scm-row .scm-label', 'textContent')) === path.basename(note), 'literal untracked filename');
-    await settleSnapshots();
-    await ui.pointer('.scm-row-target');
-    await ui.pointer(`.scm-row .scm-icon-button[title=${JSON.stringify(stageTitle)}]`, 'left');
-    await until(() => repo.state.indexChanges.some(change => change.uri.fsPath === note), 'stage through inline button');
-    await vscode.workspace.getConfiguration('git').update('useEditorAsCommitInput', true, vscode.ConfigurationTarget.Workspace);
-    await until(async () => JSON.parse(await query('.scm-row', 'dataset.vscodeContext')).eskaScmGroup === 'index', 'staged snapshot published');
-    await settleSnapshots();
-
+    const moduleContents = await fs.readFile(fixture.module);
+    await command('workbench.action.closeAllEditors');
+    await measure('deletedSemanticModule', () => fs.unlink(fixture.module), () => hasLabel(semanticLabel));
+    await fs.writeFile(fixture.module, moduleContents);
+    await until(async () => !(await hasLabel(semanticLabel)), 'restored module is clean');
+    await measure('createdFile', () => fs.writeFile(note, 'untracked button save\n'), () => hasLabel(path.basename(note)));
+    await measure('modifiedSemanticModuleAgain', () => fs.appendFile(fixture.module, '// SCM button save worktree\n'), () => hasLabel(semanticLabel));
+    assert.equal(await git('diff', '--cached', '--name-only', '--', relative(fixture.module), relative(note)), '', 'button save inputs are unstaged');
+    await input('ESKA button save');
     await ui.pointer('.scm-commit', 'left');
-    await until(() => path.basename(vscode.window.activeTextEditor?.document.uri.fsPath ?? '') === 'COMMIT_EDITMSG', 'empty commit opens the native Git editor');
-    assert.equal(await query('textarea', 'disabled'), true);
-    const editor = vscode.window.activeTextEditor;
-    await editor.edit(builder => builder.insert(new vscode.Position(0, 0), 'native editor commit\n'));
-    await editor.document.save();
-    await command('workbench.action.closeActiveEditor');
-    await until(async () => await git('log', '-1', '--format=%s') === 'native editor commit', 'Git commits the editor message');
-    await until(async () => !(await query('textarea', 'disabled')), 'native editor commit acknowledged');
-
+    await verifySave('ESKA button save', [fixture.module, note], 'button');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
-      passed: true, vscode: vscode.version, semanticLabel: true, contextStage: true, inlineStage: true,
-      nativeInput: true, focusPreserved: true, keyboardCommit: true, emptyCommitEditor: true,
+      passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
+      gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
+      keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true,
+      monitorWithoutManualGitRefresh: true, semanticLabel, latencyMs, commitFiles,
+      latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));
-  } finally {
-    ui.close();
-  }
+  } catch (error) {
+    const dom = await ui.webview("document.body.innerText").catch(() => undefined);
+    await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
+      passed: false, error: String(error.stack ?? error), fixture: fixture.root, gitRoot: repositoryRoot,
+      latencyMs, commitFiles, dom, gitStatus: await git('status', '--porcelain=v1').catch(() => undefined),
+    }));
+    throw error;
+  } finally { ui.close(); }
 };

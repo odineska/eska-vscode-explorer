@@ -34,8 +34,9 @@ function repository(base = root, working = [change()]) {
     revert: async paths => { calls.push(['revert', ...paths]); }, clean: async paths => { calls.push(['clean', ...paths]); } };
 }
 function context(base = root) {
-  const requests = [], info = { rootPath: wire(base), sourcePath: wire(join(base, 'src')), generation: 1 };
-  return { projects: [{ info }], requests, connection: { state: { kind: 'ready', sourceLabels: true } },
+  const requests = [], info = { scope: { kind: 'standalone' }, rootPath: wire(base), sourcePath: wire(join(base, 'src')), generation: 1 };
+  return { projects: [{ info }], requests, connection: { state: { kind: 'ready', sourceLabels: true,
+    target: { path: base, executable: join(base, 'bin', 'eska-project') } } },
     request: async (project, method, params) => {
       requests.push([project, method, params]);
       return { labels: params.paths.map(path => ({ path, translations: path.value.endsWith('ObjectModule.bsl')
@@ -53,11 +54,12 @@ function setup(repositories = [repository()], trees = [context()]) {
       return [...this.repositories].sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length).find(repo =>
         value.fsPath === repo.rootUri.fsPath || value.fsPath.startsWith(repo.rootUri.fsPath + '/'));
     }, toGitUri: (value, ref) => ({ ...value, scheme: 'git', ref }) } };
-  const view = { visible: true, onDidChangeVisibility: () => disposable, onDidDispose: () => disposable,
+  const visibility = new EventEmitter();
+  const view = { visible: true, onDidChangeVisibility: visibility.event, onDidDispose: () => disposable,
     webview: { cspSource: 'test-webview', asWebviewUri: value => value, onDidReceiveMessage: received.event,
       postMessage: async value => { snapshots.push(value); return true; } } };
   let registeredView;
-  const vscode = { env: { language: 'ru' }, ViewColumn: { Active: -1 }, Uri: { joinPath: (base, ...parts) => uri(join(base.fsPath, ...parts)) },
+  const vscode = { env: { language: 'ru' }, ViewColumn: { Active: -1 }, Uri: { file: uri, joinPath: (base, ...parts) => uri(join(base.fsPath, ...parts)) },
     workspace: { isTrusted: true, textDocuments: [], onDidChangeConfiguration: () => disposable,
       getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
     window: { registerWebviewViewProvider: (id, provider) => { registeredView = { id, provider }; return disposable; },
@@ -66,7 +68,18 @@ function setup(repositories = [repository()], trees = [context()]) {
     commands: { registerCommand: (name, callback) => { registered.set(name, callback); return disposable; },
       executeCommand: async (...args) => { invoked.push(args); } } };
   const fileActions = load('scm-file-actions', { vscode }, { Error });
-  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions }, { Error });
+  const observed = new Map(), monitor = { targets: [] }, save = { calls: [], run: async () => true };
+  class ScmMonitors {
+    constructor(changed) { monitor.update = (root, snapshot) => { observed.set(root, snapshot); changed(root); }; }
+    synchronize(targets) { monitor.targets = targets; }
+    get(root) { return observed.get(root); }
+    restart() {}
+    dispose() {}
+  }
+  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions,
+    './scm-monitor.js': { ScmMonitors }, './scm-save.js': { ScmSaveError: class extends Error {}, async saveScmScope(scope, input) {
+      scope.validate(); save.calls.push([scope, input]); return save.run(scope, input);
+    } } }, { Error });
   const provider = new MetadataChanges({ extensionUri: uri(resolve('.')) }, git, () => 'ru-RU', async () => {}, () => {});
   assert.equal(registeredView.id, viewId);
   registeredView.provider.setTrees(trees);
@@ -85,7 +98,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     repositoryToken: snapshot().repositories.find(repo => repo.key === repository)?.repositoryToken,
     revision: snapshot().revision,
   });
-  return { provider, vscode, git, invoked, warnings, errors, view, trees, snapshot, input, rows, command, send,
+  return { provider, vscode, git, invoked, warnings, errors, view, trees, snapshot, input, rows, command, send, save, monitor, visibility,
     ready: () => send({ type: 'ready' }),
     refresh: () => registered.get(`${viewId}.refresh`)(),
     edit: (repository, value, editId, overrides) => send({ type: 'message', ...payload(repository, value, editId), ...overrides }),
@@ -252,14 +265,14 @@ test('commit selects the exact repository, shares the native draft and only ackn
   assert.equal(selected().message, 'Updated in native Git');
 
   let outcome = 'cancel';
-  h.vscode.commands.executeCommand = async (command, target) => {
-    h.invoked.push([command, target]);
+  h.save.run = async () => {
     if (outcome === 'fail') throw new Error('commit failed');
-    if (outcome === 'success') other.inputBox.value = '';
+    return outcome === 'success';
   };
   await h.commit(key, 'Retain this message', 2, 1);
-  assert.deepEqual(h.invoked[0], ['git.commit', other.rootUri]);
-  assert.equal(h.invoked[0][1], other.rootUri);
+  assert.equal(h.save.calls[0][0].root, second);
+  assert.equal(h.save.calls[0][0].repositoryRoot, second);
+  assert.equal(h.save.calls[0][1], 'Retain this message');
   assert.equal(selected().message, 'Retain this message');
   assert.equal(selected().acknowledgedCommitId, 1);
 
@@ -275,7 +288,8 @@ test('commit selects the exact repository, shares the native draft and only ackn
   assert.equal(selected().acknowledgedCommitId, 3);
   await h.commit(key, 'Retain this message', 2, 3);
   await h.commit(key, 'Invalid attempt', 4, 1.5);
-  assert.equal(h.invoked.length, 3);
+  assert.equal(h.save.calls.length, 3);
+  assert.equal(h.invoked.length, 0);
   assert.equal(other.inputBox.value, '');
   assert.equal(first.inputBox.value, 'existing first draft');
 });
@@ -289,6 +303,7 @@ test('commit rejects an unknown or closed repository without using another root'
   h.git.api.repositories = [];
   await h.commit(rootRow.key, 'closed target', 1, 1);
   assert.equal(h.invoked.length, 0);
+  assert.equal(h.save.calls.length, 0);
   assert.equal(h.errors.length, 2);
   assert.equal(repo.inputBox.value, '');
 });
@@ -303,6 +318,7 @@ test('the repository token and SCM revision fence off stale commit messages', as
   await h.edit(initial.key, 'invalid token', 1, { repositoryToken: 'unknown token' });
   await h.command('commit', h.rows()[0]);
   assert.equal(h.invoked.length, 0);
+  assert.equal(h.save.calls.length, 0);
   assert.equal(repo.inputBox.value, '');
   assert.equal(h.snapshot().repositories[0].acknowledgedCommitId, 1);
 
@@ -314,6 +330,7 @@ test('the repository token and SCM revision fence off stale commit messages', as
   assert.notEqual(current.repositoryToken, initial.repositoryToken);
   await h.commit(current.key, 'old repository instance', 1, 2, { repositoryToken: initial.repositoryToken });
   assert.equal(h.invoked.length, 0);
+  assert.equal(h.save.calls.length, 0);
   assert.equal(replacement.inputBox.value, '');
 });
 
@@ -323,23 +340,43 @@ test('a commit received while one is in flight is acknowledged without running o
   await h.ready();
   const [entry] = h.snapshot().repositories;
   let finish;
-  h.vscode.commands.executeCommand = (...args) => {
-    h.invoked.push(args);
-    return new Promise(resolve => { finish = resolve; });
-  };
+  h.save.run = () => new Promise(resolve => { finish = resolve; });
   await h.commit(entry.key, 'first message', 1, 1);
-  assert.equal(h.invoked.length, 1);
+  assert.equal(h.save.calls.length, 1);
   try {
     await h.commit(entry.key, 'duplicate click while busy', 2, 2);
     assert.equal(h.errors.length, 1);
     assert.equal(h.snapshot().repositories[0].acknowledgedCommitId, 2);
     assert.equal(repo.inputBox.value, 'first message');
   } finally {
-    finish();
+    finish(true);
   }
   await flush();
-  assert.equal(h.invoked.length, 1);
+  assert.equal(h.save.calls.length, 1);
   assert.equal(h.snapshot().repositories[0].acknowledgedCommitId, 2);
+});
+
+test('monitor changes reach the semantic list before the native Git status and reuse labels', async t => {
+  const repo = repository(root, []), h = setup([repo]);
+  t.after(() => h.provider.dispose());
+  let scans = 0;
+  repo.status = async () => { scans++; };
+  await h.ready();
+  assert.equal(h.monitor.targets[0].root, root);
+  const snapshot = { branch: 'monitor-branch', mergeChanges: [], indexChanges: [], workingTreeChanges: [change()], untrackedChanges: [] };
+  h.monitor.update(root, snapshot);
+  await h.ready();
+  assert.equal(h.snapshot().repositories[0].branch, 'monitor-branch');
+  assert.equal(h.rows()[0].label, 'Документ.ВыдачаЗайма.МодульОбъекта');
+  h.monitor.update(root, { ...snapshot, untrackedChanges: [change('notes.txt', 7)] });
+  await h.ready();
+  assert.equal(h.rows().length, 2);
+  assert.equal(h.snapshot().repositories[0].groups.length, 1, 'mixed mode groups untracked files with worktree files');
+  assert.deepEqual(Array.from(h.trees[0].requests[1][2].paths, path => path.value), ['notes.txt']);
+  assert.equal(scans, 0);
+  h.view.visible = false;
+  h.visibility.fire();
+  assert.equal(h.monitor.targets.length, 0);
 });
 
 test('native Windows paths, UNC, Cyrillic and spaces retain path boundaries', () => {
