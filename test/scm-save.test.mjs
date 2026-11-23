@@ -24,7 +24,7 @@ function setup({ language = 'ru', input, tools = ['facade'], exit = 0, diagnosti
   };
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', {})(
     name => mocks[name] ?? require(name), module, module.exports);
-  const scope = { root, repositoryRoot: root, executable: join(root, 'bin', 'eska-project'), validate() { state.validates++; } };
+  const scope = { root, repositoryRoot: root, executable: join(root, 'bin', 'eska-project'), validate() { state.validates++; }, async refresh() {} };
   return { state, calls, probes, prompts, scope, save: value => module.exports.saveScmScope(scope, value) };
 }
 
@@ -112,4 +112,34 @@ test('accepted prompt message reaches the draft before discovery or save can fai
   cancelled.scope.acceptMessage = value => accepted.push(value);
   assert.equal(await cancelled.save(''), false);
   assert.deepEqual(accepted, []);
+});
+
+test('final native refresh follows input and tool discovery and failure preserves the accepted message', async () => {
+  for (const fail of [false, true]) {
+    const h = setup({ input: 'Accepted before refresh' }), events = [];
+    h.scope.acceptMessage = value => events.push(value);
+    h.state.onProbe = () => events.push('discovered');
+    h.scope.refresh = async () => {
+      events.push('refresh');
+      assert.equal(h.calls.length, 0);
+      if (fail) throw new Error('native status failed');
+    };
+    if (fail) await assert.rejects(h.save(''), /native status failed/);
+    else assert.equal(await h.save(''), true);
+    assert.deepEqual(events, ['Accepted before refresh', 'discovered', 'refresh']);
+    assert.equal(h.calls.length, fail ? 0 : 1);
+  }
+});
+
+test('final preflight rechecks context, trust and dirty documents after native refresh', async () => {
+  for (const kind of ['dirty', 'untrusted', 'stale']) {
+    const h = setup();
+    h.scope.refresh = async () => {
+      if (kind === 'dirty') h.state.dirty = [{}];
+      if (kind === 'untrusted') h.state.trusted = false;
+      if (kind === 'stale') h.scope.validate = () => { throw new Error('stale'); };
+    };
+    await assert.rejects(h.save('Preserve existing draft'));
+    assert.equal(h.calls.length, 0);
+  }
 });

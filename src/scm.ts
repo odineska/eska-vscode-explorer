@@ -7,7 +7,8 @@ import { changeCaption, changeGroups, changeIdentity, changes, insideRepository,
 import { button, fileActions, fileInline, fileMenu, groupActions, groupCommands, isFileAction, isFileMutation, isGroupAction, type FileAction, type ScmAction } from "./scm-actions.js";
 import { executeFileAction } from "./scm-file-actions.js";
 import { ScmMonitors } from "./scm-monitor.js";
-import { saveScmScope, ScmSaveError, type ScmSaveScope } from "./scm-save.js";
+import { saveScmScope, ScmSaveError } from "./scm-save.js";
+import type { ProjectCommandTarget } from "./project-command.js";
 import { message, type MessageKey } from "./messages.js";
 import { isRecord, isWirePath, projectEnabled } from "./protocol.js";
 import { nativePath, resolveSourcePath, sourceKey } from "./source.js";
@@ -19,7 +20,7 @@ interface GroupEntry { kind: "group"; key: string; parent: RepositoryEntry; grou
 export interface ChangeEntry { kind: "change"; key: string; parent: GroupEntry; change: import("./git-api.js").GitChange; label: string; fromMonitor: boolean }
 type Entry = RepositoryEntry | GroupEntry | ChangeEntry;
 interface ProjectContext { tree: MetadataTree; project: ProjectTree; root: string; source: string }
-interface SaveScope extends Omit<ScmSaveScope, "validate" | "repositoryRoot"> { tree: MetadataTree; name: string }
+interface SaveScope extends ProjectCommandTarget { tree: MetadataTree; name: string }
 type Captions = Record<"ru-RU" | "en-US", string>;
 const groupLabels: Record<ChangeGroup, MessageKey> = { merge: "scmMerge", index: "scmIndex", working: "scmWorking", untracked: "scmUntracked" };
 const prefix = "eska.explorer.scm";
@@ -508,28 +509,36 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
   }
 
   private async commit(entry: RepositoryEntry): Promise<void> {
-    const { repository } = entry, candidates = this.saveScopes(repository);
-    if (!candidates.length) throw new Error(this.text("scmSaveNoProject"));
+    const { repository } = entry;
     const draft = repository.inputBox.value;
-    const head = () => JSON.stringify([repository.state.HEAD?.name, repository.state.HEAD?.commit]);
-    const before = head();
+    await repository.status();
+    this.validRepository(entry);
+    if (this.disposed) throw new Error(this.text("scmChanged"));
+    const candidates = this.saveScopes(repository);
+    if (!candidates.length) throw new Error(this.text("scmSaveNoProject"));
+    const { name: branch, commit: revision } = repository.state.HEAD ?? {};
     const scope = candidates.length === 1 ? candidates[0] : (await vscode.window.showQuickPick(candidates.map(candidate => ({
       label: candidate.name, description: candidate.root, candidate,
     })), { title: this.text("scmSaveScope") }))?.candidate;
     if (!scope) return;
     const validate = () => {
       this.validRepository(entry);
-      if (this.disposed || before !== head() || !this.saveScopes(repository).some(candidate => candidate.tree === scope.tree
+      const head = repository.state.HEAD;
+      if (this.disposed || branch !== head?.name || revision !== head?.commit || !this.saveScopes(repository).some(candidate => candidate.tree === scope.tree
         && candidate.root === scope.root && candidate.executable === scope.executable && candidate.workspace === scope.workspace)) {
         throw new Error(this.text("scmChanged"));
       }
+    };
+    const refresh = () => {
+      validate();
+      return repository.status();
     };
     let acceptedDraft = draft;
     const acceptMessage = (value: string) => {
       acceptedDraft = value;
       if (!this.deferredDrafts.has(repository) && repository.inputBox.value === draft) repository.inputBox.value = value;
     };
-    if (!await saveScmScope({ ...scope, repositoryRoot: repository.rootUri.fsPath, validate, acceptMessage }, draft)) return;
+    if (!await saveScmScope({ ...scope, repositoryRoot: repository.rootUri.fsPath, validate, refresh, acceptMessage }, draft)) return;
     if (repository.inputBox.value === acceptedDraft) repository.inputBox.value = "";
     try { await repository.status(); } catch { this.log("scm_status_after_save_failed"); }
   }

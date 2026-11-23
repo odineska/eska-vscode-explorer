@@ -247,11 +247,34 @@ exports.run = async function () {
     await fs.unlink(hook);
     await ui.pointer('.scm-commit', 'left');
     await verifySave(draft, [note], 'retry');
+    const initialBranch = await git('branch', '--show-current');
+    const initialCommit = await git('rev-parse', 'HEAD');
+    const switchedBranch = 'scm-prompt-same-commit';
+    await fs.appendFile(fixture.module, '// save branch prompt guard\n');
+    await until(() => hasLabel(semanticLabel), 'prompt guard source change appears');
+    await settleSnapshots();
+    await ui.pointer('.scm-commit', 'left');
+    await until(() => ui.workbench("document.activeElement?.matches('.quick-input-widget input')"), 'branch test message prompt focused');
+    await git('switch', '-c', switchedBranch);
+    assert.equal(await git('rev-parse', 'HEAD'), initialCommit, 'branches point at the same commit');
+    assert.equal(repo.state.HEAD.name, initialBranch, 'autorefresh leaves native HEAD cached during prompt');
+    await ui.insertText('Retained branch prompt draft');
+    await ui.key('Enter', 13);
+    await until(async () => await query('textarea', 'value') === 'Retained branch prompt draft'
+      && !(await query('textarea', 'disabled')), 'branch change cancels save and retains accepted draft');
+    assert.equal(await git('rev-parse', 'HEAD'), initialCommit, 'branch-raced save creates no commit');
+    assert.equal(await git('rev-parse', initialBranch), initialCommit, 'the original branch stays at the same commit');
+    assert.equal(await git('ls-files', '--stage', '--', path.basename(outside)), outsideIndex, 'cancelled save preserves outside index');
+    await settleSnapshots();
+    await ui.pointer('.scm-commit', 'left');
+    await verifySave('Retained branch prompt draft', [fixture.module], 'branchRetry');
+    assert.equal(await git('branch', '--show-current'), switchedBranch, 'conscious retry saves to the new branch');
+    assert.equal(await git('rev-parse', initialBranch), initialCommit);
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
       gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
       keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true, failedHookDraftRetried: true,
-      monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, semanticLabel, latencyMs, commitFiles,
+      monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, sameCommitBranchPromptGuard: true, semanticLabel, latencyMs, commitFiles,
       latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));
   } catch (error) {

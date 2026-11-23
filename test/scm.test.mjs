@@ -81,7 +81,9 @@ function setup(repositories = [repository()], trees = [context()]) {
   }
   const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions,
     './scm-monitor.js': { ScmMonitors }, './scm-save.js': { ScmSaveError: class extends Error {}, async saveScmScope(scope, input) {
-      scope.validate(); save.calls.push([scope, input]); return save.run(scope, input);
+      scope.validate(); save.calls.push([scope, input]); const saved = await save.run(scope, input);
+      if (saved) { await scope.refresh(); scope.validate(); }
+      return saved;
     } } }, { Error });
   const provider = new MetadataChanges({ extensionUri: uri(resolve('.')) }, git, () => 'ru-RU', async () => {}, () => {});
   assert.equal(registeredView.id, viewId);
@@ -501,6 +503,7 @@ test('prompt drafts survive failed saves while later edits win on failure and su
       return true;
     };
     await h.commit(key, '', 1, 1);
+    await flush();
     assert.equal(repo.inputBox.value, outcome.startsWith('deferred') ? 'Later edit' : outcome === 'failure' ? 'Prompt draft' : '');
     assert.equal(h.snapshot().repositories[0].message, repo.inputBox.value);
   }
@@ -535,4 +538,46 @@ test('separate untracked paths cannot complete a rename in the working group', (
   assert.deepEqual(monitoredChanges(repo, 'untracked', snapshot, 'separate'), [added]);
   assert.deepEqual(monitoredChanges(repo, 'working', snapshot, 'mixed'), [rename]);
   assert.equal(matchChanges(repo, 'working', [old]).size, 0);
+});
+
+test('save refreshes native HEAD around prompts and rejects same-commit branch switches or failed status', async t => {
+  for (const outcome of ['unchanged', 'switch', 'status failure', 'closed']) {
+    const repo = repository(), h = setup([repo]);
+    t.after(() => h.provider.dispose()); await h.ready();
+    let branch = 'main', statuses = 0;
+    repo.status = async () => {
+      statuses++;
+      if (outcome === 'status failure' && statuses === 2) throw new Error('status failed');
+      repo.state.HEAD = { name: branch, commit: 'same commit' };
+    };
+    h.save.run = async scope => {
+      scope.acceptMessage('Accepted prompt message');
+      if (outcome === 'switch') branch = 'other';
+      if (outcome === 'closed') h.git.api.repositories = [];
+      return true;
+    };
+    const key = h.snapshot().repositories[0].key;
+    await h.commit(key, '', 1, 1);
+    await flush();
+    assert.equal(repo.inputBox.value, outcome === 'unchanged' ? '' : 'Accepted prompt message');
+    assert.equal(h.errors.length, outcome === 'unchanged' ? 0 : 1);
+    assert.equal(statuses, outcome === 'unchanged' ? 3 : outcome === 'closed' ? 1 : 2);
+    if (outcome === 'switch') {
+      h.save.run = async () => true;
+      await h.commit(key, repo.inputBox.value, 2, 2);
+      assert.equal(repo.inputBox.value, '', 'a conscious retry accepts the refreshed branch');
+      assert.equal(h.errors.length, 1);
+    }
+  }
+});
+
+test('failed initial native status cancels before scope or message prompts and preserves the draft', async t => {
+  const repo = repository(), h = setup([repo]);
+  t.after(() => h.provider.dispose()); await h.ready();
+  repo.status = async () => { throw new Error('initial status failed'); };
+  await h.commit(h.snapshot().repositories[0].key, 'Existing draft', 1, 1);
+  await flush();
+  assert.deepEqual(h.errors, ['initial status failed']);
+  assert.equal(h.save.calls.length, 0);
+  assert.equal(repo.inputBox.value, 'Existing draft');
 });

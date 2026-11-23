@@ -11,6 +11,7 @@ import { findTool } from "./tooling/inspect.js";
 export interface ScmSaveScope extends ProjectCommandTarget {
   repositoryRoot: string;
   validate(): void;
+  refresh(): Promise<void>;
   acceptMessage?(message: string): void;
 }
 
@@ -76,6 +77,7 @@ export async function saveScmScope(scope: ScmSaveScope, input: string): Promise<
   if (!executable) throw new Error(text("scmSaveMissing"));
   const args = projectArgs(scope.root, "save", ...(scope.workspace ? ["--workspace"] : []), `--message=${commitMessage}`);
   if (!await belongsToRepository(scope).catch(() => false)) throw new Error(text("scmChanged"));
+  await scope.refresh();
   preflight();
   const { code, diagnostic } = await runSave(executable, args, scope.root);
   if (code !== 0) throw new ScmSaveError(text("scmSaveFailed", code === undefined ? "?" : String(code)), diagnostic);
