@@ -489,6 +489,23 @@ test('a previously confirmed native conflict changing type makes the selection s
   }
 });
 
+test('prompt drafts survive failed saves while later edits win on failure and success', async t => {
+  for (const outcome of ['failure', 'deferred failure', 'deferred success', 'success']) {
+    const repo = repository(), h = setup([repo]);
+    t.after(() => h.provider.dispose()); await h.ready();
+    const key = h.snapshot().repositories[0].key;
+    h.save.run = async scope => {
+      if (outcome.startsWith('deferred')) await h.edit(key, 'Later edit', 2);
+      scope.acceptMessage('Prompt draft');
+      if (outcome.endsWith('failure')) throw new Error('hook refused');
+      return true;
+    };
+    await h.commit(key, '', 1, 1);
+    assert.equal(repo.inputBox.value, outcome.startsWith('deferred') ? 'Later edit' : outcome === 'failure' ? 'Prompt draft' : '');
+    assert.equal(h.snapshot().repositories[0].message, repo.inputBox.value);
+  }
+});
+
 test('indexed matches keep independent renames, exact rows, renameUri and repository ownership', () => {
   const repo = repository(root, []);
   const first = { ...change('b.bsl', Status.IndexRenamed, 'a.bsl'), renameUri: uri(join(source, 'b.bsl')) };

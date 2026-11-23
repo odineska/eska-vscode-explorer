@@ -99,3 +99,17 @@ test('a worktree nested inside the selected repository cannot receive its commit
   await assert.rejects(h.save('message'));
   assert.equal(h.calls.length, 0);
 });
+
+test('accepted prompt message reaches the draft before discovery or save can fail', async () => {
+  for (const options of [{ tools: [] }, { exit: 1 }]) {
+    const h = setup({ input: 'Retain hook message', ...options });
+    const accepted = [];
+    h.scope.acceptMessage = value => accepted.push(value);
+    await assert.rejects(h.save(''));
+    assert.deepEqual(accepted, ['Retain hook message']);
+  }
+  const cancelled = setup(), accepted = [];
+  cancelled.scope.acceptMessage = value => accepted.push(value);
+  assert.equal(await cancelled.save(''), false);
+  assert.deepEqual(accepted, []);
+});

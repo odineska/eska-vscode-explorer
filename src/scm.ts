@@ -524,8 +524,13 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
         throw new Error(this.text("scmChanged"));
       }
     };
-    if (!await saveScmScope({ ...scope, repositoryRoot: repository.rootUri.fsPath, validate }, draft)) return;
-    if (repository.inputBox.value === draft) repository.inputBox.value = "";
+    let acceptedDraft = draft;
+    const acceptMessage = (value: string) => {
+      acceptedDraft = value;
+      if (!this.deferredDrafts.has(repository) && repository.inputBox.value === draft) repository.inputBox.value = value;
+    };
+    if (!await saveScmScope({ ...scope, repositoryRoot: repository.rootUri.fsPath, validate, acceptMessage }, draft)) return;
+    if (repository.inputBox.value === acceptedDraft) repository.inputBox.value = "";
     try { await repository.status(); } catch { this.log("scm_status_after_save_failed"); }
   }
 

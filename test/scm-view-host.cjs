@@ -224,10 +224,33 @@ exports.run = async function () {
     await fs.rename(renamedNote, note);
     await until(async () => !(await hasLabel(path.basename(renamedNote))), 'rename fixture restored');
 
+    const hooks = path.join(repositoryRoot, '.git', 'fixture-hooks');
+    const hook = path.join(hooks, 'pre-commit');
+    const ran = path.join(repositoryRoot, '.git', 'fixture-hook-ran');
+    await fs.mkdir(hooks);
+    await fs.writeFile(hook, '#!/bin/sh\necho rejected > "$(git rev-parse --git-path fixture-hook-ran)"\nexit 1\n', { mode: 0o755 });
+    await git('config', 'core.hooksPath', hooks);
+    await fs.appendFile(note, 'uncommitted until retry\n');
+    await until(() => hasLabel(path.basename(note)), 'edited note becomes available to save');
+    await settleSnapshots();
+    const beforeRejection = await git('rev-parse', 'HEAD');
+    const draft = 'Retry the same ESKA message';
+    await ui.pointer('.scm-commit', 'left');
+    await until(() => ui.workbench("document.activeElement?.matches('.quick-input-widget input')"), 'commit message prompt focused');
+    await ui.insertText(draft);
+    await ui.key('Enter', 13);
+    await until(async () => await fs.access(ran).then(() => true, () => false) && !(await query('textarea', 'disabled')),
+      'failed hook returned control to the SCM panel');
+    assert.equal(await git('rev-parse', 'HEAD'), beforeRejection);
+    assert.equal(repo.inputBox.value, draft);
+    assert.equal(await query('textarea', 'value'), draft);
+    await fs.unlink(hook);
+    await ui.pointer('.scm-commit', 'left');
+    await verifySave(draft, [note], 'retry');
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
       gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
-      keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true,
+      keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true, failedHookDraftRetried: true,
       monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, semanticLabel, latencyMs, commitFiles,
       latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));

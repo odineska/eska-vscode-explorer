@@ -11,6 +11,7 @@ import { findTool } from "./tooling/inspect.js";
 export interface ScmSaveScope extends ProjectCommandTarget {
   repositoryRoot: string;
   validate(): void;
+  acceptMessage?(message: string): void;
 }
 
 export class ScmSaveError extends Error {
@@ -66,6 +67,7 @@ export async function saveScmScope(scope: ScmSaveScope, input: string): Promise<
     });
     if (selected === undefined) return false;
     commitMessage = selected;
+    scope.acceptMessage?.(commitMessage);
   }
   if (!commitMessage.trim()) throw new Error(text("scmSaveMessageRequired"));
   const directory = dirname(scope.executable);
