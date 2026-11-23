@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acknowledgeDraft, acknowledgeInput, reconcilePendingCommits, selectRow } from '../webview/scm/model.mjs';
+import { acknowledgeDraft, acknowledgeInput, reconcilePendingCommits, selectRow, groupCount, rowWindow, positionRange, positionSelected, togglePosition } from '../webview/scm/model.mjs';
 
 test('SCM selection supports ranges and toggle without losing its anchor', () => {
   const visible = ['first', 'middle', 'last', 'elsewhere'];
@@ -49,4 +49,26 @@ test('SCM input updates preserve the current draft on echoes, stale edits and re
   assert.equal(acknowledgeInput(draft, { ...input, repositoryToken: 'closed repo', acknowledgedEditId: 50 }), draft);
   assert.equal(acknowledgeInput(undefined, input), undefined);
   assert.deepEqual(acknowledgeInput(draft, { ...input, message: 'message from Git' }), { ...draft, value: 'message from Git' });
+});
+
+test('SCM viewport bounds DOM work for the full 113026-row inventory', () => {
+  const count = 113026;
+  assert.equal(groupCount({ count }), count);
+  for (const top of [0, 22, 500000, count * 22 - 600]) {
+    const window = rowWindow(count, top, 600);
+    assert.ok(window.start >= 0 && window.end <= count);
+    assert.ok(window.end - window.start <= 45);
+  }
+  assert.deepEqual(rowWindow(count, count * 22 - 22, 600), { start: count - 9, end: count });
+});
+
+test('SCM ranges span unloaded groups without allocating row keys', () => {
+  const groups = [{ key: 'a', count: 113026 }, { key: 'b', count: 3 }, { key: 'c', count: 10 }];
+  const ranges = positionRange(groups, { group: 'c', index: 5 }, { group: 'a', index: 1 });
+  assert.deepEqual(ranges, [{ group: 'a', start: 1, end: 113025 }, { group: 'b', start: 0, end: 2 }, { group: 'c', start: 0, end: 5 }]);
+  assert.equal(positionSelected(ranges, { group: 'a', index: 90000 }), true);
+  const removed = togglePosition(ranges, { group: 'a', index: 90000 });
+  assert.equal(positionSelected(removed, { group: 'a', index: 90000 }), false);
+  assert.equal(positionSelected(removed, { group: 'a', index: 90001 }), true);
+  assert.equal(positionSelected(togglePosition(removed, { group: 'a', index: 90000 }), { group: 'a', index: 90000 }), true);
 });

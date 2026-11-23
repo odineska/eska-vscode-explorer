@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
-import { resolve, join, win32 } from 'node:path';
+import { resolve, relative, join, win32 } from 'node:path';
 import { sourceKey } from '../out/source.js';
 import { message } from '../out/messages.js';
 import { changeCaption, changeIdentity, insideRepository, matchChanges, monitoredChanges } from '../out/scm-model.js';
@@ -94,6 +94,8 @@ function setup(repositories = [repository()], trees = [context()]) {
   const send = async value => { received.fire(value); await flush(); };
   const snapshot = () => snapshots.findLast(value => value.type === 'snapshot');
   const input = () => snapshots.findLast(value => value.type === 'input');
+  const pages = () => snapshots.filter(value => value.type === 'rows');
+  const requestRows = (group, start, count, revision = snapshot().revision) => send({ type: 'rows', revision, group, start, count });
   const rows = () => snapshot().repositories.flatMap(repo => repo.groups.flatMap(group => group.rows));
   const command = (action, item, overrides) => registered.get(`${viewId}.${action}`)({
     ...item.context, webview: viewId, eskaScmRevision: snapshot().revision, ...overrides,
@@ -105,7 +107,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     repositoryToken: snapshot().repositories.find(repo => repo.key === repository)?.repositoryToken,
     revision: snapshot().revision,
   });
-  return { provider, vscode, git, gitChanged, invoked, warnings, errors, view, trees, snapshot, input, rows, command, send, save, monitor, visibility,
+  return { provider, vscode, git, gitChanged, invoked, warnings, errors, view, trees, snapshot, input, rows, pages, requestRows, command, send, save, monitor, visibility,
     ready: () => send({ type: 'ready' }),
     refresh: () => registered.get(`${viewId}.refresh`)(),
     edit: (repository, value, editId, overrides) => send({ type: 'message', ...payload(repository, value, editId), ...overrides }),
@@ -209,25 +211,73 @@ test('multi-root captions use the owning tree and mutations never silently use a
   assert.equal(h.errors.length, 1);
 });
 
-test('semantic requests are bounded and a late response cannot resurrect a closed project', async t => {
+test('large groups publish their count and request semantic names only for the requested pages', async t => {
   const repo = repository(root, Array.from({ length: 513 }, (_, index) => change(`notes/${index}.txt`)));
+  repo.state.workingTreeChanges.push(change());
   const h = setup([repo]); t.after(() => h.provider.dispose());
   await h.ready();
-  assert.equal(h.rows().length, 513);
-  assert.deepEqual(h.trees[0].requests.map(request => request[2].paths.length), [512, 1]);
+  const group = h.snapshot().repositories[0].groups[0];
+  assert.equal(group.count, 514);
+  assert.equal(group.rows, undefined);
+  assert.equal(h.trees[0].requests.length, 0);
+  await h.requestRows(group.key, 0, 201);
+  await h.requestRows(group.key, -1, 1);
+  await h.requestRows(group.key, group.count, 1);
+  await h.requestRows(group.key, 0, 1, h.snapshot().revision - 1);
+  assert.equal(h.pages().length, 0);
+  const received = [];
+  for (let start = 0; start < group.count; start += 200) {
+    await h.requestRows(group.key, start, 200);
+    const page = h.pages().at(-1);
+    assert.equal(page.revision, h.snapshot().revision);
+    assert.equal(page.group, group.key);
+    assert.equal(page.start, start);
+    received.push(...page.rows);
+  }
+  assert.equal(received.length, group.count);
+  assert.equal(new Set(received.map(row => row.key)).size, group.count);
+  assert.deepEqual(received.map(row => row.description), repo.state.workingTreeChanges.map(change => relative(root, change.uri.fsPath)).sort());
+  assert.equal(received.find(row => row.description === join('src', file)).label, 'Документ.ВыдачаЗайма.МодульОбъекта');
+  await h.requestRows(group.key, 0, 50);
+  assert.deepEqual(h.trees[0].requests.map(request => request[2].paths.length), [200, 200, 114]);
+});
+
+test('a late page cannot resurrect a closed project', async t => {
+  const repo = repository(root, Array.from({ length: 201 }, (_, index) => change(`notes/${index}.txt`)));
+  const h = setup([repo]); t.after(() => h.provider.dispose());
+  await h.ready();
   let release;
-  h.trees[0].request = async () => new Promise(resolve => { release = resolve; });
-  const old = h.refresh();
-  await flush();
+  h.trees[0].request = async (_project, _method, { paths }) => new Promise(resolve => {
+    release = () => resolve({ labels: paths.map(path => ({ path, translations: null })) });
+  });
+  await h.requestRows(h.snapshot().repositories[0].groups[0].key, 0, 40);
   assert.equal(typeof release, 'function');
   h.git.modeFor = () => undefined;
   h.provider.setProjects([]);
   h.provider.setTrees([]);
-  const current = h.refresh();
-  await current;
-  release({ labels: [] });
-  await old;
+  await h.refresh();
+  release();
+  await flush();
+  assert.equal(h.pages().length, 0);
   assert.equal(h.snapshot().repositories.length, 0);
+});
+
+test('commands on paged ranges apply to the exact files across a page boundary', async t => {
+  const names = Array.from({ length: 260 }, (_, index) => `notes/${String(index).padStart(3, '0')}.txt`);
+  const repo = repository(root, names.map(name => change(name)));
+  const h = setup([repo]); t.after(() => h.provider.dispose());
+  await h.ready();
+  const group = h.snapshot().repositories[0].groups[0].key;
+  await h.requestRows(group, 128, 1);
+  const [target] = h.pages().at(-1).rows;
+  const selection = { eskaScmSelectionRanges: [{ group, start: 127, end: 129 }, { group, start: 128, end: 130 }] };
+  const old = h.snapshot().revision;
+  await h.command('stage', target, selection);
+  assert.deepEqual(repo.calls, [['add', ...names.slice(127, 131).map(name => join(source, name))]]);
+  await h.command('stage', target, { ...selection, eskaScmRevision: old });
+  await h.command('stage', target, { eskaScmSelectionRanges: [{ group, start: 128, end: 260 }] });
+  assert.equal(repo.calls.length, 1);
+  assert.equal(h.errors.length, 2);
 });
 
 test('foreign files, forged contexts, stale revisions and removed rows cannot mutate Git', async t => {
@@ -386,6 +436,15 @@ test('monitor changes reach the semantic list before the native Git status and r
   h.view.visible = false;
   h.visibility.fire();
   assert.equal(h.monitor.targets.length, 0);
+  const shown = h.snapshot(), lookups = h.trees[0].requests.length;
+  h.monitor.update(root, { ...snapshot, workingTreeChanges: [change('hidden.bsl')] });
+  await h.provider.publish();
+  assert.equal(h.snapshot(), shown);
+  assert.equal(h.trees[0].requests.length, lookups);
+  h.view.visible = true;
+  h.visibility.fire();
+  await h.provider.publish();
+  assert.equal(h.rows()[0].description, join('src', 'hidden.bsl'));
 });
 
 test('native Windows paths, UNC, Cyrillic and spaces retain path boundaries', () => {

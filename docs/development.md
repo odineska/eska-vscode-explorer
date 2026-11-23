@@ -925,7 +925,7 @@ Native suite использует публичные команды и наст�
 После сборки запустите проверки SCM.
 
 ```sh
-node --test test/git-api.test.mjs test/scm*.test.mjs
+node --test test/decorations.test.mjs test/git-api.test.mjs test/scm*.test.mjs
 ```
 
 - `scm-monitor.test.mjs` проверяет stdin NDJSON, общий строковый glob `**/*`,
@@ -950,7 +950,9 @@ Host-тесты используют настоящий встроенный Git
 `scm-modes-host.cjs` переключает режимы отдельной папки в окне с двумя
 репозиториями и проверяет diff, индекс, коммит, создание и удаление манифеста.
 `scm-view-host.cjs` дополнительно сохраняет локальный модуль под
-`files.watcherExclude` при `git.autorefresh=false`. Для медленной проверки
+`files.watcherExclude` при `git.autorefresh=false`. В группе из 260 файлов
+этот тест проверяет счётчик, число строк в DOM, выделение через границу
+страниц и URI файла, открытого после перехода клавишей `End`. Для медленной проверки
 восстановления пропущенного события задайте
 `ESKA_HOST_SCM_MISSED_EVENT=1`: сценарий меняет заранее отслеживаемый,
 неоткрытый файл выше workspace и ждёт очередной полной сверки без ручного

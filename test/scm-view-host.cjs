@@ -72,7 +72,7 @@ async function attachScm() {
     return {
       workbench: evaluate,
       webview: expression => evaluate(expression, scm),
-      async pointer(selector, button = 'none') {
+      async pointer(selector, button = 'none', modifiers = 0) {
         const point = await evaluate(`(() => {
           const rect = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
           return rect && { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
@@ -87,8 +87,8 @@ async function attachScm() {
         assert.equal(await evaluate(`document.elementFromPoint(${x}, ${y})?.matches('iframe.webview.ready')`), true, selector);
         await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
         if (button === 'none') return;
-        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
-        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1, modifiers });
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1, modifiers });
       },
       async key(key, windowsVirtualKeyCode, modifiers = 0) {
         const options = { key, code: key, windowsVirtualKeyCode, modifiers };
@@ -319,11 +319,56 @@ exports.run = async function () {
     await verifySave('Retained branch prompt draft', [fixture.module], 'branchRetry');
     assert.equal(await git('branch', '--show-current'), switchedBranch, 'conscious retry saves to the new branch');
     assert.equal(await git('rev-parse', initialBranch), initialCommit);
+    // Cross the eager threshold with literal files; exercise the installed webview and host paging wire.
+    const viewportDirectory = await fs.mkdtemp(path.join(fixture.root, 'zz-scm-viewport-'));
+    const viewportNames = Array.from({ length: 260 }, (_, index) => `viewport-${String(index).padStart(3, '0')}.txt`);
+    const lastViewportFile = path.join(viewportDirectory, viewportNames.at(-1));
+    let viewportRows;
+    try {
+      await Promise.all(viewportNames.map(name => fs.writeFile(path.join(viewportDirectory, name), `SCM viewport fixture ${name}\n`)));
+      await until(() => ui.webview(`[...document.querySelectorAll('.scm-count')].some(node => Number(node.textContent) === 260)`),
+        'all 260 literal files reach a paged SCM group');
+      await settleSnapshots();
+      assert.equal((await git('status', '--porcelain=v1', '--untracked-files=all', '--', relative(viewportDirectory)))
+        .split('\n').filter(Boolean).length, 260, 'Git and SCM agree on the full paged fixture');
+      await ui.webview(`window.scrollTo(0, 0)`);
+      await until(() => hasLabel(viewportNames[0]), 'first page renders real file rows');
+      viewportRows = await ui.webview(`document.querySelectorAll('.scm-row').length`);
+      assert.ok(viewportRows > 0 && viewportRows < 100, `viewport bounds rendered rows: ${viewportRows}`);
+      await ui.webview(`(() => {
+        const row = [...document.querySelectorAll('.scm-row')].find(node => node.querySelector('.scm-label')?.textContent === ${JSON.stringify(viewportNames[0])});
+        row.querySelector('.scm-row-target').dataset.fixtureScmRow = 'first';
+      })()`);
+      // Actual workbench keyboard input must request an unloaded last page and focus its final file.
+      await ui.pointer('[data-fixture-scm-row="first"]', 'left', process.platform === 'darwin' ? 4 : 2);
+      await ui.key('End', 35, 8); // Shift+End keeps a compact range over unloaded rows.
+      await until(() => ui.webview(`document.activeElement?.matches('.scm-row-target') && document.activeElement.querySelector('.scm-label')?.textContent === ${JSON.stringify(viewportNames.at(-1))}`),
+        'Shift+End loads the last page and focuses its actual last file');
+      const lastViewportContext = await ui.webview(`JSON.parse(document.activeElement.closest('.scm-row').dataset.vscodeContext)`);
+      assert.ok(lastViewportContext.eskaScmSelectionRanges.some(range => range.start === 0 && range.end === 259),
+        'Shift selection includes the complete unloaded group');
+      assert.ok(await ui.webview(`document.querySelectorAll('.scm-row').length < 100`), 'last page also bounds DOM rows');
+      await ui.key('Home', 36);
+      await until(() => ui.webview(`document.activeElement?.closest('.scm-row')?.getAttribute('aria-posinset') === '1' && window.scrollY < 300`),
+        'Home returns from the late page to the first row, including a staged group');
+      await ui.key('End', 35);
+      await until(() => ui.webview(`document.activeElement?.querySelector('.scm-label')?.textContent === ${JSON.stringify(viewportNames.at(-1))}`),
+        'End returns through the page boundary');
+      const openContext = await ui.webview(`JSON.parse(document.activeElement.closest('.scm-row').dataset.vscodeContext)`);
+      await command('eska.explorer.scm.open', { ...openContext, webview: 'eska.explorer.scm' });
+      await until(() => vscode.window.activeTextEditor?.document.uri.fsPath === lastViewportFile,
+        'opening the End row opens the exact final fixture URI');
+      assert.equal(await git('ls-files', '--stage', '--', path.basename(outside)), outsideIndex,
+        'paged navigation and opening preserve pre-existing staged files');
+    } finally {
+      await command('workbench.action.closeAllEditors');
+      await fs.rm(viewportDirectory, { recursive: true, force: true });
+    }
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
       gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
       keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true, failedHookDraftRetried: true,
-      monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, sameCommitBranchPromptGuard: true, semanticLabel, latencyMs, commitFiles,
+      monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, sameCommitBranchPromptGuard: true, pagedScmViewport: true, viewportRows, semanticLabel, latencyMs, commitFiles,
       latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));
   } catch (error) {
