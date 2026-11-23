@@ -182,7 +182,7 @@ export class QuerySourceSession {
 
   /** A save of an older native SDBL revision cannot silently apply a newer acknowledged draft. */
   async prepare(owner: QueryOwnerFacts, draft: string, comments: CommentDecision[] = [],
-    lineEnding?: "lf" | "crlf", saveCleanOwner = false): Promise<QueryPreparedSession["plan"]> {
+    lineEnding?: "lf" | "crlf", saveCleanOwner = false): Promise<QueryPreparedSession["plan"] & { output: string }> {
     if (lineEnding !== undefined && !this.client.limits.editorLineEndings) throw new ExplorerError("incompatible");
     const saveOwnerRequested = saveCleanOwner && this.client.saveCleanOwner;
     let original: ReturnType<QueryRecovery["record"]> | undefined;

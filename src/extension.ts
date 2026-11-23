@@ -178,7 +178,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.disposables.push(this.language);
     this.queries = new QueryTabs(context, this.connection, () => this.tree, () => this.language.selectedApplication,
       entry => { if (!this.disposed) this.changed.fire(entry); }, value => this.output.warn(value),
-      uri => this.support.ownedWorkspaceReadonlyRule(uri), uri => this.support.settleWorkspaceReadonlyRule(uri));
+      uri => this.support.settleWorkspaceReadonlyRule(uri));
     this.formatting = new FormattingService(String(context.extension.packageJSON.version), this.queries, this.tooling, (text, level) => this.output[level ?? "info"](text));
     this.language.attachQueries(new QueryLanguage(this.queries, value => this.output.warn(value)));
     this.queryDesigner = new QueryDesigner(context, this.queries, value => this.output.warn(value));

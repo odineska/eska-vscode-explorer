@@ -117,14 +117,17 @@ async function clauseAndReadonly(explorer, owner, accepted) {
   await files.update("readonlyInclude", { "**/ObjectModule.bsl": true }, vscode.ConfigurationTarget.Workspace);
   try {
     draft = await openQuery(owner); const before = draft.getText(); view = await openConstructor(explorer, draft);
-    assert.equal(view.binding.core.model.writable, false);
-    assert.ok(view.binding.core.model.statements[0].append.every(value => value.unavailable === "read_only"));
-    await assert.rejects(view.binding.core.action({ kind: "append", statement: 0, clause: "fields", text: "9" }), error => error.details?.reason === "user_read_only");
+    assert.equal(view.binding.core.model.writable, true, "configured owner readonly does not restrict the query constructor");
+    await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: "action",
+      action: { kind: "append", statement: 0, clause: "fields", text: "9" } });
+    const edited = view.binding.core.model.text;
+    assert.notEqual(edited, before);
     await explorer.queryDesigner.receive(view, { revision: view.binding.core.model.revision, type: "apply" }); draft = vscode.window.activeTextEditor.document;
-    assert.equal(draft.getText(), before); assert.equal((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
+    assert.equal(draft.getText(), edited);
+    assert.notEqual((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
     await closeQueryTabs(draft, true);
   } finally { await files.update("readonlyInclude", undefined, vscode.ConfigurationTarget.Workspace); }
-  accepted.push("six_clause_operations_preserve_opaque_package_and_readonly_constructor_cannot_grant_write_access");
+  accepted.push("six_clause_operations_preserve_opaque_package_and_configured_readonly_owner_keeps_constructor_editable");
 }
 
 /** Losing the real process discards only unaccepted model operations, retaining the earlier canonical checkpoint. */

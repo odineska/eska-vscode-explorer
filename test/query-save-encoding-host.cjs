@@ -5,6 +5,22 @@ const vscode = require('vscode');
 const { until, returned, closeQueryTabs } = require('./query-modal-host.cjs');
 const { connectWorkbench } = require('./query-constructor-dom.cjs');
 
+/** Probe the native editor and undo only this probe when its current mode permits input. */
+async function nativeWritable(document) {
+  await vscode.window.showTextDocument(document,{preview:false});
+  await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+  const before=document.getText(),dirty=document.isDirty;
+  const editor=vscode.window.activeTextEditor,end=document.positionAt(before.length);
+  editor.selection=new vscode.Selection(end,end);
+  await vscode.commands.executeCommand('type',{text:'x'});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const writable=document.getText()!==before;
+  assert.equal(document.getText(),before+(writable?'x':''));
+  if(writable){await vscode.commands.executeCommand('undo');await until(()=>document.getText()===before,'native permission probe undo');}
+  assert.equal(document.isDirty,dirty);
+  return writable;
+}
+
 /** Installed-window regression: native input and actual Ctrl+S, without private provider access. */
 exports.run = async function () {
   const fixture = JSON.parse(process.env.ESKA_HOST_FIXTURE), accepted = [];
@@ -30,19 +46,22 @@ exports.run = async function () {
     });
 
     const files = vscode.workspace.getConfiguration('files');
-    // Parent participants are deliberately separate from query participants: a source plan owns exact output.
-    await files.update('trimTrailingWhitespace', false, vscode.ConfigurationTarget.Global);
-    await files.update('insertFinalNewline', false, vscode.ConfigurationTarget.Global);
-    await vscode.workspace.getConfiguration('editor').update('formatOnSave', false, vscode.ConfigurationTarget.Global);
     for (const scenario of [
       { name: 'utf8', global: 'utf8', query: 'utf8' },
       { name: 'utf8bom_repeated_ctrl_s', global: 'utf8bom', query: 'utf8bom' },
       { name: 'windows1251_query_unicode_native_model', global: 'utf8', query: 'windows1251', unicode: true },
       { name: 'global_windows1251_initial_virtual_read', global: 'windows1251' },
+      { name: 'user_exact_globs', global: 'utf8', rules: { '/*.bsl': true, '/*.os': true } },
+      { name: 'recursive_source_globs', global: 'utf8', rules: { '**/*.bsl': true, '**/*.os': true } },
+      { name: 'recursive_source_and_query_globs', global: 'utf8', rules: { '**/*.bsl': true, '**/*.os': true, '**/*.sdbl': true } },
     ]) {
       await files.update('encoding', scenario.global, vscode.ConfigurationTarget.Global);
+      await files.update('readonlyInclude', scenario.rules, vscode.ConfigurationTarget.Global);
+      const settingsBefore = JSON.stringify(files.inspect('readonlyInclude'));
       let owner = await vscode.workspace.openTextDocument(uri, { encoding: 'utf8bom' });
       const editor = await vscode.window.showTextDocument(owner, { preview: false });
+      const sourceWritable=await nativeWritable(owner);
+      if(scenario.rules?.['**/*.bsl'])assert.equal(sourceWritable,false,'recursive source glob must lock the native owner');
       const at = owner.positionAt(owner.getText().indexOf('SELECT ') + 3);
       editor.selection = new vscode.Selection(at, at);
       await vscode.commands.executeCommand('eska.explorer.editBslQuery');
@@ -58,6 +77,7 @@ exports.run = async function () {
         // The first edit ends exactly at the BSL continuation before an unchanged suffix.
         const alias = accepted.length === 0 && iteration === 0 ? 'Value' : 'Значение';
         const query = `SELECT ${number}\n    AS ${alias}${scenario.unicode ? ', "😀" AS Символ' : ''}`;
+        await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
         await ui.focus();
         await ui.key('a', 'KeyA', 65, 2);
         await ui.typeText(query);
@@ -75,6 +95,8 @@ exports.run = async function () {
       owner = await returned(uri);
       assert.equal(owner.isDirty, false);
       assert.equal(owner.getText(), expected.slice(1));
+      assert.equal(JSON.stringify(files.inspect('readonlyInclude')), settingsBefore, 'query preserves exact readonly settings');
+      assert.equal(await nativeWritable(owner),sourceWritable,'native owner permissions survive query Save and close');
       const bytes = await fs.readFile(fixture.module);
       assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
       assert.ok(bytes.toString('utf8').includes('// owner 😀\r\n'));

@@ -1,6 +1,6 @@
 // Canonical TOML keys from upstream project-model for these releases.
 // Diagnostic parameters come from the rules' settings readers.
-export const analyzerCatalogVersion = '0.4.6';
+export const analyzerCatalogVersion = '0.4.7';
 
 const label = (ru, en) => ({ ru, en });
 const field = (path, type, ru, en, options) => ({
@@ -86,6 +86,9 @@ export const analyzerGroups = [
     }),
     field('diagnostics.dataflowMaxIterations', 'integer', 'Лимит итераций анализа потока данных', 'Dataflow iteration limit', { ...natural, default: 10000 }),
     field('diagnostics.bsllsSuppressionCompat', 'boolean', 'Распознавать комментарии подавления BSLLS', 'Recognize BSLLS suppression comments', { default: true }),
+    field('features.map_key_types', 'boolean', 'Типы значений соответствия по ключам', 'Map value types by key', {
+      default: true, since: '0.4.7'
+    }),
     field('features.type_narrowing', 'boolean', 'Уточнение типов', 'Type narrowing', { default: true }),
     field('features.workspace_diagnostics', 'enum', 'Диагностика рабочей области', 'Workspace diagnostics', {
       choices: ['off', 'extensions', 'all'],
@@ -153,6 +156,16 @@ export const analyzerGroups = [
 
 // Each rule is a boolean or a table of its parameters. A table enables the rule.
 const diagnosticRows = [
+  ["AtClientAtServerFormMethod", "Недоступный метод формы с директивой &НаКлиентеНаСервере", "Unreachable form method with &AtClientAtServer", true],
+  ["PostingWhileDataExchangeLoading", "Проведение при загрузке данных", "Posting while data exchange is loading", true],
+  ["UnboundFormEventHandler", "Непривязанный обработчик события формы", "Unbound form event handler", true],
+  ["FormEventHandlerDirective", "Несовместимая директива обработчика события формы", "Incompatible form event handler directive", true],
+  ["StructureKeyIsNotIdentifier", "Ключ структуры не является идентификатором", "Structure key is not an identifier", true],
+  ["MultilingualStringHasEmptyTranslation", "Пустой перевод объявленного языка в НСтр", "Empty translation of a declared language in NStr", true],
+  ["FormDataHasNoMetadataMethod", "Вызов Метаданные() у данных формы", "Metadata() called on form data", true],
+  ["ValueIsFilledOfBoolean", "ЗначениеЗаполнено от Булево", "ValueIsFilled of Boolean", true],
+  ["TypeNameComparedAsText", "Сравнение имени типа как текста", "Type name compared as text", false],
+
   ["OrdinaryFormDialogUnread", "Не удалось прочитать диалог обычной формы", "Ordinary form dialog could not be read", true],
   ["BuiltinFunctionNameAsDeclaration", "Имя встроенной функции в объявлении", "Built-in function name in a declaration", true],
   ["LocalCallWithQueryInCycle", "Вызов локального метода с запросом в цикле", "Local method with a query called inside a loop", true],
@@ -559,7 +572,7 @@ export const diagnosticCatalog = diagnosticRows.map(([id, ru, en, defaultEnabled
 }));
 
 // Upstream 0.2.67 reads a smaller project-model TOML contract. The default data
-// above tracks 0.4.6. The 0.4.x releases use the same project-model fields.
+// above tracks 0.4.7. Version-specific fields are gated below.
 const fieldsUnavailableIn0267 = new Set([
   'source.exclude', 'source.exclude_globs', 'min_platform_version', 'compatibility_mode',
   'source.configuration', 'source.externals', 'platform_help.source', 'platform_help.path',
@@ -582,10 +595,19 @@ const introduced = {
   RegisterRecorderFieldInQuery: '0.4.5',
   QueryOrderByDocumentDate: '0.4.6',
   QueryConditionWithoutIndex: '0.4.6',
+  AtClientAtServerFormMethod: '0.4.7',
+  PostingWhileDataExchangeLoading: '0.4.7',
+  UnboundFormEventHandler: '0.4.7',
+  FormEventHandlerDirective: '0.4.7',
+  StructureKeyIsNotIdentifier: '0.4.7',
+  MultilingualStringHasEmptyTranslation: '0.4.7',
+  FormDataHasNoMetadataMethod: '0.4.7',
+  ValueIsFilledOfBoolean: '0.4.7',
+  TypeNameComparedAsText: '0.4.7',
 };
 
 export const analyzerCatalogVersions = Object.freeze([
-  '0.2.67', '0.4.0', '0.4.1', '0.4.2', '0.4.3', '0.4.4', '0.4.5', '0.4.6'
+  '0.2.67', '0.4.0', '0.4.1', '0.4.2', '0.4.3', '0.4.4', '0.4.5', '0.4.6', '0.4.7'
 ]);
 
 // Only these presentation levels affect findings; upstream grade/type are not effective overrides.
@@ -610,7 +632,7 @@ export function analyzerCatalogForVersion(version) {
       severityOverrides: false,
       analyzerGroups: analyzerGroups.map(group => ({
         ...group,
-        fields: group.fields.filter(field => !fieldsUnavailableIn0267.has(field.path.join('.')))
+        fields: group.fields.filter(field => !field.since && !fieldsUnavailableIn0267.has(field.path.join('.')))
       })).filter(group => group.fields.length > 0),
       diagnosticCatalog: diagnosticCatalog.filter(rule => rule.legacyEnabled !== undefined).map(rule => ({
         ...rule,
@@ -622,7 +644,11 @@ export function analyzerCatalogForVersion(version) {
 
   return {
     severityOverrides: analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf('0.4.4'),
-    analyzerGroups,
+    analyzerGroups: analyzerGroups.map(group => ({
+      ...group,
+      fields: group.fields.filter(field => !field.since
+        || analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf(field.since))
+    })),
     diagnosticCatalog: diagnosticCatalog.filter(({ id }) =>
       !introduced[id] || analyzerCatalogVersions.indexOf(version) >= analyzerCatalogVersions.indexOf(introduced[id])
     ).map(rule => rule.id === 'FieldsFromJoinsWithoutIsNull' && ['0.4.0', '0.4.1'].includes(version)

@@ -54,16 +54,18 @@ exports.run=async function(){
     await files.update('readonlyInclude', { '**/ObjectModule.bsl': true }, vscode.ConfigurationTarget.Workspace);
     try {
       draft = await openDirty();
-      assert.equal((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
+      assert.notEqual((await vscode.workspace.fs.stat(draft.uri)).permissions, vscode.FilePermission.Readonly);
       const beforeDraft = draft.getText();
-      await vscode.commands.executeCommand('type', { text: 'must not alter query' });
-      assert.equal(draft.getText(), beforeDraft);
+      await vscode.commands.executeCommand('type', { text: 'x' });
+      await until(()=>draft.getText()!==beforeDraft,'native query input acknowledged');
+      await vscode.commands.executeCommand('undo');
+      await until(()=>draft.getText()===beforeDraft,'native query undo acknowledged');
       await closeQueryTabs(draft);
       owner = await returned(uri);
     } finally {
       await files.update('readonlyInclude', undefined, vscode.ConfigurationTarget.Workspace);
     }
-    accepted.push('query_inherits_configured_readonly_source');
+    accepted.push('query_remains_editable_with_configured_readonly_source');
 
     await vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession');
     draft = await openDirty();
@@ -71,6 +73,7 @@ exports.run=async function(){
     owner = await returned(uri);
     const before = owner.getText();
     await vscode.commands.executeCommand('type', { text: 'must not alter parent' });
+    await new Promise(resolve=>setTimeout(resolve,150));
     assert.equal(owner.getText(), before);
     await vscode.commands.executeCommand('workbench.action.files.resetActiveEditorReadonlyInSession');
     accepted.push('native_readonly_override_survives_query_roundtrip');

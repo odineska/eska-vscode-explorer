@@ -241,54 +241,54 @@ test("closing an owned query stops if the editor refuses to close or focus is re
   }
 });
 
-/** Only the source's temporary native view is exposed to the save command. */
-function sourceSaveFixture({ changeOnShow = false, refuseSave = false } = {}) {
-  class TabInputText { constructor(uri) { this.uri = uri; } }
-  const owner = { uri: { toString: () => 'file:///owner.bsl' }, version: 7, isClosed: false, isDirty: true };
-  const query = { uri: { toString: () => 'eska-query:/draft' }, isClosed: false };
-  const previous = { document: query };
-  const group = { viewColumn: 1, activeTab: { isPreview: false }, tabs: [{ input: new TabInputText(query.uri), isDirty: true }] };
-  const commands = [], closed = [];
-  const window = { activeTextEditor: previous, tabGroups: { activeTabGroup: group, async close(tab) {
-    closed.push(tab); group.tabs.splice(group.tabs.indexOf(tab), 1); return true;
-  } }, async showTextDocument(document) {
-    const editor = { document }; window.activeTextEditor = editor;
-    if (document === owner) {
-      group.tabs.push({ input: new TabInputText(owner.uri), get isDirty() { return owner.isDirty; } });
-      if (changeOnShow) owner.version++;
-    }
-    return editor;
-  } };
-  const { saveQueryOwner } = nativeAdapters({ TabInputText, window, commands: { async executeCommand(command) {
-    assert.equal(window.activeTextEditor.document, owner);
-    commands.push(command);
-    if (!refuseSave) owner.isDirty = false;
-  } } })('modal-parent');
-  return { save: () => saveQueryOwner(owner), owner, query, group, window, commands, closed };
+/** Simulate an external writer and native model reload independently of the source's editor permissions. */
+function cleanOwnerFixture({ disk = 'before', beforeWrite, onWrite } = {}) {
+  const uri = { toString: () => 'file:///owner.bsl' };
+  const owner = { uri, version: 7, encoding: 'utf8', text: 'before', isDirty: false, getText() { return this.text; } };
+  const writes = [], subscriptions = new Set();
+  const subscribe = listener => { subscriptions.add(listener); return { dispose: () => subscriptions.delete(listener) }; };
+  const workspace = {
+    encode: async text => Buffer.from(text),
+    onDidChangeTextDocument: subscribe, onDidCloseTextDocument: subscribe,
+    fs: {
+      async readFile() { beforeWrite?.(owner); return Buffer.from(disk); },
+      async writeFile(target, bytes) {
+        assert.equal(target, uri);
+        writes.push(bytes.toString());
+        owner.text = bytes.toString();
+        owner.version++;
+        onWrite?.(owner);
+        for (const listener of subscriptions) listener({ document: owner, contentChanges: [{}] });
+      },
+    },
+  };
+  const { writeCleanQueryOwner } = nativeAdapters({ workspace, window: { tabGroups: { all: [] } } })('owner');
+  let attempted = false;
+  return { write: () => writeCleanQueryOwner(owner, '7', 'after', () => { attempted = true; }),
+    writes, subscriptions, get attempted() { return attempted; } };
 }
 
-test('clean-owner persistence skips participants and restores query focus without an extra source tab', async () => {
-  const f = sourceSaveFixture();
-  await f.save();
-  assert.deepEqual(f.commands, ['workbench.action.files.saveWithoutFormatting']);
-  assert.equal(f.owner.isDirty, false);
-  assert.equal(f.window.activeTextEditor.document, f.query);
-  assert.equal(f.closed.length, 1);
-  assert.equal(f.group.tabs.length, 1);
+test('a clean query owner is acknowledged only after its native buffer contains the saved bytes', async () => {
+  const f = cleanOwnerFixture();
+  await f.write();
+  assert.deepEqual(f.writes, ['after']);
+  assert.equal(f.attempted, true);
+  assert.equal(f.subscriptions.size, 0);
 });
 
-test('source changes while activating its temporary view prevent persistence', async () => {
-  const f = sourceSaveFixture({ changeOnShow: true });
-  await assert.rejects(f.save(), { code: 'sourceChanged' });
-  assert.equal(f.commands.length, 0);
-  assert.equal(f.window.activeTextEditor.document, f.query);
-  assert.equal(f.owner.isDirty, true);
+test('an external disk edit or a newly dirty owner prevents the checked file write', async () => {
+  for (const options of [{ disk: 'changed' }, { beforeWrite: owner => { owner.isDirty = true; } },
+    { beforeWrite: owner => { owner.version++; } }]) {
+    const f = cleanOwnerFixture(options);
+    await assert.rejects(f.write(), { code: 'sourceChanged' });
+    assert.equal(f.attempted, false);
+    assert.deepEqual(f.writes, []);
+  }
 });
 
-test('failed native source persistence retains its dirty model and reports failure', async () => {
-  const f = sourceSaveFixture({ refuseSave: true });
-  await assert.rejects(f.save(), { code: 'sourceChanged' });
-  assert.equal(f.owner.isDirty, true);
-  assert.equal(f.closed.length, 0);
-  assert.equal(f.window.activeTextEditor.document, f.query);
+test('an owner edit during reload is preserved and the attempted write stays pending', async () => {
+  const f = cleanOwnerFixture({ onWrite: owner => { owner.text += ' user edit'; owner.isDirty = true; } });
+  await assert.rejects(f.write(), { code: 'sourceChanged' });
+  assert.equal(f.attempted, true);
+  assert.equal(f.subscriptions.size, 0);
 });

@@ -3,9 +3,9 @@ import { isRecord } from "../protocol.js";
 import { invalid, isByteRange, isPosition, isSnapshot, parseQueryValue,
   type QueryCapabilities, type QueryIdentity, type QueryPlan, type QueryPosition } from "./protocol.js";
 
-/** Independently verify source coordinates and output bytes before a plan reaches WorkspaceEdit. */
-export function parsePlan(value: unknown, original: string, snapshot: string, identity: QueryIdentity, limits: QueryCapabilities): QueryPlan {
-  const { output } = checkedTextPlan(value, original, snapshot, limits);
+/** Independently verify source coordinates and output bytes before editing or saving the owner. */
+export function parsePlan(value: unknown, original: string, snapshot: string, identity: QueryIdentity, limits: QueryCapabilities): QueryPlan & { output: string } {
+  const { plan, output } = checkedTextPlan(value, original, snapshot, limits);
   if (!isRecord(value)) invalid();
   const projected = parseQueryValue(value.projectedQuery, Buffer.byteLength(output), limits);
   // A BSL range can move in the projection, but must not replace the session's original identity.
@@ -13,7 +13,7 @@ export function parsePlan(value: unknown, original: string, snapshot: string, id
     && (projected.identity.kind !== "dataSet" || JSON.stringify(projected.identity.path) !== JSON.stringify(identity.path)))
     || (identity.kind === "dynamicList" && (projected.identity.kind !== "dynamicList"
       || projected.identity.id !== identity.id || projected.identity.name !== identity.name))) invalid();
-  return value as unknown as QueryPlan;
+  return { ...plan, projectedQuery: projected, output };
 }
 
 export type QueryTextPlan = Omit<QueryPlan, "projectedQuery">;

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 
 /** Load compiled owner code with scoped native boundaries, without global module mocks. */
-function fixture({ invalidate = true, churn = false, changeDocument = false, writable = true, configured = false, scheme = "file" } = {}) {
+function fixture({ invalidate = true, churn = false, changeDocument = false, writable = true, permissions, scheme = "file" } = {}) {
   const require = createRequire(new URL('../out/query/owner.js', import.meta.url));
   const { ExplorerError } = require('../protocol.js');
   const uri = { scheme, fsPath: '/project/ObjectModule.bsl', toString: () => 'file:///project/ObjectModule.bsl' };
@@ -34,13 +34,12 @@ function fixture({ invalidate = true, churn = false, changeDocument = false, wri
   const compiled = readFileSync(new URL('../out/query/owner.js', import.meta.url), 'utf8');
   const accesses = [];
   runInNewContext(`(function(require,module,exports){${compiled}\n})`)(name => {
-    if (name === '../editor-policy.js') return { configuredReadOnly: () => configured };
     if (name === '../tree.js') return {};
     if (name === 'node:fs/promises') return { access: async (file, mode) => {
       accesses.push({ file, mode });
       if (!writable) throw Object.assign(new Error('access denied'), { code: 'EACCES' });
     } };
-    if (name === 'vscode') return { Uri: { file: () => uri }, FilePermission: { Readonly: 1 }, workspace: { fs: { stat: async () => ({}) } } };
+    if (name === 'vscode') return { Uri: { file: () => uri }, FilePermission: { Readonly: 1 }, workspace: { fs: { stat: async () => ({ permissions }) } } };
     if (name === '../reveal.js') return { revealFile: async () => {
       reveals++;
       return { project, node: { id: { kind: 'module', owner: 'catalog:Товары', role: 'object' } } };
@@ -48,7 +47,7 @@ function fixture({ invalidate = true, churn = false, changeDocument = false, wri
     if (name === '../source.js') return { existingSource: async () => uri.fsPath };
     return require(name);
   }, module, module.exports);
-  return { run: () => module.exports.bslQueryOwner(tree, document), readOnly: allow => module.exports.nativeReadOnly(document, undefined, allow), accesses, document, counts: () => ({ reveals, requests, barriers }) };
+  return { run: () => module.exports.bslQueryOwner(tree, document), readOnly: () => module.exports.nativeReadOnly(document), accesses, document, counts: () => ({ reveals, requests, barriers }) };
 }
 
 test('BSL reopening resolves its lazy module again after a save invalidation during source lookup', async () => {
@@ -77,27 +76,18 @@ test('continuous source invalidation is bounded and reported as an owner conflic
 });
 
 
-test('filesystem access protects file owners even without a configured readonly override', async () => {
-  for (const allow of [false, true]) {
-    const f = fixture({ writable: false });
-    assert.equal(await f.readOnly(allow), true);
-    assert.equal(f.accesses.length, 1);
-    assert.equal(f.accesses[0].file, f.document.uri.fsPath);
+test('query source writes need filesystem access independently of the native editor mode', async () => {
+  const writable = fixture();
+  assert.equal(await writable.readOnly(), false);
+  const denied = fixture({ writable: false });
+  assert.equal(await denied.readOnly(), true);
+  assert.equal(denied.accesses[0].file, denied.document.uri.fsPath);
+});
+
+test('a virtual draft or snapshot uses its own provider permissions', async () => {
+  for (const permissions of [undefined, 1]) {
+    const f = fixture({ scheme: 'eska-query', permissions, writable: false });
+    assert.equal(await f.readOnly(), permissions === 1);
+    assert.equal(f.accesses.length, 0);
   }
-});
-
-test('writable file owners still obey configured editor restrictions', async () => {
-  const ordinary = fixture();
-  assert.equal(await ordinary.readOnly(false), false);
-  const restricted = fixture({ configured: true });
-  assert.equal(await restricted.readOnly(false), true);
-  assert.equal(await restricted.readOnly(true), false);
-  assert.equal(restricted.accesses.length, 2);
-});
-
-test('virtual resources use provider and editor restrictions without native fs access', async () => {
-  const f = fixture({ scheme: 'eska-query', writable: false });
-  assert.equal(await f.readOnly(false), false);
-  assert.equal(await f.readOnly(true), false);
-  assert.equal(f.accesses.length, 0);
 });

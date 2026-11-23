@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import * as vscode from "vscode";
-import { configuredReadOnly } from "../editor-policy.js";
 import { ExplorerError, isRecord, isWirePath, type WirePath } from "../protocol.js";
 import { revealFile } from "../reveal.js";
 import { existingSource, nativePath, isForm } from "../source.js";
@@ -36,12 +35,11 @@ export async function xmlQueryOwner(tree: MetadataTree, entry: TreeEntry): Promi
   return { entry, source, path, document };
 }
 
-/** A native session override can waive editor rules, while filesystem permissions still apply. */
-export async function nativeReadOnly(document: vscode.TextDocument, ignoredWorkspaceRule?: string, allowConfiguredWrite = false): Promise<boolean> {
+/** File permissions apply to every view, independently of read-only settings in a particular editor. */
+export async function nativeReadOnly(document: vscode.TextDocument): Promise<boolean> {
   const stat = await vscode.workspace.fs.stat(document.uri);
   if (stat.permissions === vscode.FilePermission.Readonly) return true;
-  if (document.uri.scheme === "file" && !await access(document.uri.fsPath, constants.W_OK).then(() => true, () => false)) return true;
-  return !allowConfiguredWrite && configuredReadOnly(document, ignoredWorkspaceRule);
+  return document.uri.scheme === "file" && !await access(document.uri.fsPath, constants.W_OK).then(() => true, () => false);
 }
 
 /** Native tabs retain dirty state when a concurrent save notification clears the extension-host document flag. */
@@ -49,6 +47,58 @@ export function nativeDirty(document: vscode.TextDocument): boolean {
   const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab => tab.input instanceof vscode.TabInputText
     && tab.input.uri.toString() === document.uri.toString());
   return document.isDirty || tabs.some(tab => tab.isDirty);
+}
+
+/** A clean source can follow VS Code's native file reload without changing the owner's editor permissions. */
+export async function writeCleanQueryOwner(document: vscode.TextDocument, version: string, output: string,
+  willWrite: () => void): Promise<void> {
+  const encoding = document.encoding;
+  const before = document.getText();
+  const [original, replacement] = await Promise.all([
+    vscode.workspace.encode(before, { encoding }), vscode.workspace.encode(output, { encoding }),
+  ]);
+  const disk = await vscode.workspace.fs.readFile(document.uri);
+  if (document.isClosed || nativeDirty(document) || String(document.version) !== version || document.encoding !== encoding
+    || !Buffer.from(disk).equals(original)) throw new ExplorerError("sourceChanged");
+
+  let changed!: () => void;
+  const reloaded = new Promise<void>(resolve => { changed = resolve; });
+  const changes = vscode.workspace.onDidChangeTextDocument(event => {
+    if (event.document === document && event.contentChanges.length) changed();
+  });
+  const closed = vscode.workspace.onDidCloseTextDocument(value => { if (value === document) changed(); });
+  const waitForChange = async (milliseconds: number) => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([reloaded, new Promise<void>(resolve => { timer = setTimeout(resolve, milliseconds); })]);
+    } finally { clearTimeout(timer); }
+  };
+  const awaitingReload = () => !document.isClosed && String(document.version) === version;
+  try {
+    willWrite();
+    await vscode.workspace.fs.writeFile(document.uri, replacement);
+    if (awaitingReload()) await waitForChange(750);
+    if (awaitingReload() && !nativeDirty(document)) {
+      // An excluded file may never produce a watcher event. Resolving a native view reloads a clean model.
+      // VS Code preserves concurrent dirty edits when resolving the view and keeps focus in the query.
+      const priorTabs = new Set(vscode.window.tabGroups.all.flatMap(group => group.tabs));
+      const editor = await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true, preview: false });
+      try {
+        if (awaitingReload()) await waitForChange(10_000);
+      } finally {
+        const group = vscode.window.tabGroups.all.find(group => group.viewColumn === editor.viewColumn);
+        const temporary = group?.tabs.find(tab => !priorTabs.has(tab) && tab.input instanceof vscode.TabInputText
+          && tab.input.uri.toString() === document.uri.toString());
+        if (temporary && !temporary.isDirty && !document.isDirty && vscode.window.activeTextEditor !== editor) {
+          await vscode.window.tabGroups.close(temporary, true);
+        }
+      }
+    }
+    if (document.isClosed || document.isDirty || document.getText() !== output) throw new ExplorerError("sourceChanged");
+  } finally {
+    changes.dispose();
+    closed.dispose();
+  }
 }
 
 /** Resolve the active module through backend source roles; the adapter never infers a BSL owner from its filename. */
