@@ -118,26 +118,35 @@ exports.run = async function () {
   const semanticLabel = russian ? 'Справочник.Товары.МодульОбъекта' : 'Catalog.Товары.ObjectModule';
   const outside = path.join(repositoryRoot, 'outside-scope.txt');
   const note = path.join(fixture.root, 'Заметка #1.txt');
+  const missedEvent = path.join(repositoryRoot, 'missed-event.txt');
   const latencyMs = {};
   const commitFiles = {};
+  await vscode.workspace.getConfiguration('git').update('openRepositoryInParentFolders', 'always', vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration('git').update('enableSmartCommit', false, vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration('git').update('autorefresh', false, vscode.ConfigurationTarget.Workspace);
   assert.equal(vscode.workspace.getConfiguration('git').get('enableSmartCommit'), false);
   assert.equal(vscode.workspace.getConfiguration('git').get('autorefresh'), false);
-  await fs.writeFile(path.join(repositoryRoot, '.gitignore'), `/*\n!/${path.basename(fixture.root)}/\n!/outside-scope.txt\n`);
+  await fs.writeFile(path.join(repositoryRoot, '.gitignore'), `/*\n!/${path.basename(fixture.root)}/\n!/outside-scope.txt\n!/missed-event.txt\n`);
   await fs.writeFile(path.join(fixture.root, '.gitignore'), '.eska/\n.vscode/\nhost-result.json\n');
   await fs.writeFile(outside, 'baseline outside project\n');
+  await fs.writeFile(missedEvent, 'baseline outside workspace\n');
   await git('init');
   await git('config', 'user.name', 'ESKA SCM Test');
   await git('config', 'user.email', 'scm@example.invalid');
-  await git('add', path.basename(fixture.root), path.basename(outside));
+  // Editor save normalizes mixed line endings; use a consistent baseline for save/revert assertions.
+  await fs.writeFile(fixture.module, (await fs.readFile(fixture.module, 'utf8')).replace(/\r\n/g, '\n'));
+  await git('add', path.basename(fixture.root), path.basename(outside), path.basename(missedEvent));
   await git('commit', '-m', 'SCM fixture');
   await fs.appendFile(outside, 'staged outside project must survive\n');
   await git('add', path.basename(outside));
   const outsideIndex = await git('ls-files', '--stage', '--', path.basename(outside));
   const gitApi = (await vscode.extensions.getExtension('vscode.git').activate()).getAPI(1);
-  const repo = await gitApi.openRepository(vscode.Uri.file(repositoryRoot));
-  assert.ok(repo);
+  let repo;
+  await until(async () => {
+    repo = gitApi.repositories.find(value => value.rootUri.fsPath === repositoryRoot)
+      ?? await gitApi.openRepository(vscode.Uri.file(repositoryRoot));
+    return Boolean(repo);
+  }, 'native Git repository finishes opening');
   const explorer = await vscode.extensions.all.find(value => value.packageJSON.name === 'eska-explorer').activate();
   await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module)));
   if (explorer) await until(() => explorer.tree?.connection.state.kind === 'ready', 'ESKA project connected');
@@ -196,6 +205,45 @@ exports.run = async function () {
     await ui.key('Enter', 13, process.platform === 'darwin' ? 4 : 2);
     await verifySave('ESKA keyboard save', [fixture.module], 'keyboard');
     await until(async () => !(await hasLabel(semanticLabel)), 'saved module row disappears');
+
+    const previousExcludes = vscode.workspace.getConfiguration('files').get('watcherExclude');
+    try {
+      await vscode.workspace.getConfiguration('files').update('watcherExclude', {
+        ...previousExcludes, '**/src/Catalogs/**': true,
+      }, vscode.ConfigurationTarget.Workspace);
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Let the workbench apply watcher exclusions.
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(fixture.module));
+      const original = document.getText();
+      await measure('savedExcludedModule', async () => {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(document.uri, document.positionAt(original.length), '// excluded editor save\n');
+        assert.equal(await vscode.workspace.applyEdit(edit), true);
+        assert.equal(await document.save(), true);
+      }, () => hasLabel(semanticLabel));
+      const restore = new vscode.WorkspaceEdit();
+      restore.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), original);
+      assert.equal(await vscode.workspace.applyEdit(restore), true);
+      assert.equal(await document.save(), true);
+      await until(async () => !(await hasLabel(semanticLabel)), 'excluded saved module restored');
+      if (process.env.ESKA_HOST_SCM_MISSED_EVENT === '1') {
+        await command('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 2500)); // Drain prior save/index notifications.
+        const started = performance.now();
+        await fs.appendFile(missedEvent, 'external edit without workspace watcher\n');
+        const deadline = Date.now() + 40_000;
+        while (!(await hasLabel(path.basename(missedEvent))) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(await hasLabel(path.basename(missedEvent)), true, 'periodic refresh recovers external edit outside workspace');
+        latencyMs.externalOutsideWorkspace = Math.round(performance.now() - started);
+        const restoredDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(missedEvent));
+        const restoreExternal = new vscode.WorkspaceEdit();
+        restoreExternal.replace(restoredDocument.uri, new vscode.Range(restoredDocument.positionAt(0), restoredDocument.positionAt(restoredDocument.getText().length)), 'baseline outside workspace\n');
+        assert.equal(await vscode.workspace.applyEdit(restoreExternal), true);
+        assert.equal(await restoredDocument.save(), true);
+        await until(async () => !(await hasLabel(path.basename(missedEvent))), 'outside workspace edit restored through save');
+      }
+    } finally {
+      await vscode.workspace.getConfiguration('files').update('watcherExclude', previousExcludes, vscode.ConfigurationTarget.Workspace);
+    }
 
     const moduleContents = await fs.readFile(fixture.module);
     await command('workbench.action.closeAllEditors');

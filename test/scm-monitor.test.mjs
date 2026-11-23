@@ -3,14 +3,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, posix, win32 } from 'node:path';
 const root = resolve('monitor-repository');
 const snapshot = () => ({ schema_version: 1, kind: 'snapshot', repository: { root, root_encoding: 'utf-8', head: 'attached', branch: 'main', branch_encoding: 'utf-8', commit: 'a'.repeat(40) }, changes: [] });
-function load(overrides = {}) {
+function load(overrides = {}, globals = {}) {
   const url = new URL('../out/scm-monitor.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
-  runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, TextDecoder, setTimeout, clearTimeout })(name => {
-    if (name === 'vscode') return { Uri: { file: fsPath => ({ fsPath }) } };
+  runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, TextDecoder, setTimeout, clearTimeout, setInterval, clearInterval, ...globals })(name => {
+    if (name === 'vscode') return overrides.vscode ?? { Uri: { file: fsPath => ({ fsPath }) }, workspace: {
+      createFileSystemWatcher: () => ({ dispose() {}, onDidCreate: () => ({dispose(){}}), onDidChange: () => ({dispose(){}}), onDidDelete: () => ({dispose(){}}) }),
+      ...Object.fromEntries(['onDidSaveTextDocument', 'onDidCreateFiles', 'onDidDeleteFiles', 'onDidRenameFiles'].map(name => [name, () => ({dispose(){}})]))
+    } };
     return overrides[name] ?? require(name);
   }, module, module.exports);
   return module.exports;
@@ -46,7 +50,7 @@ test('real child streams publish snapshots and remain dormant after death until 
   const api = load({ './tooling/inspect.js': { findTool: async () => process.execPath }, 'node:child_process': {
     spawn(executable, args, options) {
       launches++; assert.equal(options.shell, false); assert.equal(options.windowsHide, true);
-      assert.deepEqual(Array.from(args), ['--project-dir', root, 'monitor', '--format', 'json']);
+      assert.deepEqual(Array.from(args), ['--project-dir', root, 'monitor', '--events-stdin', '--format', 'json']);
       const value = JSON.stringify(snapshot()) + '\n';
       const child = spawn(executable, ['-e', `const s=${JSON.stringify(value)};process.stdout.write(s.slice(0,9));setTimeout(()=>process.stdout.write(s.slice(9)),10);setTimeout(()=>process.exit(0),150);`], { stdio: 'pipe' });
       children.push(child); return child;
@@ -88,4 +92,83 @@ test('terminal errors, malformed JSON, and excessive stderr kill only the monito
       assert.equal(logs.length, 1); assert.equal(monitors.get(root), undefined);
     } finally { monitors.dispose(); for (const child of children) child.kill(); }
   }
+});
+
+test('shares workspace events, bounds backpressure and reconciles on a fixed cadence', async () => {
+  const listeners = {}, writes = [], children = [], intervals = []; let watched = 0, disposed = 0;
+  const subscribe = name => callback => { listeners[name] = callback; return { dispose() { delete listeners[name]; } }; };
+  const vscode = { Uri: { file: fsPath => ({ fsPath }) }, workspace: {
+    createFileSystemWatcher(glob) {
+      assert.equal(glob, '**/*'); watched++;
+      return { dispose() { disposed++; }, onDidCreate: subscribe('create'), onDidChange: subscribe('change'), onDidDelete: subscribe('delete') };
+    }, onDidSaveTextDocument: subscribe('save'), onDidCreateFiles: subscribe('created'),
+    onDidDeleteFiles: subscribe('deleted'), onDidRenameFiles: subscribe('rename'),
+  } };
+  const api = load({ vscode, './tooling/inspect.js': { findTool: async () => '/tool' }, 'node:child_process': {
+    spawn() {
+      const stream = () => Object.assign(new EventEmitter(), { destroy() {} });
+      const child = Object.assign(new EventEmitter(), { stdin: stream(), stdout: stream(), stderr: stream(), kill() {} });
+      child.stdin.write = data => { writes.push(JSON.parse(data)); return false; };
+      children.push(child); return child;
+    },
+  } }, {
+    // Advance long timeouts immediately to exercise a slow first status without sleeping.
+    setTimeout(callback, delay) { return setTimeout(callback, delay >= 1000 ? 0 : delay); },
+    setInterval(callback, delay) { assert.equal(delay, 30000); intervals.push(callback); return intervals.length; },
+    clearInterval() {},
+  });
+  const monitors = new api.ScmMonitors(() => {}, () => {});
+  const uri = path => ({ scheme: 'file', authority: '', fsPath: resolve(root, path) });
+  try {
+    monitors.synchronize([{ root, projectExecutable: '/tool' }, { root: resolve('second'), projectExecutable: '/tool' }]);
+    await waitFor(() => children.length === 2); assert.equal(watched, 1);
+    // Child is live but has not published its baseline yet; edits must already reach stdin.
+    listeners.change(uri('.git/objects/ab/blob')); listeners.change(uri('.git/logs/HEAD'));
+    listeners.change(uri('.git/index.lock'));
+    listeners.change(uri('a')); listeners.save({ uri: uri('excluded/b') });
+    listeners.rename({ files: [{ oldUri: uri('old'), newUri: uri('new') }] });
+    listeners.save({ uri: { scheme: 'eska-protected', fsPath: resolve(root, 'virtual') } });
+    await waitFor(() => writes.length === 1);
+    assert.deepEqual(writes[0], { schema_version: 1, paths: ['a', 'excluded/b', 'old', 'new'] });
+    for (let i = 0; i < 2000; i++) listeners.change(uri(`burst/${i}`));
+    intervals[0](); // Fixed recovery cadence is independent of file-event coalescing.
+    assert.equal(writes.length, 1);
+    children[0].stdin.emit('drain'); await waitFor(() => writes.length === 2);
+    assert.deepEqual(writes[1], { schema_version: 1, refresh: true });
+    children[0].stdin.emit('drain'); intervals[0]();
+    assert.equal(writes[2].refresh, true);
+    children[0].stdout.emit('data', Buffer.from(JSON.stringify(snapshot()) + '\n'));
+    assert.equal(monitors.get(root).branch, 'main');
+    monitors.synchronize([]); assert.equal(disposed, 1); assert.deepEqual(Object.keys(listeners), []);
+    children[0].stdout.emit('data', Buffer.from(JSON.stringify(snapshot()) + '\n'));
+    assert.equal(monitors.get(root), undefined);
+  } finally { monitors.dispose(); }
+});
+
+for (const [platform, paths, repositoryRoot, local, foreign, expected] of [
+  ['posix', posix, '/work/repo', '/work/repo/dir/модуль.bsl', '/work/repository/file', 'dir/модуль.bsl'],
+  ['win32 drive', win32, 'C:\\work\\repo', 'C:\\work\\repo\\dir\\модуль.bsl', 'D:\\work\\repo\\file', 'dir/модуль.bsl'],
+  ['win32 UNC', win32, '\\\\server\\share\\repo', '\\\\server\\share\\repo\\dir\\module.bsl', '\\\\server\\other\\repo\\file', 'dir/module.bsl'],
+]) test(`routes ${platform} events inside the repository using slash UTF-8 paths`, async () => {
+  let observe; const writes = [], stream = () => Object.assign(new EventEmitter(), { destroy() {} });
+  const subscribe = () => ({ dispose() {} });
+  const api = load({ 'node:path': paths, vscode: { workspace: {
+    createFileSystemWatcher: () => ({ dispose() {}, onDidCreate: subscribe, onDidDelete: subscribe,
+      onDidChange(callback) { observe = callback; return subscribe(); } }),
+    onDidSaveTextDocument: subscribe, onDidCreateFiles: subscribe, onDidDeleteFiles: subscribe, onDidRenameFiles: subscribe,
+  } }, './tooling/inspect.js': { findTool: async () => '/tool' }, 'node:child_process': {
+    spawn() { return Object.assign(new EventEmitter(), { stdin: Object.assign(stream(), {
+      write(data) { writes.push(JSON.parse(data)); return true; },
+    }), stdout: stream(), stderr: stream(), kill() {} }); },
+  } });
+  const monitors = new api.ScmMonitors(() => {}, () => {});
+  try {
+    monitors.synchronize([{ root: repositoryRoot, projectExecutable: '/tool' }]);
+    await new Promise(resolve => setImmediate(resolve));
+    observe({ scheme: 'file', authority: platform.includes('UNC') ? 'server' : '', fsPath: local });
+    observe({ scheme: 'file', authority: '', fsPath: foreign });
+    observe({ scheme: 'file', authority: '', fsPath: paths.join(repositoryRoot, '..', 'outside', 'file') });
+    await waitFor(() => writes.length);
+    assert.deepEqual(writes, [{ schema_version: 1, paths: [expected] }]);
+  } finally { monitors.dispose(); }
 });
