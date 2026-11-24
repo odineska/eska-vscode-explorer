@@ -3,7 +3,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import type { GitApi, GitChange, GitRepository } from "./git-api.js";
 import { Status } from "./git-status.js";
-import { isFileMutation, type FileAction } from "./scm-actions.js";
+import { isFileMutation, SCM_EMPTY, type FileAction } from "./scm-actions.js";
 import type { MessageKey } from "./messages.js";
 import { relativeFile } from "./reveal.js";
 import { hasDirtySource, sourceKey } from "./source.js";
@@ -274,6 +274,14 @@ async function open(action: "open" | "diff" | "head" | "revealOs" | "revealExplo
     return;
   }
   let { left, right } = diffUris(entry, context);
+  if (action === "diff" && context.repository.scmProvider === "eska" && context.repository.lineStagingAvailable) {
+    if (status === Status.Deleted) {
+      left = context.api.toGitUri(uri, "~");
+      right = context.api.toGitUri(uri, SCM_EMPTY);
+    } else if (status === Status.Untracked || status === Status.IntentToAdd || status === Status.Modified && right) {
+      left = context.api.toGitUri(right ?? uri, "~");
+    }
+  }
   if (action === "compareWorkspace") {
     const main = context.repository.state.worktrees?.find(worktree => worktree.main);
     const path = relativeFile(context.repository.rootUri.fsPath, uri.fsPath);

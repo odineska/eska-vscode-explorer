@@ -34,6 +34,7 @@ try {
     "workbench.startupEditor": "none", "onboarding.enabled": false,
     "telemetry.telemetryLevel": "off", "extensions.autoUpdate": false,
     "extensions.autoCheckUpdates": false, "update.mode": "none",
+    ...(basename(suite) === "scm-lines-host.cjs" ? { "git.enabled": false, "eska.explorer.scm.mode": "eska" } : {}),
     ...(["scm-view-host.cjs", "scm-host.cjs", "decorations-host.cjs", "project-commands-host.cjs", "support-visual-host.cjs"].includes(basename(suite))
       ? { "eska.explorer.scm.mode": "both" } : {}),
   }));
@@ -301,6 +302,10 @@ try {
   }
   let workspace = workspaceFolder;
   let secondFixture;
+  if (basename(suite) === "scm-lines-host.cjs") {
+    // Discovery happens at activation; the repository must exist before the host starts.
+    await run("git", ["init"], { cwd: fixture.root });
+  }
   if (basename(suite) === "scm-diff-restore-host.cjs") {
     const git = (...args) => run("git", args, { cwd: fixture.root });
     const original = await readFile(fixture.module);

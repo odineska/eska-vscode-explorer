@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@babel/core": "8.1.2",
+    "@joaomoreno/unique-names-generator": "5.2.0",
     "@solidjs/babel-plugin": "2.0.1",
     "@solidjs/web": "2.0.1",
     "@types/node": "22.20.5",
@@ -513,6 +514,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "eska.explorer.scm.stageLines",
+        "title": "%scmStageLines%",
+        "category": "ESKA",
+        "icon": "$(add)"
+      },
+      {
         "command": "eska.explorer.scm.unstage",
         "title": "%scmUnstage%",
         "category": "ESKA",
@@ -687,6 +694,11 @@
     },
     "menus": {
       "editor/title": [
+        {
+          "command": "eska.explorer.scm.stageLines",
+          "when": "isInDiffEditor && eska.scmCanStageLines",
+          "group": "navigation@3"
+        },
         {
           "command": "eska.explorer.queryConstructor",
           "when": "resourceScheme == eska-query && resourceExtname == .sdbl",
@@ -975,6 +987,10 @@
           "when": "false"
         },
         {
+          "command": "eska.explorer.scm.stageLines",
+          "when": "isInDiffEditor && eska.scmCanStageLines"
+        },
+        {
           "command": "eska.explorer.scm.unstage",
           "when": "false"
         },
@@ -1072,6 +1088,11 @@
         }
       ],
       "editor/context": [
+        {
+          "command": "eska.explorer.scm.stageLines",
+          "when": "isInDiffEditor && eska.scmCanStageLines",
+          "group": "modification@1"
+        },
         {
           "command": "eska.explorer.editBslQuery",
           "when": "editorLangId == bsl && (resourceScheme == file || resourceScheme == eska-protected)",

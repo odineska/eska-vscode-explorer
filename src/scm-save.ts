@@ -11,7 +11,7 @@ import { findTool } from "./tooling/inspect.js";
 export interface ScmSaveScope extends ProjectCommandTarget {
   repositoryRoot: string;
   validate(): void;
-  refresh(): Promise<void>;
+  refresh(): Promise<"all" | "staged">;
   acceptMessage?(message: string): void;
 }
 
@@ -75,11 +75,13 @@ export async function saveScmScope(scope: ScmSaveScope, input: string): Promise<
   const executable = await findTool("eska", "eska", directory)
     ?? await findTool("eska-vcs", "eska-vcs", directory);
   if (!executable) throw new Error(text("scmSaveMissing"));
-  const args = projectArgs(scope.root, "save", ...(scope.workspace ? ["--workspace"] : []), `--message=${commitMessage}`);
   if (!await belongsToRepository(scope).catch(() => false)) throw new Error(text("scmChanged"));
-  await scope.refresh();
+  const staged = await scope.refresh() === "staged";
   preflight();
+  const args = projectArgs(scope.root, "save", ...(scope.workspace ? ["--workspace"] : []),
+    ...(staged ? ["--staged"] : []), `--message=${commitMessage}`);
   const { code, diagnostic } = await runSave(executable, args, scope.root);
+  if (staged && code === 2) throw new ScmSaveError(text("scmSaveStagedNeedsUpdate"), diagnostic);
   if (code !== 0) throw new ScmSaveError(text("scmSaveFailed", code === undefined ? "?" : String(code)), diagnostic);
   return true;
 }

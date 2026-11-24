@@ -72,7 +72,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     commands: { registerCommand: (name, callback) => { registered.set(name, callback); return disposable; },
       executeCommand: async (...args) => { invoked.push(args); } } };
   const fileActions = load('scm-file-actions', { vscode }, { Error });
-  const observed = new Map(), monitor = { targets: [] }, save = { calls: [], run: async () => true };
+  const observed = new Map(), monitor = { targets: [] }, save = { calls: [], modes: [], run: async () => true };
   class ScmMonitors {
     constructor(changed) { monitor.update = (root, snapshot) => { observed.set(root, snapshot); changed(root); }; }
     synchronize(targets) { monitor.targets = targets; }
@@ -80,10 +80,10 @@ function setup(repositories = [repository()], trees = [context()]) {
     restart() {}
     dispose() {}
   }
-  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions,
+  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions, './scm-line-staging.js': {},
     './scm-monitor.js': { ScmMonitors }, './scm-save.js': { ScmSaveError: class extends Error {}, async saveScmScope(scope, input) {
       scope.validate(); save.calls.push([scope, input]); const saved = await save.run(scope, input);
-      if (saved) { await scope.refresh(); scope.validate(); }
+      if (saved) { save.modes.push(await scope.refresh()); scope.validate(); }
       return saved;
     } } }, { Error });
   const provider = new MetadataChanges({ extensionUri: uri(resolve('.')) }, git, () => 'ru-RU', async () => {}, () => {});
@@ -469,7 +469,7 @@ test('one Git observer follows enablement, repository lifetime and disposal with
   const extension = { enabled: true, onDidChangeEnablement: enabled.event, getAPI: () => api };
   const { GitRepositories } = load('git-api', {
     vscode: { EventEmitter, extensions: { getExtension: () => ({ activate: async () => extension }) } },
-    './scm-repository.js': {}, './scm-monitor.js': { ScmMonitors: class { dispose() {} } },
+    './scm-repository.js': {}, './scm-branches.js': {}, './scm-monitor.js': { ScmMonitors: class { dispose() {} } },
   }, { AbortController });
   const observer = new GitRepositories(); await new Promise(resolve => setImmediate(resolve));
   const facade = observer.api; assert.deepEqual(Array.from(facade.repositories), [repo]); assert.equal(state.callbacks.size, 1);
@@ -646,6 +646,31 @@ test('failed initial native status cancels before scope or message prompts and p
   assert.deepEqual(h.errors, ['initial status failed']);
   assert.equal(h.save.calls.length, 0);
   assert.equal(repo.inputBox.value, 'Existing draft');
+});
+
+test('commit uses scoped staging from the panel or either refresh, even if a staged row disappears', async t => {
+  const repositoryRoot = resolve('save parent'), project = join(repositoryRoot, 'project');
+  const inside = change('src/selected.bsl', Status.IndexModified, 'src/selected.bsl', project);
+  const outside = change('sibling.bsl', Status.IndexModified, 'sibling.bsl', repositoryRoot);
+  const rename = change('sibling.bsl', Status.IndexRenamed, 'project/old.bsl', repositoryRoot);
+  for (const [seen, initial, final, expected] of [
+    [[outside], [outside], [outside], 'all'],
+    [[inside], [], [], 'staged'],
+    [[], [inside], [], 'staged'],
+    [[], [], [inside], 'staged'],
+    [[], [rename], [rename], 'staged'],
+  ]) {
+    const repo = repository(repositoryRoot, [change('edit', Status.Modified, 'edit', project)]);
+    repo.state.indexChanges = seen;
+    const h = setup([repo], [context(project)]);
+    t.after(() => h.provider.dispose());
+    await h.ready();
+    const statuses = [initial, final];
+    repo.status = async () => { repo.state.indexChanges = statuses.shift() ?? final; };
+    await h.commit(h.snapshot().repositories[0].key, 'Commit visible selection', 1, 1);
+    assert.deepEqual(h.save.modes, [expected]);
+    assert.deepEqual(h.errors, []);
+  }
 });
 
 test('ordinary Git status does not invalidate an action in the ESKA panel', async t => {

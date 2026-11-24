@@ -24,7 +24,7 @@ function setup({ language = 'ru', input, tools = ['facade'], exit = 0, diagnosti
   };
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', {})(
     name => mocks[name] ?? require(name), module, module.exports);
-  const scope = { root, repositoryRoot: root, executable: join(root, 'bin', 'eska-project'), validate() { state.validates++; }, async refresh() {} };
+  const scope = { root, repositoryRoot: root, executable: join(root, 'bin', 'eska-project'), validate() { state.validates++; }, async refresh() { return 'all'; } };
   return { state, calls, probes, prompts, scope, save: value => module.exports.saveScmScope(scope, value) };
 }
 
@@ -53,6 +53,25 @@ test('missing facade falls back to vcs, while failed facade is never retried', a
   assert.equal(failed.calls.length, 1); assert.equal(failed.probes.length, 1);
   const missing = setup({ tools: [] });
   await assert.rejects(missing.save('message'), /eska-vcs/); assert.equal(missing.calls.length, 0);
+});
+
+test('staged save passes the same strict option through the facade and standalone VCS', async () => {
+  for (const tools of [['facade'], [undefined, 'vcs']]) {
+    const h = setup({ tools });
+    h.scope.workspace = true;
+    h.scope.refresh = async () => 'staged';
+    assert.equal(await h.save('prepared'), true);
+    assert.deepEqual(Array.from(h.calls[0][1].slice(4)), ['save', '--workspace', '--staged', '--message=prepared']);
+  }
+});
+
+test('an old CLI rejecting --staged reports the upgrade and never retries an unrestricted save', async () => {
+  const h = setup({ language: 'en', tools: ['old facade', 'vcs'], exit: 2, diagnostic: 'unexpected argument' });
+  h.scope.refresh = async () => 'staged';
+  await assert.rejects(h.save('keep draft'), /Update ESKA/);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.probes.length, 1);
+  assert.ok(h.calls[0][1].includes('--staged'));
 });
 
 test('prompt validates whitespace and cancellation does not discover or run tools', async () => {
@@ -123,6 +142,7 @@ test('final native refresh follows input and tool discovery and failure preserve
       events.push('refresh');
       assert.equal(h.calls.length, 0);
       if (fail) throw new Error('native status failed');
+      return 'all';
     };
     if (fail) await assert.rejects(h.save(''), /native status failed/);
     else assert.equal(await h.save(''), true);
