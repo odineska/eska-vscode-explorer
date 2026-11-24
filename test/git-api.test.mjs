@@ -77,12 +77,16 @@ test('failed snapshot, missing mutations and explicit Git opt outs never close n
     await owner.releaseScm(); owner.dispose();
   }
 });
-test('provides independent SCM without native extension and avoids repeated probes/status', async () => {
-  const { owner, calls, settled, EskaRepository, Uri } = setup({ nativeAvailable: false });
+test('provides independent SCM and branch switching in both mode without the native extension', async () => {
+  const { owner, calls, commands, setPick, settled, EskaRepository, Uri } = setup({ nativeAvailable: false });
   const projects = [{ root: '/repo', projectExecutable: '/project', mode: 'both' }];
   owner.setScmProjects(projects); await settled(); owner.setScmProjects(projects); await settled();
   assert.ok(owner.repositories[0] instanceof EskaRepository); assert.equal(calls.filter(call => call[0] === 'status').length, 0);
   assert.equal(owner.api.toGitUri(Uri.file('/repo/file'), 'HEAD').scheme, 'eska-scm');
+  assert.equal(owner.repositories[0].branchStatusEnabled, true);
+  setPick('feature');
+  await commands.get('eska.explorer.scm.checkout')('/repo');
+  assert.deepEqual(calls.at(-1), ['checkout', '/repo', 'feature']);
   await owner.releaseScm(); owner.dispose();
 });
 test('manually closed native roots still have ESKA SCM and are never reopened', async () => {

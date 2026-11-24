@@ -163,7 +163,7 @@ export class GitRepositories implements vscode.Disposable {
     if (typeof root !== "string") return;
     const key = sourceKey(root), repository = this.own.get(key), generation = this.generation;
     const active = (): boolean => !this.disposed && !this.releasing && generation === this.generation && vscode.workspace.isTrusted !== false
-      && this.own.get(key) === repository && this.visible.get(key) === repository && this.modes.get(key) === "eska"
+      && this.own.get(key) === repository && this.visible.get(key) === repository
       && repository?.branchStatusEnabled === true;
     if (!repository || !active()) return;
     try {
@@ -369,7 +369,10 @@ export class GitRepositories implements vscode.Disposable {
       this.watches.get(previous)?.dispose(); this.watches.delete(previous); this.closed.fire(previous);
     }
     this.visible = next;
-    for (const [key, repository] of this.own) repository.setBranchStatus(!this.releasing && this.modes.get(key) === "eska" && next.get(key) === repository);
+    for (const [key, repository] of this.own) {
+      const mode = this.modes.get(key);
+      repository.setBranchStatus(!this.releasing && (mode === "eska" || mode === "both") && next.get(key) === repository);
+    }
     for (const repository of next.values()) if (!this.watches.has(repository)) {
       this.watches.set(repository, repository.state.onDidChange(() => {
         this.readers.get(sourceKey(repository.rootUri.fsPath))?.invalidateContent(); this.changed.fire(repository);

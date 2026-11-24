@@ -257,6 +257,13 @@ exports.run = async function () {
         await git(fixture.root, 'branch', 'host-status-git-disabled');
         await pickBranch('host-status-git-disabled');
         await pickBranch(originalBranch);
+        await setMode('both');
+        await expectOwners([], true);
+        await expectBranch(originalBranch);
+        await pickBranch('host-status-git-disabled');
+        await pickBranch(originalBranch);
+        await setMode('eska');
+        await expectOwners([], true);
         if (process.platform === 'linux') assert.equal((await monitors()).length, 1, 'Git disabled retains one monitor');
         await fs.writeFile(fixture.module, changed);
         await until(async () => !(await hasModule()), 'ESKA independent clean snapshot with Git disabled');
