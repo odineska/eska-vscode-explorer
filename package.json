@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@babel/core": "8.1.2",
+    "@joaomoreno/unique-names-generator": "5.2.0",
     "@solidjs/babel-plugin": "2.0.1",
     "@solidjs/web": "2.0.1",
     "@types/node": "22.20.5",

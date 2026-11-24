@@ -33,13 +33,14 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
       closedRoots.add(path);
       const i = repositories.findIndex(value => value.rootUri.fsPath === path); if (i >= 0) close.fire(repositories.splice(i, 1)[0]);
     } } };
-  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true, lineStagingAvailable = false) { Object.assign(this, repo(root), { executable, mutationsAvailable, branchesAvailable, cacheBlobs, lineStagingAvailable });
+  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true, lineStagingAvailable = false, branchActionsAvailable = false) { Object.assign(this, repo(root), { executable, mutationsAvailable, branchesAvailable, cacheBlobs, lineStagingAvailable, branchActionsAvailable });
     const changed = new Emitter(); this.onDidChangeInput = changed.event; let draft = '';
     this.inputBox = { get value() { return draft; }, set value(value) { draft = value; changed.fire(value); } };
   } async branches() { return ['main', 'feature']; } async checkout(branch) { calls.push(['checkout', this.rootUri.fsPath, branch]); } invalidateContent() {} setBranchStatus(value) { this.branchStatusEnabled = value; } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }
   const url = new URL('../out/git-api.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, AbortController, setTimeout, clearTimeout, queueMicrotask })(name => {
     if (name === 'vscode') return vscode;
+    if (name === './scm-branches.js') return {};
     if (name === './scm-monitor.js') return { ScmMonitors: class { snapshots = new Map(); constructor(changed) { this.changed = changed; monitor = this; } synchronize(targets) { for (const target of targets) { if (!this.snapshots.has(target.root)) { if (!fail) this.snapshots.set(target.root, {}); queueMicrotask(() => this.changed(target.root)); } } } get(root) { return this.snapshots.get(root); } dispose() {} } };
     if (name === './source.js') return { sourceKey: path => path };
     if (name === './scm-repository.js') return { EskaRepository, EskaScmFileSystemProvider: class { constructor(resolve) { resolveReader = resolve; } dispose() {} }, SCM_SCHEME: 'eska-scm', SCM_CHECKOUT: 'eska.explorer.scm.checkout',

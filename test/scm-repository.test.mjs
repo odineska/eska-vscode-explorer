@@ -283,3 +283,16 @@ test('blob reads retry against the restored owner when a mode transition dispose
   assert.equal(Buffer.from(await read).toString(), 'a'); assert.equal(calls.length, 2);
   provider.dispose(); fallback.dispose();
 });
+test('extended branch bridge is capability gated and uses typed literal arguments', async () => {
+  const { EskaRepository, calls } = load(false, undefined, args => args[3] === 'scm-refs' ? { refs: [{ name: 'origin/topic', kind: 'remote' }] } : {});
+  const root = resolve('repo');
+  const old = new EskaRepository(root, '/bin/eska-vcs', key => key, true, true);
+  await assert.rejects(old.branchRefs(), /scmBranchUpdateRequired/);
+  await assert.rejects(old.branchAction({ target: { name: 'HEAD', kind: 'head' }, branch: 'new' }), /scmBranchUpdateRequired/);
+  assert.equal(calls.length, 0);
+  const repo = new EskaRepository(root, '/bin/eska-vcs', key => key, true, true, true, false, true);
+  assert.equal((await repo.branchRefs())[0].kind, 'remote');
+  await repo.branchAction({ target: { name: 'origin/topic', kind: 'remote' }, branch: 'new/ветка' });
+  assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-switch', '--kind', 'remote', '--branch', 'new/ветка', '--', 'origin/topic']);
+  assert.equal(calls[2][3], 'scm-status');
+});

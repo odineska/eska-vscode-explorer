@@ -469,7 +469,7 @@ test('one Git observer follows enablement, repository lifetime and disposal with
   const extension = { enabled: true, onDidChangeEnablement: enabled.event, getAPI: () => api };
   const { GitRepositories } = load('git-api', {
     vscode: { EventEmitter, extensions: { getExtension: () => ({ activate: async () => extension }) } },
-    './scm-repository.js': {}, './scm-monitor.js': { ScmMonitors: class { dispose() {} } },
+    './scm-repository.js': {}, './scm-branches.js': {}, './scm-monitor.js': { ScmMonitors: class { dispose() {} } },
   }, { AbortController });
   const observer = new GitRepositories(); await new Promise(resolve => setImmediate(resolve));
   const facade = observer.api; assert.deepEqual(Array.from(facade.repositories), [repo]); assert.equal(state.callbacks.size, 1);

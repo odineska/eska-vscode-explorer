@@ -10,6 +10,7 @@ import { relativeFile } from "./reveal.js";
 import { findTool } from "./tooling/inspect.js";
 import { runtimeJson } from "./runtime-tools.js";
 import type { MessageKey } from "./messages.js";
+import { parseBranchRefs, type BranchRef, type BranchAction } from "./scm-branch-model.js";
 
 export const SCM_SCHEME = "eska-scm";
 export const SCM_CHECKOUT = "eska.explorer.scm.checkout";
@@ -27,6 +28,7 @@ class ScmBridgeError extends Error {
 }
 const bridgeErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
   git_unavailable: "scmBranchGitUnavailable", branch_invalid: "scmBranchInvalid", branch_not_found: "scmBranchMissing",
+  branch_exists: "scmBranchExists",
   references: "scmBranchReferences", checkout_failed: "scmBranchCheckoutFailed",
 };
 const lineStageErrors: Readonly<Record<string, MessageKey | undefined>> = {
@@ -47,7 +49,7 @@ export async function scmBridge(executable: string, root: string, operation: str
 
 /** Discover the Git root through a read-only backend capability probe. */
 export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{
-  root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; lineStagingAvailable: boolean;
+  root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; lineStagingAvailable: boolean; branchActionsAvailable: boolean;
 } | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
@@ -57,7 +59,8 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     const root = nativePath({ value: data.root, encoding: data.root_encoding as "utf-8" | "percent" | "utf-16-percent" });
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
     return { root, executable, mutationsAvailable: data.mutations_available === true,
-      branchesAvailable: data.branches_available === true, lineStagingAvailable: data.line_staging_available === true };
+      branchesAvailable: data.branches_available === true, lineStagingAvailable: data.line_staging_available === true,
+      branchActionsAvailable: data.branch_actions_available === true };
   } catch { return; }
 }
 
@@ -86,7 +89,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
   constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false,
-    private readonly cacheBlobs = true, readonly lineStagingAvailable = false) {
+    private readonly cacheBlobs = true, readonly lineStagingAvailable = false, readonly branchActionsAvailable = false) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -144,13 +147,26 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
     return names;
   }
   async checkout(branch: string): Promise<void> {
+    return this.switchBranch("scm-checkout", ["--", branch]);
+  }
+  async branchRefs(): Promise<BranchRef[]> {
+    if (!this.branchActionsAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    return parseBranchRefs(await this.request("scm-refs"));
+  }
+  async branchAction(action: BranchAction): Promise<void> {
+    if (!this.branchActionsAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    return this.switchBranch("scm-switch", ["--kind", action.target.kind,
+      ...(action.branch === undefined ? [] : ["--branch", action.branch]),
+      ...(action.detached ? ["--detached"] : []), "--", action.target.name]);
+  }
+  private async switchBranch(operation: string, args: string[]): Promise<void> {
     if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
     if (this.pending) await this.pending;
     if (this.writing) throw new Error(this.text("scmChanged"));
     this.writing = true;
     const task = async (): Promise<void> => {
       try {
-        try { await this.request("scm-checkout", ["--", branch]); }
+        try { await this.request(operation, args); }
         catch (cause) {
           try { await this.refreshStatus(); } catch { /* Preserve the checkout failure. */ }
           throw cause;
