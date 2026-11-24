@@ -185,6 +185,7 @@
   "scmRevealOs": "Reveal in File Manager",
   "scmRevealExplorer": "Reveal in Explorer View",
   "scmCompareWorkspace": "Compare with Workspace",
+  "scmCheckout": "Switch Branch",
   "scmCommit": "Commit",
   "scmStageAll": "Stage All Changes",
   "scmStageAllTracked": "Stage All Tracked Changes",

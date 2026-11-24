@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { dirname, isAbsolute, join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { Status } from "./git-status.js";
 import type { GitRepository } from "./git-api.js";
 import { parseScmSnapshot, type ScmMonitorSnapshot } from "./scm-monitor.js";
@@ -11,6 +11,7 @@ import { runtimeJson } from "./runtime-tools.js";
 import type { MessageKey } from "./messages.js";
 
 export const SCM_SCHEME = "eska-scm";
+export const SCM_CHECKOUT = "eska.explorer.scm.checkout";
 type Text = (key: MessageKey, ...values: string[]) => string;
 type Revision = "head" | "index" | "base" | "ours" | "theirs";
 
@@ -23,7 +24,7 @@ export async function scmBridge(executable: string, root: string, operation: str
 }
 
 /** Discover the Git root through a read-only backend capability probe. */
-export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{ root: string; executable: string; mutationsAvailable: boolean } | undefined> {
+export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{ root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean } | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
     if (!executable || signal?.aborted) return;
@@ -31,7 +32,7 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     if (typeof data.root !== "string" || !["utf-8", "percent", "utf-16-percent"].includes(String(data.root_encoding))) return;
     const root = nativePath({ value: data.root, encoding: data.root_encoding as "utf-8" | "percent" | "utf-16-percent" });
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
-    return { root, executable, mutationsAvailable: data.mutations_available === true };
+    return { root, executable, mutationsAvailable: data.mutations_available === true, branchesAvailable: data.branches_available === true };
   } catch { return; }
 }
 
@@ -47,6 +48,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   private readonly closed = new vscode.EventEmitter<void>();
   readonly onDidDispose = this.closed.event;
   private current: ScmMonitorSnapshot | undefined;
+  private sourceControl: vscode.SourceControl | undefined;
+  get branchStatusEnabled(): boolean { return this.sourceControl !== undefined; }
   private pending: Promise<void> | undefined;
   private deferred: ScmMonitorSnapshot | undefined;
   private writing = false;
@@ -56,7 +59,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   private stamp = Date.now();
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
-  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true) {
+  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -77,6 +80,60 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       onDidChange: this.changed.event,
     };
   }
+  /** Let VS Code select the active repository's status without another file watcher. */
+  setBranchStatus(enabled: boolean): void {
+    if (!enabled || this.abort.signal.aborted) {
+      this.sourceControl?.dispose(); this.sourceControl = undefined; return;
+    }
+    if (!this.sourceControl) {
+      this.sourceControl = vscode.scm.createSourceControl("eska", `ESKA: ${basename(this.rootUri.fsPath)}`, this.rootUri);
+      this.sourceControl.inputBox.visible = false;
+    }
+    this.updateBranchStatus();
+  }
+  private updateBranchStatus(): void {
+    if (!this.sourceControl) return;
+    const snapshot = this.current;
+    this.sourceControl.statusBarCommands = snapshot ? [{
+      command: SCM_CHECKOUT,
+      title: snapshot.branch ? `$(git-branch) ${snapshot.branch}` : `$(git-commit) ${snapshot.commit?.slice(0, 7) ?? this.text("scmBranchUnborn")}`,
+      tooltip: `${this.text("scmCheckout")} — ${this.rootUri.fsPath}`,
+      arguments: [this.rootUri.fsPath],
+    }] : [];
+  }
+  async branches(): Promise<string[]> {
+    if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    const data = await this.request("scm-branches");
+    if (!Array.isArray(data.branches)) throw new Error(this.text("scmFailed"));
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (const branch of data.branches) {
+      if (!isRecord(branch) || typeof branch.name !== "string" || !["utf-8", "percent"].includes(String(branch.name_encoding))) throw new Error(this.text("scmFailed"));
+      // Git permits non-UTF-8 refs on Unix, but checkout's argument is UTF-8.
+      if (branch.name_encoding !== "utf-8") continue;
+      if (!branch.name || /[\x00-\x20\x7f]/.test(branch.name) || seen.has(branch.name)) throw new Error(this.text("scmFailed"));
+      seen.add(branch.name); names.push(branch.name);
+    }
+    return names;
+  }
+  async checkout(branch: string): Promise<void> {
+    if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    if (this.pending) await this.pending;
+    if (this.writing) throw new Error(this.text("scmChanged"));
+    this.writing = true;
+    const task = async (): Promise<void> => {
+      try {
+        try { await this.request("scm-checkout", ["--", branch]); }
+        catch (cause) {
+          try { await this.refreshStatus(); } catch { /* Preserve the checkout failure. */ }
+          throw cause;
+        }
+        await this.refreshStatus();
+      } finally { this.writing = false; this.mutation = undefined; }
+    };
+    this.mutation = task();
+    await this.mutation;
+  }
   private get untrackedMode(): string {
     return vscode.workspace.getConfiguration("git", this.rootUri).get<string>("untrackedChanges", "mixed");
   }
@@ -89,7 +146,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
     if (this.abort.signal.aborted || snapshot === this.current) return;
     this.blobs.clear(); this.cachedBytes = 0;
     this.stamp = Math.max(Date.now(), this.stamp + 1);
-    this.current = snapshot; this.changed.fire();
+    this.current = snapshot; this.updateBranchStatus(); this.changed.fire();
   }
   status(): Promise<void> {
     return this.mutation ?? this.refreshStatus();
@@ -221,6 +278,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
     return request;
   }
   dispose(): void {
+    this.setBranchStatus(false);
     this.abort.abort(); this.blobs.clear(); this.closed.fire(); this.closed.dispose();
     this.changed.dispose(); this.inputChanged.dispose();
   }

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { relative, isAbsolute } from "node:path";
 import type { MessageKey } from "./messages.js";
-import { discoverScmRoot, EskaRepository, EskaScmFileSystemProvider, SCM_SCHEME } from "./scm-repository.js";
+import { discoverScmRoot, EskaRepository, EskaScmFileSystemProvider, SCM_SCHEME, SCM_CHECKOUT } from "./scm-repository.js";
 import { ScmMonitors } from "./scm-monitor.js";
 import { sourceKey } from "./source.js";
 
@@ -30,7 +30,7 @@ interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<b
 
 export type ScmMode = "eska" | "vscode" | "both";
 export interface ScmProject { root: string; projectExecutable: string; mode: ScmMode }
-interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; supported: boolean; projects: ScmProject[] }
+interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; supported: boolean; projects: ScmProject[] }
 type Text = (key: MessageKey, ...values: string[]) => string;
 const RECOVERY_KEY = "eska.scm.closedRepositories.v1";
 export function containsScmRoot(root: string, path: string): boolean {
@@ -103,11 +103,40 @@ export class GitRepositories implements vscode.Disposable {
     }
     const provider = new EskaScmFileSystemProvider(root => this.own.get(sourceKey(root)));
     this.subscriptions.push(provider, vscode.workspace.registerFileSystemProvider(SCM_SCHEME, provider, { isReadonly: true, isCaseSensitive: process.platform !== "win32" }),
+      vscode.commands.registerCommand(SCM_CHECKOUT, (root: unknown) => this.checkout(root)),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("git.enabled") || event.affectsConfiguration("git.ignoredRepositories")) this.schedule();
       }), vscode.workspace.onDidChangeWorkspaceFolders(() => this.schedule()),
       vscode.workspace.onDidGrantWorkspaceTrust(() => this.schedule()));
     this.schedule();
+  }
+  private async checkout(root: unknown): Promise<void> {
+    if (typeof root !== "string") return;
+    const key = sourceKey(root), repository = this.own.get(key), generation = this.generation;
+    const active = (): boolean => !this.disposed && !this.releasing && generation === this.generation && vscode.workspace.isTrusted !== false
+      && this.own.get(key) === repository && this.visible.get(key) === repository && this.modes.get(key) === "eska"
+      && repository?.branchStatusEnabled === true;
+    if (!repository || !active()) return;
+    try {
+      const branches = await repository.branches();
+      if (!active()) return;
+      if (!branches.length) { void vscode.window.showInformationMessage(this.text("scmBranchEmpty")); return; }
+      const branch = await vscode.window.showQuickPick(branches.map(name => ({ label: name, name,
+        ...(name === repository.state.HEAD?.name ? { description: this.text("scmBranchCurrent") } : {}) })), {
+        title: `${this.text("scmCheckout")} — ${repository.rootUri.fsPath}`,
+        placeHolder: this.text("scmBranchSelect"),
+      });
+      // A picker can outlive its repository or an ownership/mode transition.
+      if (!branch || !active() || !branches.includes(branch.name)) return;
+      if (branch.name === repository.state.HEAD?.name) return;
+      const dirty = vscode.workspace.textDocuments.some(document => document.isDirty && document.uri.scheme === "file"
+        && containsScmRoot(repository.rootUri.fsPath, document.uri.fsPath));
+      if (dirty) { void vscode.window.showWarningMessage(this.text("scmBranchDirty")); return; }
+      await repository.checkout(branch.name);
+    } catch (error) {
+      this.log(String(error instanceof Error && error.cause ? error.cause : error));
+      if (active()) void vscode.window.showErrorMessage(repository.branchesAvailable ? this.text("scmFailed") : this.text("scmBranchUpdateRequired"));
+    }
   }
   setScmProjects(projects: readonly ScmProject[]): void {
     const signature = JSON.stringify(projects);
@@ -183,9 +212,9 @@ export class GitRepositories implements vscode.Disposable {
       const key = sourceKey(root), entry = roots.get(key);
       if (entry) {
         entry.projects.push(project);
-        if (target) { entry.supported = true; entry.executable = target.executable; entry.mutationsAvailable = target.mutationsAvailable; }
+        if (target) { entry.supported = true; entry.executable = target.executable; entry.mutationsAvailable = target.mutationsAvailable; entry.branchesAvailable = target.branchesAvailable; }
       } else roots.set(key, { root, executable: target?.executable ?? project.projectExecutable,
-        mutationsAvailable: target?.mutationsAvailable ?? false, supported: target !== undefined, projects: [project] });
+        mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false, supported: target !== undefined, projects: [project] });
     }
     return roots;
   }
@@ -224,9 +253,10 @@ export class GitRepositories implements vscode.Disposable {
       // Git opt-outs affect native recovery/takeover, never independent ESKA SCM.
       const native = this.natives.get(key);
       let repository = this.own.get(key);
-      if (repository && (repository.executable !== target.executable || repository.mutationsAvailable !== target.mutationsAvailable)) { repository.dispose(); this.own.delete(key); repository = undefined; }
+      if (repository && (repository.executable !== target.executable || repository.mutationsAvailable !== target.mutationsAvailable
+        || repository.branchesAvailable !== target.branchesAvailable)) { repository.dispose(); this.own.delete(key); repository = undefined; }
       if (!repository) {
-        repository = new EskaRepository(target.root, target.executable, this.text, target.mutationsAvailable);
+        repository = new EskaRepository(target.root, target.executable, this.text, target.mutationsAvailable, target.branchesAvailable);
         repository.onDidChangeInput(value => {
           this.drafts.set(key, value);
           if (this.recovery.has(target.root)) void this.persist().catch(error => this.log(String(error)));
@@ -286,6 +316,7 @@ export class GitRepositories implements vscode.Disposable {
       this.watches.get(previous)?.dispose(); this.watches.delete(previous); this.closed.fire(previous);
     }
     this.visible = next;
+    for (const [key, repository] of this.own) repository.setBranchStatus(!this.releasing && this.modes.get(key) === "eska" && next.get(key) === repository);
     for (const repository of next.values()) if (!this.watches.has(repository)) {
       this.watches.set(repository, repository.state.onDidChange(() => this.changed.fire(repository))); this.opened.fire(repository);
     }
@@ -324,6 +355,7 @@ export class GitRepositories implements vscode.Disposable {
   }
   async releaseScm(): Promise<void> {
     this.releasing = true; this.generation++; this.abort.abort(); this.monitors.dispose();
+    for (const repository of this.own.values()) repository.setBranchStatus(false);
     await this.pending.catch(error => this.log(String(error)));
     for (const root of [...this.recovery]) {
       try { await this.restore(root, this.own.get(sourceKey(root))?.inputBox.value); } catch (error) { this.log(String(error)); }

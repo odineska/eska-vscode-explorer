@@ -9,14 +9,14 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("base64"), handler) {
   const url = process.env.ESKA_SCM_TEST_OUT_DIR ? pathToFileURL(resolve(process.env.ESKA_SCM_TEST_OUT_DIR, "scm-repository.js")) : new URL('../out/scm-repository.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
-  const calls = [];
+  const calls = [], controls = [];
   class Uri {
     constructor(fsPath, scheme = 'file', query = '', fragment = '') { Object.assign(this, { fsPath, scheme, query, fragment }); }
     static file(path) { return new Uri(path); }
     with(update) { return Object.assign(new Uri(this.fsPath, this.scheme, this.query, this.fragment), update); }
   }
   class EventEmitter { listeners = new Set(); event = fn => { this.listeners.add(fn); return { dispose: () => this.listeners.delete(fn) }; }; fire(value) { for (const fn of this.listeners) fn(value); } dispose() { this.listeners.clear(); } }
-  const vscode = { Uri, EventEmitter, workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) }, Disposable: class { constructor(fn) { this.dispose = fn; } }, FileType: { File: 1 }, FilePermission: { Readonly: 1 }, FileChangeType: { Changed: 1, Deleted: 3 }, FileSystemError: { NoPermissions: () => new Error('readonly'), FileNotFound: () => new Error('missing') } };
+  const vscode = { scm: { createSourceControl(id, label, rootUri) { const control = { id, label, rootUri, inputBox: {}, disposed: false, dispose() { this.disposed = true; } }; controls.push(control); return control; } }, Uri, EventEmitter, workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) }, Disposable: class { constructor(fn) { this.dispose = fn; } }, FileType: { File: 1 }, FilePermission: { Readonly: 1 }, FileChangeType: { Changed: 1, Deleted: 3 }, FileSystemError: { NoPermissions: () => new Error('readonly'), FileNotFound: () => new Error('missing') } };
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, AbortController, Uint8Array })(name => {
     if (name === 'vscode') return vscode;
     if (name === './scm-monitor.js') {
@@ -28,7 +28,7 @@ function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("b
     if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); return { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data: handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {} }; } };
     return require(name);
   }, module, module.exports);
-  return { ...module.exports, vscode, calls };
+  return { ...module.exports, vscode, calls, controls };
 }
 test('maps HEAD/index and all conflict stages without silently accepting revisions', () => {
   const { revisionForRef } = load();
@@ -160,4 +160,39 @@ test('resident event during writes is superseded by post-write status and not lo
   const root = resolve('repo'), repo = new EskaRepository(root, '/bin/eska-vcs', key => key);
   const write = repo.add([resolve(root, 'a')]); repo.accept(snapshot('b')); release(new Error('failed'));
   await assert.rejects(write); assert.equal(repo.state.HEAD.commit, 'c'.repeat(40)); repo.dispose();
+});
+
+
+test('branch status follows resident HEAD, uses exact root and disposes without any status requests', () => {
+  const { EskaRepository, SCM_CHECKOUT, controls, calls } = load();
+  const root = resolve('repo'), repo = new EskaRepository(root, '/eska-vcs', key => key);
+  repo.accept({ ...snapshot('a'), head: 'attached' }); repo.setBranchStatus(true);
+  const control = controls[0];
+  assert.equal(control.rootUri.fsPath, root); assert.equal(control.inputBox.visible, false);
+  assert.equal(control.statusBarCommands[0].title, '$(git-branch) main');
+  assert.equal(control.statusBarCommands[0].command, SCM_CHECKOUT);
+  assert.deepEqual(Array.from(control.statusBarCommands[0].arguments), [root]);
+  repo.accept({ ...snapshot('b'), head: 'detached', branch: undefined });
+  assert.equal(control.statusBarCommands[0].title, '$(git-commit) bbbbbbb');
+  repo.accept({ ...snapshot('a'), head: 'unborn', branch: 'new', commit: undefined });
+  assert.equal(control.statusBarCommands[0].title, '$(git-branch) new');
+  repo.setBranchStatus(false); assert.equal(control.disposed, true); assert.equal(repo.branchStatusEnabled, false);
+  repo.setBranchStatus(true); assert.equal(controls.length, 2);
+  repo.dispose(); assert.equal(controls[1].disposed, true); assert.equal(calls.length, 0);
+});
+
+test('branch bridge checks capability and keeps checkout argument literal with one post-write refresh', async () => {
+  const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-branches'
+    ? { branches: [{ name: 'main', name_encoding: 'utf-8' }, { name: 'feature/кириллица', name_encoding: 'utf-8' }, { name: '%FF', name_encoding: 'percent' }] }
+    : snapshot('b'));
+  const root = resolve('repo'), old = new EskaRepository(root, '/eska-vcs', key => key);
+  await assert.rejects(old.branches(), { message: 'scmBranchUpdateRequired' });
+  await assert.rejects(old.checkout('main'), { message: 'scmBranchUpdateRequired' });
+  assert.equal(calls.length, 0); old.dispose();
+  const repo = new EskaRepository(root, '/eska-vcs', key => key, true, true);
+  assert.deepEqual(Array.from(await repo.branches()), ['main', 'feature/кириллица']);
+  await repo.checkout('feature/кириллица');
+  assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-checkout', '--', 'feature/кириллица']);
+  assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1);
+  assert.equal(repo.state.HEAD.commit, 'b'.repeat(40)); repo.dispose();
 });

@@ -560,6 +560,11 @@
         "category": "ESKA"
       },
       {
+        "command": "eska.explorer.scm.checkout",
+        "title": "%scmCheckout%",
+        "category": "ESKA"
+      },
+      {
         "command": "eska.explorer.scm.commit",
         "title": "%scmCommit%",
         "category": "ESKA",
@@ -872,6 +877,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "eska.explorer.scm.checkout",
+          "when": "false"
+        },
         {
           "command": "eska.explorer.scm.compareRevisions",
           "when": "eska.hasProject && !eska.scmNativeOnly"
