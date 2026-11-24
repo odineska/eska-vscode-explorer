@@ -15,10 +15,12 @@ exports.run = async function () {
   let ui;
   try {
     await fs.writeFile(path.join(fixture.root, '.gitignore'), '.eska/\n.vscode/\nhost-result.json\n');
+    await fs.appendFile(path.join(fixture.root, 'eska.toml'), "\n[vcs.workflow]\npreset='trunk'\n");
     await git('init'); await git('add', '.');
     await git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Branch picker fixture');
     const initial = await git('branch', '--show-current');
     await git('branch', 'local-source'); await git('tag', 'tag-source');
+    await git('branch', 'develop'); await git('branch', 'task/develop');
     await git('remote', 'add', 'origin', 'https://example.invalid/branches');
     await git('update-ref', 'refs/remotes/origin/remote-source', 'HEAD');
     await vscode.extensions.getExtension('1c-tooling.eska-explorer').activate();
@@ -75,6 +77,43 @@ exports.run = async function () {
     await until(async () => await git('branch', '--show-current') === 'remote-source', 'remote checkout');
     assert.equal(await git('rev-parse', '--abbrev-ref', '@{upstream}'), 'origin/remote-source');
     await expectBranch('remote-source'); checks.push('remote-tracking-checkout');
+    // Exercise the real status indicator with colliding literal/task names and
+    // separate index/worktree images. Reading durable metadata proves a shelf,
+    // rather than a checkout that happened to retain dirty files.
+    const relativeModule = path.relative(fixture.root, fixture.module).split(path.sep).join('/');
+    const base = await fs.readFile(fixture.module);
+    const staged = Buffer.concat([base, Buffer.from('\r\n// staged shelf bytes\r\n')]);
+    const worktree = Buffer.concat([staged, Buffer.from('// saved worktree bytes: точность\r\n')]);
+    const untracked = path.join(fixture.root, 'shelf-untracked.bsl');
+    const untrackedBytes = Buffer.from('\ufeff// untracked shelf bytes\r\n');
+    await fs.writeFile(fixture.module, staged); await git('add', '--', relativeModule);
+    await fs.writeFile(fixture.module, worktree); await fs.writeFile(untracked, untrackedBytes);
+    await open(); await pick('develop');
+    await until(async () => await git('branch', '--show-current') === 'develop', 'literal develop checkout, not task/develop');
+    await expectBranch('develop');
+    assert.equal(await git('status', '--porcelain'), '', 'target branch has clean index and worktree');
+    assert.deepEqual(await fs.readFile(fixture.module), base);
+    await assert.rejects(fs.stat(untracked), { code: 'ENOENT' });
+    const shelfRoot = path.join(fixture.root, '.git', 'eska-shelves');
+    const shelves = [];
+    for (const id of await fs.readdir(shelfRoot)) {
+      try { shelves.push(JSON.parse(await fs.readFile(path.join(shelfRoot, id, 'metadata.json'), 'utf8')).shelf); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    const shelf = shelves.find(item => Buffer.from(item.branch).toString() === 'refs/heads/remote-source');
+    assert.ok(shelf, 'durable shelf belongs to the actual source branch');
+    assert.ok(shelf.files.some(item => Buffer.from(item.path).toString() === relativeModule));
+    assert.ok(await git('rev-parse', '--verify', `refs/eska/shelves/${shelf.id}`), 'shelf protects real Git objects');
+    checks.push('literal-develop-clean-with-source-shelf');
+    await open(); await pick('remote-source');
+    await until(async () => await git('branch', '--show-current') === 'remote-source', 'return through branch status UI');
+    await expectBranch('remote-source');
+    const indexBytes = (await execFile('git', ['-C', fixture.root, 'show', `:${relativeModule}`], { env: gitEnv, encoding: 'buffer' })).stdout;
+    assert.deepEqual(indexBytes, staged, 'staged blob restored byte for byte');
+    assert.deepEqual(await fs.readFile(fixture.module), worktree, 'saved worktree restored byte for byte');
+    assert.deepEqual(await fs.readFile(untracked), untrackedBytes, 'untracked BSL restored byte for byte');
+    assert.ok((await git('status', '--porcelain', '-z')).split('\0').includes(`MM ${relativeModule}`), 'partial staging remains separate');
+    checks.push('status-ui-return-restores-staged-worktree-untracked-bytes');
     await assertOwners(); checks.push('single-monitor-single-indicator-no-native-duplicate');
     const config = vscode.workspace.getConfiguration('eska.explorer', vscode.Uri.file(fixture.root));
     const oldMode = config.inspect('scm.mode')?.workspaceFolderValue;
