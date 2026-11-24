@@ -185,6 +185,7 @@
   "scmRevealOs": "Показать в файловом менеджере",
   "scmRevealExplorer": "Показать в панели проводника",
   "scmCompareWorkspace": "Сравнить с рабочей областью",
+  "scmCheckout": "Сменить ветку",
   "scmCommit": "Фиксация",
   "scmStageAll": "Хранить все промежуточные изменения",
   "scmStageAllTracked": "Подготовить все отслеживаемые изменения",

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { dirname, isAbsolute, join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { Status } from "./git-status.js";
 import type { GitRepository } from "./git-api.js";
 import { parseScmSnapshot, type ScmMonitorSnapshot } from "./scm-monitor.js";
@@ -11,19 +11,28 @@ import { runtimeJson } from "./runtime-tools.js";
 import type { MessageKey } from "./messages.js";
 
 export const SCM_SCHEME = "eska-scm";
+export const SCM_CHECKOUT = "eska.explorer.scm.checkout";
 type Text = (key: MessageKey, ...values: string[]) => string;
 type Revision = "head" | "index" | "base" | "ours" | "theirs";
+class ScmBridgeError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+const bridgeErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
+  git_unavailable: "scmBranchGitUnavailable", branch_invalid: "scmBranchInvalid", branch_not_found: "scmBranchMissing",
+  references: "scmBranchReferences", checkout_failed: "scmBranchCheckoutFailed",
+};
 
 /** Never interpret human output or invoke a shell for repository operations. */
 export async function scmBridge(executable: string, root: string, operation: string, args: string[] = [], signal?: AbortSignal, input?: unknown): Promise<Record<string, unknown>> {
-  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout: 30_000, maxOutputBytes: MAX_RESPONSE, signal, input });
-  if (!isRecord(value) || value.schema_version !== 1 || value.operation !== operation.replaceAll("-", "_")
-    || value.error !== null || !isRecord(value.data)) throw new Error("Invalid SCM bridge response");
+  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout: 30_000, maxOutputBytes: MAX_RESPONSE, signal, input, resultExitCodes: [1] });
+  if (!isRecord(value) || value.schema_version !== 1 || value.operation !== operation.replaceAll("-", "_")) throw new Error("Invalid SCM bridge response");
+  if (typeof value.error === "string") throw new ScmBridgeError(value.error);
+  if (value.error !== null || !isRecord(value.data)) throw new Error("Invalid SCM bridge response");
   return value.data;
 }
 
 /** Discover the Git root through a read-only backend capability probe. */
-export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{ root: string; executable: string; mutationsAvailable: boolean } | undefined> {
+export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{ root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean } | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
     if (!executable || signal?.aborted) return;
@@ -31,7 +40,7 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     if (typeof data.root !== "string" || !["utf-8", "percent", "utf-16-percent"].includes(String(data.root_encoding))) return;
     const root = nativePath({ value: data.root, encoding: data.root_encoding as "utf-8" | "percent" | "utf-16-percent" });
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
-    return { root, executable, mutationsAvailable: data.mutations_available === true };
+    return { root, executable, mutationsAvailable: data.mutations_available === true, branchesAvailable: data.branches_available === true };
   } catch { return; }
 }
 
@@ -44,9 +53,12 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   readonly onDidChangeInput = this.inputChanged.event;
   private readonly changed = new vscode.EventEmitter<void>();
   private readonly abort = new AbortController();
+  get isDisposed(): boolean { return this.abort.signal.aborted; }
   private readonly closed = new vscode.EventEmitter<void>();
   readonly onDidDispose = this.closed.event;
   private current: ScmMonitorSnapshot | undefined;
+  private sourceControl: vscode.SourceControl | undefined;
+  get branchStatusEnabled(): boolean { return this.sourceControl !== undefined; }
   private pending: Promise<void> | undefined;
   private deferred: ScmMonitorSnapshot | undefined;
   private writing = false;
@@ -56,7 +68,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   private stamp = Date.now();
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
-  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true) {
+  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false,
+    private readonly cacheBlobs = true) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -77,6 +90,60 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       onDidChange: this.changed.event,
     };
   }
+  /** Let VS Code select the active repository's status without another file watcher. */
+  setBranchStatus(enabled: boolean): void {
+    if (!enabled || this.abort.signal.aborted) {
+      this.sourceControl?.dispose(); this.sourceControl = undefined; return;
+    }
+    if (!this.sourceControl) {
+      this.sourceControl = vscode.scm.createSourceControl("eska", `ESKA: ${basename(this.rootUri.fsPath)}`, this.rootUri);
+      this.sourceControl.inputBox.visible = false;
+    }
+    this.updateBranchStatus();
+  }
+  private updateBranchStatus(): void {
+    if (!this.sourceControl) return;
+    const snapshot = this.current;
+    this.sourceControl.statusBarCommands = snapshot ? [{
+      command: SCM_CHECKOUT,
+      title: snapshot.branch ? `$(git-branch) ${snapshot.branch}` : `$(git-commit) ${snapshot.commit?.slice(0, 7) ?? this.text("scmBranchUnborn")}`,
+      tooltip: `${this.text("scmCheckout")} — ${this.rootUri.fsPath}`,
+      arguments: [this.rootUri.fsPath],
+    }] : [];
+  }
+  async branches(): Promise<string[]> {
+    if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    const data = await this.request("scm-branches");
+    if (!Array.isArray(data.branches)) throw new Error(this.text("scmFailed"));
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (const branch of data.branches) {
+      if (!isRecord(branch) || typeof branch.name !== "string" || !["utf-8", "percent"].includes(String(branch.name_encoding))) throw new Error(this.text("scmFailed"));
+      // Git permits non-UTF-8 refs on Unix, but checkout's argument is UTF-8.
+      if (branch.name_encoding !== "utf-8") continue;
+      if (!branch.name || /[\x00-\x20\x7f]/.test(branch.name) || seen.has(branch.name)) throw new Error(this.text("scmFailed"));
+      seen.add(branch.name); names.push(branch.name);
+    }
+    return names;
+  }
+  async checkout(branch: string): Promise<void> {
+    if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    if (this.pending) await this.pending;
+    if (this.writing) throw new Error(this.text("scmChanged"));
+    this.writing = true;
+    const task = async (): Promise<void> => {
+      try {
+        try { await this.request("scm-checkout", ["--", branch]); }
+        catch (cause) {
+          try { await this.refreshStatus(); } catch { /* Preserve the checkout failure. */ }
+          throw cause;
+        }
+        await this.refreshStatus();
+      } finally { this.writing = false; this.mutation = undefined; }
+    };
+    this.mutation = task();
+    await this.mutation;
+  }
   private get untrackedMode(): string {
     return vscode.workspace.getConfiguration("git", this.rootUri).get<string>("untrackedChanges", "mixed");
   }
@@ -87,9 +154,12 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   }
   private publish(snapshot: ScmMonitorSnapshot): void {
     if (this.abort.signal.aborted || snapshot === this.current) return;
+    this.current = snapshot; this.updateBranchStatus(); this.invalidateContent();
+  }
+  invalidateContent(): void {
+    if (this.abort.signal.aborted) return;
     this.blobs.clear(); this.cachedBytes = 0;
-    this.stamp = Math.max(Date.now(), this.stamp + 1);
-    this.current = snapshot; this.changed.fire();
+    this.stamp = Math.max(Date.now(), this.stamp + 1); this.changed.fire();
   }
   status(): Promise<void> {
     return this.mutation ?? this.refreshStatus();
@@ -190,7 +260,10 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       const data = await scmBridge(this.executable, this.rootUri.fsPath, operation, args, this.abort.signal, input);
       if (this.abort.signal.aborted) throw new Error(this.text("scmChanged"));
       return data;
-    } catch (cause) { throw new Error(this.text("scmFailed"), { cause }); }
+    } catch (cause) {
+      const key = cause instanceof ScmBridgeError && Object.hasOwn(bridgeErrorMessages, cause.code) ? bridgeErrorMessages[cause.code] : undefined;
+      throw new Error(this.text(key ?? "scmFailed"), { cause });
+    }
   }
   toGitUri(uri: vscode.Uri, ref: string): vscode.Uri {
     this.path(uri);
@@ -208,7 +281,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       // Native decoding plus canonical re-encoding is linear and has no regexp backtracking stack.
       const bytes = Buffer.from(data.content, "base64");
       if (bytes.length > 33_554_432 || bytes.toString("base64") !== data.content) throw new Error(this.text("scmFailed"));
-      if (this.blobs.get(key) === request) {
+      if (this.cacheBlobs && this.blobs.get(key) === request) {
         this.cachedBytes += bytes.length;
         if (this.cachedBytes > 33_554_432) {
           this.blobs.clear(); this.cachedBytes = bytes.length; this.blobs.set(key, request);
@@ -217,10 +290,12 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       return bytes;
     });
     this.blobs.set(key, request);
-    void request.catch(() => { if (this.blobs.get(key) === request) this.blobs.delete(key); });
+    const remove = (): void => { if (this.blobs.get(key) === request) this.blobs.delete(key); };
+    void request.then(() => { if (!this.cacheBlobs) remove(); }, remove);
     return request;
   }
   dispose(): void {
+    this.setBranchStatus(false);
     this.abort.abort(); this.blobs.clear(); this.closed.fire(); this.closed.dispose();
     this.changed.dispose(); this.inputChanged.dispose();
   }
@@ -242,17 +317,19 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
   private readonly changes = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.changes.event;
   private readonly repositories = new Map<EskaRepository, { subscription: vscode.Disposable; uris: Map<string, vscode.Uri> }>();
-  constructor(private readonly resolve: (root: string) => EskaRepository | undefined) {}
+  constructor(private readonly resolve: (root: string) => EskaRepository | undefined | Promise<EskaRepository | undefined>) {}
   watch(): vscode.Disposable { return new vscode.Disposable(() => {}); }
-  private target(uri: vscode.Uri): { repository: EskaRepository; revision: Revision; file: vscode.Uri } {
+  private async target(uri: vscode.Uri): Promise<{ repository: EskaRepository; revision: Revision; file: vscode.Uri }> {
     try {
       if (uri.scheme !== SCM_SCHEME || uri.fragment) throw new Error();
       const query: unknown = JSON.parse(uri.query);
-      if (!isRecord(query) || typeof query.root !== "string" || !["head", "index", "base", "ours", "theirs"].includes(String(query.revision))) throw new Error();
-      const repository = this.resolve(query.root);
-      if (!repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(query.root)) throw new Error();
+      if (!isRecord(query) || typeof query.root !== "string" || !isAbsolute(query.root) || query.root.includes("\0")
+        || !["head", "index", "base", "ours", "theirs"].includes(String(query.revision))) throw new Error();
       const file = uri.with({ scheme: "file", query: "", fragment: "" });
-      if (!relativeFile(repository.rootUri.fsPath, file.fsPath)) throw new Error();
+      if (!relativeFile(query.root, file.fsPath)) throw new Error();
+      const repository = await this.resolve(query.root);
+      if (!repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(query.root)) throw new Error();
+      if (repository.isDisposed) return { repository, revision: query.revision as Revision, file };
       let watched = this.repositories.get(repository);
       if (!watched) {
         const uris = new Map<string, vscode.Uri>();
@@ -261,7 +338,8 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
         });
         const closed = repository.onDidDispose(() => {
           this.repositories.delete(repository); changed.dispose();
-          this.changes.fire([...uris.values()].map(uri => ({ type: vscode.FileChangeType.Deleted, uri })));
+          // Ownership can change while the saved URI still names a real Git blob.
+          this.changes.fire([...uris.values()].map(uri => ({ type: vscode.FileChangeType.Changed, uri })));
         });
         watched = { uris, subscription: { dispose() { closed.dispose(); changed.dispose(); } } };
         this.repositories.set(repository, watched);
@@ -273,12 +351,20 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
     } catch { throw vscode.FileSystemError.FileNotFound(uri); }
   }
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const { repository, revision, file } = this.target(uri);
-    return repository.readBlob(file, revision);
+    return (await this.content(uri)).content;
+  }
+  private async content(uri: vscode.Uri): Promise<{ repository: EskaRepository; content: Uint8Array }> {
+    const { repository, revision, file } = await this.target(uri);
+    try { return { repository, content: await repository.readBlob(file, revision) }; }
+    catch (error) {
+      if (!repository.isDisposed) throw error;
+      // A mode transition may close the hot owner while the saved blob is still valid.
+      const next = await this.target(uri);
+      return { repository: next.repository, content: await next.repository.readBlob(next.file, next.revision) };
+    }
   }
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-    const { repository, revision, file } = this.target(uri);
-    const content = await repository.readBlob(file, revision);
+    const { repository, content } = await this.content(uri);
     return { type: vscode.FileType.File, ctime: 0, mtime: repository.contentVersion, size: content.length, permissions: vscode.FilePermission.Readonly };
   }
   readDirectory(): [string, vscode.FileType][] { return []; }

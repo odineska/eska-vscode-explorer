@@ -9,14 +9,14 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("base64"), handler) {
   const url = process.env.ESKA_SCM_TEST_OUT_DIR ? pathToFileURL(resolve(process.env.ESKA_SCM_TEST_OUT_DIR, "scm-repository.js")) : new URL('../out/scm-repository.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
-  const calls = [];
+  const calls = [], controls = [];
   class Uri {
     constructor(fsPath, scheme = 'file', query = '', fragment = '') { Object.assign(this, { fsPath, scheme, query, fragment }); }
     static file(path) { return new Uri(path); }
     with(update) { return Object.assign(new Uri(this.fsPath, this.scheme, this.query, this.fragment), update); }
   }
   class EventEmitter { listeners = new Set(); event = fn => { this.listeners.add(fn); return { dispose: () => this.listeners.delete(fn) }; }; fire(value) { for (const fn of this.listeners) fn(value); } dispose() { this.listeners.clear(); } }
-  const vscode = { Uri, EventEmitter, workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) }, Disposable: class { constructor(fn) { this.dispose = fn; } }, FileType: { File: 1 }, FilePermission: { Readonly: 1 }, FileChangeType: { Changed: 1, Deleted: 3 }, FileSystemError: { NoPermissions: () => new Error('readonly'), FileNotFound: () => new Error('missing') } };
+  const vscode = { scm: { createSourceControl(id, label, rootUri) { const control = { id, label, rootUri, inputBox: {}, disposed: false, dispose() { this.disposed = true; } }; controls.push(control); return control; } }, Uri, EventEmitter, workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) }, Disposable: class { constructor(fn) { this.dispose = fn; } }, FileType: { File: 1 }, FilePermission: { Readonly: 1 }, FileChangeType: { Changed: 1, Deleted: 3 }, FileSystemError: { NoPermissions: () => new Error('readonly'), FileNotFound: () => new Error('missing') } };
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, AbortController, Uint8Array })(name => {
     if (name === 'vscode') return vscode;
     if (name === './scm-monitor.js') {
@@ -25,10 +25,10 @@ function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("b
       runInNewContext('(function(require,module,exports){' + readFileSync(childUrl, 'utf8') + '\n})', { process, Buffer, TextDecoder, setTimeout, clearTimeout, setInterval, clearInterval })(name => name === 'vscode' ? vscode : require(name), nested, nested.exports);
       return nested.exports;
     }
-    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); return { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data: handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {} }; } };
+    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); const data = handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {}; return data?.operation ? data : { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data }; } };
     return require(name);
   }, module, module.exports);
-  return { ...module.exports, vscode, calls };
+  return { ...module.exports, vscode, calls, controls };
 }
 test('maps HEAD/index and all conflict stages without silently accepting revisions', () => {
   const { revisionForRef } = load();
@@ -160,4 +160,126 @@ test('resident event during writes is superseded by post-write status and not lo
   const root = resolve('repo'), repo = new EskaRepository(root, '/bin/eska-vcs', key => key);
   const write = repo.add([resolve(root, 'a')]); repo.accept(snapshot('b')); release(new Error('failed'));
   await assert.rejects(write); assert.equal(repo.state.HEAD.commit, 'c'.repeat(40)); repo.dispose();
+});
+
+test('branch status follows resident HEAD, uses exact root and disposes without any status requests', () => {
+  const { EskaRepository, SCM_CHECKOUT, controls, calls } = load();
+  const root = resolve('repo'), repo = new EskaRepository(root, '/eska-vcs', key => key);
+  repo.accept({ ...snapshot('a'), head: 'attached' }); repo.setBranchStatus(true);
+  const control = controls[0];
+  assert.equal(control.rootUri.fsPath, root); assert.equal(control.inputBox.visible, false);
+  assert.equal(control.statusBarCommands[0].title, '$(git-branch) main');
+  assert.equal(control.statusBarCommands[0].command, SCM_CHECKOUT);
+  assert.deepEqual(Array.from(control.statusBarCommands[0].arguments), [root]);
+  repo.accept({ ...snapshot('b'), head: 'detached', branch: undefined });
+  assert.equal(control.statusBarCommands[0].title, '$(git-commit) bbbbbbb');
+  repo.accept({ ...snapshot('a'), head: 'unborn', branch: 'new', commit: undefined });
+  assert.equal(control.statusBarCommands[0].title, '$(git-branch) new');
+  repo.setBranchStatus(false); assert.equal(control.disposed, true); assert.equal(repo.branchStatusEnabled, false);
+  repo.setBranchStatus(true); assert.equal(controls.length, 2);
+  repo.dispose(); assert.equal(controls[1].disposed, true); assert.equal(calls.length, 0);
+});
+
+test('branch bridge checks capability and keeps checkout argument literal with one post-write refresh', async () => {
+  const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-branches'
+    ? { branches: [{ name: 'main', name_encoding: 'utf-8' }, { name: 'feature/кириллица', name_encoding: 'utf-8' }, { name: '%FF', name_encoding: 'percent' }] }
+    : snapshot('b'));
+  const root = resolve('repo'), old = new EskaRepository(root, '/eska-vcs', key => key);
+  await assert.rejects(old.branches(), { message: 'scmBranchUpdateRequired' });
+  await assert.rejects(old.checkout('main'), { message: 'scmBranchUpdateRequired' });
+  assert.equal(calls.length, 0); old.dispose();
+  const repo = new EskaRepository(root, '/eska-vcs', key => key, true, true);
+  assert.deepEqual(Array.from(await repo.branches()), ['main', 'feature/кириллица']);
+  await repo.checkout('feature/кириллица');
+  assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-checkout', '--', 'feature/кириллица']);
+  assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1);
+  assert.equal(repo.state.HEAD.commit, 'b'.repeat(40)); repo.dispose();
+});
+
+test('checkout domain failures retain localized explanations and refresh the previous state', async () => {
+  for (const [code, message] of [['checkout_failed', 'scmBranchCheckoutFailed'], ['branch_not_found', 'scmBranchMissing'], ['git_unavailable', 'scmBranchGitUnavailable']]) {
+    const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-checkout'
+      ? { schema_version: 1, operation: 'scm_checkout', data: null, error: code } : snapshot('a'));
+    const repo = new EskaRepository(resolve('repo'), '/eska-vcs', key => key, true, true);
+    await assert.rejects(repo.checkout('feature'), { message });
+    assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1); repo.dispose();
+  }
+});
+
+test('restored provider waits for an asynchronous owner and keeps URI alive across owner disposal', async () => {
+  const { EskaRepository, EskaScmFileSystemProvider, vscode } = load();
+  const root = resolve('repo'), first = new EskaRepository(root, '/eska-vcs', key => key);
+  const second = new EskaRepository(root, '/eska-vcs', key => key);
+  let ready, owner = new Promise(resolve => { ready = resolve; });
+  const provider = new EskaScmFileSystemProvider(() => owner);
+  const uri = first.toGitUri(vscode.Uri.file(resolve(root, 'module.bsl')), '');
+  const read = provider.readFile(uri); let completed = false; read.then(() => { completed = true; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(completed, false);
+  ready(first); await read;
+  const events = []; provider.onDidChangeFile(event => events.push(...event));
+  owner = second; first.dispose(); assert.equal(events.length, 1);
+  assert.equal(events[0].type, vscode.FileChangeType.Changed);
+  assert.ok((await provider.readFile(uri)).length > 0);
+  const foreign = uri.with({ query: JSON.stringify({ root: resolve('other'), revision: 'head' }) });
+  await assert.rejects(provider.readFile(foreign));
+  provider.dispose(); second.dispose();
+});
+
+test('read-only fallback never caches mutable HEAD or index blobs without a monitor', async () => {
+  let reads = 0;
+  const { EskaRepository, vscode, calls } = load(false, '', () => ({ content: Buffer.from(String(++reads)).toString('base64') }));
+  const root = resolve('repo'), repo = new EskaRepository(root, '/eska-vcs', key => key, false, false, false);
+  const file = vscode.Uri.file(resolve(root, 'a'));
+  assert.equal(Buffer.from(await repo.readBlob(file, 'index')).toString(), '1');
+  assert.equal(Buffer.from(await repo.readBlob(file, 'index')).toString(), '2');
+  assert.equal(Buffer.from(await repo.readBlob(file, 'head')).toString(), '3');
+  assert.equal(calls.filter(args => args[3] === 'scm-status').length, 0); repo.dispose();
+});
+
+test('stat and read retain the monitored cache and use uncached content after ownership changes', async () => {
+  const { EskaRepository, EskaScmFileSystemProvider, vscode, calls } = load();
+  const root = resolve('repo'), monitored = new EskaRepository(root, '/eska-vcs', key => key);
+  let owner = monitored;
+  const fallback = new EskaRepository(root, '/eska-vcs', key => key, false, false, false);
+  const provider = new EskaScmFileSystemProvider(() => owner), uri = monitored.toGitUri(vscode.Uri.file(resolve(root, 'a')), '');
+  monitored.accept(snapshot('a'));
+  await provider.stat(uri); await provider.readFile(uri); await provider.stat(uri);
+  assert.equal(calls.length, 1);
+  monitored.accept(snapshot('b')); await provider.stat(uri); await provider.readFile(uri);
+  assert.equal(calls.length, 2);
+  owner = fallback; monitored.dispose(); await provider.stat(uri); await provider.readFile(uri);
+  assert.equal(calls.length, 4);
+  const before = calls.length;
+  await assert.rejects(provider.readFile(uri.with({ query: JSON.stringify({ root: resolve('outside'), revision: 'index' }) })));
+  assert.equal(calls.length, before); provider.dispose(); fallback.dispose();
+});
+
+test('cacheless readers coalesce concurrent blobs but release completed values', async () => {
+  let release;
+  const { EskaRepository, EskaScmFileSystemProvider, vscode, calls } = load(false, '', () => new Promise(resolve => { release = resolve; }));
+  const root = resolve('repo'), repo = new EskaRepository(root, '/eska-vcs', key => key, false, false, false);
+  const provider = new EskaScmFileSystemProvider(() => repo), uri = repo.toGitUri(vscode.Uri.file(resolve(root, 'a')), '');
+  const stat = provider.stat(uri), read = provider.readFile(uri);
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(calls.length, 1);
+  release({ content: 'YQ==' }); await Promise.all([stat, read]);
+  const next = provider.readFile(uri); await new Promise(resolve => setImmediate(resolve)); assert.equal(calls.length, 2);
+  release({ content: 'Yg==' }); assert.equal(Buffer.from(await next).toString(), 'b');
+  provider.dispose(); repo.dispose();
+});
+
+test('blob reads retry against the restored owner when a mode transition disposes the monitored owner', async () => {
+  let started;
+  const ready = new Promise(resolve => { started = resolve; });
+  const { EskaRepository, EskaScmFileSystemProvider, vscode, calls } = load(false, '', (_args, options, count) => {
+    if (count > 1) return { content: 'YQ==' };
+    started(); return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('owner closed')), { once: true }));
+  });
+  const root = resolve('repo'), monitored = new EskaRepository(root, '/eska-vcs', key => key);
+  const fallback = new EskaRepository(root, '/eska-vcs', key => key, false, false, false);
+  let owner = monitored;
+  const provider = new EskaScmFileSystemProvider(() => owner), uri = monitored.toGitUri(vscode.Uri.file(resolve(root, 'a')), '');
+  const read = provider.readFile(uri); await ready;
+  owner = fallback; monitored.dispose();
+  assert.equal(Buffer.from(await read).toString(), 'a'); assert.equal(calls.length, 2);
+  provider.dispose(); fallback.dispose();
 });

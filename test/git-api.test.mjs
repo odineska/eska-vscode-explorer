@@ -9,8 +9,9 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
     fire(value) { for (const callback of this.listeners) callback(value); } dispose() { this.listeners.clear(); }
   }
   class Uri { constructor(fsPath) { this.fsPath = fsPath; this.scheme = 'file'; } static file(path) { return new Uri(path); } static joinPath(uri, path) { return Uri.file(uri.fsPath + '/' + path); } }
+  const commands = new Map(), notices = [], picks = []; let pick;
   const open = new Emitter(), close = new Emitter(), calls = [], storage = new Map([["eska.scm.closedRepositories.v1", recovery]]);
-  let monitor, discoveries = 0, providerOptions;
+  let monitor, discoveries = 0, providerOptions, resolveReader;
   const closedRoots = new Set(recovery.map(value => typeof value === 'string' ? value : value.root));
   const repo = root => { const changed = new Emitter(); return { rootUri: Uri.file(root), inputBox: { value: '' }, state: { onDidChange: changed.event }, emitState() { changed.fire(); } }; };
   const repositories = nativeRoots.map(repo);
@@ -18,10 +19,11 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
     async openRepository(uri) { calls.push(['open', uri.fsPath]); if (apiKeepsClosed && closedRoots.has(uri.fsPath)) return null; let value = repositories.find(item => item.rootUri.fsPath === uri.fsPath); if (!value) { value = repo(uri.fsPath); repositories.push(value); open.fire(value); } return value; },
     toGitUri(uri) { return { ...uri, scheme: 'git' }; } };
   const vscode = { Uri, EventEmitter: Emitter, workspace: {
-    isTrusted: trusted, onDidGrantWorkspaceTrust: new Emitter().event, onDidChangeConfiguration: new Emitter().event, onDidChangeWorkspaceFolders: new Emitter().event, workspaceFolders: folders.map(path => ({ uri: Uri.file(path) })), registerFileSystemProvider(scheme, provider, options) { providerOptions = options; return { dispose() {} }; },
+    isTrusted: trusted, textDocuments: [], onDidGrantWorkspaceTrust: new Emitter().event, onDidChangeConfiguration: new Emitter().event, onDidChangeWorkspaceFolders: new Emitter().event, workspaceFolders: folders.map(path => ({ uri: Uri.file(path) })), registerFileSystemProvider(scheme, provider, options) { providerOptions = options; return { dispose() {} }; },
     getConfiguration() { return { get(key, fallback) { return key === 'enabled' ? gitEnabled : key === 'ignoredRepositories' ? ignored : fallback; } }; },
   }, extensions: { getExtension() { return nativeAvailable ? { activate: async () => ({ enabled: true, getAPI: () => native, onDidChangeEnablement: new Emitter().event }) } : undefined; } },
-    commands: { async executeCommand(command, uri) {
+    window: { async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message) { notices.push(message); }, showInformationMessage(message) { notices.push(message); } },
+    commands: { registerCommand(name, handler) { commands.set(name, handler); return { dispose() { commands.delete(name); } }; }, async executeCommand(command, uri) {
       const path = typeof uri === 'string' ? uri : uri.fsPath;
       calls.push([command, path]);
       if (command === 'git.openRepository') {
@@ -31,23 +33,23 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
       closedRoots.add(path);
       const i = repositories.findIndex(value => value.rootUri.fsPath === path); if (i >= 0) close.fire(repositories.splice(i, 1)[0]);
     } } };
-  class EskaRepository { constructor(root, executable, text, mutationsAvailable) { Object.assign(this, repo(root)); this.executable = executable; this.mutationsAvailable = mutationsAvailable;
+  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true) { Object.assign(this, repo(root)); this.executable = executable; this.mutationsAvailable = mutationsAvailable; this.branchesAvailable = branchesAvailable; this.cacheBlobs = cacheBlobs;
     const changed = new Emitter(); this.onDidChangeInput = changed.event; let draft = '';
     this.inputBox = { get value() { return draft; }, set value(value) { draft = value; changed.fire(value); } };
-  } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }
+  } async branches() { return ['main', 'feature']; } async checkout(branch) { calls.push(['checkout', this.rootUri.fsPath, branch]); } invalidateContent() {} setBranchStatus(value) { this.branchStatusEnabled = value; } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }
   const url = new URL('../out/git-api.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, AbortController, setTimeout, clearTimeout, queueMicrotask })(name => {
     if (name === 'vscode') return vscode;
     if (name === './scm-monitor.js') return { ScmMonitors: class { snapshots = new Map(); constructor(changed) { this.changed = changed; monitor = this; } synchronize(targets) { for (const target of targets) { if (!this.snapshots.has(target.root)) { if (!fail) this.snapshots.set(target.root, {}); queueMicrotask(() => this.changed(target.root)); } } } get(root) { return this.snapshots.get(root); } dispose() {} } };
     if (name === './source.js') return { sourceKey: path => path };
-    if (name === './scm-repository.js') return { EskaRepository, EskaScmFileSystemProvider: class { dispose() {} }, SCM_SCHEME: 'eska-scm',
-      discoverScmRoot: async () => { discoveries++; return oldCli ? undefined : { root: '/repo', executable: '/eska-vcs', mutationsAvailable: mutations }; } };
+    if (name === './scm-repository.js') return { EskaRepository, EskaScmFileSystemProvider: class { constructor(resolve) { resolveReader = resolve; } dispose() {} }, SCM_SCHEME: 'eska-scm', SCM_CHECKOUT: 'eska.explorer.scm.checkout',
+      discoverScmRoot: async () => { discoveries++; return oldCli ? undefined : { root: '/repo', executable: '/eska-vcs', mutationsAvailable: mutations, branchesAvailable: true }; } };
     return require(name);
   }, module, module.exports);
   const owner = new module.exports.GitRepositories();
   owner.configureScm({ workspaceState: { get: (key, fallback) => storage.get(key) ?? fallback, update: async (key, value) => { storage.set(key, value); } } }, key => key, () => {});
   const settled = async () => { for (let i = 0; i < 25; i++) await new Promise(resolve => setImmediate(resolve)); };
-  return { owner, calls, repositories, settled, EskaRepository, Uri, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
+  return { owner, calls, repositories, settled, EskaRepository, Uri, commands, notices, picks, vscode, reader: root => resolveReader(root), setPick(value) { pick = value; }, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
 }
 test('takes ownership only after valid status and restores draft on mode change', async () => {
   const { owner, calls, repositories, settled, EskaRepository } = setup();
@@ -75,12 +77,16 @@ test('failed snapshot, missing mutations and explicit Git opt outs never close n
     await owner.releaseScm(); owner.dispose();
   }
 });
-test('provides independent SCM without native extension and avoids repeated probes/status', async () => {
-  const { owner, calls, settled, EskaRepository, Uri } = setup({ nativeAvailable: false });
+test('provides independent SCM and branch switching in both mode without the native extension', async () => {
+  const { owner, calls, commands, setPick, settled, EskaRepository, Uri } = setup({ nativeAvailable: false });
   const projects = [{ root: '/repo', projectExecutable: '/project', mode: 'both' }];
   owner.setScmProjects(projects); await settled(); owner.setScmProjects(projects); await settled();
   assert.ok(owner.repositories[0] instanceof EskaRepository); assert.equal(calls.filter(call => call[0] === 'status').length, 0);
   assert.equal(owner.api.toGitUri(Uri.file('/repo/file'), 'HEAD').scheme, 'eska-scm');
+  assert.equal(owner.repositories[0].branchStatusEnabled, true);
+  setPick('feature');
+  await commands.get('eska.explorer.scm.checkout')('/repo');
+  assert.deepEqual(calls.at(-1), ['checkout', '/repo', 'feature']);
   await owner.releaseScm(); owner.dispose();
 });
 test('manually closed native roots still have ESKA SCM and are never reopened', async () => {
@@ -195,5 +201,61 @@ test('state updates name their repository while membership changes emit undefine
   owner.repositories[0].emitState(); assert.equal(events.pop(), owner.repositories[0]);
   await openNative('/other'); await settled(); assert.ok(events.includes(undefined));
   assert.equal(providerOptions().isCaseSensitive, process.platform !== 'win32');
+  await owner.releaseScm(); owner.dispose();
+});
+
+
+test('branch picker is bound to its live ESKA root and rejects stale ownership and dirty editors', async () => {
+  const { owner, commands, calls, picks, setPick, settled, vscode, Uri, EskaRepository } = setup();
+  await settled(); owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await settled();
+  const repository = owner.repositories[0]; assert.ok(repository instanceof EskaRepository); assert.equal(repository.branchStatusEnabled, true);
+  const checkout = commands.get('eska.explorer.scm.checkout'); setPick('feature');
+  await checkout('/other'); assert.equal(picks.length, 0);
+  await checkout('/repo'); assert.deepEqual(calls.at(-1), ['checkout', '/repo', 'feature']);
+  assert.match(picks[0].options.title, /\/repo/);
+  const writes = () => calls.filter(call => call[0] === 'checkout').length;
+  vscode.workspace.textDocuments = [{ isDirty: true, uri: Uri.file('/repo/file') }];
+  await checkout('/repo'); assert.equal(writes(), 1);
+  vscode.workspace.textDocuments = [];
+  setPick(async items => { owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'both' }]); await settled(); return items[1]; });
+  await checkout('/repo'); assert.equal(writes(), 1); assert.equal(repository.branchStatusEnabled, false);
+  await checkout('/repo'); assert.equal(writes(), 1);
+  await owner.releaseScm(); owner.dispose();
+});
+
+
+test('restored SCM readers wait for project authority and work in native-only mode without status', async () => {
+  const { owner, reader, calls, settled, EskaRepository } = setup({ nativeRoots: [] });
+  await settled(); let completed = false;
+  const pending = reader('/repo').then(value => { completed = true; return value; });
+  await settled(); assert.equal(completed, false);
+  owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'vscode' }]);
+  const restored = await pending; assert.ok(restored instanceof EskaRepository);
+  assert.equal(restored.rootUri.fsPath, '/repo'); assert.equal(restored.mutationsAvailable, false); assert.equal(restored.cacheBlobs, false);
+  assert.equal(await reader('/repo'), restored); assert.equal(await reader('/outside'), undefined);
+  assert.equal(calls.filter(call => call[0] === 'status').length, 0);
+  owner.setScmProjects([]); await settled(); assert.equal(await reader('/repo'), undefined);
+  await owner.releaseScm(); owner.dispose();
+});
+
+test('untrusted workspace cannot authorize restored blob readers', async () => {
+  const { owner, reader, settled, discoveryCount } = setup({ trusted: false });
+  owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'vscode' }]); await settled();
+  assert.equal(await reader('/repo'), undefined); assert.equal(discoveryCount(), 0);
+  await owner.releaseScm(); owner.dispose();
+});
+
+test('restored readers reuse the ready monitored owner and fall back across mode changes without rediscovery', async () => {
+  const { owner, reader, settled, discoveryCount } = setup({ nativeRoots: [] });
+  await settled(); owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await settled();
+  const monitored = owner.repositories[0], count = discoveryCount();
+  assert.equal(await reader('/repo'), monitored); assert.equal(await reader('/repo'), monitored);
+  assert.equal(discoveryCount(), count);
+  owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'vscode' }]); await settled();
+  const fallback = await reader('/repo'); assert.notEqual(fallback, monitored); assert.equal(fallback.cacheBlobs, false);
+  assert.equal(discoveryCount(), count);
+  owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await settled();
+  assert.equal(await reader('/repo'), owner.repositories[0]); assert.notEqual(await reader('/repo'), fallback);
+  assert.equal(await reader('/outside'), undefined); assert.equal(discoveryCount(), count);
   await owner.releaseScm(); owner.dispose();
 });

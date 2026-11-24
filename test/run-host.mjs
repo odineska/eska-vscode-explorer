@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, rm, readFile, writeFile, cp, mkdir, symlink } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, readFile, writeFile, cp, mkdir, symlink } from "node:fs/promises";
 import { resolve, join, isAbsolute, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addCommonModules, addDocumentModules, createTreeProject } from "./fixture.mjs";
@@ -301,6 +301,20 @@ try {
   }
   let workspace = workspaceFolder;
   let secondFixture;
+  if (basename(suite) === "scm-diff-restore-host.cjs") {
+    const git = (...args) => run("git", args, { cwd: fixture.root });
+    const original = await readFile(fixture.module);
+    await writeFile(join(fixture.root, ".gitignore"), ".eska/\n.vscode/\nhost-result.json\n");
+    await git("init");
+    await git("config", "core.autocrlf", "false");
+    await git("add", ".");
+    await git("-c", "user.name=ESKA test", "-c", "user.email=scm@example.invalid",
+      "-c", "commit.gpgSign=false", "commit", "-m", "Diff restoration baseline");
+    const staged = Buffer.concat([original, Buffer.from("// staged Изменение\n")]);
+    await writeFile(fixture.module, staged);
+    await git("add", "--", fixture.module);
+    await writeFile(fixture.module, Buffer.concat([staged, Buffer.from("// рабочая копия\n")]));
+  }
   if (["run-debug-view-host.cjs", "run-debug-presence-normal-host.cjs"].includes(basename(suite))) {
     // Keep the workspace identity stable while the suite adds/removes folders.
     workspace = join(root, "run-debug.code-workspace");
@@ -417,6 +431,16 @@ ${basename(suite) === "run-debug-presence-normal-host.cjs"
   const runs = process.env.ESKA_HOST_CONFLICT_RELOAD ? 3 : process.env.ESKA_HOST_RESTART || process.env.ESKA_HOST_QUERY_RESTART || process.env.ESKA_HOST_ACTIVITY_RESTART ? 2 : 1;
   receipt.timings.preHostMs = performance.now() - driverStarted;
   for (let run = languageWarmup ? -1 : 0; run < runs; run++) {
+    if (run === 1 && basename(suite) === "scm-diff-restore-host.cjs") {
+      await appendFile(fixture.module, "// правка при закрытом редакторе\n");
+      const mode = process.env.ESKA_HOST_RESTORED_SCM_MODE;
+      if (mode) {
+        if (!["eska", "vscode", "both"].includes(mode)) throw new Error("Unknown restored SCM mode");
+        const settingsFile = join(fixture.root, ".vscode", "settings.json");
+        const settings = JSON.parse(await readFile(settingsFile, "utf8"));
+        await writeFile(settingsFile, JSON.stringify({ ...settings, "eska.explorer.scm.mode": mode }));
+      }
+    }
     const hostStarted = performance.now();
     await rm(join(fixture.root, "host-result.json"), { force: true });
     const child = spawn(executable, ["--verbose", "--skip-welcome", "--skip-release-notes", ...(locale ? [`--locale=${locale}`] : []), ...(process.env.ESKA_HOST_DEBUG_PORT ? [`--remote-debugging-port=${process.env.ESKA_HOST_DEBUG_PORT}`] : []),

@@ -52,7 +52,52 @@ exports.run = async function () {
   }
   async function expectOwners(expected, monitor) {
     await until(() => JSON.stringify(roots()) === JSON.stringify([...expected].sort()), `native roots: ${expected.join(', ')}`);
-    if (process.platform === 'linux') await until(async () => Boolean((await monitors()).length) === monitor, `ESKA monitor active=${monitor}`);
+    if (process.platform === 'linux') await until(async () => (await monitors()).length === (monitor ? 1 : 0), `ESKA monitor active=${monitor}`);
+  }
+  const branchItems = () => ui.workbench(`(() => [...document.querySelectorAll('.part.statusbar .statusbar-item')]
+    .filter(node => node.querySelector('[class*=\"codicon-git-branch\"], .codicon-git-commit') && node.getBoundingClientRect().width > 0)
+    .map(node => ({ text: node.textContent.trim(), title: node.title, label: node.getAttribute('aria-label') })))()`);
+  async function expectBranch(name) {
+    await until(async () => { const items = await branchItems(); return items.length === 1 && items[0].text.includes(name); }, `exactly one visible branch status: ${name}`);
+  }
+  async function clickBranch() {
+    await ui.workbench(`(() => {
+      const nodes = [...document.querySelectorAll('.part.statusbar .statusbar-item')]
+        .filter(node => node.querySelector('[class*=\"codicon-git-branch\"], .codicon-git-commit') && node.getBoundingClientRect().width > 0);
+      if (nodes.length !== 1) throw new Error('Expected exactly one visible branch status');
+      (nodes[0].querySelector('a') ?? nodes[0]).click();
+    })()`);
+    await until(() => ui.workbench("Boolean(document.querySelector('.quick-input-widget input:focus'))"), 'status bar click opens Quick Pick');
+  }
+  async function pickBranch(name) {
+    await selectRepository(fixture.root);
+    await clickBranch();
+    await ui.insertText(name);
+    await until(() => ui.workbench("[...document.querySelectorAll('.quick-input-widget .monaco-list-row')].some(row => row.textContent.includes(" + JSON.stringify(name) + "))"), `Quick Pick lists ${name}`);
+    await command('workbench.action.acceptSelectedQuickOpenItem');
+    await until(async () => (await git(fixture.root, 'branch', '--show-current')).trim() === name, `actual branch switched to ${name}`);
+    await expectBranch(name);
+  }
+  async function selectRepository(root) {
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(root === fixture.root ? fixture.module : path.join(root, 'ordinary.txt'))));
+    await command('workbench.view.scm');
+    await ui.workbench(`(() => {
+      const provider = [...document.querySelectorAll('.scm-view .scm-provider, .scm-repositories-view .monaco-list-row')]
+        .find(row => row.querySelector('.label-name')?.textContent === ${JSON.stringify(path.basename(root))});
+      // VS Code hides the repository header when only one provider remains.
+      if (!provider && document.querySelectorAll('.scm-view .scm-provider').length === 0) return;
+      if (!provider) throw new Error('Repository selector was not found');
+      const target = provider.querySelector('.label-name') ?? provider;
+      for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, buttons: type === 'mousedown' ? 1 : 0 }));
+    })()`);
+  }
+  async function expandProviders() {
+    await ui.workbench(`(() => {
+      for (const row of document.querySelectorAll('.scm-view .monaco-list-row[aria-level=\"1\"][aria-expanded=\"false\"]')) {
+        const target = row.querySelector('.monaco-tl-twistie');
+        for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, buttons: type === 'mousedown' ? 1 : 0 }));
+      }
+    })()`);
   }
   const hasModule = () => ui.webview("[...document.querySelectorAll('.scm-row .scm-label')].some(node => node.textContent.includes('ObjectModule') || node.textContent.includes('МодульОбъекта'))");
   async function rowContext() {
@@ -82,6 +127,32 @@ exports.run = async function () {
     await connecting;
     await expectOwners([fixture.ordinary], true);
     checks.push('default-eska-only-manifested-root');
+    const originalBranch = (await git(fixture.root, 'branch', '--show-current')).trim();
+    await git(fixture.root, 'branch', 'host-status-topic');
+    await git(fixture.ordinary, 'switch', '-c', 'ordinary-native');
+    const monitorPids = (await monitors())?.map(item => item.pid);
+    if (monitorPids) assert.equal(monitorPids.length, 1, 'one existing ESKA monitor');
+    await selectRepository(fixture.root);
+    await expectBranch(originalBranch);
+    await clickBranch();
+    await command('workbench.action.closeQuickOpen');
+    assert.equal((await git(fixture.root, 'branch', '--show-current')).trim(), originalBranch, 'cancel leaves HEAD unchanged');
+    await pickBranch('host-status-topic');
+    await git(fixture.root, 'switch', '--detach');
+    const detached = (await git(fixture.root, 'rev-parse', '--short=7', 'HEAD')).trim();
+    await expectBranch(detached);
+    await git(fixture.root, 'switch', originalBranch);
+    await expectBranch(originalBranch);
+    await selectRepository(fixture.ordinary);
+    await expectBranch('ordinary-native');
+    await selectRepository(fixture.root);
+    await expectBranch(originalBranch);
+    assert.deepEqual((await monitors())?.map(item => item.pid), monitorPids, 'branch changes reuse the resident monitor');
+    assert.ok(await ui.workbench("[...document.querySelectorAll('.scm-view .scm-editor')].filter(node => node.getBoundingClientRect().height > 0).length <= 1"), 'no extra native commit input');
+    assert.equal(await ui.workbench("document.querySelectorAll('.scm-view .monaco-editor[data-uri^=\"vscode-scm:eska/\"]').length"), 0, 'ESKA status provider hides its native commit input');
+    checks.push('statusbar-dom-click-pick-switch-cancel-detached-external-multiroot-one-monitor');
+    await expandProviders();
+
     await command('workbench.view.explorer');
     await new Promise(resolve => setTimeout(resolve, 500)); // Allow visibility/disposal handlers to run.
     await expectOwners([fixture.ordinary], true);
@@ -144,21 +215,28 @@ exports.run = async function () {
     await until(() => nativeRepo(fixture.root)?.state.workingTreeChanges.some(change => change.uri.fsPath === fixture.module), 'vscode mode native update');
     assert.equal(nativeRepo(fixture.root).inputBox.value, retainedDraft, 'vscode provider receives existing ESKA draft');
     await until(() => nativeRow('ObjectModule.bsl'), 'vscode mode native module row visible');
-    checks.push('vscode-mode-both-native-roots-no-monitor');
+    await selectRepository(fixture.root);
+    await expectBranch(originalBranch);
+    checks.push('vscode-mode-both-native-roots-no-monitor-one-branch');
     await setMode('both');
     await expectOwners([fixture.root, fixture.ordinary], true);
     ui.close();
     await command('eska.explorer.scm.focus');
     ui = await attachScm();
+    await expandProviders();
     await until(() => nativeRow('ObjectModule.bsl'), 'both mode native row visible');
     await until(hasModule, 'both mode ESKA panel active');
     await until(() => ui.webview("document.querySelector('textarea').value === " + JSON.stringify(retainedDraft)), 'draft survives both mode');
     assert.ok(nativeRepo(fixture.root).state.workingTreeChanges.some(change => change.uri.fsPath === fixture.module));
-    checks.push('both-mode-native-and-eska');
+    await selectRepository(fixture.root);
+    await expectBranch(originalBranch);
+    checks.push('both-mode-native-and-eska-one-branch');
     await setMode('eska');
     await expectOwners([fixture.ordinary], true);
     await until(() => ui.webview("document.querySelector('textarea').value === " + JSON.stringify(retainedDraft)), 'draft survives return to eska');
-    checks.push('folder-override-back-to-eska');
+    await selectRepository(fixture.root);
+    await expectBranch(originalBranch);
+    checks.push('folder-override-back-to-eska-one-branch');
     await fs.unlink(manifest);
     await expectOwners([fixture.root, fixture.ordinary], false);
     checks.push('manifest-removal-restores-displaced-root');
@@ -175,6 +253,18 @@ exports.run = async function () {
         ui.close();
         await command('eska.explorer.scm.focus');
         ui = await attachScm();
+        await expectBranch(originalBranch);
+        await git(fixture.root, 'branch', 'host-status-git-disabled');
+        await pickBranch('host-status-git-disabled');
+        await pickBranch(originalBranch);
+        await setMode('both');
+        await expectOwners([], true);
+        await expectBranch(originalBranch);
+        await pickBranch('host-status-git-disabled');
+        await pickBranch(originalBranch);
+        await setMode('eska');
+        await expectOwners([], true);
+        if (process.platform === 'linux') assert.equal((await monitors()).length, 1, 'Git disabled retains one monitor');
         await fs.writeFile(fixture.module, changed);
         await until(async () => !(await hasModule()), 'ESKA independent clean snapshot with Git disabled');
         await fs.appendFile(fixture.module, '// git.enabled=false autonomy\r\n');
@@ -193,9 +283,9 @@ exports.run = async function () {
     const finalGitSettings = initialGitSettings.map(([key]) => [key, vscode.workspace.getConfiguration('git', uri).inspect(key)]);
     assert.deepEqual(finalGitSettings, initialGitSettings, 'Git configuration is untouched');
     checks.push('git-settings-unchanged');
-    await fs.writeFile(output, JSON.stringify({ passed: true, vscode: vscode.version, checks, nativeRoots: roots(), monitors: await monitors(), diff: { original: diff.original.toString(), modified: diff.modified.toString() }, gitSettingsUnchanged: true }));
+    await fs.writeFile(output, JSON.stringify({ passed: true, vscode: vscode.version, checks, nativeRoots: roots(), monitors: await monitors(), diff: { original: diff.original.toString(), modified: diff.modified.toString() }, gitSettingsUnchanged: true, branchStatus: await branchItems() }));
   } catch (error) {
-    await fs.writeFile(output, JSON.stringify({ passed: false, vscode: vscode.version, error: String(error.stack ?? error), checks, nativeRoots: roots(), monitors: await monitors(), lastContext, gitLogs: await gitLogs(), dom: await ui?.webview('document.body.innerText').catch(() => undefined), workbench: await ui?.workbench('document.body.innerText').catch(() => undefined), tabs: vscode.window.tabGroups.all.flatMap(group => group.tabs).map(tab => ({label:tab.label,input:tab.input})) }));
+    await fs.writeFile(output, JSON.stringify({ passed: false, vscode: vscode.version, error: String(error.stack ?? error), checks, nativeRoots: roots(), monitors: await monitors(), lastContext, statusDom: await ui?.workbench("document.querySelector('.part.statusbar')?.outerHTML").catch(() => undefined), scmDom: await ui?.workbench("[...document.querySelectorAll('.scm-view, .scm-repositories-view')].map(node => node.outerHTML).join('\\n').slice(0, 30000)").catch(() => undefined), branchStatus: ui ? await branchItems().catch(() => undefined) : undefined, gitLogs: await gitLogs(), dom: await ui?.webview('document.body.innerText').catch(() => undefined), workbench: await ui?.workbench('document.body.innerText').catch(() => undefined), tabs: vscode.window.tabGroups.all.flatMap(group => group.tabs).map(tab => ({label:tab.label,input:tab.input})) }));
     throw error;
   } finally {
     ui?.close();

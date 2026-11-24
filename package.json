@@ -22,6 +22,7 @@
   "activationEvents": [
     "onFileSystem:eska-query",
     "onFileSystem:eska-protected",
+    "onFileSystem:eska-scm",
     "onView:eska.explorer.projects",
     "workspaceContains:eska.toml",
     "onStartupFinished",
@@ -560,6 +561,11 @@
         "category": "ESKA"
       },
       {
+        "command": "eska.explorer.scm.checkout",
+        "title": "%scmCheckout%",
+        "category": "ESKA"
+      },
+      {
         "command": "eska.explorer.scm.commit",
         "title": "%scmCommit%",
         "category": "ESKA",
@@ -872,6 +878,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "eska.explorer.scm.checkout",
+          "when": "false"
+        },
         {
           "command": "eska.explorer.scm.compareRevisions",
           "when": "eska.hasProject && !eska.scmNativeOnly"
