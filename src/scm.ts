@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { basename } from "node:path";
 import { randomBytes } from "node:crypto";
-import { GitRepositories, type GitRepository, type ScmProject } from "./git-api.js";
+import { GitRepositories, type GitChange, type GitRepository, type ScmProject } from "./git-api.js";
 import { gitStatus, Status } from "./git-status.js";
 import { changeCaption, changeGroups, changeIdentity, changes, insideRepository, matchChanges, monitoredChanges, type ChangeGroup } from "./scm-model.js";
 import { button, fileActions, fileInline, fileMenu, groupActions, groupCommands, isFileAction, isFileMutation, isGroupAction, type FileAction, type ScmAction } from "./scm-actions.js";
@@ -17,7 +17,7 @@ import type { MetadataTree, ProjectTree } from "./tree.js";
 
 interface RepositoryEntry { kind: "repository"; key: string; repository: GitRepository; groups: GroupEntry[]; branch: string | undefined }
 interface GroupEntry { kind: "group"; key: string; parent: RepositoryEntry; group: ChangeGroup; entries: ChangeEntry[] }
-export interface ChangeEntry { kind: "change"; key: string; parent: GroupEntry; change: import("./git-api.js").GitChange; label: string; fromMonitor: boolean }
+export interface ChangeEntry { kind: "change"; key: string; parent: GroupEntry; change: GitChange; label: string; fromMonitor: boolean }
 type Entry = RepositoryEntry | GroupEntry | ChangeEntry;
 interface ProjectContext { tree: MetadataTree; project: ProjectTree; root: string; source: string }
 interface SaveScope extends ProjectCommandTarget { tree?: MetadataTree; name: string }
@@ -597,16 +597,21 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
   private async commit(entry: RepositoryEntry): Promise<void> {
     const { repository } = entry;
     const draft = repository.inputBox.value;
+    const displayedIndex = entry.groups.find(group => group.group === "index")?.entries;
     await repository.status();
     this.validRepository(entry);
     if (this.disposed) throw new Error(this.text("scmChanged"));
     const candidates = this.saveScopes(repository);
     if (!candidates.length) throw new Error(this.text("scmSaveNoProject"));
     const { name: branch, commit: revision } = repository.state.HEAD ?? {};
+    const initialIndex = repository.state.indexChanges;
     const scope = candidates.length === 1 ? candidates[0] : (await vscode.window.showQuickPick(candidates.map(candidate => ({
       label: candidate.name, description: candidate.root, candidate,
     })), { title: this.text("scmSaveScope") }))?.candidate;
     if (!scope) return;
+    const inScope = (change: GitChange) => [change.uri, change.originalUri, change.renameUri]
+      .some(uri => uri && relativeFile(scope.root, uri.fsPath) !== undefined);
+    const wasStaged = initialIndex.some(inScope) || displayedIndex?.some(row => inScope(row.change));
     const validate = () => {
       this.validRepository(entry);
       const head = repository.state.HEAD;
@@ -615,9 +620,11 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
         throw new Error(this.text("scmChanged"));
       }
     };
-    const refresh = () => {
+    const refresh = async () => {
       validate();
-      return repository.status();
+      await repository.status();
+      // Losing the staged selection while a prompt is open must never broaden a commit.
+      return wasStaged || repository.state.indexChanges.some(inScope) ? "staged" : "all";
     };
     let acceptedDraft = draft;
     const acceptMessage = (value: string) => {

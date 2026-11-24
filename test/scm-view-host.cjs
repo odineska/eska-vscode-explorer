@@ -113,6 +113,7 @@ exports.run = async function () {
   // VS Code can remove injected config values while retaining GIT_CONFIG_COUNT.
   const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(key)));
   const git = async (...args) => (await execFile('git', args, { cwd: repositoryRoot, env: gitEnv })).stdout.trim();
+  const gitBytes = async (...args) => (await execFile('git', args, { cwd: repositoryRoot, env: gitEnv, encoding: 'buffer' })).stdout;
   const command = (id, ...args) => vscode.commands.executeCommand(id, ...args);
   const russian = vscode.env.language.startsWith('ru');
   const semanticLabel = russian ? 'Справочник.Товары.МодульОбъекта' : 'Catalog.Товары.ObjectModule';
@@ -121,6 +122,7 @@ exports.run = async function () {
   const missedEvent = path.join(repositoryRoot, 'missed-event.txt');
   const latencyMs = {};
   const commitFiles = {};
+  const stagedFixture = Array.from({ length: 10 }, (_, index) => path.join(fixture.root, `staged-scope-${index}.txt`));
   await vscode.workspace.getConfiguration('git').update('openRepositoryInParentFolders', 'always', vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration('git').update('enableSmartCommit', false, vscode.ConfigurationTarget.Workspace);
   await vscode.workspace.getConfiguration('git').update('autorefresh', false, vscode.ConfigurationTarget.Workspace);
@@ -135,6 +137,7 @@ exports.run = async function () {
   await git('config', 'user.email', 'scm@example.invalid');
   // Editor save normalizes mixed line endings; use a consistent baseline for save/revert assertions.
   await fs.writeFile(fixture.module, (await fs.readFile(fixture.module, 'utf8')).replace(/\r\n/g, '\n'));
+  await Promise.all(stagedFixture.map((file, index) => fs.writeFile(file, `baseline ${index}\n`)));
   await git('add', path.basename(fixture.root), path.basename(outside), path.basename(missedEvent));
   await git('commit', '-m', 'SCM fixture');
   await fs.appendFile(outside, 'staged outside project must survive\n');
@@ -319,6 +322,49 @@ exports.run = async function () {
     await verifySave('Retained branch prompt draft', [fixture.module], 'branchRetry');
     assert.equal(await git('branch', '--show-current'), switchedBranch, 'conscious retry saves to the new branch');
     assert.equal(await git('rev-parse', initialBranch), initialCommit);
+    // Reproduce the commit button contract with ten edits and only two selected
+    // index blobs. The outside index entry must survive the scoped commit too.
+    const stagedBytes = stagedFixture.map((_, index) => Buffer.from(`baseline ${index}\nedited ${index}\n`));
+    await Promise.all(stagedFixture.map((file, index) => fs.writeFile(file, stagedBytes[index])));
+    await until(async () => await ui.webview(`[...document.querySelectorAll('.scm-row .scm-label')]
+      .filter(node => /^staged-scope-\\d+\\.txt$/.test(node.textContent)).length`) === 10, 'all ten tracked edits are visible');
+    for (const file of stagedFixture.slice(0, 2)) {
+      let context;
+      await until(async () => {
+        context = await ui.webview(`[...document.querySelectorAll('.scm-row')]
+          .filter(row => row.querySelector('.scm-label')?.textContent === ${JSON.stringify(path.basename(file))})
+          .map(row => JSON.parse(row.dataset.vscodeContext)).find(context => context.eskaScmGroup === 'working')`);
+        return context;
+      }, `unstaged row for ${path.basename(file)}`);
+      await command('eska.explorer.scm.stage', { ...context, webview: 'eska.explorer.scm' });
+      await until(async () => (await git('diff', '--cached', '--name-only', '--', relative(file))) === relative(file),
+        `ESKA staged ${path.basename(file)}`);
+      await settleSnapshots();
+    }
+    assert.deepEqual((await git('diff', '--cached', '--name-only', '-z')).split('\0').filter(Boolean).sort(),
+      [path.basename(outside), ...stagedFixture.slice(0, 2).map(relative)].sort());
+    const partialWorktree = Buffer.concat([stagedBytes[0], Buffer.from('unstaged tail stays outside commit\n')]);
+    await fs.writeFile(stagedFixture[0], partialWorktree);
+    await settleSnapshots();
+    await input('ESKA commit two prepared files out of ten');
+    await ui.pointer('.scm-commit', 'left');
+    await verifySave('ESKA commit two prepared files out of ten', stagedFixture.slice(0, 2), 'strictStaged');
+    for (let index = 0; index < stagedFixture.length; index++) {
+      const file = stagedFixture[index];
+      assert.deepEqual(await gitBytes('show', `HEAD:${relative(file)}`),
+        index < 2 ? stagedBytes[index] : Buffer.from(`baseline ${index}` + '\n'), `committed bytes for ${path.basename(file)}`);
+      assert.deepEqual(await fs.readFile(file), index === 0 ? partialWorktree : stagedBytes[index],
+        `worktree bytes preserved for ${path.basename(file)}`);
+    }
+    assert.deepEqual((await git('diff', '--name-only', '-z', '--', path.basename(fixture.root)))
+      .split('\0').filter(Boolean).sort(), [stagedFixture[0], ...stagedFixture.slice(2)].map(relative).sort(),
+      'one partial file and eight unprepared files remain modified');
+    assert.equal(repo.inputBox.value, '', 'native commit draft cleared after staged success');
+    // Restore only this owned regression's residual edits before viewport checks.
+    await git('restore', '--worktree', '--', ...stagedFixture.map(relative));
+    await until(async () => !(await ui.webview(`[...document.querySelectorAll('.scm-row .scm-label')]
+      .some(node => /^staged-scope-\\d+\\.txt$/.test(node.textContent))`)), 'residual regression edits cleaned up');
+
     // Cross the eager threshold with literal files; exercise the installed webview and host paging wire.
     const viewportDirectory = await fs.mkdtemp(path.join(fixture.root, 'zz-scm-viewport-'));
     const viewportNames = Array.from({ length: 260 }, (_, index) => `viewport-${String(index).padStart(3, '0')}.txt`);
@@ -367,7 +413,7 @@ exports.run = async function () {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({
       passed: true, vscode: vscode.version, locale: vscode.env.language, fixture: fixture.root,
       gitRoot: repositoryRoot, smartCommit: false, gitAutorefresh: false,
-      keyboardSave: true, buttonSave: true, unstagedSave: true, outsideStagePreserved: true, failedHookDraftRetried: true,
+      keyboardSave: true, buttonSave: true, unstagedSave: true, stagedOnlySave: true, partialStageBytesPreserved: true, outsideStagePreserved: true, failedHookDraftRetried: true,
       monitorWithoutManualGitRefresh: true, firstMonitorRenameUnstage: true, sameCommitBranchPromptGuard: true, pagedScmViewport: true, viewportRows, semanticLabel, latencyMs, commitFiles,
       latencyMethod: 'performance.now before filesystem mutation until semantic/literal SCM DOM label; 50ms condition polling; no suite repo.status calls',
     }));
