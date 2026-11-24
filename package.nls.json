@@ -177,6 +177,7 @@
   "scmOpen": "Open File",
   "scmDiff": "Open Changes",
   "scmStage": "Stage Changes",
+  "scmStageLines": "Stage Selected Lines",
   "scmUnstage": "Unstage Changes",
   "scmDiscard": "Discard Changes",
   "scmRefresh": "Refresh 1C Changes",

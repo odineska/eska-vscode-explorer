@@ -1,6 +1,7 @@
 import type { MessageKey } from "./messages.js";
 import type { ChangeGroup } from "./scm-model.js";
 
+export const SCM_EMPTY = "eska-empty";
 export const fileActions = ["open", "diff", "head", "stage", "unstage", "discard", "ignore", "revealOs", "revealExplorer", "compareWorkspace"] as const;
 export type FileAction = typeof fileActions[number];
 export const groupCommands = {

@@ -9,6 +9,7 @@ import { sourceKey } from "./source.js";
 export interface GitChange { readonly uri: vscode.Uri; readonly originalUri: vscode.Uri; readonly renameUri?: vscode.Uri; readonly status: number }
 export interface GitRepository {
   readonly scmProvider?: "eska";
+  readonly lineStagingAvailable?: boolean;
   readonly rootUri: vscode.Uri;
   readonly kind?: "repository" | "submodule" | "worktree";
   readonly inputBox: { value: string };
@@ -30,7 +31,8 @@ interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<b
 
 export type ScmMode = "eska" | "vscode" | "both";
 export interface ScmProject { root: string; projectExecutable: string; mode: ScmMode }
-interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; supported: boolean; projects: ScmProject[] }
+interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean;
+  lineStagingAvailable: boolean; supported: boolean; projects: ScmProject[] }
 type Text = (key: MessageKey, ...values: string[]) => string;
 const RECOVERY_KEY = "eska.scm.closedRepositories.v1";
 export function containsScmRoot(root: string, path: string): boolean {
@@ -265,9 +267,11 @@ export class GitRepositories implements vscode.Disposable {
       const key = sourceKey(root), entry = roots.get(key);
       if (entry) {
         entry.projects.push(project);
-        if (target) { entry.supported = true; entry.executable = target.executable; entry.mutationsAvailable = target.mutationsAvailable; entry.branchesAvailable = target.branchesAvailable; }
+        if (target) Object.assign(entry, target, { supported: true });
       } else roots.set(key, { root, executable: target?.executable ?? project.projectExecutable,
-        mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false, supported: target !== undefined, projects: [project] });
+        mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false,
+        lineStagingAvailable: target?.lineStagingAvailable ?? false,
+        supported: target !== undefined, projects: [project] });
     }
     return roots;
   }
@@ -307,9 +311,12 @@ export class GitRepositories implements vscode.Disposable {
       const native = this.natives.get(key);
       let repository = this.own.get(key);
       if (repository && (repository.executable !== target.executable || repository.mutationsAvailable !== target.mutationsAvailable
-        || repository.branchesAvailable !== target.branchesAvailable)) { repository.dispose(); this.own.delete(key); repository = undefined; }
+        || repository.branchesAvailable !== target.branchesAvailable || repository.lineStagingAvailable !== target.lineStagingAvailable)) {
+        repository.dispose(); this.own.delete(key); repository = undefined;
+      }
       if (!repository) {
-        repository = new EskaRepository(target.root, target.executable, this.text, target.mutationsAvailable, target.branchesAvailable);
+        repository = new EskaRepository(target.root, target.executable, this.text, target.mutationsAvailable, target.branchesAvailable,
+          true, target.lineStagingAvailable);
         repository.onDidChangeInput(value => {
           this.drafts.set(key, value);
           if (this.recovery.has(target.root)) void this.persist().catch(error => this.log(String(error)));

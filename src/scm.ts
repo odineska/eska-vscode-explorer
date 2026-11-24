@@ -7,6 +7,7 @@ import { changeCaption, changeGroups, changeIdentity, changes, insideRepository,
 import { button, fileActions, fileInline, fileMenu, groupActions, groupCommands, isFileAction, isFileMutation, isGroupAction, type FileAction, type ScmAction } from "./scm-actions.js";
 import { executeFileAction, openGroupChanges } from "./scm-file-actions.js";
 import { ScmMonitors } from "./scm-monitor.js";
+import { stageSelectedLines } from "./scm-line-staging.js";
 import { saveScmScope, ScmSaveError } from "./scm-save.js";
 import type { ProjectCommandTarget } from "./project-command.js";
 import { message, type MessageKey } from "./messages.js";
@@ -76,6 +77,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.${alias}`, (entry?: unknown) => this.execute("revealOs", entry)));
     }
     this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.refresh`, () => this.refresh()),
+      vscode.commands.registerCommand(`${prefix}.stageLines`, () => this.runAction(() => stageSelectedLines(this.git, key => this.text(key)))),
       vscode.commands.registerCommand(`${prefix}.compareRevisions`, () => this.compareRevisions()));
   }
 
@@ -443,10 +445,23 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     return keys;
   }
 
-  private async execute(action: ScmAction, value?: unknown, selected?: unknown): Promise<void> {
+  private async runAction(action: () => Promise<void>): Promise<void> {
     if (this.disposed || this.busy) return;
     this.busy = true;
-    try {
+    try { await action(); }
+    catch (error) { this.report(error); }
+    finally {
+      this.busy = false;
+      for (const [repository, draft] of this.deferredDrafts) {
+        if (this.git.repositories.includes(repository)) repository.inputBox.value = draft.value;
+      }
+      this.deferredDrafts.clear();
+      this.invalidate(); await this.publish();
+    }
+  }
+
+  private async execute(action: ScmAction, value?: unknown, selected?: unknown): Promise<void> {
+    await this.runAction(async () => {
       const entry = this.resolve(value);
       const root = entry.kind === "repository" ? entry : entry.kind === "group" ? entry.parent : entry.parent.parent;
       const repository = this.validRepository(root);
@@ -499,15 +514,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
         if (fileAction === "diff" || action === "openChange" || fileMenu(row.parent.group, settings.worktree, settings.local, true).includes(fileAction)) rows.push(row);
       }
       await this.files(fileAction, rows);
-    } catch (error) { this.report(error); }
-    finally {
-      this.busy = false;
-      for (const [repository, draft] of this.deferredDrafts) {
-        if (this.git.repositories.includes(repository)) repository.inputBox.value = draft.value;
-      }
-      this.deferredDrafts.clear();
-      this.invalidate(); await this.publish();
-    }
+    });
   }
 
   private targetsGroup(action: string, selected: ChangeGroup, group: ChangeGroup, status: number): boolean {

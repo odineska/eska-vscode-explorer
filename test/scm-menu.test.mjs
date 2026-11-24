@@ -54,9 +54,14 @@ test("1C changes retain their SCM view identity and use native webview menus", a
   const scmCommands = contributes.commands.filter(scmItem);
   const palette = contributes.menus.commandPalette.filter(scmItem);
   assert.equal(palette.length, scmCommands.length);
+  const lineStaging = "isInDiffEditor && eska.scmCanStageLines";
   for (const { command } of scmCommands) {
-    const when = [commandId("refresh"), commandId("compareRevisions")].includes(command) ? "eska.hasProject && !eska.scmNativeOnly" : "false";
+    const when = command === commandId("stageLines") ? lineStaging
+      : [commandId("refresh"), commandId("compareRevisions")].includes(command) ? "eska.hasProject && !eska.scmNativeOnly" : "false";
     assert.deepEqual(palette.filter(item => item.command === command), [{ command, when }]);
+  }
+  for (const menu of ["editor/title", "editor/context"]) {
+    assert.ok(contributes.menus[menu].some(entry => entry.command === commandId("stageLines") && entry.when === lineStaging));
   }
   assert.ok(contributes.menus["view/title"].some(entry =>
     entry.command === commandId("refresh") && entry.when === `view == ${viewId}`,

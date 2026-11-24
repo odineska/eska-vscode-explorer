@@ -33,7 +33,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
       closedRoots.add(path);
       const i = repositories.findIndex(value => value.rootUri.fsPath === path); if (i >= 0) close.fire(repositories.splice(i, 1)[0]);
     } } };
-  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true) { Object.assign(this, repo(root)); this.executable = executable; this.mutationsAvailable = mutationsAvailable; this.branchesAvailable = branchesAvailable; this.cacheBlobs = cacheBlobs;
+  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true, lineStagingAvailable = false) { Object.assign(this, repo(root), { executable, mutationsAvailable, branchesAvailable, cacheBlobs, lineStagingAvailable });
     const changed = new Emitter(); this.onDidChangeInput = changed.event; let draft = '';
     this.inputBox = { get value() { return draft; }, set value(value) { draft = value; changed.fire(value); } };
   } async branches() { return ['main', 'feature']; } async checkout(branch) { calls.push(['checkout', this.rootUri.fsPath, branch]); } invalidateContent() {} setBranchStatus(value) { this.branchStatusEnabled = value; } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }

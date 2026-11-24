@@ -80,7 +80,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     restart() {}
     dispose() {}
   }
-  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions,
+  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions, './scm-line-staging.js': {},
     './scm-monitor.js': { ScmMonitors }, './scm-save.js': { ScmSaveError: class extends Error {}, async saveScmScope(scope, input) {
       scope.validate(); save.calls.push([scope, input]); const saved = await save.run(scope, input);
       if (saved) { save.modes.push(await scope.refresh()); scope.validate(); }

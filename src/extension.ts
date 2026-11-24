@@ -53,6 +53,7 @@ import { ProjectRuntime, type RuntimeProject } from "./project-runtime.js";
 import { WorkspaceProjects } from "./workspace-projects.js";
 import { RunDebugView } from "./run-debug-view.js";
 import { registerBslEnterRules } from "./language/bsl-newline.js";
+import { watchScmLineStageContext } from "./scm-line-staging.js";
 
 const collectionContexts = { standardAttributes: "eskaGroup", metadata: "eskaMetadataGroup", modules: "eskaModulesGroup", common: "eskaGroup", unsupported: "eskaGroup" } as const;
 
@@ -158,6 +159,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.status.name = "ESKA Explorer";
     this.status.command = "eska.explorer.updateTools";
     this.disposables.push(this.status, this.scm, this.decorations, this.protectedSources, this.projects, this.runDebug,
+      watchScmLineStageContext(this.git, text => this.output.warn(text)),
       vscode.window.registerTreeDataProvider("eska.explorer.runDebug", this.runDebug));
     this.disposables.push(new ProtectedLanguageFeatures(error => this.output.warn(String(error))));
     this.filters = new ProjectFilters(context.workspaceState);

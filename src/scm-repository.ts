@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { Status } from "./git-status.js";
+import { SCM_EMPTY } from "./scm-actions.js";
 import type { GitRepository } from "./git-api.js";
 import { parseScmSnapshot, type ScmMonitorSnapshot } from "./scm-monitor.js";
 import { isRecord, MAX_RESPONSE } from "./protocol.js";
@@ -13,13 +14,26 @@ import type { MessageKey } from "./messages.js";
 export const SCM_SCHEME = "eska-scm";
 export const SCM_CHECKOUT = "eska.explorer.scm.checkout";
 type Text = (key: MessageKey, ...values: string[]) => string;
-type Revision = "head" | "index" | "base" | "ours" | "theirs";
+type Revision = "head" | "index" | "base" | "ours" | "theirs" | "empty";
+export interface ScmStageLinesRequest {
+  schema_version: 1;
+  index_sha256: string;
+  worktree_sha256: string;
+  side: "index" | "worktree";
+  ranges: readonly { start: number; end: number }[];
+}
 class ScmBridgeError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 const bridgeErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
   git_unavailable: "scmBranchGitUnavailable", branch_invalid: "scmBranchInvalid", branch_not_found: "scmBranchMissing",
   references: "scmBranchReferences", checkout_failed: "scmBranchCheckoutFailed",
+};
+const lineStageErrors: Readonly<Record<string, MessageKey | undefined>> = {
+  stale_status: "scmLineStageChanged", path: "scmLineStageChanged", ignored: "scmLineStageChanged",
+  empty_selection: "scmLineStageEmpty", ambiguous_lines: "scmLineStageUneven", unsupported_text: "scmLineStageUnsupported",
+  conflict: "scmLineStageConflict", index_locked: "scmLineStageLocked", oversize: "scmLineStageSize",
+  input_limit: "scmLineStageSize",
 };
 
 /** Never interpret human output or invoke a shell for repository operations. */
@@ -32,7 +46,9 @@ export async function scmBridge(executable: string, root: string, operation: str
 }
 
 /** Discover the Git root through a read-only backend capability probe. */
-export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{ root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean } | undefined> {
+export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{
+  root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; lineStagingAvailable: boolean;
+} | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
     if (!executable || signal?.aborted) return;
@@ -40,7 +56,8 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     if (typeof data.root !== "string" || !["utf-8", "percent", "utf-16-percent"].includes(String(data.root_encoding))) return;
     const root = nativePath({ value: data.root, encoding: data.root_encoding as "utf-8" | "percent" | "utf-16-percent" });
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
-    return { root, executable, mutationsAvailable: data.mutations_available === true, branchesAvailable: data.branches_available === true };
+    return { root, executable, mutationsAvailable: data.mutations_available === true,
+      branchesAvailable: data.branches_available === true, lineStagingAvailable: data.line_staging_available === true };
   } catch { return; }
 }
 
@@ -69,7 +86,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
   constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false,
-    private readonly cacheBlobs = true) {
+    private readonly cacheBlobs = true, readonly lineStagingAvailable = false) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -188,6 +205,28 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   add(paths: string[]): Promise<void> { return this.files("stage", paths); }
   revert(paths: string[]): Promise<void> { return this.files("unstage", paths); }
   clean(paths: string[]): Promise<void> { return this.files("discard", paths); }
+  async stageLines(uri: vscode.Uri, selection: ScmStageLinesRequest, validate: () => void): Promise<void> {
+    if (!this.lineStagingAvailable) throw new Error(this.text("scmLineStageChanged"));
+    const path = this.path(uri);
+    if (this.pending) await this.pending;
+    if (this.writing) throw new Error(this.text("scmBusy"));
+    validate();
+    this.writing = true;
+    const task = async (): Promise<void> => {
+      try {
+        try { await this.request("scm-stage-lines", ["--", path], selection); }
+        catch (cause) {
+          if (cause instanceof Error && cause.cause instanceof ScmBridgeError && cause.cause.code === "stale_status") {
+            try { await this.refreshStatus(); } catch { /* Preserve the stale selection error. */ }
+          }
+          throw cause;
+        }
+        await this.refreshStatus();
+      } finally { this.writing = false; this.mutation = undefined; }
+    };
+    this.mutation = task();
+    await this.mutation;
+  }
   private path(uri: vscode.Uri): string {
     const path = uri.scheme === "file" ? relativeFile(this.rootUri.fsPath, uri.fsPath) : undefined;
     if (!path || path.includes("\0")) throw new Error(this.text("scmChanged"));
@@ -261,7 +300,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       if (this.abort.signal.aborted) throw new Error(this.text("scmChanged"));
       return data;
     } catch (cause) {
-      const key = cause instanceof ScmBridgeError && Object.hasOwn(bridgeErrorMessages, cause.code) ? bridgeErrorMessages[cause.code] : undefined;
+      const messages = operation === "scm-stage-lines" ? lineStageErrors : bridgeErrorMessages;
+      const key = cause instanceof ScmBridgeError && Object.hasOwn(messages, cause.code) ? messages[cause.code] : undefined;
       throw new Error(this.text(key ?? "scmFailed"), { cause });
     }
   }
@@ -272,6 +312,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   }
   readBlob(uri: vscode.Uri, revision: Revision): Promise<Uint8Array> {
     const path = this.path(uri), key = `${revision}:${path}`;
+    if (revision === "empty") return Promise.resolve(new Uint8Array());
     const existing = this.blobs.get(key);
     if (existing) return existing;
     if (this.blobs.size >= 64) { this.blobs.clear(); this.cachedBytes = 0; }
@@ -308,6 +349,7 @@ export function revisionForRef(ref: string): Revision {
     case "~1": return "base";
     case "~2": return "ours";
     case "~3": return "theirs";
+    case SCM_EMPTY: return "empty";
     default: throw new Error("Unsupported SCM revision");
   }
 }
@@ -324,7 +366,7 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
       if (uri.scheme !== SCM_SCHEME || uri.fragment) throw new Error();
       const query: unknown = JSON.parse(uri.query);
       if (!isRecord(query) || typeof query.root !== "string" || !isAbsolute(query.root) || query.root.includes("\0")
-        || !["head", "index", "base", "ours", "theirs"].includes(String(query.revision))) throw new Error();
+        || !["head", "index", "base", "ours", "theirs", "empty"].includes(String(query.revision))) throw new Error();
       const file = uri.with({ scheme: "file", query: "", fragment: "" });
       if (!relativeFile(query.root, file.fsPath)) throw new Error();
       const repository = await this.resolve(query.root);
