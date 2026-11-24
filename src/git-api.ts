@@ -48,6 +48,12 @@ export class GitRepositories implements vscode.Disposable {
   private native: ReturnType<GitExtension["getAPI"]> | undefined;
   private readonly natives = new Map<string, GitRepository>();
   private readonly own = new Map<string, EskaRepository>();
+  private readonly readers = new Map<string, EskaRepository>();
+  private readonly pendingReaders = new Map<string, Promise<EskaRepository | undefined>>();
+  private readerGeneration = 0;
+  private readerAbort = new AbortController();
+  private projectsReadyResolve: (() => void) | undefined;
+  private readonly projectsReady = new Promise<void>(resolve => { this.projectsReadyResolve = resolve; });
   private readonly watches = new Map<GitRepository, vscode.Disposable>();
   private visible = new Map<string, GitRepository>();
   private projects: readonly ScmProject[] = [];
@@ -73,7 +79,7 @@ export class GitRepositories implements vscode.Disposable {
   constructor() {
     this.monitors = new ScmMonitors(root => {
       const key = sourceKey(root), snapshot = this.monitors.get(root);
-      if (snapshot) { this.own.get(key)?.accept(snapshot); this.monitorWaiters.get(key)?.(true); }
+      if (snapshot) { this.own.get(key)?.accept(snapshot); this.readers.get(key)?.invalidateContent(); this.monitorWaiters.get(key)?.(true); }
       else { this.failedMonitors.add(key); this.monitorWaiters.get(key)?.(false); this.schedule(); }
     }, message => this.log(message));
     const owner = this;
@@ -101,14 +107,57 @@ export class GitRepositories implements vscode.Disposable {
         if ("draft" in value && typeof value.draft === "string") this.drafts.set(sourceKey(value.root), value.draft);
       }
     }
-    const provider = new EskaScmFileSystemProvider(root => this.own.get(sourceKey(root)));
+    const provider = new EskaScmFileSystemProvider(root => this.resolveReader(root));
     this.subscriptions.push(provider, vscode.workspace.registerFileSystemProvider(SCM_SCHEME, provider, { isReadonly: true, isCaseSensitive: process.platform !== "win32" }),
       vscode.commands.registerCommand(SCM_CHECKOUT, (root: unknown) => this.checkout(root)),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("git.enabled") || event.affectsConfiguration("git.ignoredRepositories")) this.schedule();
-      }), vscode.workspace.onDidChangeWorkspaceFolders(() => this.schedule()),
-      vscode.workspace.onDidGrantWorkspaceTrust(() => this.schedule()));
+      }), vscode.workspace.onDidChangeWorkspaceFolders(() => { this.clearReaders(); this.schedule(); }),
+      vscode.workspace.onDidGrantWorkspaceTrust(() => { this.clearReaders(); this.schedule(); }));
     this.schedule();
+  }
+  /** Restored tabs can request blobs before discovery or a monitor's first snapshot. */
+  private async resolveReader(root: string): Promise<EskaRepository | undefined> {
+    await this.projectsReady;
+    if (this.disposed || this.releasing || vscode.workspace.isTrusted === false) return;
+    const key = sourceKey(root);
+    const projects = this.projects.filter(project => containsScmRoot(root, project.root)
+      && (vscode.workspace.workspaceFolders ?? []).some(folder => folder.uri.scheme === "file" && containsScmRoot(folder.uri.fsPath, project.root)));
+    if (!projects.length) return;
+    const owner = this.own.get(key);
+    if (owner && !owner.isDisposed && !this.failedMonitors.has(key) && this.monitors.get(root)
+      && projects.some(project => sourceKey(this.discoveries.get(this.discoveryKey(project))?.root ?? "") === key)) return owner;
+    const existing = this.readers.get(key);
+    if (existing) return existing;
+    const pending = this.pendingReaders.get(key);
+    if (pending) return pending;
+    const generation = this.readerGeneration;
+    const request = async (): Promise<EskaRepository | undefined> => {
+      for (const project of projects) {
+        const discoveryKey = this.discoveryKey(project);
+        const target = this.discoveries.get(discoveryKey)
+          ?? await discoverScmRoot(project.root, project.projectExecutable, this.readerAbort.signal);
+        if (generation !== this.readerGeneration) return this.resolveReader(root);
+        if (this.disposed || this.releasing || vscode.workspace.isTrusted === false) return;
+        if (!target || sourceKey(target.root) !== key) continue;
+        const readyOwner = this.own.get(key);
+        if (readyOwner && !readyOwner.isDisposed && !this.failedMonitors.has(key) && this.monitors.get(root)) return readyOwner;
+        // The read-only owner survives SCM mode changes and never runs status or a watcher.
+        // Mutable HEAD/index blobs are deliberately uncached without a resident monitor.
+        const reader = new EskaRepository(target.root, target.executable, this.text, false, false, false);
+        this.readers.set(key, reader); return reader;
+      }
+      return;
+    };
+    const promise = request().finally(() => { if (this.pendingReaders.get(key) === promise) this.pendingReaders.delete(key); });
+    this.pendingReaders.set(key, promise);
+    return promise;
+  }
+  private clearReaders(): void {
+    this.readerGeneration++; this.readerAbort.abort(); this.readerAbort = new AbortController();
+    this.pendingReaders.clear();
+    for (const reader of this.readers.values()) reader.dispose();
+    this.readers.clear();
   }
   private async checkout(root: unknown): Promise<void> {
     if (typeof root !== "string") return;
@@ -142,7 +191,10 @@ export class GitRepositories implements vscode.Disposable {
   setScmProjects(projects: readonly ScmProject[]): void {
     const signature = JSON.stringify(projects);
     if (this.projectsConfigured && signature === this.signature) return;
+    if (projects.length !== this.projects.length || projects.some((project, index) => project.root !== this.projects[index]?.root
+      || project.projectExecutable !== this.projects[index]?.projectExecutable)) this.clearReaders();
     this.projectsConfigured = true;
+    this.projectsReadyResolve?.(); this.projectsReadyResolve = undefined;
     this.failedMonitors.clear(); this.signature = signature; this.projects = projects.map(project => ({ ...project }));
     const retained = new Set(projects.map(project => this.discoveryKey(project)));
     for (const key of this.discoveries.keys()) if (!retained.has(key)) this.discoveries.delete(key);
@@ -152,7 +204,7 @@ export class GitRepositories implements vscode.Disposable {
   /** Explicit refresh retries terminal sessions and tools installed at an unchanged path. */
   retryScm(): void {
     if (!this.projectsConfigured) return;
-    this.failedMonitors.clear(); this.discoveries.clear(); this.schedule();
+    this.clearReaders(); this.failedMonitors.clear(); this.discoveries.clear(); this.schedule();
   }
   private discoveryKey(project: ScmProject): string { return JSON.stringify([sourceKey(project.root), project.projectExecutable]); }
   private schedule(): void {
@@ -319,7 +371,9 @@ export class GitRepositories implements vscode.Disposable {
     this.visible = next;
     for (const [key, repository] of this.own) repository.setBranchStatus(!this.releasing && this.modes.get(key) === "eska" && next.get(key) === repository);
     for (const repository of next.values()) if (!this.watches.has(repository)) {
-      this.watches.set(repository, repository.state.onDidChange(() => this.changed.fire(repository))); this.opened.fire(repository);
+      this.watches.set(repository, repository.state.onDidChange(() => {
+        this.readers.get(sourceKey(repository.rootUri.fsPath))?.invalidateContent(); this.changed.fire(repository);
+      })); this.opened.fire(repository);
     }
     this.changed.fire(undefined);
   }
@@ -356,6 +410,7 @@ export class GitRepositories implements vscode.Disposable {
   }
   async releaseScm(): Promise<void> {
     this.releasing = true; this.generation++; this.abort.abort(); this.monitors.dispose();
+    this.projectsReadyResolve?.(); this.clearReaders();
     for (const repository of this.own.values()) repository.setBranchStatus(false);
     await this.pending.catch(error => this.log(String(error)));
     for (const root of [...this.recovery]) {
@@ -366,6 +421,7 @@ export class GitRepositories implements vscode.Disposable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.generation++; this.abort.abort(); this.monitors.dispose();
+    this.projectsReadyResolve?.(); this.clearReaders();
     for (const subscription of [...this.subscriptions, ...this.nativeSubscriptions, ...this.watches.values()]) subscription.dispose();
     for (const repository of this.own.values()) repository.dispose();
     this.changed.dispose(); this.opened.dispose(); this.closed.dispose();

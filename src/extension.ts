@@ -395,7 +395,8 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
       const selected = config.get<string>("scm.mode", "eska");
       const mode: ScmMode = selected === "both" || selected === "vscode" ? selected : "eska";
       const root = folder.uri.fsPath;
-      if (mode === "vscode" || !vscode.workspace.isTrusted) return { root, projectExecutable: fallback, mode };
+      // A restored ESKA diff can still need the configured executable in native Git mode.
+      if (!vscode.workspace.isTrusted) return { root, projectExecutable: fallback, mode };
       const backend = config.get<string>("backend", "project");
       const name = backend === "legacy" ? "eska" : "eska-project";
       const configured = config.get<string>("executable", "eska-project");

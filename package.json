@@ -22,6 +22,7 @@
   "activationEvents": [
     "onFileSystem:eska-query",
     "onFileSystem:eska-protected",
+    "onFileSystem:eska-scm",
     "onView:eska.explorer.projects",
     "workspaceContains:eska.toml",
     "onStartupFinished",

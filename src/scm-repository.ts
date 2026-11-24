@@ -53,6 +53,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   readonly onDidChangeInput = this.inputChanged.event;
   private readonly changed = new vscode.EventEmitter<void>();
   private readonly abort = new AbortController();
+  get isDisposed(): boolean { return this.abort.signal.aborted; }
   private readonly closed = new vscode.EventEmitter<void>();
   readonly onDidDispose = this.closed.event;
   private current: ScmMonitorSnapshot | undefined;
@@ -67,7 +68,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   private stamp = Date.now();
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
-  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false) {
+  constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false,
+    private readonly cacheBlobs = true) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -152,9 +154,12 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   }
   private publish(snapshot: ScmMonitorSnapshot): void {
     if (this.abort.signal.aborted || snapshot === this.current) return;
+    this.current = snapshot; this.updateBranchStatus(); this.invalidateContent();
+  }
+  invalidateContent(): void {
+    if (this.abort.signal.aborted) return;
     this.blobs.clear(); this.cachedBytes = 0;
-    this.stamp = Math.max(Date.now(), this.stamp + 1);
-    this.current = snapshot; this.updateBranchStatus(); this.changed.fire();
+    this.stamp = Math.max(Date.now(), this.stamp + 1); this.changed.fire();
   }
   status(): Promise<void> {
     return this.mutation ?? this.refreshStatus();
@@ -276,7 +281,7 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       // Native decoding plus canonical re-encoding is linear and has no regexp backtracking stack.
       const bytes = Buffer.from(data.content, "base64");
       if (bytes.length > 33_554_432 || bytes.toString("base64") !== data.content) throw new Error(this.text("scmFailed"));
-      if (this.blobs.get(key) === request) {
+      if (this.cacheBlobs && this.blobs.get(key) === request) {
         this.cachedBytes += bytes.length;
         if (this.cachedBytes > 33_554_432) {
           this.blobs.clear(); this.cachedBytes = bytes.length; this.blobs.set(key, request);
@@ -285,7 +290,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       return bytes;
     });
     this.blobs.set(key, request);
-    void request.catch(() => { if (this.blobs.get(key) === request) this.blobs.delete(key); });
+    const remove = (): void => { if (this.blobs.get(key) === request) this.blobs.delete(key); };
+    void request.then(() => { if (!this.cacheBlobs) remove(); }, remove);
     return request;
   }
   dispose(): void {
@@ -311,17 +317,19 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
   private readonly changes = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.changes.event;
   private readonly repositories = new Map<EskaRepository, { subscription: vscode.Disposable; uris: Map<string, vscode.Uri> }>();
-  constructor(private readonly resolve: (root: string) => EskaRepository | undefined) {}
+  constructor(private readonly resolve: (root: string) => EskaRepository | undefined | Promise<EskaRepository | undefined>) {}
   watch(): vscode.Disposable { return new vscode.Disposable(() => {}); }
-  private target(uri: vscode.Uri): { repository: EskaRepository; revision: Revision; file: vscode.Uri } {
+  private async target(uri: vscode.Uri): Promise<{ repository: EskaRepository; revision: Revision; file: vscode.Uri }> {
     try {
       if (uri.scheme !== SCM_SCHEME || uri.fragment) throw new Error();
       const query: unknown = JSON.parse(uri.query);
-      if (!isRecord(query) || typeof query.root !== "string" || !["head", "index", "base", "ours", "theirs"].includes(String(query.revision))) throw new Error();
-      const repository = this.resolve(query.root);
-      if (!repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(query.root)) throw new Error();
+      if (!isRecord(query) || typeof query.root !== "string" || !isAbsolute(query.root) || query.root.includes("\0")
+        || !["head", "index", "base", "ours", "theirs"].includes(String(query.revision))) throw new Error();
       const file = uri.with({ scheme: "file", query: "", fragment: "" });
-      if (!relativeFile(repository.rootUri.fsPath, file.fsPath)) throw new Error();
+      if (!relativeFile(query.root, file.fsPath)) throw new Error();
+      const repository = await this.resolve(query.root);
+      if (!repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(query.root)) throw new Error();
+      if (repository.isDisposed) return { repository, revision: query.revision as Revision, file };
       let watched = this.repositories.get(repository);
       if (!watched) {
         const uris = new Map<string, vscode.Uri>();
@@ -330,7 +338,8 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
         });
         const closed = repository.onDidDispose(() => {
           this.repositories.delete(repository); changed.dispose();
-          this.changes.fire([...uris.values()].map(uri => ({ type: vscode.FileChangeType.Deleted, uri })));
+          // Ownership can change while the saved URI still names a real Git blob.
+          this.changes.fire([...uris.values()].map(uri => ({ type: vscode.FileChangeType.Changed, uri })));
         });
         watched = { uris, subscription: { dispose() { closed.dispose(); changed.dispose(); } } };
         this.repositories.set(repository, watched);
@@ -342,12 +351,20 @@ export class EskaScmFileSystemProvider implements vscode.FileSystemProvider {
     } catch { throw vscode.FileSystemError.FileNotFound(uri); }
   }
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const { repository, revision, file } = this.target(uri);
-    return repository.readBlob(file, revision);
+    return (await this.content(uri)).content;
+  }
+  private async content(uri: vscode.Uri): Promise<{ repository: EskaRepository; content: Uint8Array }> {
+    const { repository, revision, file } = await this.target(uri);
+    try { return { repository, content: await repository.readBlob(file, revision) }; }
+    catch (error) {
+      if (!repository.isDisposed) throw error;
+      // A mode transition may close the hot owner while the saved blob is still valid.
+      const next = await this.target(uri);
+      return { repository: next.repository, content: await next.repository.readBlob(next.file, next.revision) };
+    }
   }
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-    const { repository, revision, file } = this.target(uri);
-    const content = await repository.readBlob(file, revision);
+    const { repository, content } = await this.content(uri);
     return { type: vscode.FileType.File, ctime: 0, mtime: repository.contentVersion, size: content.length, permissions: vscode.FilePermission.Readonly };
   }
   readDirectory(): [string, vscode.FileType][] { return []; }
