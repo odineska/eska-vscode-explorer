@@ -25,7 +25,7 @@ function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("b
       runInNewContext('(function(require,module,exports){' + readFileSync(childUrl, 'utf8') + '\n})', { process, Buffer, TextDecoder, setTimeout, clearTimeout, setInterval, clearInterval })(name => name === 'vscode' ? vscode : require(name), nested, nested.exports);
       return nested.exports;
     }
-    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); const data = handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {}; return data?.operation ? data : { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data }; } };
+    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); const data = handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {}; return args[2] === 'switch' || data?.operation ? data : { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data }; } };
     return require(name);
   }, module, module.exports);
   return { ...module.exports, vscode, calls, controls };
@@ -180,27 +180,35 @@ test('branch status follows resident HEAD, uses exact root and disposes without 
   repo.dispose(); assert.equal(controls[1].disposed, true); assert.equal(calls.length, 0);
 });
 
-test('branch bridge checks capability and keeps checkout argument literal with one post-write refresh', async () => {
-  const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-branches'
-    ? { branches: [{ name: 'main', name_encoding: 'utf-8' }, { name: 'feature/кириллица', name_encoding: 'utf-8' }, { name: '%FF', name_encoding: 'percent' }] }
-    : snapshot('b'));
-  const root = resolve('repo'), old = new EskaRepository(root, '/eska-vcs', key => key);
-  await assert.rejects(old.branches(), { message: 'scmBranchUpdateRequired' });
+test('selecting a local ref runs the public literal switch with shelves and refreshes once', async () => {
+  const { EskaRepository, calls } = load(false, '', (args, options) => {
+    if (args[2] === 'switch') {
+      assert.equal(options.timeout, 0);
+      assert.equal(options.signal, undefined);
+      return { schema_version: 1, operation: 'switch', dry_run: false, branch: args.at(-1), saved: {}, restored: null };
+    }
+    if (args[3] === 'scm-branches') return { branches: [{ name: 'main', name_encoding: 'utf-8' }, { name: 'feature/кириллица', name_encoding: 'utf-8' }, { name: '%FF', name_encoding: 'percent' }] };
+    return snapshot('b');
+  });
+  const root = resolve('repo'), old = new EskaRepository(root, '/eska-vcs', key => key, true, true);
   await assert.rejects(old.checkout('main'), { message: 'scmBranchUpdateRequired' });
   assert.equal(calls.length, 0); old.dispose();
-  const repo = new EskaRepository(root, '/eska-vcs', key => key, true, true);
+  const repo = new EskaRepository(root, '/eska-vcs', key => key, true, true, true, false, true, true);
   assert.deepEqual(Array.from(await repo.branches()), ['main', 'feature/кириллица']);
-  await repo.checkout('feature/кириллица');
-  assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-checkout', '--', 'feature/кириллица']);
+  const result = await repo.branchAction({ target: { kind: 'local', name: 'feature/кириллица' } });
+  assert.equal(result.saved, true);
+  assert.equal(result.restored, false);
+  assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, 'switch', '--format', 'json', '--', 'feature/кириллица']);
   assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1);
   assert.equal(repo.state.HEAD.commit, 'b'.repeat(40)); repo.dispose();
 });
 
 test('checkout domain failures retain localized explanations and refresh the previous state', async () => {
-  for (const [code, message] of [['checkout_failed', 'scmBranchCheckoutFailed'], ['branch_not_found', 'scmBranchMissing'], ['git_unavailable', 'scmBranchGitUnavailable']]) {
-    const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-checkout'
-      ? { schema_version: 1, operation: 'scm_checkout', data: null, error: code } : snapshot('a'));
-    const repo = new EskaRepository(resolve('repo'), '/eska-vcs', key => key, true, true);
+  for (const [code, message] of [['command', 'scmBranchCheckoutFailed'], ['branch-missing', 'scmBranchMissing'],
+    ['target-checked-out', 'scmBranchOccupied'], ['moved-branch', 'scmBranchShelfBlocked']]) {
+    const { EskaRepository, calls } = load(false, '', args => args[2] === 'switch'
+      ? { schema_version: 1, status: 'error', error: { code } } : snapshot('a'));
+    const repo = new EskaRepository(resolve('repo'), '/eska-vcs', key => key, true, true, true, false, false, true);
     await assert.rejects(repo.checkout('feature'), { message });
     assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1); repo.dispose();
   }
@@ -284,15 +292,17 @@ test('blob reads retry against the restored owner when a mode transition dispose
   provider.dispose(); fallback.dispose();
 });
 test('extended branch bridge is capability gated and uses typed literal arguments', async () => {
-  const { EskaRepository, calls } = load(false, undefined, args => args[3] === 'scm-refs' ? { refs: [{ name: 'origin/topic', kind: 'remote' }] } : {});
+  const { EskaRepository, calls } = load(false, undefined, args => args[3] === 'scm-refs'
+    ? { refs: [{ name: 'origin/topic', kind: 'remote' }] } : { saved: true, restored: false });
   const root = resolve('repo');
   const old = new EskaRepository(root, '/bin/eska-vcs', key => key, true, true);
   await assert.rejects(old.branchRefs(), /scmBranchUpdateRequired/);
   await assert.rejects(old.branchAction({ target: { name: 'HEAD', kind: 'head' }, branch: 'new' }), /scmBranchUpdateRequired/);
   assert.equal(calls.length, 0);
-  const repo = new EskaRepository(root, '/bin/eska-vcs', key => key, true, true, true, false, true);
+  const repo = new EskaRepository(root, '/bin/eska-vcs', key => key, true, true, true, false, true, true);
   assert.equal((await repo.branchRefs())[0].kind, 'remote');
-  await repo.branchAction({ target: { name: 'origin/topic', kind: 'remote' }, branch: 'new/ветка' });
+  const result = await repo.branchAction({ target: { name: 'origin/topic', kind: 'remote' }, branch: 'new/ветка' });
+  assert.equal(result.saved, true);
   assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-switch', '--kind', 'remote', '--branch', 'new/ветка', '--', 'origin/topic']);
   assert.equal(calls[2][3], 'scm-status');
 });

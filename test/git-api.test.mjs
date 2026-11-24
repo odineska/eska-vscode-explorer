@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
-function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true, fail = false, ignored = [], gitEnabled = true, nativeAvailable = true, apiKeepsClosed = false, oldCli = false, trusted = true, recovery = [] } = {}) {
+function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true, fail = false, ignored = [], gitEnabled = true, nativeAvailable = true, apiKeepsClosed = false, oldCli = false, safeSwitch = true, trusted = true, recovery = [] } = {}) {
   class Emitter {
     listeners = new Set(); event = callback => { this.listeners.add(callback); return { dispose: () => this.listeners.delete(callback) }; };
     fire(value) { for (const callback of this.listeners) callback(value); } dispose() { this.listeners.clear(); }
@@ -18,11 +18,11 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
   const native = { getRepository(uri) { return repositories.find(repo => repo.rootUri.fsPath === uri.fsPath) ?? null; }, repositories, onDidOpenRepository: open.event, onDidCloseRepository: close.event,
     async openRepository(uri) { calls.push(['open', uri.fsPath]); if (apiKeepsClosed && closedRoots.has(uri.fsPath)) return null; let value = repositories.find(item => item.rootUri.fsPath === uri.fsPath); if (!value) { value = repo(uri.fsPath); repositories.push(value); open.fire(value); } return value; },
     toGitUri(uri) { return { ...uri, scheme: 'git' }; } };
-  const vscode = { Uri, EventEmitter: Emitter, workspace: {
+  const vscode = { Uri, EventEmitter: Emitter, ProgressLocation: { Notification: 15 }, workspace: {
     isTrusted: trusted, textDocuments: [], onDidGrantWorkspaceTrust: new Emitter().event, onDidChangeConfiguration: new Emitter().event, onDidChangeWorkspaceFolders: new Emitter().event, workspaceFolders: folders.map(path => ({ uri: Uri.file(path) })), registerFileSystemProvider(scheme, provider, options) { providerOptions = options; return { dispose() {} }; },
     getConfiguration() { return { get(key, fallback) { return key === 'enabled' ? gitEnabled : key === 'ignoredRepositories' ? ignored : fallback; } }; },
   }, extensions: { getExtension() { return nativeAvailable ? { activate: async () => ({ enabled: true, getAPI: () => native, onDidChangeEnablement: new Emitter().event }) } : undefined; } },
-    window: { async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message) { notices.push(message); }, showInformationMessage(message) { notices.push(message); } },
+    window: { withProgress(_options, callback) { return callback(); }, async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message) { notices.push(message); }, showInformationMessage(message) { notices.push(message); } },
     commands: { registerCommand(name, handler) { commands.set(name, handler); return { dispose() { commands.delete(name); } }; }, async executeCommand(command, uri) {
       const path = typeof uri === 'string' ? uri : uri.fsPath;
       calls.push([command, path]);
@@ -33,10 +33,10 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
       closedRoots.add(path);
       const i = repositories.findIndex(value => value.rootUri.fsPath === path); if (i >= 0) close.fire(repositories.splice(i, 1)[0]);
     } } };
-  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true, lineStagingAvailable = false, branchActionsAvailable = false) { Object.assign(this, repo(root), { executable, mutationsAvailable, branchesAvailable, cacheBlobs, lineStagingAvailable, branchActionsAvailable });
+  class EskaRepository { constructor(root, executable, text, mutationsAvailable, branchesAvailable, cacheBlobs = true, lineStagingAvailable = false, branchActionsAvailable = false, safeSwitchAvailable = false) { Object.assign(this, repo(root), { executable, mutationsAvailable, branchesAvailable, cacheBlobs, lineStagingAvailable, branchActionsAvailable, safeSwitchAvailable });
     const changed = new Emitter(); this.onDidChangeInput = changed.event; let draft = '';
     this.inputBox = { get value() { return draft; }, set value(value) { draft = value; changed.fire(value); } };
-  } async branches() { return ['main', 'feature']; } async checkout(branch) { calls.push(['checkout', this.rootUri.fsPath, branch]); } invalidateContent() {} setBranchStatus(value) { this.branchStatusEnabled = value; } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }
+  } async branches() { return ['main', 'feature']; } async checkout(branch, validate) { validate(); calls.push(['checkout', this.rootUri.fsPath, branch]); return { saved: false, restored: false }; } invalidateContent() {} setBranchStatus(value) { this.branchStatusEnabled = value; } accept() {} async status() { calls.push(['status', this.rootUri.fsPath]); if (fail) throw new Error('failed'); } dispose() {} toGitUri(uri) { return { ...uri, scheme: 'eska-scm' }; } }
   const url = new URL('../out/git-api.js', import.meta.url), module = { exports: {} }, require = createRequire(url);
   runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, AbortController, setTimeout, clearTimeout, queueMicrotask })(name => {
     if (name === 'vscode') return vscode;
@@ -44,7 +44,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
     if (name === './scm-monitor.js') return { ScmMonitors: class { snapshots = new Map(); constructor(changed) { this.changed = changed; monitor = this; } synchronize(targets) { for (const target of targets) { if (!this.snapshots.has(target.root)) { if (!fail) this.snapshots.set(target.root, {}); queueMicrotask(() => this.changed(target.root)); } } } get(root) { return this.snapshots.get(root); } dispose() {} } };
     if (name === './source.js') return { sourceKey: path => path };
     if (name === './scm-repository.js') return { EskaRepository, EskaScmFileSystemProvider: class { constructor(resolve) { resolveReader = resolve; } dispose() {} }, SCM_SCHEME: 'eska-scm', SCM_CHECKOUT: 'eska.explorer.scm.checkout',
-      discoverScmRoot: async () => { discoveries++; return oldCli ? undefined : { root: '/repo', executable: '/eska-vcs', mutationsAvailable: mutations, branchesAvailable: true }; } };
+      discoverScmRoot: async () => { discoveries++; return oldCli ? undefined : { root: '/repo', executable: '/eska-vcs', mutationsAvailable: mutations, branchesAvailable: true, safeSwitchAvailable: safeSwitch }; } };
     return require(name);
   }, module, module.exports);
   const owner = new module.exports.GitRepositories();
@@ -88,6 +88,17 @@ test('provides independent SCM and branch switching in both mode without the nat
   setPick('feature');
   await commands.get('eska.explorer.scm.checkout')('/repo');
   assert.deepEqual(calls.at(-1), ['checkout', '/repo', 'feature']);
+  await owner.releaseScm(); owner.dispose();
+});
+
+test('a backend without shelf-aware switch is blocked before offering a checkout', async () => {
+  const { owner, calls, commands, settled, notices, picks } = setup({ nativeAvailable: false, safeSwitch: false });
+  owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]);
+  await settled();
+  await commands.get('eska.explorer.scm.checkout')('/repo');
+  assert.deepEqual(notices, ['scmBranchUpdateRequired']);
+  assert.equal(picks.length, 0);
+  assert.equal(calls.length, 0);
   await owner.releaseScm(); owner.dispose();
 });
 test('manually closed native roots still have ESKA SCM and are never reopened', async () => {

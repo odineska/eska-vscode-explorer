@@ -23,6 +23,7 @@ export interface ScmStageLinesRequest {
   side: "index" | "worktree";
   ranges: readonly { start: number; end: number }[];
 }
+export interface BranchSwitchResult { saved: boolean; restored: boolean }
 class ScmBridgeError extends Error {
   constructor(readonly code: string) { super(code); }
 }
@@ -30,6 +31,15 @@ const bridgeErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
   git_unavailable: "scmBranchGitUnavailable", branch_invalid: "scmBranchInvalid", branch_not_found: "scmBranchMissing",
   branch_exists: "scmBranchExists",
   references: "scmBranchReferences", checkout_failed: "scmBranchCheckoutFailed",
+};
+const switchErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
+  ...bridgeErrorMessages,
+  "branch-invalid": "scmBranchInvalid", "branch-missing": "scmBranchMissing",
+  "target-checked-out": "scmBranchOccupied", command: "scmBranchCheckoutFailed", locked: "scmBranchLocked",
+  "in-progress": "scmBranchOperation", detached: "scmBranchShelfOwner", unborn: "scmBranchShelfOwner",
+  "invalid-shelf": "scmBranchShelfBlocked", "shelf-exists": "scmBranchShelfBlocked", "shelf-missing": "scmBranchShelfBlocked",
+  "wrong-branch": "scmBranchShelfBlocked", "moved-branch": "scmBranchShelfBlocked", collision: "scmBranchShelfBlocked",
+  incomplete: "scmBranchShelfBlocked", dirty: "scmBranchShelfBlocked", "unsupported-index": "scmBranchShelfBlocked",
 };
 const lineStageErrors: Readonly<Record<string, MessageKey | undefined>> = {
   stale_status: "scmLineStageChanged", path: "scmLineStageChanged", ignored: "scmLineStageChanged",
@@ -39,8 +49,8 @@ const lineStageErrors: Readonly<Record<string, MessageKey | undefined>> = {
 };
 
 /** Never interpret human output or invoke a shell for repository operations. */
-export async function scmBridge(executable: string, root: string, operation: string, args: string[] = [], signal?: AbortSignal, input?: unknown): Promise<Record<string, unknown>> {
-  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout: 30_000, maxOutputBytes: MAX_RESPONSE, signal, input, resultExitCodes: [1] });
+export async function scmBridge(executable: string, root: string, operation: string, args: string[] = [], signal?: AbortSignal, input?: unknown, timeout = 30_000): Promise<Record<string, unknown>> {
+  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout, maxOutputBytes: MAX_RESPONSE, signal, input, resultExitCodes: [1] });
   if (!isRecord(value) || value.schema_version !== 1 || value.operation !== operation.replaceAll("-", "_")) throw new Error("Invalid SCM bridge response");
   if (typeof value.error === "string") throw new ScmBridgeError(value.error);
   if (value.error !== null || !isRecord(value.data)) throw new Error("Invalid SCM bridge response");
@@ -50,6 +60,7 @@ export async function scmBridge(executable: string, root: string, operation: str
 /** Discover the Git root through a read-only backend capability probe. */
 export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{
   root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; lineStagingAvailable: boolean; branchActionsAvailable: boolean;
+  safeSwitchAvailable: boolean;
 } | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
@@ -60,7 +71,7 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
     return { root, executable, mutationsAvailable: data.mutations_available === true,
       branchesAvailable: data.branches_available === true, lineStagingAvailable: data.line_staging_available === true,
-      branchActionsAvailable: data.branch_actions_available === true };
+      branchActionsAvailable: data.branch_actions_available === true, safeSwitchAvailable: data.safe_switch_available === true };
   } catch { return; }
 }
 
@@ -89,7 +100,8 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
   get contentVersion(): number { return this.stamp; }
   readonly state: GitRepository["state"];
   constructor(root: string, readonly executable: string, private readonly text: Text, readonly mutationsAvailable = true, readonly branchesAvailable = false,
-    private readonly cacheBlobs = true, readonly lineStagingAvailable = false, readonly branchActionsAvailable = false) {
+    private readonly cacheBlobs = true, readonly lineStagingAvailable = false, readonly branchActionsAvailable = false,
+    readonly safeSwitchAvailable = false) {
     this.rootUri = vscode.Uri.file(root);
     const owner = this;
     this.inputBox = { get value() { return owner.draft; }, set value(value: string) {
@@ -146,36 +158,64 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
     }
     return names;
   }
-  async checkout(branch: string): Promise<void> {
-    return this.switchBranch("scm-checkout", ["--", branch]);
+  async checkout(branch: string, validate?: () => void): Promise<BranchSwitchResult> {
+    return this.switchBranch(async () => {
+      const value = await runtimeJson(this.executable, ["--project-dir", this.rootUri.fsPath, "switch", "--format", "json", "--", branch],
+        { timeout: 0, maxOutputBytes: MAX_RESPONSE });
+      if (isRecord(value) && value.schema_version === 1 && value.status === "error" && isRecord(value.error)
+        && typeof value.error.code === "string") throw this.switchFailure(value.error.code);
+      if (!isRecord(value) || value.schema_version !== 1 || value.operation !== "switch" || value.dry_run !== false || value.branch !== branch
+        || !(value.saved === null || isRecord(value.saved)) || !(value.restored === null || isRecord(value.restored))) {
+        throw new Error(this.text("scmFailed"));
+      }
+      return { saved: value.saved !== null, restored: value.restored !== null };
+    }, validate);
   }
   async branchRefs(): Promise<BranchRef[]> {
     if (!this.branchActionsAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
     return parseBranchRefs(await this.request("scm-refs"));
   }
-  async branchAction(action: BranchAction): Promise<void> {
+  async branchAction(action: BranchAction, validate?: () => void): Promise<BranchSwitchResult> {
     if (!this.branchActionsAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
-    return this.switchBranch("scm-switch", ["--kind", action.target.kind,
+    if (action.target.kind === "local" && action.branch === undefined && !action.detached) return this.checkout(action.target.name, validate);
+    const args = ["--kind", action.target.kind,
       ...(action.branch === undefined ? [] : ["--branch", action.branch]),
-      ...(action.detached ? ["--detached"] : []), "--", action.target.name]);
+      ...(action.detached ? ["--detached"] : []), "--", action.target.name];
+    return this.switchBranch(async () => {
+      try {
+        const data = await scmBridge(this.executable, this.rootUri.fsPath, "scm-switch", args, undefined, undefined, 0);
+        return { saved: data.saved === true, restored: data.restored === true };
+      } catch (cause) {
+        if (cause instanceof ScmBridgeError) throw this.switchFailure(cause.code);
+        throw new Error(this.text("scmFailed"), { cause });
+      }
+    }, validate);
   }
-  private async switchBranch(operation: string, args: string[]): Promise<void> {
-    if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+  private switchFailure(code: string): Error {
+    const message = Object.hasOwn(switchErrorMessages, code) ? switchErrorMessages[code] : undefined;
+    return new Error(this.text(message ?? "scmFailed"), { cause: new ScmBridgeError(code) });
+  }
+  private async switchBranch(run: () => Promise<BranchSwitchResult>, validate?: () => void): Promise<BranchSwitchResult> {
+    if (!this.safeSwitchAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+    if (!this.branchesAvailable) throw new Error(this.text("scmBranchGitUnavailable"));
     if (this.pending) await this.pending;
-    if (this.writing) throw new Error(this.text("scmChanged"));
+    if (this.writing || this.isDisposed) throw new Error(this.text("scmChanged"));
+    validate?.();
     this.writing = true;
+    let outcome: BranchSwitchResult = { saved: false, restored: false };
     const task = async (): Promise<void> => {
       try {
-        try { await this.request(operation, args); }
-        catch (cause) {
-          try { await this.refreshStatus(); } catch { /* Preserve the checkout failure. */ }
-          throw cause;
-        }
-        await this.refreshStatus();
-      } finally { this.writing = false; this.mutation = undefined; }
+        // Let the checkout and its shelf transaction finish even if the view closes.
+        outcome = await run();
+      } finally {
+        try { if (!this.isDisposed) await this.refreshStatus(); }
+        catch { /* The resident monitor can refresh independently of the completed transaction. */ }
+        this.writing = false; this.mutation = undefined;
+      }
     };
     this.mutation = task();
     await this.mutation;
+    return outcome;
   }
   private get untrackedMode(): string {
     return vscode.workspace.getConfiguration("git", this.rootUri).get<string>("untrackedChanges", "mixed");

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { relative, isAbsolute } from "node:path";
 import type { MessageKey } from "./messages.js";
-import { discoverScmRoot, EskaRepository, EskaScmFileSystemProvider, SCM_SCHEME, SCM_CHECKOUT } from "./scm-repository.js";
+import { discoverScmRoot, EskaRepository, EskaScmFileSystemProvider, SCM_SCHEME, SCM_CHECKOUT, type BranchSwitchResult } from "./scm-repository.js";
 import { ScmMonitors } from "./scm-monitor.js";
 import { pickBranchAction } from "./scm-branches.js";
 import { sourceKey } from "./source.js";
@@ -33,7 +33,7 @@ interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<b
 export type ScmMode = "eska" | "vscode" | "both";
 export interface ScmProject { root: string; projectExecutable: string; mode: ScmMode }
 interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean;
-  lineStagingAvailable: boolean; branchActionsAvailable: boolean; supported: boolean; projects: ScmProject[] }
+  lineStagingAvailable: boolean; branchActionsAvailable: boolean; safeSwitchAvailable: boolean; supported: boolean; projects: ScmProject[] }
 type Text = (key: MessageKey, ...values: string[]) => string;
 const branchPickerMessages: Readonly<Record<string, MessageKey | undefined>> = {
   create: "scmBranchCreate", createFrom: "scmBranchCreateFrom", checkoutDetached: "scmBranchCheckoutDetached", checkout: "scmBranchPickRef",
@@ -176,17 +176,16 @@ export class GitRepositories implements vscode.Disposable {
       && repository?.branchStatusEnabled === true;
     if (!repository || !active()) return;
     try {
-      let switchBranch: () => Promise<void>;
+      if (!repository.safeSwitchAvailable) throw new Error(this.text("scmBranchUpdateRequired"));
+      if (!repository.branchesAvailable) throw new Error(this.text("scmBranchGitUnavailable"));
+      let switchBranch: (validate: () => void) => Promise<BranchSwitchResult>;
       if (repository.branchActionsAvailable) {
-        if (!repository.branchesAvailable) throw new Error(this.text("scmBranchGitUnavailable"));
         const refs = await repository.branchRefs();
         if (!active()) return;
         const action = await pickBranchAction(refs, repository.rootUri, (key, ...values) =>
           this.text(branchPickerMessages[key] ?? "scmFailed", ...values), active);
         if (!action || !active()) return;
-        if (action.branch === undefined && !action.detached && action.target.kind === "local"
-          && action.target.name === repository.state.HEAD?.name) return;
-        switchBranch = () => repository.branchAction(action);
+        switchBranch = validate => repository.branchAction(action, validate);
       } else {
         const branches = await repository.branches();
         if (!active()) return;
@@ -196,13 +195,20 @@ export class GitRepositories implements vscode.Disposable {
           title: `${this.text("scmCheckout")} — ${repository.rootUri.fsPath}`,
           placeHolder: this.text("scmBranchSelect"),
         });
-        if (!branch || !active() || !branches.includes(branch.name) || branch.name === repository.state.HEAD?.name) return;
-        switchBranch = () => repository.checkout(branch.name);
+        if (!branch || !active() || !branches.includes(branch.name)) return;
+        switchBranch = validate => repository.checkout(branch.name, validate);
       }
-      const dirty = vscode.workspace.textDocuments.some(document => document.isDirty && document.uri.scheme === "file"
+      const dirty = () => vscode.workspace.textDocuments.some(document => document.isDirty && document.uri.scheme === "file"
         && containsScmRoot(repository.rootUri.fsPath, document.uri.fsPath));
-      if (dirty) { void vscode.window.showWarningMessage(this.text("scmBranchDirty")); return; }
-      await switchBranch();
+      if (dirty()) { void vscode.window.showWarningMessage(this.text("scmBranchDirty")); return; }
+      const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification,
+        title: this.text("scmBranchSwitching"), cancellable: false }, () => switchBranch(() => {
+        if (!active()) throw new Error(this.text("scmChanged"));
+        if (dirty()) throw new Error(this.text("scmBranchDirty"));
+      }));
+      if (!active()) return;
+      const detail = [result.saved ? this.text("scmBranchSaved") : "", result.restored ? this.text("scmBranchRestored") : ""].filter(Boolean).join(" ");
+      if (detail) void vscode.window.showInformationMessage(detail);
     } catch (error) {
       this.log(String(error instanceof Error && error.cause ? error.cause : error));
       if (active()) void vscode.window.showErrorMessage(error instanceof Error ? error.message : this.text("scmFailed"));
@@ -289,6 +295,7 @@ export class GitRepositories implements vscode.Disposable {
       } else roots.set(key, { root, executable: target?.executable ?? project.projectExecutable,
         mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false,
         lineStagingAvailable: target?.lineStagingAvailable ?? false, branchActionsAvailable: target?.branchActionsAvailable ?? false,
+        safeSwitchAvailable: target?.safeSwitchAvailable ?? false,
         supported: target !== undefined, projects: [project] });
     }
     return roots;
@@ -330,12 +337,12 @@ export class GitRepositories implements vscode.Disposable {
       let repository = this.own.get(key);
       if (repository && (repository.executable !== target.executable || repository.mutationsAvailable !== target.mutationsAvailable
         || repository.branchesAvailable !== target.branchesAvailable || repository.lineStagingAvailable !== target.lineStagingAvailable
-        || repository.branchActionsAvailable !== target.branchActionsAvailable)) {
+        || repository.branchActionsAvailable !== target.branchActionsAvailable || repository.safeSwitchAvailable !== target.safeSwitchAvailable)) {
         repository.dispose(); this.own.delete(key); repository = undefined;
       }
       if (!repository) {
         repository = new EskaRepository(target.root, target.executable, this.text, target.mutationsAvailable, target.branchesAvailable,
-          true, target.lineStagingAvailable, target.branchActionsAvailable);
+          true, target.lineStagingAvailable, target.branchActionsAvailable, target.safeSwitchAvailable);
         repository.onDidChangeInput(value => {
           this.drafts.set(key, value);
           if (this.recovery.has(target.root)) void this.persist().catch(error => this.log(String(error)));
