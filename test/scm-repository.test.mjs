@@ -25,7 +25,7 @@ function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("b
       runInNewContext('(function(require,module,exports){' + readFileSync(childUrl, 'utf8') + '\n})', { process, Buffer, TextDecoder, setTimeout, clearTimeout, setInterval, clearInterval })(name => name === 'vscode' ? vscode : require(name), nested, nested.exports);
       return nested.exports;
     }
-    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); return { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data: handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {} }; } };
+    if (name === './runtime-tools.js' && !real) return { runtimeJson: async (exe, args, options) => { calls.push(args); calls.inputs ??= []; calls.inputs.push(options.input); const data = handler ? await handler(args, options, calls.length) : args[3] === 'scm-blob' ? { content } : {}; return data?.operation ? data : { schema_version: 1, operation: args[3].replaceAll('-', '_'), error: null, data }; } };
     return require(name);
   }, module, module.exports);
   return { ...module.exports, vscode, calls, controls };
@@ -195,4 +195,14 @@ test('branch bridge checks capability and keeps checkout argument literal with o
   assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-checkout', '--', 'feature/кириллица']);
   assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1);
   assert.equal(repo.state.HEAD.commit, 'b'.repeat(40)); repo.dispose();
+});
+
+test('checkout domain failures retain localized explanations and refresh the previous state', async () => {
+  for (const [code, message] of [['checkout_failed', 'scmBranchCheckoutFailed'], ['branch_not_found', 'scmBranchMissing'], ['git_unavailable', 'scmBranchGitUnavailable']]) {
+    const { EskaRepository, calls } = load(false, '', args => args[3] === 'scm-checkout'
+      ? { schema_version: 1, operation: 'scm_checkout', data: null, error: code } : snapshot('a'));
+    const repo = new EskaRepository(resolve('repo'), '/eska-vcs', key => key, true, true);
+    await assert.rejects(repo.checkout('feature'), { message });
+    assert.equal(calls.filter(args => args[3] === 'scm-status').length, 1); repo.dispose();
+  }
 });

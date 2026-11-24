@@ -14,12 +14,20 @@ export const SCM_SCHEME = "eska-scm";
 export const SCM_CHECKOUT = "eska.explorer.scm.checkout";
 type Text = (key: MessageKey, ...values: string[]) => string;
 type Revision = "head" | "index" | "base" | "ours" | "theirs";
+class ScmBridgeError extends Error {
+  constructor(readonly code: string) { super(code); }
+}
+const bridgeErrorMessages: Readonly<Record<string, MessageKey | undefined>> = {
+  git_unavailable: "scmBranchGitUnavailable", branch_invalid: "scmBranchInvalid", branch_not_found: "scmBranchMissing",
+  references: "scmBranchReferences", checkout_failed: "scmBranchCheckoutFailed",
+};
 
 /** Never interpret human output or invoke a shell for repository operations. */
 export async function scmBridge(executable: string, root: string, operation: string, args: string[] = [], signal?: AbortSignal, input?: unknown): Promise<Record<string, unknown>> {
-  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout: 30_000, maxOutputBytes: MAX_RESPONSE, signal, input });
-  if (!isRecord(value) || value.schema_version !== 1 || value.operation !== operation.replaceAll("-", "_")
-    || value.error !== null || !isRecord(value.data)) throw new Error("Invalid SCM bridge response");
+  const value = await runtimeJson(executable, ["--project-dir", root, "__bridge", operation, ...args], { timeout: 30_000, maxOutputBytes: MAX_RESPONSE, signal, input, resultExitCodes: [1] });
+  if (!isRecord(value) || value.schema_version !== 1 || value.operation !== operation.replaceAll("-", "_")) throw new Error("Invalid SCM bridge response");
+  if (typeof value.error === "string") throw new ScmBridgeError(value.error);
+  if (value.error !== null || !isRecord(value.data)) throw new Error("Invalid SCM bridge response");
   return value.data;
 }
 
@@ -247,7 +255,10 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       const data = await scmBridge(this.executable, this.rootUri.fsPath, operation, args, this.abort.signal, input);
       if (this.abort.signal.aborted) throw new Error(this.text("scmChanged"));
       return data;
-    } catch (cause) { throw new Error(this.text("scmFailed"), { cause }); }
+    } catch (cause) {
+      const key = cause instanceof ScmBridgeError && Object.hasOwn(bridgeErrorMessages, cause.code) ? bridgeErrorMessages[cause.code] : undefined;
+      throw new Error(this.text(key ?? "scmFailed"), { cause });
+    }
   }
   toGitUri(uri: vscode.Uri, ref: string): vscode.Uri {
     this.path(uri);

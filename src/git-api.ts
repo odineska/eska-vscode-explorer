@@ -135,7 +135,8 @@ export class GitRepositories implements vscode.Disposable {
       await repository.checkout(branch.name);
     } catch (error) {
       this.log(String(error instanceof Error && error.cause ? error.cause : error));
-      if (active()) void vscode.window.showErrorMessage(repository.branchesAvailable ? this.text("scmFailed") : this.text("scmBranchUpdateRequired"));
+      if (active()) void vscode.window.showErrorMessage(!repository.branchesAvailable ? this.text("scmBranchUpdateRequired")
+        : error instanceof Error ? error.message : this.text("scmFailed"));
     }
   }
   setScmProjects(projects: readonly ScmProject[]): void {
