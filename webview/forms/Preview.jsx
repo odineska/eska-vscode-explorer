@@ -410,6 +410,7 @@ function Pages(props) {
   createEffect(pictureSizes, () => { layout.invalidate(); }, { defer: true });
   const representation = () => scalar(node(), 'PagesRepresentation', 'TabsOnTop');
   const horizontal = () => !sideTabRepresentation(representation());
+  const underlined = () => usesVersion85Layout(state) && ['Auto', 'TabsOnTop'].includes(representation());
   const pages = createMemo(() => node().children.filter(page => page.presentation.displayed
     && (state.os !== 'linux' || horizontal() || page.children.some(child => displayedInPreview(child, state.model.root)))));
   const selectedPage = createMemo(() => pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0]);
@@ -423,7 +424,7 @@ function Pages(props) {
       pictureHeight = Math.max(pictureHeight, size.height);
       if (!horizontal() && pageTabLabel(page, state)) sidePictureWidth = Math.max(sidePictureWidth, size.width);
     }
-    return { ...tabMetrics(pages().map(page => page.presentation.titleFont), pictureHeight), pictureHeight, sidePictureWidth };
+    return { ...tabMetrics(pages().map(page => page.presentation.titleFont), pictureHeight, underlined()), pictureHeight, sidePictureWidth };
   });
   function reportPictureSize(key, width, height) {
     setPictureSizes(previous => {
@@ -441,14 +442,15 @@ function Pages(props) {
   const authoredStretch = () => flag(node(), 'HorizontalStretch', false)
     || pages().some(page => flag(page, 'HorizontalStretch', false));
   return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}
-    data-authored-side-stretch={side() && authoredStretch() ? '' : undefined}>
+    data-authored-side-stretch={side() && authoredStretch() ? '' : undefined}
+    data-tab-style={underlined() ? 'underline' : undefined}>
     <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={sideMetrics()?.fitMinimum}
       style={{ height:horizontal() && (state.os === 'linux' || metrics().pictureHeight) ? `${metrics().height}px` : undefined,
         'min-width':sideMetrics() ? `${sideMetrics().buttonMinimum}px` : undefined }}>
       <For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()}
         pageBackground={selectedPage()?.presentation.background} pageHasBackground={!!property(selectedPage(),'BackColor')}
         pages={node()} controller={props.controller} metrics={metrics()} representation={representation()} horizontal={horizontal()}
-        side={side()} sideMetrics={sideMetrics()} active={page.key === selected()}
+        side={side()} sideMetrics={sideMetrics()} underlined={underlined()} active={page.key === selected()}
         pictureSize={pictureSizes().get(page.key)} reportPictureSize={(width, height) => reportPictureSize(page.key, width, height)}/>}</For>
     </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state) || page.name} class="taxi-page" aria-hidden={String(page.key !== selected())} inert={page.key !== selected()}
@@ -462,6 +464,7 @@ function PageTab(props) {
   const [paint,setPaint]=createSignal();
   const label = () => pageTabLabel(props.page, state);
   const picture = () => props.page.presentation.picture;
+  const titleFont = () => font(props.page.presentation.titleFont, state.os, props.underlined ? state.profile : undefined);
   const bottom = () => props.representation === 'TabsOnBottom';
   const iconOnly = () => !label() && !!props.pictureSize;
   const pictureLayout = createMemo(() => tabPictureLayout(props.metrics, {
@@ -472,29 +475,30 @@ function PageTab(props) {
     return 2 * (iconOnly() ? props.metrics.pictureInset - 1 : props.metrics.horizontalPadding);
   };
   const width = createNativeButtonWidth(() => button, () => ({ text:label(), os:state.os,
-    automatic:true, wordCaption:!!props.sideMetrics, font:font(props.page.presentation.titleFont,state.os), metrics:props.metrics,
+    automatic:true, wordCaption:!!props.sideMetrics, font:titleFont(), metrics:props.metrics,
     pictureWidth:pictureLayout().leading, padding:padding() }));
   createEffect(() => (props.sideMetrics || props.metrics.pictureHeight) && width(), measured => {
     if (measured) layout.invalidate();
   });
-  const native = () => state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'TabsOnBottom', 'Swipe'].includes(props.representation));
+  const native = () => !props.underlined && state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'TabsOnBottom', 'Swipe'].includes(props.representation));
   const tabInset = () => props.side ? props.metrics.horizontalPadding + 1 + Number(props.side === 'right') : undefined;
   const pictureStyle = () => ({
     left: props.side && iconOnly()
       ? `round(down, calc((100% - ${props.pictureSize.width}px) / 2), 1px)`
-      : `calc(${pictureLayout().left - 1}px + ${props.side ? 'var(--taxi-side-caption-extra, 0px)' : '0px'})`,
-    top: `${pictureLayout().top - 1}px`,
+      : `calc(${pictureLayout().left - Number(!props.underlined)}px + ${props.side ? 'var(--taxi-side-caption-extra, 0px)' : '0px'})`,
+    top: `${pictureLayout().top - Number(!props.underlined)}px`,
   });
   const titleColorAuthored = () => {
     const value = scalar(props.page, 'TitleTextColor', scalar(props.pages, 'TitleTextColor'));
     return value !== '' && value !== 'Auto';
   };
   return <button ref={button} data-native-tab-border={paint()?'ready':undefined} type="button" role="tab" aria-label={caption(props.page,state) || props.page.name} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active?.toString()} class={{active:props.active,'taxi-selected':state.selected===props.page.key}}
-    style={{...font(props.page.presentation.titleFont,state.os),color:color(props.page.presentation.titleColor),width:width(),
+    style={{...titleFont(),color:!props.underlined || titleColorAuthored() ? color(props.page.presentation.titleColor) : undefined,width:width(),
       height:state.os === 'linux' || props.metrics.pictureHeight ? `${props.metrics.height}px` : undefined,
       'padding-left':state.os === 'linux' && padding() !== undefined ? `${Math.ceil(padding() / 2)}px` : undefined,
       'padding-right':state.os === 'linux' && padding() !== undefined ? `${Math.floor(padding() / 2)}px` : undefined,
-      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,'--taxi-tab-fill':paint() ? `rgb(${paint().background.join(',')})` : undefined,
+      'line-height':`${Math.max(props.underlined ? 20 : 0, fontLineHeight(props.page.presentation.titleFont))}px`,
+      '--taxi-tab-fill':paint() ? `rgb(${paint().background.join(',')})` : undefined,
       '--taxi-disabled-tab-text':paint()?.foreground ? `rgb(${paint().foreground.join(',')})` : undefined}} onClick={event => {
     event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page, true);
   }}>

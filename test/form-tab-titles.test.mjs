@@ -49,3 +49,13 @@ test('empty tabs use the largest caption font and tall pictures enlarge the stri
   assert.equal(tabMetrics([{ points: 14 }], 24).height, 41);
   assert.equal(tabMetrics([{ points: 10 }], 64).height, 76);
 });
+
+test('8.5 Designer top tabs use the measured band and accommodate larger contents', () => {
+  const fonts = [{ points: 10 }];
+  const metrics = tabMetrics(fonts, 0, true);
+  assert.equal(metrics.height, 34);
+  assert.equal(metrics.horizontalPadding, 12);
+  assert.equal(tabMetrics(fonts, 24, true).height, 38);
+  assert.ok(tabMetrics([{ points: 24 }], 0, true).height > metrics.height);
+  assert.equal(tabMetrics(fonts).height, 27);
+});

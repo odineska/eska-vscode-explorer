@@ -15,11 +15,22 @@ export function sideTabRepresentation(value) {
   return value === 'TabsOnLeftHorizontal' || value === 'TabsOnRightHorizontal';
 }
 
-export function tabMetrics(fonts, pictureHeight = 0) {
+export function tabMetrics(fonts, pictureHeight = 0, underlined = false) {
   const largest = fonts.reduce((value, font) => (font?.points ?? 10) > (value?.points ?? 10) ? font : value, fonts[0]);
+  const lineHeight = fontLineHeight(largest);
+  if (underlined) {
+    // 8.5 Designer top tabs at 96 dpi, including the indicator.
+    const contentHeight = Math.max(20, lineHeight, pictureHeight);
+    return {
+      height: contentHeight + 14,
+      horizontalPadding: 12,
+      pictureInset: 12,
+      pictureSpacing: 6,
+      emptyWidth: 8,
+    };
+  }
   const [height, horizontalPadding, padding, fitMinimum, inset, spacing, emptyWidth] = measured.get(largest?.points ?? 10) ?? [];
   const calibrated = height !== undefined && fonts.every(font => measured.has(font?.points ?? 10));
-  const lineHeight = fontLineHeight(largest);
   const captionHeight = height ?? Math.ceil(lineHeight * 1.75);
   const captionPadding = horizontalPadding ?? Math.max(1, Math.floor(lineHeight * .7) - 1);
   // Side buttons add two borders and have a separate painted minimum.

@@ -13,6 +13,9 @@
 .preview-scroll:has(> .taxi-preview[data-profile="version-8.5"]) {
   color-scheme: light;
   color: #4d4d4d;
+  --eska-form-tab-divider: #dbdbdb;
+  --eska-form-tab-text: #81818a;
+  --eska-form-tab-active-text: #1c1c1f;
 }
 
 /* The profile uses measured 1C colors. The VS Code body class selects the mode. */
@@ -26,6 +29,9 @@
   --eska-form-text: #ededf2;
   --eska-form-muted: #84848c;
   --eska-form-focus: #9fccfc;
+  --eska-form-tab-divider: #575757;
+  --eska-form-tab-text: var(--eska-form-muted);
+  --eska-form-tab-active-text: var(--eska-form-text);
   background: var(--eska-form-surface);
   color: var(--eska-form-text);
   color-scheme: dark;
@@ -148,13 +154,13 @@
       background-color: var(--taxi-LinesColor);
     }
 
-    & .taxi-tabs > button {
+    & .taxi-pages:not([data-tab-style=underline]) > .taxi-tabs > button {
       background-color: var(--taxi-tab-fill);
       color: var(--taxi-FormTextColor);
       border-color: var(--taxi-tab-stroke);
     }
 
-    & .taxi-tabs > button.active {
+    & .taxi-pages:not([data-tab-style=underline]) > .taxi-tabs > button.active {
       background-color: var(--taxi-FormBackColor);
     }
 
