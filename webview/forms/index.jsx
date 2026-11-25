@@ -5,6 +5,7 @@ import { previewWindowFocus } from './window-focus.mjs';
 import { createNativeTextRuntime } from './native-text.js';
 import { createInputBorderPaintQueue } from './NativeInputBorder.jsx';
 import './style.css';
+import './theme.css';
 import './inspector.css';
 import './editor.css';
 const c = controller(acquireVsCodeApi());

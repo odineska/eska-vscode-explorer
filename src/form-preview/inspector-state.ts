@@ -9,6 +9,7 @@ export interface InspectorUi {
   right: number;
   dataWidth: number;
   zoom: number;
+  previewTheme: "vscode" | "light" | "dark";
   tab: "attributes" | "commands" | "parameters";
   treeTab: "elements" | "commandInterface";
   search: string;
@@ -19,7 +20,7 @@ export interface InspectorUi {
 export interface InspectorState { ui: InspectorUi; selection?: ElementIdentity }
 
 export function defaultInspectorUi(): InspectorUi {
-  return { upper: 230, detachedUpper: 230, detachedLeft: 45, left: 30, right: 66, dataWidth: 48, zoom: 100, tab: "attributes",
+  return { upper: 230, detachedUpper: 230, detachedLeft: 45, left: 30, right: 66, dataWidth: 48, zoom: 100, previewTheme: "vscode", tab: "attributes",
     treeTab: "elements", search: "", inspectedData: "", folded: {}, dataFolded: {} };
 }
 
@@ -46,6 +47,7 @@ export function parseInspectorState(value: unknown): InspectorState | undefined 
     if (typeof number === "number" && Number.isFinite(number) && number >= 0 && number <= maximum) ui[key] = number;
   }
   if (typeof input.zoom === "number" && [50, 75, 100, 125, 150, 200].includes(input.zoom)) ui.zoom = input.zoom;
+  if (input.previewTheme === "dark" || input.previewTheme === "light") ui.previewTheme = input.previewTheme;
   if (input.tab === "commands" || input.tab === "parameters") ui.tab = input.tab;
   if (input.treeTab === "commandInterface") ui.treeTab = input.treeTab;
   if (typeof input.search === "string") ui.search = input.search.slice(0, 512);

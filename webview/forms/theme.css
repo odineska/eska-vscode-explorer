@@ -1,0 +1,65 @@
+/* Preview theme follows VS Code only in automatic mode; explicit overrides stay fixed. */
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) {
+  color-scheme: dark;
+  color: #e5e7eb;
+  background: #202328;
+  --taxi-TextColor: #e5e7eb;
+  --taxi-FormTextColor: #e5e7eb;
+  --taxi-BackColor: #202328;
+  --taxi-FormBackColor: #202328;
+  --taxi-BorderColor: #737a84;
+  --taxi-ButtonTextColor: #e5e7eb;
+  --taxi-ButtonBackColor: #343941;
+  --taxi-ButtonBorderColor: #737a84;
+  --taxi-FieldTextColor: #e5e7eb;
+  --taxi-FieldBackColor: #292e35;
+  --taxi-FieldBorderColor: #737a84;
+  --taxi-HyperlinkTextColor: #8ebcff;
+  --taxi-SpecialTextColor: #b3bac4;
+  --taxi-GroupTitleTextColor: #8dd4b0;
+  --taxi-SelectionBackColor: #354f70;
+  --taxi-SelectionTextColor: #fff;
+  --taxi-FieldSelectionBackColor: #354f70;
+  --taxi-LinesColor: #515861;
+  --taxi-HeaderBackColor: #343941;
+  --taxi-HeaderTextColor: #e5e7eb;
+  --taxi-TableFooterBackColor: #343941;
+  --taxi-tab-border: #737a84;
+  --eska-form-command-background: #30353c;
+}
+.preview-scroll:has(> :is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"])) { background: #202328; }
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(.taxi-form-frame, .taxi-form-title, .taxi-input, .taxi-table, .taxi-tabs > button) {
+  background-color: var(--taxi-FormBackColor);
+  color: var(--taxi-FormTextColor);
+  border-color: var(--taxi-BorderColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(th, .taxi-form-title) {
+  background-color: var(--taxi-HeaderBackColor);
+  color: var(--taxi-HeaderTextColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-button {
+  background: var(--taxi-ButtonBackColor);
+  color: var(--taxi-ButtonTextColor);
+  border-color: var(--taxi-ButtonBorderColor);
+  box-shadow: none;
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(.taxi-menu, .taxi-menu button[role=menuitem], .taxi-table-search, .taxi-table-scrollbar) {
+  background-color: var(--taxi-FieldBackColor);
+  color: var(--taxi-FieldTextColor);
+  border-color: var(--taxi-FieldBorderColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-menu button[role=menuitem].active {
+  background-color: var(--taxi-SelectionBackColor);
+  color: var(--taxi-SelectionTextColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .form-required-marker {
+  color: #ff8484;
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) {
+  --taxi-tab-fill: #343941;
+  --taxi-tab-stroke: #737a84;
+  --taxi-disabled-tab-text: #9ca4af;
+  --taxi-TooltipBackColor: #343941;
+  --taxi-ToolTipBackColor: #343941;
+  --taxi-TooltipTextColor: #e5e7eb;
+}

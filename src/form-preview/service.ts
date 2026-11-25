@@ -221,6 +221,14 @@ export class FormPreviewService implements vscode.Disposable {
       if (state) this.rememberInspector(view, state);
       return;
     }
+    if (value.type === "previewTheme" && (value.previewTheme === "vscode" || value.previewTheme === "light" || value.previewTheme === "dark")) {
+      if (view.frames.get(frame.role) !== frame) return;
+      const ui = { ...(view.inspectorState?.ui ?? defaultInspectorUi()), previewTheme: value.previewTheme as "vscode" | "light" | "dark" };
+      this.rememberInspector(view, { ...view.inspectorState, ui });
+      for (const target of view.frames.values()) if (target !== frame && target.ready)
+        void target.panel.webview.postMessage({ type: "previewTheme", previewTheme: ui.previewTheme });
+      return;
+    }
     if (value.type === "previewNavigation") {
       if (view.frames.get(frame.role) !== frame) return;
       const navigation = parsePreviewNavigation(value.previewNavigation); if (!navigation) return;
@@ -514,7 +522,7 @@ export class FormPreviewService implements vscode.Disposable {
       const updateSchema = frame.role === "main" && (frame === initializeNavigation || frame.editSchema !== schema);
       frame.editSchema = schema;
       void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
-      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, handlerAuthoring: view.client?.limits.handlerAuthoring === true, referenceData: view.client?.limits.referenceData === true,
+      previewTheme: view.inspectorState?.ui.previewTheme ?? "vscode", role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, handlerAuthoring: view.client?.limits.handlerAuthoring === true, referenceData: view.client?.limits.referenceData === true,
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },

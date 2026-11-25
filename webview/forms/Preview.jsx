@@ -253,7 +253,8 @@ export function Preview(props) {
   });
   return <StandardPictureScaleContext value={pictureScale}><FormLayoutContext value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined}
-      data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile={state.profile ?? "taxi-8.3.27"} style={{ zoom: state.ui.zoom / 100 }}>
+      data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile={state.profile ?? "taxi-8.3.27"}
+      data-preview-theme={state.ui.previewTheme ?? 'vscode'} style={{ zoom: state.ui.zoom / 100 }}>
       <div ref={frame} data-preview-profile={state.profile ?? "taxi-8.3.27"} data-form-drop-root={root().key} class={["taxi-form-frame", { 'taxi-selected': state.selected === root().key }]}
         data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.nativeFormScroll() ? '' : undefined}
         data-vertical-scroll={layout.nativeFormScroll() ? scalar(root(), 'VerticalScroll') || undefined : undefined}
