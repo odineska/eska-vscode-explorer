@@ -110,6 +110,10 @@ try {
     await writeFile(fixture.module, `\ufeffПроцедура Test()\r\nQ = "SELECT ${fields}\r\n|FROM (SELECT 1 AS NestedValue) AS Child";\r\nКонецПроцедуры\r\n`);
   }
   if (["form-profile-host.cjs", "form-editor-host.cjs", "form-preview-window-host.cjs", "form-handler-authoring-host.cjs", "form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs", "form-detached-space-host.cjs", "form-property-catalogue-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
+  if (basename(suite) === "form-profile-host.cjs") {
+    const projectFile = join(fixture.root, "eska.toml");
+    await appendFile(projectFile, '\n[build]\nplatform_version="8.5.4"\n');
+  }
   if (basename(suite) === "form-inspectors-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormInspectorSource(fixture);
   if (basename(suite) === "form-header-layout-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createHeaderLayoutSource(fixture);
   if (basename(suite) === "form-inspector-navigation-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createInspectorNavigationSource(fixture);

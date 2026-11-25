@@ -14,9 +14,6 @@ exports.run = async () => {
   const config = path.join(fixture.source, 'Configuration.xml');
   const original = await fs.readFile(config, 'utf8');
   const source = await fs.readFile(fixture.form.path);
-  const project = path.join(fixture.root, 'eska.toml');
-  const projectBefore = await fs.readFile(project, 'utf8');
-  await fs.writeFile(project, projectBefore + '\n[build]\nplatform_version="8.5.4"\n');
   const samples = [];
   let ui;
   try {
@@ -29,7 +26,7 @@ exports.run = async () => {
     ui = await frame({ state: { title: view.frames.get('main').panel.title } });
     await until(async () => await ui.evaluate("!!document.querySelector('.taxi-input[data-native-border=ready]')"), 'Taxi input painted');
     await ui.evaluate("globalThis.retainedInput = document.querySelector('.taxi-input')");
-    for (const [mode, profile, native] of [['Version8_5', 'version-8.5', null], ['Version8_3_10', 'taxi-8.3.27', 'ready'], ['Version8_5', 'version-8.5', null]]) {
+    for (const [mode, profile, native] of [['Version8_5', 'version-8.5', null], ['Taxi', 'taxi-8.3.27', 'ready'], ['Version8_5', 'version-8.5', null]]) {
       const property = `<InterfaceCompatibilityMode>${mode}</InterfaceCompatibilityMode>`;
       const changed = original.includes('<InterfaceCompatibilityMode>')
         ? original.replace(/<InterfaceCompatibilityMode>[^<]*<\/InterfaceCompatibilityMode>/, property)
@@ -52,6 +49,8 @@ exports.run = async () => {
         assert.equal(sample.nativeBorder, '');
         assert.equal(sample.border, 'rgb(153, 153, 153)');
       }
+      sample.interfaceCompatibilityMode = view.snapshot.interfaceCompatibilityMode;
+      assert.equal(sample.interfaceCompatibilityMode, mode);
       samples.push(sample);
     }
     assert.deepEqual(await fs.readFile(fixture.form.path), source);
@@ -59,7 +58,6 @@ exports.run = async () => {
     await fs.writeFile(path.join(fixture.root, 'host-result.json'), JSON.stringify({passed:true,samples,sourceUnchanged:true}));
   } finally {
     await fs.writeFile(config, original);
-    await fs.writeFile(project, projectBefore);
     ui?.close();
     await explorer.shutdown();
   }
