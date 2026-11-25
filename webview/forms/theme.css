@@ -14,8 +14,9 @@
   color-scheme: light;
   color: #4d4d4d;
   --eska-form-tab-divider: #dbdbdb;
-  --eska-form-tab-text: #81818a;
+  --eska-form-muted: #81818a;
   --eska-form-tab-active-text: #1c1c1f;
+  --eska-form-tumbler-fill: #f2f2f2;
 }
 
 /* The profile uses measured 1C colors. The VS Code body class selects the mode. */
@@ -30,8 +31,8 @@
   --eska-form-muted: #84848c;
   --eska-form-focus: #9fccfc;
   --eska-form-tab-divider: #575757;
-  --eska-form-tab-text: var(--eska-form-muted);
   --eska-form-tab-active-text: var(--eska-form-text);
+  --eska-form-tumbler-fill: var(--eska-form-toolbar);
   background: var(--eska-form-surface);
   color: var(--eska-form-text);
   color-scheme: dark;

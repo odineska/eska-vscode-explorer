@@ -348,7 +348,7 @@ button { cursor: default; }
   border: 0;
   margin: 0;
   background: transparent;
-  color: var(--eska-form-tab-text);
+  color: var(--eska-form-muted);
 }
 .taxi-pages[data-tab-style=underline] > .taxi-tabs > button.active {
   color: var(--eska-form-tab-active-text);
@@ -449,6 +449,26 @@ button { cursor: default; }
   width: var(--taxi-field-caption-width, var(--taxi-choice-title-width, auto));
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField] > .taxi-field-row[data-title-location=Top] { row-gap: 3px; }
+.taxi-preview[data-os=linux] .taxi-radios[data-rounded-tumbler] {
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--taxi-radio-segment-fill, var(--eska-form-tumbler-fill));
+  color: var(--eska-form-muted);
+  box-shadow: inset 0 0 0 1px var(--taxi-radio-segment-border, transparent);
+}
+.taxi-preview[data-os=linux] .taxi-radios[data-rounded-tumbler] > .taxi-radio-option {
+  padding-inline: 13px;
+  border: 0;
+  background: transparent;
+}
+.taxi-preview[data-os=linux] .taxi-radios[data-rounded-tumbler] .taxi-radio-caption {
+  color: inherit;
+}
+.taxi-preview[data-os=linux] .taxi-element[data-kind=RadioButtonField]
+  > .taxi-field-row[data-title-location=Top][data-rounded-tumbler-row] {
+  row-gap: 5px;
+}
 .taxi-preview[data-os=linux] .taxi-field-row:is([data-title-location=Left],[data-title-location=Right]):has(> .taxi-field-control > .taxi-radios:not([data-rows="1"]))
   > .taxi-field-label { align-self: start; }
 .taxi-progress { display: block; height: 21px; max-width: 100%; padding: 1px; border: 1px solid #a0a0a0; background: #fff; }

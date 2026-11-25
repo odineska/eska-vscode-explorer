@@ -23,6 +23,11 @@ test('8.5 input captions default above the control and inherit a container place
   assert.equal(inputTitlePlacement({ ...field, properties: [property('TitleLocation', 'Left')] }, defaultPlacement), 'Left');
   assert.equal(inputTitlePlacement({ ...field, presentation: { titleLocation: 'Top' } }, groupPlacement), 'Top');
   assert.equal(inputTitlePlacement(field), 'Left');
+  const tumbler = { ...field, kind: 'RadioButtonField', properties: [property('RadioButtonType', 'Tumbler')] };
+  assert.equal(inputTitlePlacement(tumbler, defaultPlacement), 'Top');
+  assert.equal(inputTitlePlacement(tumbler, groupPlacement), 'Left');
+  assert.equal(inputTitlePlacement(tumbler), 'Left');
+  assert.equal(inputTitlePlacement({ ...tumbler, properties: [] }, defaultPlacement), 'Left');
 });
 function fixture() {
   const origin = { source, range: { start: 0, end: 200 } };

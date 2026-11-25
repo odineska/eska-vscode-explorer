@@ -958,8 +958,9 @@ function Field(props) {
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
   const pageInputTitle = () => props.pageTitleRow && node().kind === 'InputField';
   const pageTitleAbove = () => pageInputTitle() && titleLocation() === 'Top';
-  const label = () => title() + (title() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const radio = () => state.os === 'linux' && node().kind === 'RadioButtonField';
+  const tumbler = () => version85() && radio() && scalar(node(), 'RadioButtonType') === 'Tumbler';
+  const label = () => title() + (title() && !tumbler() && !(checkbox() && titleLocation() === 'Right') ? ':' : '');
   const labelFont = () => node().presentation.titleFont;
   const allocatedCaption = () => layout?.captionFor(node());
   const inputCaption = () => node().kind === 'InputField' ? allocatedCaption() : undefined;
@@ -987,7 +988,7 @@ function Field(props) {
   };
   const labelStyle = () => {
     const nativeCheck = state.os === 'linux' && checkbox();
-    const width = (radio() || nativeCheck) && ['Left', 'Right'].includes(titleLocation())
+    const width = (radio() && !tumbler() || nativeCheck) && ['Left', 'Right'].includes(titleLocation())
       ? wordCaptionWidth(label(), labelFont()) : undefined;
     const input = inputTitleWidth();
     const titleWidth = numericWidth() ?? (input === undefined ? undefined : input + inputCaptionInset);
@@ -1017,6 +1018,7 @@ function Field(props) {
     <Match when={node().kind === 'PictureField'}><span class="taxi-picture-field" style={pictureFieldStyle(node(), state.os)}><Picture node={node()} controller={props.controller}/></span></Match>
   </Switch>;
   return <div data-title-location={titleLocation()}
+    data-rounded-tumbler-row={tumbler() ? '' : undefined}
     data-wrapped-input-caption={inputCaption() ? '' : undefined}
     data-wrapped-checkbox-caption={checkboxCaption() ? '' : undefined}
     data-numeric-label-title={numericLabel() ? '' : undefined}

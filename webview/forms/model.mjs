@@ -96,7 +96,8 @@ export function childInputTitlePlacement(node, inherited = 'Top') {
 
 export function inputTitlePlacement(node, inherited) {
   const placement = node.presentation.titleLocation;
-  return inherited && node.kind === 'InputField' && placement === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
+  const input = node.kind === 'InputField' || node.kind === 'RadioButtonField' && scalar(node, 'RadioButtonType') === 'Tumbler';
+  return inherited && input && placement === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
     ? inherited : placement;
 }
 
