@@ -361,6 +361,9 @@ button { cursor: default; }
   border-radius: 3px 3px 0 0;
   background: var(--taxi-ImportantColor);
 }
+.taxi-preview[data-os=linux] .taxi-pages[data-tab-style=underline] > .taxi-tabs > button.taxi-selected::after {
+  inset: 0 0 3px;
+}
 .taxi-pages[data-tab-style=underline] > .taxi-page-stack > .taxi-page {
   margin: 0;
   border: 0;
@@ -957,6 +960,7 @@ button { cursor: default; }
   max-width: var(--taxi-side-page-maximum, none);
 }
 .taxi-preview[data-form-layout=allocated] .taxi-tabs { flex: none; overflow: auto; }
+.taxi-preview[data-form-layout=allocated] .taxi-pages[data-tab-style=underline] > .taxi-tabs { overflow-y: hidden; }
 .taxi-preview[data-form-layout=allocated] .taxi-tabs > button { flex: none; }
 .taxi-preview[data-form-layout=allocated] .taxi-page-stack { flex: 1; min-width: 0; min-height: 0; }
 .taxi-preview[data-form-layout=allocated] .taxi-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
