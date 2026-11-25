@@ -1,4 +1,4 @@
-import { flag, number, scalar, caption, fieldWidth, fontLineHeight, inputHeightUnit, viewStatusAddition } from './model.mjs';
+import { flag, number, scalar, caption, fieldWidth, fontLineHeight, inputHeightUnit, viewStatusAddition, usesVersion85Layout } from './model.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
@@ -28,11 +28,11 @@ function mergeColumnRows(children, vertical) {
     .map(key => [key, combine(key)]));
 }
 
-function linuxTableHeight(table, header, footer, depth, dynamic, rows) {
-  const unit = inputHeightUnit(table, 'linux'), baseBand = bandHeight(table.presentation.font);
+function linuxTableHeight(table, header, footer, depth, dynamic, rows, bandsProfile) {
+  const unit = inputHeightUnit(table, 'linux'), { baseBand, referenceBand } = bandsProfile;
   const rowCount = number(table, 'HeightInTableRows'), authored = number(table, 'Height');
   const edge = Number(dynamic), deep = rows.rowSpan - 1;
-  const baseline = rows.rowSpan * allocateBand(baseBand, baseBand);
+  const baseline = rows.rowSpan * allocateBand(baseBand, baseBand, referenceBand);
   const headerGrowth = header ? Math.max(0, rows.rowHeaderHeight - baseline) : 0;
   const footerGrowth = footer ? Math.max(0, rows.rowFooterHeight - baseline) : 0;
   const bands = (header ? rows.rowHeaderHeight : 0) + (footer ? rows.rowFooterHeight : 0);
@@ -275,32 +275,37 @@ export function tableLayout(table, state = {}, additions) {
   const nativeDynamicList = linux && dynamic;
   const captions = { locale, strings: state.strings };
   const metrics = node => column(node, readOnly, dynamic, linux, captions);
-  const baseBand = bandHeight(table.presentation.font);
+  const version85 = usesVersion85Layout(state);
+  const referenceBand = version85 ? 40 : defaultBandHeight;
+  const measureBand = value => Math.max(version85 ? referenceBand : 0, bandHeight(value));
+  const baseBand = measureBand(table.presentation.font);
   const rowMetrics = (node, height) => {
-    const footerHeight = bandHeight(tableFooterFont(table, node));
-    return { rowSpan: 1, rowHeaderHeight: allocateBand(height, baseBand),
-      rowFooterHeight: allocateBand(footerHeight, baseBand), footerHeight };
+    const footerHeight = measureBand(tableFooterFont(table, node));
+    return { rowSpan: 1, rowHeaderHeight: allocateBand(height, baseBand, referenceBand),
+      rowFooterHeight: allocateBand(footerHeight, baseBand, referenceBand), footerHeight };
   };
   function visit(node) {
-    const titleHeight = bandHeight(node.presentation.titleFont);
+    const titleHeight = measureBand(node.presentation.titleFont);
     if (node.kind !== 'ColumnGroup') {
-      const height = flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight;
+      const height = flag(node, 'ShowInHeader') ? titleHeight : referenceBand;
       return { node, mode: 'field', depth: 1, height, ...rowMetrics(node, height),
         columns: [metrics(node)], children: [] };
     }
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
-    const captionHeight = show ? titleHeight : 0;
+    // Version 8.5 displays the InCell group's caption in its single header band.
+    const groupCaptionInCell = version85 && mode === 'InCell' && show;
+    const captionHeight = show && !groupCaptionInCell ? titleHeight : 0;
     const rows = children.length ? mergeColumnRows(children, mode === 'Vertical') : rowMetrics(node, titleHeight);
     if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children, ...rows,
-      height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight),
+      height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : referenceBand),
       depth: (show ? 1 : 0) + Math.max(1, ...children.map(child => child.depth)), columns: children.flatMap(child => child.columns) };
     const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(metrics);
     const width = mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width));
     const growthWeight = parts.some(part => part.growthWeight) ? width : 0;
-    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, captionHeight, children,
+    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show: !!captionHeight, groupCaptionInCell, captionHeight, children,
       ...(mode === 'InCell' ? rowMetrics(node, titleHeight) : rows),
       height: captionHeight + (mode === 'InCell' ? titleHeight : children.reduce((sum, child) => sum + child.height, 0)),
-      depth: (show ? 1 : 0) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
+      depth: Number(!!captionHeight) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
       columns: [{ node, fields, width, growthWeight }] };
   }
   const children = table.children.filter(visible).map(visit), columns = children.flatMap(child => child.columns);
@@ -328,15 +333,15 @@ export function tableLayout(table, state = {}, additions) {
   const search = additions?.search || topSearch || autoManualSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
-  let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
+  let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : referenceBand : 0;
   let footer = flag(table, 'Footer', false)
-    ? children.length ? Math.max(...children.map(child => child.footerHeight)) : defaultBandHeight : 0;
+    ? children.length ? Math.max(...children.map(child => child.footerHeight)) : referenceBand : 0;
   const rowCount = number(table, 'HeightInTableRows');
   let height = dynamic ? 452 : 227 + Number(depth === 3), groupMinimumHeight;
   let clipHeader = false;
   if (linux) {
-    const rows = children.length ? mergeColumnRows(children, false) : rowMetrics(table, defaultBandHeight);
-    const geometry = linuxTableHeight(table, header, footer, depth, dynamic, rows);
+    const rows = children.length ? mergeColumnRows(children, false) : rowMetrics(table, referenceBand);
+    const geometry = linuxTableHeight(table, header, footer, depth, dynamic, rows, { baseBand, referenceBand });
     ({ height, header, footer } = geometry);
     clipHeader = geometry.clipHeader ?? false;
     groupMinimumHeight = geometry.minimum;

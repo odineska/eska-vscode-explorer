@@ -526,7 +526,7 @@ export class FormPreviewService implements vscode.Disposable {
       ...(frame.role === "main" ? { palette: view.palette ?? null } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
-      ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
+      ...(model && view.snapshot ? { model: view.snapshot.model, profile: view.snapshot.profile, compatibilityMode: view.snapshot.compatibilityMode, interfaceCompatibilityMode: view.snapshot.interfaceCompatibilityMode, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
     }
   }
   private failure(view: View, error: unknown): void {

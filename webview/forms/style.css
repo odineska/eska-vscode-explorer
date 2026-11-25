@@ -1382,3 +1382,82 @@ button { cursor: default; }
 }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button { top: -1px; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=SearchControlAddition] > .taxi-button > :is([data-native-picture=vector], [data-native-picture=raster]) { position: relative; left: -1px; }
+
+/* The Linux 8.5 Designer preview allocates 40 px controls and 16 px between rows at 96 dpi. */
+.taxi-preview[data-os=linux][data-profile="version-8.5"] {
+  --eska-form-row-gap: 16px;
+  --eska-form-command-height: 53px;
+  --eska-form-control-radius: 8px;
+  --eska-form-command-background: #f0f1f2;
+  --taxi-HeaderBackColor: transparent;
+  font-size: 16px;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-items--vertical {
+  row-gap: var(--eska-form-row-gap);
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-field-label {
+  line-height: 20px;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .form-required-marker {
+  color: #c53030;
+  margin-inline-end: 3px;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-field-row:has(.form-required-marker) .taxi-input--incomplete::after {
+  display: none;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-field-row {
+  column-gap: 8px;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-input, .taxi-table-search) {
+  border-radius: var(--eska-form-control-radius);
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-input > :is(input, textarea) {
+  line-height: 20px;
+  padding-inline: 10px;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-input-button {
+  border-inline-start-color: transparent;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-input[data-separate-open] {
+  overflow: visible;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-input[data-separate-open] > .taxi-input-button--open {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(100% + 1px);
+  width: 40px;
+  border: 0;
+  background: transparent;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-button:not(.taxi-button--link) {
+  min-height: 40px;
+  border-radius: var(--eska-form-control-radius);
+  box-shadow: none;
+  background-image: none;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-root-commands, .taxi-table-command-bar) {
+  min-height: var(--eska-form-command-height);
+  margin-block-end: var(--eska-form-row-gap);
+  padding-inline: 8px;
+  border-radius: var(--eska-form-control-radius);
+  background-color: var(--eska-form-command-background);
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-table-command-bar {
+  height: auto;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-root-commands, .taxi-table-command-bar) .taxi-button:not(.taxi-button--default) {
+  border-color: transparent;
+  background-color: transparent;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-table-scroll {
+  border-color: transparent;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-table-header-cell, .taxi-table-footer-cell) {
+  border-color: transparent;
+  box-shadow: none;
+  padding-block: 9px 0;
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-table-search-controls {
+  min-height: 28px;
+  margin-block-end: var(--eska-form-row-gap);
+}

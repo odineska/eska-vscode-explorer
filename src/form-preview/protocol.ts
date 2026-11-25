@@ -5,7 +5,7 @@ import { picturePreview, type PicturePreview } from "../picture.js";
 export const MAX_FORM_DEPENDENCIES = 1024;
 const FORM_NAMESPACE = "http://v8.1c.ru/8.3/xcf/logform";
 
-export interface FormLimits { maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; handlerAuthoring?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
+export interface FormLimits { profiles?: ("taxi-8.3.27" | "version-8.5")[]; maxSessions: number; maxOverlayBytes: number; maxInlineBytes: number; handlerNavigation?: boolean; handlerAuthoring?: boolean; propertyPalette?: boolean; referenceData?: boolean; propertySearch?: boolean }
 export interface FormPropertyMatch { identity: ElementIdentity; id: string; label: string; value: string }
 export interface FormInput { root: WirePath; path: WirePath; version: string; text: string }
 export interface FormInputSource { id: string; root: WirePath; path: WirePath }
@@ -69,7 +69,7 @@ export interface FormHandler { owner: { kind: "element"; identity: ElementIdenti
 export interface FormHandlerSource { source: string; root: WirePath; path: WirePath; revision: string }
 export interface FormModel { importantColor: Color; formHelpAvailable?: boolean; activityColor?: Color; scriptVariant?: "russian" | "english"; root: FormNode; assets: { id: string; picture: Extract<PicturePreview, { status: "ready" }> }[]; handlers?: FormHandler[]; attributes: FormDefinition[]; commands: FormDefinition[]; parameters: FormDefinition[]; dataFields?: FormDataField[]; expandedData?: string[][]; diagnostics: { composition: unknown[]; appearance: unknown[] } }
 export interface FormSnapshot {
-  formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27";
+  formSessionId: string; revision: string; contextFingerprint: string; application: string | null; profile: "taxi-8.3.27" | "version-8.5"; compatibilityMode?: string | null; interfaceCompatibilityMode?: string | null;
   limitedContext: boolean; modelComplete: boolean; status: "ready" | "stale"; lastError: unknown; dependencies: FormDependency[]; model: FormModel;
 }
 export interface Location { source: string; snapshot: string; root: WirePath; path: WirePath; range: { start: number; end: number } }
@@ -180,7 +180,8 @@ export function formCapabilities(value: unknown): FormLimits | undefined {
   if (!isRecord(data) || !isRecord(value.apiVersion) || value.apiVersion.major !== 1 || typeof value.apiVersion.minor !== "number" || value.apiVersion.minor < 40
     || data.schemaVersion !== 1 || data.profile !== "taxi-8.3.27" || data.readOnly !== true || data.executesBsl !== false || data.pictures !== true || data.inputPreparation !== true || data.uploads !== "queryBuffers") invalid();
   if (!["maxSessions", "maxOverlayBytes", "maxInlineBytes"].every(key => typeof data[key] === "number" && Number.isSafeInteger(data[key]) && (data[key] as number) > 0)) invalid();
-  return { maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
+  if (value.apiVersion.minor >= 56 && (!Array.isArray(data.profiles) || !data.profiles.includes("taxi-8.3.27") || data.profiles.some(profile => !["taxi-8.3.27", "version-8.5"].includes(profile)))) invalid();
+  return { ...(value.apiVersion.minor >= 56 ? { profiles: data.profiles as ("taxi-8.3.27" | "version-8.5")[] } : {}), maxSessions: Math.min(data.maxSessions as number, 16), maxOverlayBytes: Math.min(data.maxOverlayBytes as number, 8_388_608), maxInlineBytes: Math.min(data.maxInlineBytes as number, 131_072),
     ...(value.apiVersion.minor >= 39 && data.handlerNavigation === true ? { handlerNavigation: true } : {}),
     ...(value.apiVersion.minor >= 54 && data.handlerAuthoring === true ? { handlerAuthoring: true } : {}),
     ...(value.apiVersion.minor >= 41 && data.propertyPalette === true ? { propertyPalette: true } : {}),
@@ -199,8 +200,14 @@ export function parseFormPreparation(value: unknown): FormPreparation {
   return value as unknown as FormPreparation;
 }
 export function parseFormSnapshot(value: unknown): FormSnapshot {
+  if (isRecord(value)) {
+    for (const field of ["compatibilityMode", "interfaceCompatibilityMode"]) {
+      if (value[field] !== undefined && value[field] !== null && typeof value[field] !== "string") invalid();
+    }
+    if (value.profile === "version-8.5" && value.interfaceCompatibilityMode !== "Version8_5") invalid();
+  }
   if (!isRecord(value) || typeof value.formSessionId !== "string" || !value.formSessionId || !isToken(value.revision) || !hash(value.contextFingerprint)
-    || !(value.application === null || typeof value.application === "string") || value.profile !== "taxi-8.3.27" || typeof value.limitedContext !== "boolean"
+    || !(value.application === null || typeof value.application === "string") || !(["taxi-8.3.27", "version-8.5"] as unknown[]).includes(value.profile) || typeof value.limitedContext !== "boolean"
     || typeof value.modelComplete !== "boolean" || !["ready", "stale"].includes(String(value.status)) || !Array.isArray(value.dependencies) || value.dependencies.length > MAX_FORM_DEPENDENCIES || !isRecord(value.model)) invalid();
   const ids = new Set<string>();
   for (const dependency of value.dependencies) {

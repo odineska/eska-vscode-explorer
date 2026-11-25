@@ -271,7 +271,7 @@ export function controller(api) {
       let reveal = '';
       set(draft => {
         if (inspector) Object.assign(draft.ui, inspector.ui);
-        for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
+        for (const field of ['profile', 'compatibilityMode', 'interfaceCompatibilityMode', 'role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
           if (value[field] !== undefined) draft[field] = value[field];
         }
         if (model) {

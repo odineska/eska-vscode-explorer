@@ -3,7 +3,8 @@ import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
-import { prepare, fieldWidth, flatten, treeChildren, find, text, caption, font, color, automaticCommands, localizedProperty, pageSelections } from '../webview/forms/model.mjs';
+import { prepare, fieldWidth, flatten, treeChildren, find, text, caption, font, color, automaticCommands, localizedProperty, pageSelections, inputControlHeight } from '../webview/forms/model.mjs';
+import { tableLayout } from '../webview/forms/table-model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 import { parsePreviewNavigation } from '../out/form-preview/navigation.js';
 import { FormSession } from '../out/form-preview/client.js';
@@ -22,6 +23,28 @@ function fixture() {
     status: 'ready', lastError: null, dependencies: [{ id: source, root: { encoding: 'utf-8', value: '/project/src' }, path: { encoding: 'utf-8', value: 'Form.xml' }, snapshot: source, version: null, member: null, role: 'form' }],
     model: { importantColor: {kind:"role",value:"ImportantColor"}, root, assets: [], attributes: [], commands: [], parameters: [], diagnostics: { composition: [], appearance: [] } } };
 }
+
+test('the Linux 8.5 profile uses its measured field and table bands', () => {
+  const { root } = fixture().model;
+  const input = { ...root, kind: 'InputField', name: 'Number' };
+  const table = { ...root, kind: 'Table', children: [input] };
+  assert.equal(inputControlHeight(input, 'linux'), 23);
+  assert.equal(inputControlHeight(input, 'linux', 1, 'version-8.5'), 40);
+  assert.equal(tableLayout(table, { os: 'linux' }).header, 30);
+  assert.equal(tableLayout(table, { os: 'linux', profile: 'version-8.5' }).header, 40);
+  const group = { ...root, kind: 'ColumnGroup', children: [input], properties: [
+    { key: { name: 'Group', namespace: root.xmlName.namespace }, value: { kind: 'text', text: 'InCell' } },
+    { key: { name: 'ShowInHeader', namespace: root.xmlName.namespace }, value: { kind: 'text', text: 'true' } },
+  ] };
+  const grouped = { ...table, children: [group] };
+  assert.equal(tableLayout(grouped, { os: 'linux' }).header, 60);
+  const modern = tableLayout(grouped, { os: 'linux', profile: 'version-8.5' });
+  assert.equal(modern.header, 40);
+  assert.equal(modern.children[0].groupCaptionInCell, true);
+  assert.equal(font(root.presentation.font, 'linux', 'version-8.5')['font-size'], '16px');
+  const authored = { ...root.presentation.font, points: 9, origins: [root.origin] };
+  assert.equal(font(authored, 'linux', 'version-8.5')['font-size'], '12px');
+});
 
 test('opening a form releases an allocated session after a rejected snapshot or upload cleanup', async () => {
   const sessionId = 'workspace', projectId = 'project', generation = '2';
@@ -384,4 +407,16 @@ test('expanded reference paths are bounded semantic paths, including root attrib
   for (const paths of [[[]],[['Link.Parent']],[['']],Array.from({length:129},()=>['Link']),[Array(65).fill('Parent')],[['я'.repeat(1025)]]]) {
     snapshot.model.expandedData=paths;assert.throws(()=>parseFormSnapshot(snapshot));
   }
+});
+
+
+test('8.5 form snapshots retain compatibility independently of interface profile', () => {
+  const snapshot = fixture();
+  snapshot.profile = 'version-8.5';
+  snapshot.compatibilityMode = 'Version8_5_1';
+  snapshot.interfaceCompatibilityMode = 'Version8_5';
+  assert.equal(parseFormSnapshot(snapshot).profile, 'version-8.5');
+  assert.equal(parseFormSnapshot(fixture()).profile, 'taxi-8.3.27');
+  assert.throws(() => parseFormSnapshot({ ...snapshot, interfaceCompatibilityMode: 'Taxi' }));
+  assert.throws(() => parseFormSnapshot({ ...snapshot, compatibilityMode: 854 }));
 });

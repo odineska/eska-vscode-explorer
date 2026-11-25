@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createMemo, createSignal, createEffect, onSettled } from 'solid-js';
-import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, inputPaintedOutset, primitiveInputSelection, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands } from './model.mjs';
+import { caption, property, scalar, flag, number, font, color, fieldStyle, fieldValue, inputHeight, inputControlHeight, inputRowHeight, inputRows, inputChoiceButton, inputListChoice, inputOpenButton, inputPaintedOutset, primitiveInputSelection, textInputWidthBounds, linuxFixedInputWidth, linuxReferenceInput, referenceInputButtons, referenceButtonSlotWidth, fontPixels, fontLineHeight, numericLabelMetrics, textLabelMetrics, buttonMetrics, buttonAuthoredWidth, buttonControlHeight, buttonBackground, text, localizedProperty, automaticCommands, usesVersion85Layout } from './model.mjs';
 import { Table, TableCommandActions, TableToolbarSearch } from './Table.jsx';
 import { StandaloneAddition } from './Additions.jsx';
 import { Splitter } from './Splitter.jsx';
@@ -75,6 +75,8 @@ function Picture(props) {
 }
 export function CommandButton(props) {
   const formLayout = useFormLayout();
+  const state = props.controller.state;
+  const version85 = () => usesVersion85Layout(state);
   let button;
   const [backgroundImage, setBackgroundImage] = createSignal();
   const [automaticForeground, setAutomaticForeground] = createSignal();
@@ -108,7 +110,7 @@ export function CommandButton(props) {
     if (typeof value === 'string') return props.pictureVariant !== 'tableCommand' && !!standardPicture(value, props.pictureVariant);
     return value?.kind === 'common' || value?.kind === 'standard' && !!standardPicture(value.name);
   });
-  const plain = () => props.controller.state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
+  const plain = () => !version85() && state.os === 'linux' && !props.bar && !props.help && (!iconOnly() || nativeIcon()) && (!props.dropdown || props.nativeDropdown)
     && !link() && (!picture() || nativeIcon())
     && (primary() || flag(props.node, 'Enabled') || props.standaloneSearch);
   const background = () => props.controller.state.os === 'linux' && primary()
@@ -135,6 +137,7 @@ export function CommandButton(props) {
     return () => observer.disconnect();
   });
   const metrics = () => {
+    if (version85()) return {};
     if (props.controller.state.os === 'linux' && link()) {
       if (scalar(props.node, 'Type') === 'Hyperlink') {
         const height = fontLineHeight(props.node.presentation.font);
@@ -164,7 +167,7 @@ export function CommandButton(props) {
       'background-image': backgroundImage() };
   };
   const measuredWidth = createNativeButtonWidth(() => button, () => ({text:label(),os:props.controller.state.os,
-    automatic:!props.help && !iconOnly() && authoredWidth() <= 0,wordCaption:true,
+    automatic:!version85() && !props.help && !iconOnly() && authoredWidth() <= 0,wordCaption:true,
     picture:JSON.stringify(picture()),primary:props.primary,dropdown:props.dropdown,link:link(),
     font:font(props.node?.presentation.font ?? props.controller.state.model.root.presentation.font, props.controller.state.os)}));
   createEffect(measuredWidth, () => { formLayout?.invalidate(); });
@@ -177,18 +180,18 @@ export function CommandButton(props) {
     data-table-search-control={props.node?.kind === 'SearchControlAddition' ? '' : undefined} data-button-type={props.node ? scalar(props.node, 'Type', 'UsualButton') : undefined} class={{ 'taxi-button': true, 'taxi-button--default': primary(),
     'taxi-button--native-fill': plain(), 'taxi-button--native-border': !!borderPaint(),
     'taxi-button--icon-only': iconOnly(), 'taxi-button--dropdown': props.dropdown, 'taxi-button--help': props.help, 'taxi-button--link': link(), 'taxi-button--bar': props.bar, 'taxi-button--picture': iconOnly() }}
-    style={{ ...(props.node ? font(props.node.presentation.font, props.controller.state.os) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), 'border-top-color': standaloneBorder(), 'border-left-color': standaloneBorder(), 'border-right-color': standaloneBorder(), 'border-bottom-color': borderPaint() ? undefined : standaloneBorder(), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, '--taxi-button-height': authoredHeight(), width: authoredWidth() > 0 ? `${props.controller.state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
+    style={{ ...(props.node ? font(props.node.presentation.font, state.os, state.profile) : {}), ...(link() ? {'text-decoration':['underline',props.node.presentation.font.strikeout && 'line-through'].filter(Boolean).join(' ')} : {}), color: foreground(), 'background-color': color(background()), 'border-top-color': standaloneBorder(), 'border-left-color': standaloneBorder(), 'border-right-color': standaloneBorder(), 'border-bottom-color': borderPaint() ? undefined : standaloneBorder(), ...metrics(), '--taxi-button-native-border':borderPaint() ? `rgb(${borderPaint().top.join(',')})` : undefined, '--taxi-button-native-bottom':borderPaint() ? `rgb(${borderPaint().bottom.join(',')})` : undefined, '--taxi-button-native-shadow':borderPaint() ? `rgb(${borderPaint().shadow.join(',')})` : undefined, '--taxi-button-height': authoredHeight(), width: authoredWidth() > 0 ? `${state.os === 'linux' ? authoredWidth() * 10 : authoredWidth() * 8 + 4}px` : props.uniformButtonWidth ? `${props.uniformButtonWidth}px` : measuredWidth() }}
     title={label()} aria-label={label()} aria-haspopup={props.menu ? 'menu' : undefined} aria-expanded={props.menu ? props.expanded?.toString() : undefined}
     disabled={props.enabled === false} aria-disabled={(props.enabled === false || props.node && !flag(props.node, 'Enabled'))?.toString()} onClick={event => { event.stopPropagation(); if (props.node) props.controller.select(props.node, true); props.onClick?.(event); }}>
     <Show when={picture()}><Show when={!pictureName()} fallback={<Icon name={pictureName()} variant={props.pictureVariant}/>}><Picture node={props.node} picture={sourcePicture()} controller={props.controller}/></Show></Show>
     <Show when={!iconOnly()}>
-      <Show when={link() && props.controller.state.os === 'linux'} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? props.controller.state.model.root.presentation.font} foreground={foreground()} background={background()}/>}>
+      <Show when={link() && state.os === 'linux' && !version85()} fallback={<NativeCaption trailingWidth={props.nativeDropdown?4:0} text={label()} enabled={plain()} button={() => button} runtime={props.controller.nativeText} font={props.node?.presentation.font ?? state.model.root.presentation.font} foreground={foreground()} background={background()}/>}>
         <Show when={wrappedLink()} fallback={<NativeLabel text={label()} placement="buttonLink" target={() => button} enabled calibrated={linkCalibrated()} font={props.node.presentation.font} foreground={foreground()} runtime={props.controller.nativeText}/>}>
           {text => <span>{text()}</span>}
         </Show>
       </Show>
     </Show>
-    <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={standaloneInactive() ? '#a0a0a0' : props.standaloneSearch ? foreground() : color(props.controller.state.model.root.presentation.foreground)}/></Show></span></Show>
+    <Show when={props.dropdown}><span class="taxi-down"><Show when={props.nativeDropdown && !version85()} fallback="▾"><NativeButtonArrow controller={props.controller} button={()=>button} enabled={plain()} foreground={standaloneInactive() ? '#a0a0a0' : props.standaloneSearch ? foreground() : color(state.model.root.presentation.foreground)}/></Show></span></Show>
     <NativeButtonBorder controller={props.controller} button={() => button} enabled={plain()} primary={primary()} stroke={standaloneBorder()} inactive={standaloneInactive()} paint={borderPaint()} setPaint={setBorderPaint}/>
   </button>;
 }
@@ -234,7 +237,7 @@ export function Preview(props) {
   let viewport, preview, frame;
   const layout = createFormLayout(props.controller, () => viewport, () => preview, () => frame, commandPosition);
   const frameStyle = () => ({
-    ...font(root().presentation.font, state.os),
+    ...font(root().presentation.font, state.os, state.profile),
     width: `${Math.max(28, layout.allocation().width - 4)}px`,
     height: layout.measuringReference() ? 'auto' : `${Math.max(0, layout.allocation().height - 4)}px`,
     '--taxi-form-initial-width': layout.initialWidth(),
@@ -250,8 +253,8 @@ export function Preview(props) {
   });
   return <StandardPictureScaleContext value={pictureScale}><FormLayoutContext value={layout}><div ref={viewport} class="preview-scroll" aria-label={state.strings.preview}>
     <div ref={preview} class="taxi-preview" data-form-layout="preferred" data-preferred-x={layout.atPreferred('x') ? 'true' : undefined}
-      data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile="taxi-8.3.27" style={{ zoom: state.ui.zoom / 100 }}>
-      <div ref={frame} data-form-drop-root={root().key} class={["taxi-form-frame", { 'taxi-selected': state.selected === root().key }]}
+      data-reference-layout={layout.measuringReference() ? '' : undefined} data-os={state.os} data-profile={state.profile ?? "taxi-8.3.27"} style={{ zoom: state.ui.zoom / 100 }}>
+      <div ref={frame} data-preview-profile={state.profile ?? "taxi-8.3.27"} data-form-drop-root={root().key} class={["taxi-form-frame", { 'taxi-selected': state.selected === root().key }]}
         data-authored-height={layout.authoredHeight() ? '' : undefined} data-native-form-scroll={layout.nativeFormScroll() ? '' : undefined}
         data-vertical-scroll={layout.nativeFormScroll() ? scalar(root(), 'VerticalScroll') || undefined : undefined}
         style={frameStyle()}
@@ -813,6 +816,7 @@ function Input(props) {
   let valueInput, surface;
   const [paint,setPaint] = createSignal();
   const node = () => props.node, state = props.controller.state;
+  const version85 = () => usesVersion85Layout(state);
   const kind = () => node().presentation.valueType.kind;
   const value = createMemo(() => fieldValue(node(), state.culture, state.locale));
   const hint = () => localizedProperty(property(node(), 'InputHint')?.value, state.locale);
@@ -823,7 +827,7 @@ function Input(props) {
   const choicePicture = () => node().presentation.choiceButtonPicture;
   const multiline = () => flag(node(), 'MultiLine', false);
   const referenceButtons = createMemo(() => referenceInputButtons(node(), state.os));
-  const referenceButtonHeight = () => inputHeight(node(), state.os);
+  const referenceButtonHeight = () => inputHeight(node(), state.os, state.profile);
   const readOnly = () => flag(node(), 'ReadOnly', false);
   const disabled = () => paint()?.disabled ?? !flag(node(), 'Enabled');
   const textSizing = createMemo(() => textInputWidthBounds(node(), state.os));
@@ -833,8 +837,18 @@ function Input(props) {
     : inputChoiceButton(node(), state.os));
   const inactive = () => paint()?.inactive ?? (readOnly() || disabled());
   // Intrinsic layout reserves the painted edge even before the native palette is read.
-  const outset = createMemo(() => inputPaintedOutset(node(), state.os, choice()));
-  const sizing = createMemo(() => fieldStyle(node(), state.os, choice()));
+  const outset = createMemo(() => version85() ? 0 : inputPaintedOutset(node(), state.os, choice()));
+  const defaultWidth85 = () => version85() && !multiline()
+    && ['date', 'reference', 'string'].includes(kind())
+    && ['Width', 'MinWidth', 'MaxWidth'].every(name => number(node(), name) <= 0);
+  const separateOpen = () => defaultWidth85()
+    && (referenceButtons()?.includes('open') ?? inputOpenButton(node(), state.os));
+  const sizing = createMemo(() => {
+    if (!defaultWidth85()) return fieldStyle(node(), state.os, choice());
+    // The Configurator reserves a 450 px lane, including the external open action.
+    return separateOpen() ? { width: '410px', 'max-width': 'calc(100% - 40px)', 'margin-inline-end': '40px' }
+      : { width: '450px' };
+  });
   createEffect(textSizing, metrics => {
     setObservedPaintWidth(undefined);
     if (!metrics?.requestedChoice) return;
@@ -845,25 +859,26 @@ function Input(props) {
     const frame = requestAnimationFrame(measure);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   });
-  const controlHeight = () => inputControlHeight(node(), state.os);
+  const controlHeight = () => inputControlHeight(node(), state.os, undefined, state.profile);
   const verticalOffset=()=>{
-    if(state.os!=='linux'||multiline())return 0;
+    if(state.os!=='linux'||multiline()||version85())return 0;
     const offset=(inputRowHeight(node(),state.os,!!caption(node(),state))-inputHeight(node(),state.os))/2;
     return Math.round(offset)-offset;
   };
   return <div ref={surface} data-native-text-width={textSizing()?'':undefined} data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={outset()}
     data-native-reference={referenceButtons() ? '' : undefined} data-native-reference-multiline={referenceButtons() && multiline() ? '' : undefined}
+    data-separate-open={separateOpen() ? '' : undefined}
     class={["taxi-input", { 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': readOnly() }]} style={{ ...sizing(), '--taxi-input-outset': `${outset()}px`, top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
     '--taxi-reference-buttons-width': referenceButtons() && `${referenceButtons().length * referenceButtonSlotWidth}px`,
     '--taxi-reference-button-height': referenceButtons() && multiline() ? `${referenceButtonHeight()}px` : undefined,
     color: color(node().presentation.foreground), 'background-color': color(node().presentation.background), 'border-color': color(node().presentation.border), '--taxi-input-native-border':paint()?`rgb(${paint().border.join(',')})`:undefined, '--taxi-input-native-background':paint()?`rgb(${paint().background.join(',')})`:undefined, '--taxi-input-button-border':paint()?`rgb(${paint().buttonBorder.join(',')})`:undefined, '--taxi-input-disabled-foreground':paint()?.foreground?`rgb(${paint().foreground.join(',')})`:undefined }}>
-    <NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}
-      choice={choice()} referenceButtons={referenceButtons()}/>
+    <Show when={!version85()}><NativeInputBorder node={node()} surface={()=>surface} controller={props.controller} paint={paint()} setPaint={setPaint}
+      choice={choice()} referenceButtons={referenceButtons()}/></Show>
     <Switch><Match when={multiline()}><textarea readonly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabindex="-1"/></Match>
       <Match when={true}>
         <input ref={valueInput} readonly value={value()} placeholder={hint()} aria-label={caption(node(), state)} tabindex="-1"
           style={{ 'text-align': scalar(node(), 'HorizontalAlign', kind() === 'number' ? 'Right' : 'Left').toLowerCase() }}/>
-        <Show when={state.os === 'linux' && ['number', 'date'].includes(kind())}>
+        <Show when={!version85() && state.os === 'linux' && ['number', 'date'].includes(kind())}>
           <span class="taxi-input-raster" aria-hidden="true">
             <NativeLabel enabled={!disabled() && !readOnly() || !!paint()} placement="input" mask={kind() === 'date'}
               target={() => valueInput} text={value()} font={node().presentation.font}
@@ -913,6 +928,7 @@ function Input(props) {
 }
 function Field(props) {
   const node = () => props.node, state = props.controller.state;
+  const version85 = () => usesVersion85Layout(state);
   const title = () => caption(node(), state);
   const checkbox = () => node().kind === 'CheckBoxField';
   const tooltip = () => scalar(node(), 'ToolTipRepresentation') === 'Button'
@@ -934,12 +950,12 @@ function Field(props) {
   const labelCaption = () => node().kind === 'LabelField' ? allocatedCaption() : undefined;
   const nativeLabel = text => <NativeLabel placement="fieldTitle" text={text()} font={labelFont()} foreground={node().presentation.titleColor}
     runtime={props.controller.nativeText} fieldTitleRuns={pageInputTitle() && (!automaticTop() || props.fixedSideTitles)}
-    enabled={state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
+    enabled={!version85() && state.os === 'linux' && (checkbox() || (radio() || node().kind === 'InputField'
       && (sideTitle() || pageTitleAbove())) && flag(node(), 'Enabled'))}/>;
   const numericLabel = createMemo(() => numericLabelMetrics(node(), state.os));
   const numericWidth = createMemo(() => numericLabel() ? fieldCaptionProfile(label(), labelFont())?.preferred : undefined);
   const inputTitleWidth = createMemo(() => {
-    if (titleLocation() !== 'Left') return;
+    if (version85() || titleLocation() !== 'Left') return;
     if (textInputWidthBounds(node(), state.os)) return wordCaptionWidth(label(), labelFont());
     if (linuxReferenceInput(node(), state.os) || node().presentation.valueType.kind === 'number' && linuxFixedInputWidth(node(), state.os)) {
       return designCaptionWidth(label(), labelFont());
@@ -961,7 +977,7 @@ function Field(props) {
     const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || pageTitleAbove()));
     const lineHeight = numericLabel() || wrapped ? fontLineHeight(labelFont())
       : pageTitleAbove() && props.fixedSideTitles ? fontLineHeight(labelFont()) + 1 : undefined;
-    return { ...(nativeCheck || numericLabel() ? linuxControlFont(labelFont()) : font(labelFont(), state.os)),
+    return { ...(!version85() && (nativeCheck || numericLabel()) ? linuxControlFont(labelFont()) : font(labelFont(), state.os, state.profile)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
       color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
       'line-height': lineHeight === undefined ? undefined : `${lineHeight}px`,
@@ -983,9 +999,12 @@ function Field(props) {
     data-wrapped-input-caption={inputCaption() ? '' : undefined}
     data-wrapped-checkbox-caption={checkboxCaption() ? '' : undefined}
     data-numeric-label-title={numericLabel() ? '' : undefined}
-    data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? 'var(--taxi-inline-label-height, 0px)' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title())}px` : undefined }} class={['taxi-field-row', { 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }]}>
+    data-multiline={state.os === 'linux' && node().kind === 'InputField' && inputRows(node()) > 1 ? '' : undefined} style={{ 'min-height': numericLabel() ? 'var(--taxi-inline-label-height, 0px)' : node().kind === 'InputField' ? `${inputRowHeight(node(),state.os,!!title(), state.profile)}px` : undefined }} class={['taxi-field-row', { 'taxi-field-row--check': node().kind === 'CheckBoxField' && titleLocation() === 'Right', 'taxi-field-row--large': !['InputField', 'CheckBoxField', 'RadioButtonField', 'LabelField', 'ProgressBarField', 'TrackBarField', 'PeriodField'].includes(node().kind) }]}>
     <Show when={titleLocation() !== 'None'}>
       <label class="taxi-field-label" aria-label={label()} style={labelStyle()}>
+        <Show when={version85() && node().kind === 'InputField' && node().presentation.markIncomplete}>
+          <span class="form-required-marker" aria-hidden="true">*</span>
+        </Show>
         <Show when={inputCaption() || checkboxCaption()} fallback={nativeLabel(() => allocatedCaption() ?? label())}>
           {text => <For each={text().split('\n')}>{line =>
             <span class="taxi-field-caption-line">{nativeLabel(() => line)}</span>}</For>}
@@ -1032,6 +1051,7 @@ export function Element(props) {
   const bounds = axis => controlBounds(node(), axis, undefined, state.os, {
     atPreferred: layout?.atPreferred(axis),
     authoredHeight: axis === 'y' && authoredHeight(),
+    profile: state.profile,
   });
   const x = () => bounds('x'), y = () => bounds('y');
   const groupSize = () => groupPreferredSize(node(), state.os);
@@ -1047,7 +1067,7 @@ export function Element(props) {
     return authoredHeight() && flag(node(), 'MultiLine', false) ? 'authored' : '';
   };
   const layoutStyle = () => ({
-    ...font(node().presentation.font, state.os),
+    ...font(node().presentation.font, state.os, state.profile),
     '--taxi-content-maximum-width': Number.isFinite(maximumWidth()) ? `${maximumWidth()}px` : undefined,
     '--taxi-addition-width': addition() ? `${addition().preferred}px` : undefined,
     '--taxi-addition-minimum': addition() ? `${addition().minimum}px` : undefined,

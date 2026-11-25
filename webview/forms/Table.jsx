@@ -1,5 +1,5 @@
 import { For, Show, Switch, Match, createEffect, createMemo, createSignal } from 'solid-js';
-import { scalar, flag, property, caption, font, color, text, fontLineHeight } from './model.mjs';
+import { scalar, flag, property, caption, font, color, text, fontLineHeight, usesVersion85Layout } from './model.mjs';
 import { createTableLayout } from './table-layout.js';
 import { tableAdditionsProjection, tableFooterFont, tableTracks } from './table-model.mjs';
 import { CommandButton, Element, PopupMenu } from './Preview.jsx';
@@ -13,15 +13,15 @@ import { minimumHorizontalTableViewport, tableScrollbarGrays, tablePaginationGly
 const paginationWidth = 97;
 const paginationGap = 19;
 
-function bandTextStyle(value, foreground, background, alignment, os) {
-  return { ...font(value, os), color: color(foreground), 'background-color': color(background),
-    'line-height': `${Math.max(18, fontLineHeight(value))}px`, 'text-align': alignment };
+function bandTextStyle(value, foreground, background, alignment, state) {
+  return { ...font(value, state.os, state.profile), color: color(foreground), 'background-color': color(background),
+    'line-height': `${Math.max(usesVersion85Layout(state) ? 20 : 18, fontLineHeight(value))}px`, 'text-align': alignment };
 }
 
 function TableCaption(props) {
   const value = () => props.node.presentation;
   return <NativeLabel text={props.text} font={value().titleFont} foreground={value().titleColor} placement="tableHeader"
-    enabled={props.controller.state.os === 'linux'} calibrated={['Auto', 'Top'].includes(scalar(props.node, 'HeaderVerticalAlign', 'Top'))}
+    enabled={props.controller.state.os === 'linux' && !usesVersion85Layout(props.controller.state)} calibrated={['Auto', 'Top'].includes(scalar(props.node, 'HeaderVerticalAlign', 'Top'))}
     segments={props.segments} interactive={props.interactive} runtime={props.controller.nativeText}>{props.children}</NativeLabel>;
 }
 
@@ -34,9 +34,9 @@ function FooterCell(props) {
   const label = () => props.column.fields.map(item => text(item.presentation.footerText, state.locale, state.strings)).join(', ');
   return <div role="cell" class="taxi-table-footer-cell" data-footer-column={node().key} data-last-column={props.last ? '' : undefined}
     onClick={event => { event.stopPropagation(); props.controller.select(node()); }}
-    style={{ ...bandTextStyle(face(), foreground(), appearance()?.footerBackground, scalar(node(), 'FooterHorizontalAlign', 'Left').toLowerCase(), state.os), height: `${props.height}px` }}>
+    style={{ ...bandTextStyle(face(), foreground(), appearance()?.footerBackground, scalar(node(), 'FooterHorizontalAlign', 'Left').toLowerCase(), state), height: `${props.height}px` }}>
     <NativeLabel text={label()} font={face()} foreground={foreground()} placement="tableFooter"
-      enabled={state.os === 'linux'} calibrated={props.column.fields.length === 1} runtime={props.controller.nativeText}/>
+      enabled={state.os === 'linux' && !usesVersion85Layout(state)} calibrated={props.column.fields.length === 1} runtime={props.controller.nativeText}/>
   </div>;
 }
 
@@ -66,7 +66,9 @@ function Header(props) {
   const state = props.controller.state, model = () => props.model, node = () => model().node;
   const select = (event, item = node()) => { event.stopPropagation(); props.controller.select(item); };
   const cell = (item, extra = {}) => ({ ...bandTextStyle(item.presentation.titleFont, item.presentation.titleColor,
-    item.presentation.tableColumnAppearance?.headerBackground, scalar(item, 'HeaderHorizontalAlign', 'Left').toLowerCase(), state.os), ...extra });
+    item.presentation.tableColumnAppearance?.headerBackground, scalar(item, 'HeaderHorizontalAlign', 'Left').toLowerCase(), state),
+    'font-weight': usesVersion85Layout(state) && !item.presentation.titleFont?.origins?.length
+      ? 600 : item.presentation.titleFont?.weight ?? 400, ...extra });
   const title = item => flag(item, 'ShowInHeader') ? caption(item, state) : '';
   return <Switch>
     <Match when={model().mode === 'field'}><div role="columnheader" data-column={node().key} class={{ 'taxi-table-header-cell': true, selected: state.selected === node().key }} style={cell(node(), { height: `${props.height}px` })} onClick={select}><TableCaption node={node()} controller={props.controller} text={title(node())}/></div></Match>
@@ -76,7 +78,14 @@ function Header(props) {
     </div></Match>
     <Match when={model().mode === 'vertical' || model().mode === 'inCell'}><div class="taxi-table-header-vertical" style={{ height: `${props.height}px` }}>
       <Show when={model().show}><div role="columnheader" data-column={node().key} class="taxi-table-header-cell" style={cell(node(), { height: `${model().captionHeight}px` })} onClick={select}><TableCaption node={node()} controller={props.controller} text={caption(node(),state)}/></div></Show>
-      <Show when={model().mode === 'vertical'} fallback={<div role="columnheader" class="taxi-table-header-cell" style={cell(node(), { flex: 1 })}><TableCaption node={node()} controller={props.controller} text={model().columns[0].fields.map(title).join(', ')} segments={model().columns[0].fields.flatMap((item,index)=>index?[', ',title(item)]:[title(item)])} interactive><For each={model().columns[0].fields}>{(item, index) => <><Show when={index() > 0}>, </Show><span data-column={item.key} onClick={event => select(event, item)}>{title(item)}</span></>}</For></TableCaption></div>}>
+      <Show when={model().mode === 'vertical'} fallback={<div role="columnheader" class="taxi-table-header-cell" style={cell(node(), { flex: 1 })}>
+        <Show when={model().groupCaptionInCell} fallback={<TableCaption node={node()} controller={props.controller}
+          text={model().columns[0].fields.map(title).join(', ')} segments={model().columns[0].fields.flatMap((item,index)=>index?[', ',title(item)]:[title(item)])} interactive>
+          <For each={model().columns[0].fields}>{(item, index) => <><Show when={index() > 0}>, </Show><span data-column={item.key} onClick={event => select(event, item)}>{title(item)}</span></>}</For>
+        </TableCaption>}>
+          <span data-column={node().key} onClick={select}>{caption(node(), state)}</span>
+        </Show>
+      </div>}>
         <For each={model().children}>{(child, index) => <Header model={child} controller={props.controller} height={child.height + (index() === model().children.length - 1 ? props.height - model().height : 0)}/>}</For>
       </Show>
     </div></Match>
@@ -164,9 +173,9 @@ export function Table(props) {
       '--taxi-table-pagination-width': layout().nativeDynamicList ? `${paginationWidth}px` : undefined,
       '--taxi-table-pagination-gap': layout().nativeDynamicList ? `${paginationGap}px` : undefined,
     }}>
-    <Show when={title()}><div class="taxi-table-title" style={{ ...font(node().presentation.titleFont, state.os),
+    <Show when={title()}><div class="taxi-table-title" style={{ ...font(node().presentation.titleFont, state.os, state.profile),
       'line-height': `${fontLineHeight(node().presentation.titleFont)}px`, color: color(node().presentation.titleColor) }}>
-      <NativeLabel placement="fieldTitle" enabled text={title() + ':'} font={node().presentation.titleFont}
+      <NativeLabel placement="fieldTitle" enabled={!usesVersion85Layout(state)} text={title() + ':'} font={node().presentation.titleFont}
         foreground={node().presentation.titleColor} runtime={props.controller.nativeText}/>
     </div></Show>
     <Show when={layout().toolbar}><div class="taxi-table-command-bar" data-autofill={layout().more ? '' : undefined}
@@ -186,7 +195,7 @@ export function Table(props) {
     <ViewStatus node={node()} controller={props.controller} fitTable/>
     <div role="table" aria-label={caption(node(), state)} class="taxi-table-scroll" data-native-horizontal={horizontal() ? '' : undefined}
       aria-disabled={inactive() ? 'true' : undefined} style={{ height: `${layout().height}px`, 'background-color': color(node().presentation.background) }}>
-      <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" data-clip-header={layout().clipHeader ? '' : undefined} style={{ ...font(node().presentation.font, state.os), color: color(node().presentation.foreground) }}>
+      <div ref={content} id={`table-grid-${node().key}`} class="taxi-table-content" data-clip-header={layout().clipHeader ? '' : undefined} style={{ ...font(node().presentation.font, state.os, state.profile), color: color(node().presentation.foreground) }}>
         <Show when={layout().header}><div class="taxi-table-head" role="rowgroup" style={{ height: `${layout().header}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{child => <Header model={child} controller={props.controller} height={layout().header}/>}</For></div></Show>
         <div class="taxi-table-empty" role="rowgroup"><Show when={node().presentation.markIncomplete}><i class="taxi-table-incomplete"/></Show></div>
         <Show when={layout().footer}><div class="taxi-table-footer" role="row" style={{ height: `${layout().footer}px`, 'grid-template-columns': tracks() }}><For each={layout().children}>{(child, index) => <Footer model={child} table={node()} controller={props.controller} height={layout().footer} last={index() === layout().children.length - 1}/>}</For></div></Show>
