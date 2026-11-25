@@ -48,6 +48,20 @@ test('detached preview receives editing availability and layout without the insp
   assert.equal(preview.messages.at(-1).authoring, false);
 });
 
+test('both preview frames receive the accepted theme after an older state publication', async () => {
+  const { service, view, frames } = await fixture();
+  service.rememberInspector = (target, state) => { target.inspectorState = state; };
+  for (const [role, theme] of [['main', 'dark'], ['preview', 'light']]) {
+    service.publish(view, false);
+    await service.receive(view, frames.get(role), { type: 'previewTheme', previewTheme: theme });
+    for (const frame of frames.values()) {
+      assert.equal(frame.messages.at(-1)?.type, 'previewTheme');
+      assert.equal(frame.messages.at(-1)?.previewTheme, theme);
+      assert.equal(frame.messages.at(-2)?.type, 'state');
+    }
+  }
+});
+
 test('detached preview moves use the shared editor and retain its access restrictions', async () => {
   const { api, service, view, frames, requests } = await fixture();
   const preview = frames.get('preview');

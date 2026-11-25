@@ -225,7 +225,8 @@ export class FormPreviewService implements vscode.Disposable {
       if (view.frames.get(frame.role) !== frame) return;
       const ui = { ...(view.inspectorState?.ui ?? defaultInspectorUi()), previewTheme: value.previewTheme as "vscode" | "light" | "dark" };
       this.rememberInspector(view, { ...view.inspectorState, ui });
-      for (const target of view.frames.values()) if (target !== frame && target.ready)
+      // A queued model publication can carry the previous choice back to the sender.
+      for (const target of view.frames.values()) if (target.ready)
         void target.panel.webview.postMessage({ type: "previewTheme", previewTheme: ui.previewTheme });
       return;
     }
