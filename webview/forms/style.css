@@ -668,6 +668,13 @@ button { cursor: default; }
 .taxi-special-stack { max-width: 100%; }
 .taxi-special { display: flex; flex-direction: column; max-width: 100%; border: 1px solid #a0a0a0; overflow: hidden; background: #fff; }
 .taxi-document-surface { flex: 1; min-height: 0; background: #fff; }
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-special[data-native-field=HTMLDocumentField] {
+  border-radius: var(--eska-form-control-radius);
+  background-color: var(--taxi-FormBackColor);
+}
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-special[data-native-field=HTMLDocumentField] > .taxi-document-surface {
+  background: inherit;
+}
 .taxi-text-document::before { content: ''; display: block; width: 16px; height: 100%; background: repeating-conic-gradient(#f5f2dd 0 25%, #dcd9c4 0 50%) 1px 0 / 2px 2px; }
 .taxi-graphical-schema { background-image: linear-gradient(to right, #e6e6e6 1px, transparent 1px), linear-gradient(to bottom, #e6e6e6 1px, transparent 1px); background-size: 20px 20px; }
 .taxi-geographical-schema { margin: 0; border: 1px solid #8f8f8f; border-radius: 3px; }

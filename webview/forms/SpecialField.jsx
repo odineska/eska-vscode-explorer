@@ -1,5 +1,5 @@
 import { Show, Switch, Match, createMemo, createEffect, createSignal, onSettled } from 'solid-js';
-import { number, flag, scalar, color } from './model.mjs';
+import { number, flag, scalar, color, property, usesVersion85Layout } from './model.mjs';
 import { documentSurfaceMetrics } from './document-surface.mjs';
 import { pdfSurfaceMetrics } from './pdf-surface.mjs';
 import { Pdf } from './Pdf.jsx';
@@ -67,6 +67,9 @@ export function SpecialField(props) {
     if(props.node.kind==='GanttChartField')return ganttBorderColor(props.node);
     if(props.node.kind==='PlannerField')return '#a0a0a0';
     if(!flag(props.node,'Enabled')||['GeographicalSchemaField','CalendarField','PeriodField'].includes(props.node.kind)&&flag(props.node,'ReadOnly',false))return '#e8e8e8';
+    if (props.node.kind === 'HTMLDocumentField' && usesVersion85Layout(props.controller.state) && !property(props.node, 'BorderColor')) {
+      return 'var(--eska-form-html-border, #999)';
+    }
     return color(props.node.presentation.border);
   };
   return <div class="taxi-special-stack" style={{ width: `${width()}px`, '--taxi-surface-min-width': `${minimumWidth()}px` }}><Show when={props.node.kind === 'PDFDocumentField'}><ViewStatus node={props.node} controller={props.controller}/></Show>

@@ -87,6 +87,7 @@
     --eska-form-disabled-text: var(--eska-form-muted);
     --eska-form-disabled-border: #6e6e6e;
     --eska-form-table-outline: #828282;
+    --eska-form-html-border: #828282;
 
     & :is(.taxi-form-frame, .taxi-input, .taxi-table-search, .taxi-table-scrollbar, .taxi-table-horizontal-scrollbar) {
       background-color: var(--taxi-FormBackColor);
