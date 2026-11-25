@@ -1,4 +1,4 @@
-import { createEffect } from 'solid-js';
+import { createEffect, onCleanup } from 'solid-js';
 import { color, flag, property } from './model.mjs';
 import { inputBorderPixels, disabledInputForeground } from './input-border.mjs';
 import { NativeInputCorners, inputCornerBackground } from './NativeInputCorners.jsx';
@@ -40,6 +40,8 @@ export function createInputBorderPaintQueue() {
 
 export function NativeInputBorder(props) {
   let source, lastKey;
+  // Paint belongs to the retained input, which can outlive this profile's renderer.
+  onCleanup(() => props.setPaint(undefined));
   const node = () => props.node, state = props.controller.state;
   const reset = () => {
     lastKey = undefined;
