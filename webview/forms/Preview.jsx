@@ -454,13 +454,19 @@ function Pages(props) {
     props.controller.ui('pages', { ...state.ui.pages, [node().key]: page.key });
     props.controller.select(page, true);
   }
-  createEffect(() => modern() && [tabList(), selected(), horizontal()], current => {
+  createEffect(() => modern() && [tabList(), horizontal(), pages()], current => {
     if (!current?.[0]) return;
-    const [list, , across] = current;
-    // Keep the active page reachable without scrolling the form or changing its selection.
+    const [list, across] = current;
+    // The active tab can move when an earlier caption grows inside a fixed scrollport.
     const observer = new ResizeObserver(() => revealPageTab(list, across));
     observer.observe(list);
+    for (const tab of list.children) observer.observe(tab);
     return () => observer.disconnect();
+  });
+  createEffect(() => modern() && selected(), page => {
+    if (!page) return;
+    const frame = requestAnimationFrame(() => revealPageTab(tabList(), horizontal()));
+    return () => cancelAnimationFrame(frame);
   });
   function navigate(event) {
     if (!modern() || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -502,7 +508,7 @@ function Pages(props) {
 }
 
 function revealPageTab(list, horizontal) {
-  const tab = list.querySelector('[aria-selected=true]');
+  const tab = list?.querySelector('[aria-selected=true]');
   if (!tab) return;
   const offset = horizontal ? tab.offsetLeft : tab.offsetTop;
   const size = horizontal ? tab.offsetWidth : tab.offsetHeight;

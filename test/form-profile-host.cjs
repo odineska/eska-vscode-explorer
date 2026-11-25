@@ -17,6 +17,7 @@ function tabLayout() {
     representation: group.dataset.representation, selected: active.getAttribute('aria-label'),
     palette: css.colorScheme, activeFill: getComputedStyle(active).backgroundColor,
     height: active.offsetHeight, group: group.clientWidth, strip: list.clientWidth, panel: panel.offsetWidth,
+    bandHeight: list.offsetHeight, scrollLeft: list.scrollLeft,
     captions: [...list.children].map(tab => [tab.clientWidth, tab.textContent.length]),
     pageVisible: panel.getAttribute('aria-hidden') === 'false' && !panel.inert,
     scroll: list.scrollWidth, crossOverflow: css.overflowY,
@@ -32,15 +33,19 @@ function tabLayout() {
 
 async function checkPageTabs(ui, view, service, source, original) {
   const anchor = '<Pages name="Pages" id="4">';
+  const short = 'First tab';
   const title = 'A deliberately long caption '.repeat(55).trim();
-  const change = async (authored, rendered) => {
+  const change = async (authored, rendered, caption = title) => {
     const text = original.toString().replace(anchor, anchor + `<PagesRepresentation>${authored}</PagesRepresentation>`)
-      .replace('<Title>First</Title>', `<Title>${title}</Title>`);
+      .replace('<Title>First</Title>', `<Title>${caption}</Title>`);
     await fs.writeFile(source, text);
     service.schedule(view, 0);
     await until(() => [...view.nodes.values()].find(node => node.kind === 'Pages')
       ?.properties.some(property => property.key.name === 'PagesRepresentation' && property.value.text === authored), 'authored tab placement');
-    await until(async () => (await ui.evaluate(`(${tabLayout})()`)).representation === rendered, 'preview uses ' + rendered);
+    await until(async () => {
+      const tab = await read();
+      return tab.representation === rendered && tab.captions[0]?.[1] === caption.length;
+    }, 'preview uses ' + rendered + ' with updated title');
     await ui.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   };
   const read = () => ui.evaluate(`(${tabLayout})()`);
@@ -53,7 +58,7 @@ async function checkPageTabs(ui, view, service, source, original) {
   })()`);
 
   await ui.evaluate("document.querySelector('#root').style.width = '330px'");
-  await change('TabsOnBottom', 'TabsOnTop');
+  await change('TabsOnBottom', 'TabsOnTop', short);
   await theme('light');
   await until(async () => view.inspectorState?.ui.previewTheme === 'light' && (await read()).palette === 'light', 'light palette');
   const top = await read();
@@ -68,6 +73,14 @@ async function checkPageTabs(ui, view, service, source, original) {
     const tab = await read();
     return tab.selected === 'Other' && tab.selectionVisible && tab.pageVisible;
   }, 'last horizontal tab selected and scrolled into view');
+  const beforeEdit = await read();
+  await change('TabsOnBottom', 'TabsOnTop');
+  await until(async () => (await read()).selectionVisible, 'active tab revealed after the preceding caption grows');
+  const afterEdit = await read();
+  assert.equal(afterEdit.selected, beforeEdit.selected);
+  assert.equal(afterEdit.strip, beforeEdit.strip);
+  assert.equal(afterEdit.bandHeight, beforeEdit.bandHeight);
+  assert.ok(afterEdit.scrollLeft > beforeEdit.scrollLeft);
   await change('TabsOnRightHorizontal', 'TabsOnLeftHorizontal');
   const left = await read();
   assert.equal(left.height, 44);
@@ -86,7 +99,7 @@ async function checkPageTabs(ui, view, service, source, original) {
   await until(async () => (await read()).selected === title, 'vertical keyboard navigation preserves complete authored title');
   await ui.evaluate(`document.querySelector('#root').style.removeProperty('width');
     document.body.style.removeProperty('--vscode-editor-background')`);
-  return { top, left, dark };
+  return { top, left, dark, captionEdit: { beforeScroll: beforeEdit.scrollLeft, afterScroll: afterEdit.scrollLeft } };
 }
 
 exports.run = async () => {
