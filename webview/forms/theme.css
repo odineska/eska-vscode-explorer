@@ -13,13 +13,17 @@
 .preview-scroll:has(> .taxi-preview[data-profile="version-8.5"]) {
   color-scheme: light;
   color: #4d4d4d;
-  --eska-form-tab-divider: #dbdbdb;
+  --eska-form-tab-divider: #d5dce0;
+  --eska-form-tab-text: #3b454d;
+  --eska-form-tab-active-text: #154542;
+  --eska-form-tab-active-fill: #deefeb;
+  --eska-form-tab-outline: #557a74;
+  --eska-form-tab-hover: #ecf2f3;
   --eska-form-muted: #81818a;
-  --eska-form-tab-active-text: #1c1c1f;
   --eska-form-tumbler-fill: #f2f2f2;
 }
 
-/* The profile uses measured 1C colors. The VS Code body class selects the mode. */
+/* The preview owns its palette. The VS Code body class selects its mode. */
 :is(
   .preview-scroll:has(> .taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"]),
   body:is(.vscode-dark, .vscode-high-contrast)
@@ -30,8 +34,12 @@
   --eska-form-text: #ededf2;
   --eska-form-muted: #84848c;
   --eska-form-focus: #9fccfc;
-  --eska-form-tab-divider: #575757;
-  --eska-form-tab-active-text: var(--eska-form-text);
+  --eska-form-tab-divider: #536066;
+  --eska-form-tab-text: #c3ced3;
+  --eska-form-tab-active-text: #d7f5ee;
+  --eska-form-tab-active-fill: #244843;
+  --eska-form-tab-outline: #72b0a5;
+  --eska-form-tab-hover: #303b41;
   --eska-form-tumbler-fill: var(--eska-form-toolbar);
   background: var(--eska-form-surface);
   color: var(--eska-form-text);
@@ -156,13 +164,13 @@
       background-color: var(--taxi-LinesColor);
     }
 
-    & .taxi-pages:not([data-tab-style=underline]) > .taxi-tabs > button {
+    & .taxi-pages:not([data-tab-style=modern]) > .taxi-tabs > button {
       background-color: var(--taxi-tab-fill);
       color: var(--taxi-FormTextColor);
       border-color: var(--taxi-tab-stroke);
     }
 
-    & .taxi-pages:not([data-tab-style=underline]) > .taxi-tabs > button.active {
+    & .taxi-pages:not([data-tab-style=modern]) > .taxi-tabs > button.active {
       background-color: var(--taxi-FormBackColor);
     }
 

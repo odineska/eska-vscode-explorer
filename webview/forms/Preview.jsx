@@ -17,7 +17,7 @@ import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
 import { childInputTitlePlacement, inputTitlePlacement } from './model.mjs';
 import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
-import { sideTabRepresentation, tabMetrics, tabPictureLayout } from './tab-metrics.mjs';
+import { previewTabRepresentation, sideTabRepresentation, tabMetrics, tabPictureLayout } from './tab-metrics.mjs';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
 import { InputChoicePicture } from './InputChoicePicture.jsx';
 import { inputButtonGlyphs } from './reference-button-paint.mjs';
@@ -389,6 +389,11 @@ function pageTabLabel(page, state) {
   return authored && page.presentation.caption.kind === 'literal' ? caption(page, state) : '';
 }
 
+function pageTabUsesAuthoredColor(page, pages) {
+  const value = scalar(page, 'TitleTextColor', scalar(pages, 'TitleTextColor'));
+  return value !== '' && value !== 'Auto';
+}
+
 function PagePicture(props) {
   let element;
   onSettled(() => {
@@ -407,15 +412,18 @@ function Pages(props) {
   const node = () => props.node, state = props.controller.state;
   const layout = useFormLayout();
   const [pictureSizes, setPictureSizes] = createSignal(new Map());
+  const [tabList, setTabList] = createSignal();
   createEffect(pictureSizes, () => { layout.invalidate(); }, { defer: true });
-  const representation = () => scalar(node(), 'PagesRepresentation', 'TabsOnTop');
+  const version85 = () => usesVersion85Layout(state);
+  const representation = () => previewTabRepresentation(scalar(node(), 'PagesRepresentation', 'TabsOnTop'), version85());
   const horizontal = () => !sideTabRepresentation(representation());
-  const underlined = () => usesVersion85Layout(state) && ['Auto', 'TabsOnTop'].includes(representation());
+  const modern = () => version85() && (['Auto', 'TabsOnTop'].includes(representation()) || !horizontal());
   const pages = createMemo(() => node().children.filter(page => page.presentation.displayed
     && (state.os !== 'linux' || horizontal() || page.children.some(child => displayedInPreview(child, state.model.root)))));
   const selectedPage = createMemo(() => pages().find(page => page.key === state.ui.pages[node().key]) ?? pages()[0]);
   const selected = () => selectedPage()?.key;
   const metrics = createMemo(() => {
+    if (modern()) return;
     let pictureHeight = 0, sidePictureWidth = 0;
     const sizes = pictureSizes();
     for (const page of pages()) {
@@ -424,7 +432,7 @@ function Pages(props) {
       pictureHeight = Math.max(pictureHeight, size.height);
       if (!horizontal() && pageTabLabel(page, state)) sidePictureWidth = Math.max(sidePictureWidth, size.width);
     }
-    return { ...tabMetrics(pages().map(page => page.presentation.titleFont), pictureHeight, underlined()), pictureHeight, sidePictureWidth };
+    return { ...tabMetrics(pages().map(page => page.presentation.titleFont), pictureHeight), pictureHeight, sidePictureWidth };
   });
   function reportPictureSize(key, width, height) {
     setPictureSizes(previous => {
@@ -436,35 +444,101 @@ function Pages(props) {
       return sizes;
     });
   }
-  const side = () => state.os === 'linux' && !horizontal()
+  const side = () => state.os === 'linux' && !modern() && !horizontal()
     ? representation() === 'TabsOnRightHorizontal' ? 'right' : 'left' : undefined;
   const sideMetrics = () => side() && pages().length ? metrics().side : undefined;
   const authoredStretch = () => flag(node(), 'HorizontalStretch', false)
     || pages().some(page => flag(page, 'HorizontalStretch', false));
+
+  function selectPage(page) {
+    props.controller.ui('pages', { ...state.ui.pages, [node().key]: page.key });
+    props.controller.select(page, true);
+  }
+  createEffect(() => modern() && [tabList(), selected(), horizontal()], current => {
+    if (!current?.[0]) return;
+    const [list, , across] = current;
+    // Keep the active page reachable without scrolling the form or changing its selection.
+    const observer = new ResizeObserver(() => revealPageTab(list, across));
+    observer.observe(list);
+    return () => observer.disconnect();
+  });
+  function navigate(event) {
+    if (!modern() || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const tabs = [...event.currentTarget.children];
+    const index = tabs.indexOf(event.target);
+    if (index === -1) return;
+    let next;
+    if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else if (event.key === (horizontal() ? 'ArrowRight' : 'ArrowDown')) next = (index + 1) % tabs.length;
+    else if (event.key === (horizontal() ? 'ArrowLeft' : 'ArrowUp')) next = (index + tabs.length - 1) % tabs.length;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    tabs[next].focus({ preventScroll: true });
+    selectPage(pages()[next]);
+  }
   return <div class="taxi-pages" data-representation={representation()} data-native-side-tabs={side()}
     data-authored-side-stretch={side() && authoredStretch() ? '' : undefined}
-    data-tab-style={underlined() ? 'underline' : undefined}>
-    <Show when={representation() !== 'None'}><div class="taxi-tabs" role="tablist" data-side-fit-minimum={sideMetrics()?.fitMinimum}
-      style={{ height:horizontal() && (state.os === 'linux' || metrics().pictureHeight) ? `${metrics().height}px` : undefined,
+    data-tab-style={modern() ? 'modern' : undefined}>
+    <Show when={representation() !== 'None'}><div ref={setTabList} class="taxi-tabs" role="tablist"
+      aria-orientation={horizontal() ? 'horizontal' : 'vertical'} onKeyDown={navigate} data-side-fit-minimum={sideMetrics()?.fitMinimum}
+      style={{ height:!modern() && horizontal() && (state.os === 'linux' || metrics()?.pictureHeight) ? `${metrics().height}px` : undefined,
         'min-width':sideMetrics() ? `${sideMetrics().buttonMinimum}px` : undefined }}>
-      <For each={pages()}>{(page,index) => <PageTab page={page} previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()}
+      <Show when={modern()} fallback={<For each={pages()}>{(page,index) => <PageTab page={page}
+        previous={pages()[index()-1]} next={pages()[index()+1]} selected={selected()}
         pageBackground={selectedPage()?.presentation.background} pageHasBackground={!!property(selectedPage(),'BackColor')}
         pages={node()} controller={props.controller} metrics={metrics()} representation={representation()} horizontal={horizontal()}
-        side={side()} sideMetrics={sideMetrics()} underlined={underlined()} active={page.key === selected()}
-        pictureSize={pictureSizes().get(page.key)} reportPictureSize={(width, height) => reportPictureSize(page.key, width, height)}/>}</For>
+        side={side()} sideMetrics={sideMetrics()} active={page.key === selected()} onSelect={() => selectPage(page)}
+        pictureSize={pictureSizes().get(page.key)} reportPictureSize={(width, height) => reportPictureSize(page.key, width, height)}/>}</For>}>
+        <For each={pages()}>{page => <ModernPageTab page={page} pages={node()} controller={props.controller}
+          active={page.key === selected()} onSelect={() => selectPage(page)}/>}</For>
+      </Show>
     </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state) || page.name} class="taxi-page" aria-hidden={String(page.key !== selected())} inert={page.key !== selected()}
       style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained} sidePage={!!side()}
         inputTitlePlacement={usesVersion85Layout(state) ? childInputTitlePlacement(node(), props.inputTitlePlacement) : undefined}/></div>}</For></div>
   </div>;
 }
+
+function revealPageTab(list, horizontal) {
+  const tab = list.querySelector('[aria-selected=true]');
+  if (!tab) return;
+  const offset = horizontal ? tab.offsetLeft : tab.offsetTop;
+  const size = horizontal ? tab.offsetWidth : tab.offsetHeight;
+  const client = horizontal ? list.clientWidth : list.clientHeight;
+  const axis = horizontal ? 'scrollLeft' : 'scrollTop';
+  const start = list[axis];
+  if (offset < start || size > client) list[axis] = offset;
+  else if (offset + size > start + client) list[axis] = offset + size - client;
+}
+
+function ModernPageTab(props) {
+  const state = props.controller.state;
+  const title = () => pageTabLabel(props.page, state);
+  const label = () => caption(props.page, state) || props.page.name;
+  const style = () => ({ ...font(props.page.presentation.titleFont, state.os, state.profile),
+    color: pageTabUsesAuthoredColor(props.page, props.pages) ? color(props.page.presentation.titleColor) : undefined,
+    'line-height': `${Math.max(20, fontLineHeight(props.page.presentation.titleFont))}px` });
+  return <button type="button" role="tab" aria-label={label()} title={title() || label()} aria-controls={`taxi-page-${props.page.key}`}
+    aria-selected={String(props.active)} tabIndex={props.active ? 0 : -1}
+    class={{ active: props.active, 'taxi-selected': state.selected === props.page.key }} style={style()}
+    onClick={event => { event.stopPropagation(); props.onSelect(); }}>
+    <Show when={props.page.presentation.picture}>{picture => <span class="form-tab-picture"
+      data-disabled={!flag(props.page, 'Enabled') ? '' : undefined} aria-hidden="true">
+      <Picture picture={picture()} controller={props.controller}/>
+    </span>}</Show>
+    <Show when={title()}>{text => <span class="form-tab-caption">{text()}</span>}</Show>
+  </button>;
+}
+
 function PageTab(props) {
   const state = props.controller.state, layout = useFormLayout();
   let button;
   const [paint,setPaint]=createSignal();
   const label = () => pageTabLabel(props.page, state);
   const picture = () => props.page.presentation.picture;
-  const titleFont = () => font(props.page.presentation.titleFont, state.os, props.underlined ? state.profile : undefined);
+  const titleFont = () => font(props.page.presentation.titleFont, state.os);
   const bottom = () => props.representation === 'TabsOnBottom';
   const iconOnly = () => !label() && !!props.pictureSize;
   const pictureLayout = createMemo(() => tabPictureLayout(props.metrics, {
@@ -480,27 +554,24 @@ function PageTab(props) {
   createEffect(() => (props.sideMetrics || props.metrics.pictureHeight) && width(), measured => {
     if (measured) layout.invalidate();
   });
-  const native = () => !props.underlined && state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'TabsOnBottom', 'Swipe'].includes(props.representation));
+  const native = () => state.os === 'linux' && (!!props.side || ['Auto', 'TabsOnTop', 'TabsOnBottom', 'Swipe'].includes(props.representation));
   const tabInset = () => props.side ? props.metrics.horizontalPadding + 1 + Number(props.side === 'right') : undefined;
   const pictureStyle = () => ({
     left: props.side && iconOnly()
       ? `round(down, calc((100% - ${props.pictureSize.width}px) / 2), 1px)`
-      : `calc(${pictureLayout().left - Number(!props.underlined)}px + ${props.side ? 'var(--taxi-side-caption-extra, 0px)' : '0px'})`,
-    top: `${pictureLayout().top - Number(!props.underlined)}px`,
+      : `calc(${pictureLayout().left - 1}px + ${props.side ? 'var(--taxi-side-caption-extra, 0px)' : '0px'})`,
+    top: `${pictureLayout().top - 1}px`,
   });
-  const titleColorAuthored = () => {
-    const value = scalar(props.page, 'TitleTextColor', scalar(props.pages, 'TitleTextColor'));
-    return value !== '' && value !== 'Auto';
-  };
+  const titleColorAuthored = () => pageTabUsesAuthoredColor(props.page, props.pages);
   return <button ref={button} data-native-tab-border={paint()?'ready':undefined} type="button" role="tab" aria-label={caption(props.page,state) || props.page.name} aria-controls={`taxi-page-${props.page.key}`} aria-selected={props.active?.toString()} class={{active:props.active,'taxi-selected':state.selected===props.page.key}}
-    style={{...titleFont(),color:!props.underlined || titleColorAuthored() ? color(props.page.presentation.titleColor) : undefined,width:width(),
+    style={{...titleFont(),color:color(props.page.presentation.titleColor),width:width(),
       height:state.os === 'linux' || props.metrics.pictureHeight ? `${props.metrics.height}px` : undefined,
       'padding-left':state.os === 'linux' && padding() !== undefined ? `${Math.ceil(padding() / 2)}px` : undefined,
       'padding-right':state.os === 'linux' && padding() !== undefined ? `${Math.floor(padding() / 2)}px` : undefined,
-      'line-height':`${Math.max(props.underlined ? 20 : 0, fontLineHeight(props.page.presentation.titleFont))}px`,
+      'line-height':`${fontLineHeight(props.page.presentation.titleFont)}px`,
       '--taxi-tab-fill':paint() ? `rgb(${paint().background.join(',')})` : undefined,
       '--taxi-disabled-tab-text':paint()?.foreground ? `rgb(${paint().foreground.join(',')})` : undefined}} onClick={event => {
-    event.stopPropagation(); props.controller.ui('pages',{...state.ui.pages,[props.pages.key]:props.page.key}); props.controller.select(props.page, true);
+    event.stopPropagation(); props.onSelect();
   }}>
     <Show when={picture() || pictureLayout().leading > 0}>
       <span class="taxi-tab-leading" aria-hidden="true" style={{ width: `${pictureLayout().leading}px` }}>
