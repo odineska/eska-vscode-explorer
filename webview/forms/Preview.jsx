@@ -283,13 +283,16 @@ function updatePageScrollButtons(event) {
 
 export function Items(props) {
   const layout = useFormLayout();
-  const horizontal = () => horizontalGrouping(props.node) && !layout?.wrapped(props.node);
+  const autoScreenLayout = () => usesVersion85Layout(props.controller.state)
+    && scalar(props.node, 'Group') === 'AutoScreenTypeSensitive';
+  const horizontal = () => autoScreenLayout() || horizontalGrouping(props.node) && !layout?.wrapped(props.node);
   const heightConstrained = () => props.heightConstrained || hasAuthoredGroupHeight(props.node, props.controller.state.os);
   const children = () => props.node.children.filter(child => displayedInPreview(child, props.controller.state.model.root));
   const fixedSideTitles = createMemo(() => props.sidePage && fixedPageInputs(children(), props.controller.state.os));
   const pageTitleRow = createMemo(() => props.node.kind === 'Page' && (props.node.presentation.grouping === 'Horizontal'
     || horizontal() && pageInputTitlePair(children(), 'Top') || fixedSideTitles()));
   const horizontalGap = createMemo(() => {
+    if (autoScreenLayout()) return '16px';
     if (props.controller.state.os !== 'linux' || !horizontalGrouping(props.node)) return;
     const gap = horizontalGroupGap(props.node, children());
     return gap === undefined ? undefined : `${gap}px`;
@@ -357,6 +360,7 @@ export function Items(props) {
     }).join(' ');
   };
   return <div data-grouping={props.node.presentation.grouping} data-layout-owner={props.node.key}
+    data-auto-screen-layout={autoScreenLayout() ? '' : undefined}
     onScroll={event => { if (props.node.kind === 'Page') updatePageScrollButtons(event); }}
     data-content-vertical-align={contentAlignment() ? '' : undefined}
     data-content-horizontal-align={horizontalAlignment()}
@@ -364,7 +368,7 @@ export function Items(props) {
     data-column-divider={divider()?.tracks ? 'manual' : divider() ? 'auto' : undefined}
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
       '--taxi-resized-columns': divider()?.tracks, '--taxi-column-divider-value': divider() ? `${divider().value}px` : undefined,
-      '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} class={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
+      '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} class={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': !autoScreenLayout() && props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
     <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
       pageTitleRow={pageTitleRow()} fixedSideTitles={fixedSideTitles()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
@@ -847,8 +851,8 @@ function Input(props) {
   const sizing = createMemo(() => {
     if (!defaultWidth85()) return fieldStyle(node(), state.os, choice());
     // The Configurator reserves a 450 px lane, including the external open action.
-    return separateOpen() ? { width: '410px', 'max-width': 'calc(100% - 40px)', 'margin-inline-end': '40px' }
-      : { width: '450px' };
+    return separateOpen() ? { width: '410px', 'max-width': 'min(410px, calc(100% - 40px))', 'margin-inline-end': '40px' }
+      : { width: '450px', 'max-width': '100%' };
   });
   createEffect(textSizing, metrics => {
     setObservedPaintWidth(undefined);
@@ -868,6 +872,7 @@ function Input(props) {
   };
   return <div ref={surface} data-native-text-width={textSizing()?'':undefined} data-native-spin={linuxFixedInputWidth(node(),state.os)&&flag(node(),'SpinButton',false)?'':undefined} data-native-border={paint()?'ready':undefined} data-native-backdrop={paint()?.outside.join(',')} data-native-disabled-foreground={paint()?.foreground?.join(',')} data-native-outset={outset()}
     data-native-reference={referenceButtons() ? '' : undefined} data-native-reference-multiline={referenceButtons() && multiline() ? '' : undefined}
+    data-default-width-85={defaultWidth85() ? '' : undefined}
     data-separate-open={separateOpen() ? '' : undefined}
     class={["taxi-input", { 'taxi-input--incomplete': node().presentation.markIncomplete === true, 'taxi-input--read-only': readOnly() }]} style={{ ...sizing(), '--taxi-input-outset': `${outset()}px`, top:verticalOffset()?`${verticalOffset()}px`:undefined, height: `${controlHeight()}px`,
     '--taxi-reference-buttons-width': referenceButtons() && `${referenceButtons().length * referenceButtonSlotWidth}px`,
