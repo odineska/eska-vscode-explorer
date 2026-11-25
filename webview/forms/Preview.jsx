@@ -15,6 +15,7 @@ import { CheckBoxControl } from './CheckBoxControl.jsx';
 import { designCaptionWidth, wordCaptionWidth, decorationCaptionProfile, fieldCaptionProfile, linuxControlFont } from './font-metrics.mjs';
 import { inputCaptionInset } from './field-caption-layout.js';
 import { labelDecorationProfile } from './decoration-metrics.mjs';
+import { childInputTitlePlacement, inputTitlePlacement } from './model.mjs';
 import { groupSpacingInterval, horizontalGroupGap, independentVerticalSection } from './group-spacing.mjs';
 import { sideTabRepresentation, tabMetrics, tabPictureLayout } from './tab-metrics.mjs';
 import { NativeInputBorder } from './NativeInputBorder.jsx';
@@ -283,6 +284,8 @@ function updatePageScrollButtons(event) {
 
 export function Items(props) {
   const layout = useFormLayout();
+  const childTitlePlacement = () => usesVersion85Layout(props.controller.state)
+    ? childInputTitlePlacement(props.node, props.inputTitlePlacement) : undefined;
   const autoScreenLayout = () => usesVersion85Layout(props.controller.state)
     && scalar(props.node, 'Group') === 'AutoScreenTypeSensitive';
   const horizontal = () => autoScreenLayout() || horizontalGrouping(props.node) && !layout?.wrapped(props.node);
@@ -369,7 +372,7 @@ export function Items(props) {
     data-auto-spacing={automaticHorizontalSpacing(props.node) ? '' : undefined} style={{ '--taxi-content-vertical-align': contentAlignment(), '--taxi-content-horizontal-align': horizontalAlignment(), '--taxi-inherited-vertical-align': inheritedAlignment(),
       '--taxi-resized-columns': divider()?.tracks, '--taxi-column-divider-value': divider() ? `${divider().value}px` : undefined,
       '--taxi-horizontal-gap': horizontalGap(), '--taxi-layout-rows': tracks('y'), '--taxi-layout-columns': horizontal() ? tracks('x') : undefined }} class={{ 'taxi-items': true, 'taxi-items--horizontal': horizontal(), 'taxi-items--vertical': !horizontal(), 'taxi-items--wrap': !autoScreenLayout() && props.node.presentation.grouping === 'HorizontalIfPossible', 'taxi-items--usual-buttons': uniform(), 'taxi-items--buttons': buttonRow() }}>
-    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()}
+    <For each={props.node.children}>{node => <Element node={node} controller={props.controller} joinedTable={joinedTables().has(node.key)} heightConstrained={heightConstrained()} inputTitlePlacement={childTitlePlacement()}
       pageTitleRow={pageTitleRow()} fixedSideTitles={fixedSideTitles()}
       inlineAddition={horizontal()} uniformButtonWidth={width()} onPreferredButtonWidth={uniform() ? value => preferred(node.key, value) : undefined}
       usualButtonOffset={buttonRow() && (maximumHeight() - height(node)) % 2 === 1 ? '.5px' : undefined}/>}</For>
@@ -449,7 +452,8 @@ function Pages(props) {
         pictureSize={pictureSizes().get(page.key)} reportPictureSize={(width, height) => reportPictureSize(page.key, width, height)}/>}</For>
     </div></Show>
     <div class="taxi-page-stack"><For each={pages()}>{page => <div role="tabpanel" id={`taxi-page-${page.key}`} aria-label={caption(page, state) || page.name} class="taxi-page" aria-hidden={String(page.key !== selected())} inert={page.key !== selected()}
-      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained} sidePage={!!side()}/></div>}</For></div>
+      style={{ visibility: page.key === selected() ? undefined : 'hidden', 'background-color': property(page, 'BackColor') ? color(page.presentation.background) : undefined }}><Items node={page} controller={props.controller} heightConstrained={props.heightConstrained} sidePage={!!side()}
+        inputTitlePlacement={usesVersion85Layout(state) ? childInputTitlePlacement(node(), props.inputTitlePlacement) : undefined}/></div>}</For></div>
   </div>;
 }
 function PageTab(props) {
@@ -946,7 +950,7 @@ function Field(props) {
     : '';
   const layout = useFormLayout();
   const automaticTop = () => layout?.titleAbove(node());
-  const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : node().presentation.titleLocation;
+  const titleLocation = () => automaticTop() ? 'Top' : checkbox() && !title() ? 'None' : inputTitlePlacement(node(), props.inputTitlePlacement);
   const sideTitle = () => ['Left', 'Right'].includes(titleLocation());
   const pageInputTitle = () => props.pageTitleRow && node().kind === 'InputField';
   const pageTitleAbove = () => pageInputTitle() && titleLocation() === 'Top';

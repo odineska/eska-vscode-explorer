@@ -1,5 +1,5 @@
 import { For, Match, Show, Switch, createMemo, createSignal, onSettled } from 'solid-js';
-import { color, flag, font, property, scalar, viewStatusAddition } from './model.mjs';
+import { color, flag, font, property, scalar, usesVersion85Layout, viewStatusAddition } from './model.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 import { CommandButton } from './Preview.jsx';
 import { TableSearch } from './TableSearch.jsx';
@@ -14,6 +14,7 @@ function StatusStrip(props) {
   let strip;
   const state = props.controller.state;
   const node = () => props.node;
+  const native = () => state.os === 'linux' && !usesVersion85Layout(state);
   const [width, setWidth] = createSignal(0);
   const labels = createMemo(() => [1, 2].map(value => {
     const label = state.strings.sampleFilter.replaceAll('{0}', value);
@@ -23,19 +24,19 @@ function StatusStrip(props) {
   }));
   const alignment = () => ({ Left: 'start', Center: 'center', Right: 'end' })[scalar(node(), 'HorizontalLocation')];
   onSettled(() => {
-    if (state.os !== 'linux' || !props.standalone && !props.fitTable) return;
+    if (!native() || !props.standalone && !props.fitTable) return;
     const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
     observer.observe(strip);
     return () => observer.disconnect();
   });
   const chipWidth = label => {
-    if (state.os !== 'linux' || label.width === undefined) return;
+    if (!native() || label.width === undefined) return;
     const maximum = !width() ? Infinity : props.standalone
       ? Math.max(28, Math.floor((width() - 20) / 2)) : Math.max(1, Math.floor((width() - 14) / 2));
     return Math.min(label.width + 28, maximum);
   };
   const style = () => ({
-    ...font(node().presentation.font, state.os),
+    ...font(node().presentation.font, state.os, state.profile),
     color: flag(node(), 'Enabled') ? color(node().presentation.foreground) : '#aaa',
     'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
     'justify-content': alignment(),

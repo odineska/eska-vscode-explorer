@@ -222,16 +222,22 @@ function column(node, readOnly, dynamic, native, state) {
   const standard = node.presentation.caption?.kind === 'standard' ? node.presentation.caption.key : '';
   const regular = !['attribute.Code', 'attribute.Number'].includes(standard);
   const result = (width, growthWeight = 0) => ({ node, fields: [node], width, growthWeight });
+  const stretch = flag(node, 'HorizontalStretch', null);
   if (standard === 'table.LineNumber' && explicit <= 0) {
     return result(Math.max(native ? 87 : 0, Math.round((type.digits ?? 9) * 7.4 + 30)));
   }
+  if (state.version85 && explicit <= 0 && node.kind !== 'CheckBoxField') {
+    // The 8.5 Designer allocates 160 px for ordinary columns at 96 dpi.
+    const title = flag(node, 'ShowInHeader') ? designCaptionWidth(caption(node, state), node.presentation.titleFont) : 0;
+    const width = Math.max(160, (title ?? 0) + 24);
+    return result(width, stretch === true ? width : 0);
+  }
   if (native) {
-    const stretch = flag(node, 'HorizontalStretch', null);
     const width = linuxColumnWidth(node, readOnly, explicit, stretch, state);
     if (width !== undefined) {
       const automatic = type.kind === 'string' && (!type.length || type.length > 10)
         || type.kind === 'number' && type.digits === 0 || type.kind === 'reference';
-      const grows = node.kind !== 'CheckBoxField' && (stretch ?? (automatic && regular));
+      const grows = node.kind !== 'CheckBoxField' && (stretch ?? (!state.version85 && automatic && regular));
       return result(Math.floor(width), grows ? width : 0);
     }
   }
@@ -251,6 +257,8 @@ export function tableTracks(layout, available) {
   const { columns } = layout;
   const extra = available - layout.contentMinWidth;
   const flexibleWidth = columns.reduce((sum, item) => sum + item.growthWeight, 0);
+  // In 8.5, the area after the last fixed column can stay empty.
+  if (!flexibleWidth && layout.fillUnusedSpace === false) return layout.tracks;
   const firstNumber = flexibleWidth ? -1 : columns.findIndex(item => item.node.presentation.valueType?.kind === 'number');
   const fallback = firstNumber < 0 ? columns.length - 1 : firstNumber;
   let used = 0, weight = 0;
@@ -273,9 +281,9 @@ export function tableLayout(table, state = {}, additions) {
   const linux = os === 'linux';
   const nativeColumns = linux && !dynamic;
   const nativeDynamicList = linux && dynamic;
-  const captions = { locale, strings: state.strings };
-  const metrics = node => column(node, readOnly, dynamic, linux, captions);
   const version85 = usesVersion85Layout(state);
+  const captions = { locale, strings: state.strings, version85 };
+  const metrics = node => column(node, readOnly, dynamic, linux, captions);
   const referenceBand = version85 ? 40 : defaultBandHeight;
   const measureBand = value => Math.max(version85 ? referenceBand : 0, bandHeight(value));
   const baseBand = measureBand(table.presentation.font);
@@ -371,17 +379,18 @@ export function tableLayout(table, state = {}, additions) {
   const controlMinWidth = nativeWidth
     ? Math.max(viewStatusMinimum, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
   // A fixed grid can be narrower than the bands above it, even with automatic Width.
-  const nativeGridWidth = nativeColumns ? Math.max(400, Math.min(880, 40 + columns.length * 120))
-    : Math.max(400, contentMinWidth + 2);
+  const nativeGridWidth = nativeColumns && !version85 ? Math.max(400, Math.min(880, 40 + columns.length * 120))
+    : Math.max(400, contentMinWidth + (nativeColumns ? 16 : 2));
   const automaticWidth = nativeColumns ? Math.max(controlMinWidth, nativeGridWidth)
     : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
   const preferredWidth = nativeWidth ? Math.max(nativeWidth, viewStatusMinimum) : automaticWidth;
   const fixedGridWidth = linux && flag(table, 'HorizontalStretch', null) === false
     ? nativeWidth || nativeGridWidth : undefined;
   const flexible = columns.some(column => column.growthWeight);
-  const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
+  const fillUnusedSpace = !version85;
+  const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || fillUnusedSpace && !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, autofill, inlineAuthored, menuAuthored, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, fillUnusedSpace, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, autofill, inlineAuthored, menuAuthored, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }

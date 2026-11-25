@@ -4,12 +4,26 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { formCapabilities, isIdentity, identityKey, parseFormSnapshot, parseFormPreparation, parseHandlerSource, parsePropertyPalette } from '../out/form-preview/protocol.js';
 import { prepare, fieldWidth, flatten, treeChildren, find, text, caption, font, color, automaticCommands, localizedProperty, pageSelections, inputControlHeight } from '../webview/forms/model.mjs';
+import { childInputTitlePlacement, inputTitlePlacement } from '../webview/forms/model.mjs';
 import { tableLayout } from '../webview/forms/table-model.mjs';
 import { formStrings } from '../out/form-preview/strings.js';
 import { parsePreviewNavigation } from '../out/form-preview/navigation.js';
 import { FormSession } from '../out/form-preview/client.js';
 
 const source = 'a'.repeat(64);
+
+test('8.5 input captions default above the control and inherit a container placement', () => {
+  const property = (name, text) => ({ key: { namespace: 'http://v8.1c.ru/8.3/xcf/logform', name }, value: { kind: 'text', text } });
+  const field = { kind: 'InputField', properties: [], presentation: { titleLocation: 'Left' } };
+  const defaultPlacement = childInputTitlePlacement({ properties: [] });
+  assert.equal(inputTitlePlacement(field, defaultPlacement), 'Top');
+  const formPlacement = childInputTitlePlacement({ properties: [property('ChildItemsTitleLocation', 'LeftIfPossible')] });
+  const groupPlacement = childInputTitlePlacement({ properties: [] }, formPlacement);
+  assert.equal(inputTitlePlacement(field, groupPlacement), 'Left');
+  assert.equal(inputTitlePlacement({ ...field, properties: [property('TitleLocation', 'Left')] }, defaultPlacement), 'Left');
+  assert.equal(inputTitlePlacement({ ...field, presentation: { titleLocation: 'Top' } }, groupPlacement), 'Top');
+  assert.equal(inputTitlePlacement(field), 'Left');
+});
 function fixture() {
   const origin = { source, range: { start: 0, end: 200 } };
   const font = { face: null, points: 10, weight: 400, italic: false, underline: false, strikeout: false, origins: [] };

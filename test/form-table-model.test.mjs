@@ -309,6 +309,21 @@ test('Linux grids distribute surplus without shrinking columns or stretching fix
   assert.equal(tableTracks(layout, 387), '177px 176px 34px');
 });
 
+test('8.5 sizes automatic table columns at the Designer width and honors explicit stretch', () => {
+  const table = fixture();
+  const version85 = { os: 'linux', profile: 'version-8.5' };
+  const [text, amount] = table.children;
+  table.children = [text, amount];
+  let layout = tableLayout(table, version85);
+  assert.equal(tableTracks(layout, 1000), '160px 160px');
+  text.properties.push(prop('HorizontalStretch', true));
+  layout = tableLayout(table, version85);
+  assert.equal(tableTracks(layout, 1000), '840px 160px');
+  text.properties = [prop('Width', 12)];
+  layout = tableLayout(table, version85);
+  assert.equal(tableTracks(layout, 1000), '103px 160px');
+});
+
 test('Linux columns use the authored stretch mode for base widths and surplus', () => {
   const root = fixture(), [text, amount, check] = root.children;
   amount.presentation.valueType = { kind: 'number', digits: 9, fraction: 2 };

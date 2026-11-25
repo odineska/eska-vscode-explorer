@@ -88,6 +88,18 @@ export function usesVersion85Layout({ profile, os }) {
   return profile === 'version-8.5' && os === 'linux';
 }
 
+export function childInputTitlePlacement(node, inherited = 'Top') {
+  const placement = scalar(node, 'ChildItemsTitleLocation');
+  if (placement === 'Left' || placement === 'LeftIfPossible') return 'Left';
+  return placement === 'Top' ? placement : inherited;
+}
+
+export function inputTitlePlacement(node, inherited) {
+  const placement = node.presentation.titleLocation;
+  return inherited && node.kind === 'InputField' && placement === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
+    ? inherited : placement;
+}
+
 export function font(value, os, profile) {
   const aliases = { Arial: 'ESKA Taxi Sans', 'Liberation Sans': 'ESKA Taxi Sans', 'Times New Roman': 'ESKA Taxi Serif', 'Liberation Serif': 'ESKA Taxi Serif', 'Courier New': 'ESKA Taxi Mono', 'Liberation Mono': 'ESKA Taxi Mono' };
   const face = value?.face ? os === 'linux' ? aliases[value.face] ?? value.face : value.face : os === 'linux' ? 'ESKA Taxi Sans' : 'Arial';
