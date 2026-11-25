@@ -261,7 +261,7 @@ export function Preview(props) {
         style={frameStyle()}
         onClick={() => props.controller.select(root(), true)}>
         <div class="taxi-form-shadow" aria-hidden="true"/>
-        <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux'} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
+        <div class="taxi-form-title" role="heading" aria-level="2" aria-label={caption(root(), state)}><NativeLabel enabled={state.os === 'linux' && !usesVersion85Layout(state)} placement="formTitle" text={caption(root(),state)} font={{points:8.25,weight:700}} runtime={props.controller.nativeText}/></div>
         <div class={["taxi-form-content", { 'taxi-form-content--commands': hasCommands() }]}
           data-root-command-position={commandPosition()} style={{ 'background-color': color(root().presentation.background), color: color(root().presentation.foreground) }}>
           <Show when={hasCommands()}><RootCommands placement={placement()} controller={props.controller}/></Show>
@@ -531,7 +531,10 @@ function Group(props) {
     props.controller.ui('collapsed', { ...state.ui.collapsed, [node().key]: !collapsed() });
   }
   let container;
-  const outside=createNativeGroupBackdrop(()=>container,()=>({enabled:state.os==='linux'&&painted(),sequence:state.modelSequence}));
+  const version85 = () => usesVersion85Layout(state);
+  const outside = createNativeGroupBackdrop(() => container, () => ({
+    enabled: state.os === 'linux' && !version85() && painted(), sequence: state.modelSequence,
+  }));
   return <Switch>
     <Match when={node().kind === 'Pages'}><Pages {...props}/></Match>
     <Match when={node().kind === 'Popup'}><PopupMenu {...props}/></Match>
@@ -983,9 +986,13 @@ function Field(props) {
     const wrapped = checkboxCaption() || labelCaption() || (inputCaption() && (sideTitle() || pageTitleAbove()));
     const lineHeight = numericLabel() || wrapped ? fontLineHeight(labelFont())
       : pageTitleAbove() && props.fixedSideTitles ? fontLineHeight(labelFont()) + 1 : undefined;
+    const foreground = color(node().presentation.titleColor);
+    const automaticInputLabel = version85() && node().kind === 'InputField' && !node().presentation.titleColorOrigin
+      && node().presentation.titleColor?.kind === 'role' && node().presentation.titleColor.value === 'FormTextColor';
     return { ...(!version85() && (nativeCheck || numericLabel()) ? linuxControlFont(labelFont()) : font(labelFont(), state.os, state.profile)),
       width: titleWidth === undefined ? undefined : `var(--taxi-through-mixed-caption-width, var(--taxi-field-caption-width, ${titleWidth}px))`,
-      color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6' : color(node().presentation.titleColor),
+      color: nativeCheck && !flag(node(), 'Enabled') ? '#a6a6a6'
+        : automaticInputLabel ? `var(--eska-form-field-label, ${foreground})` : foreground,
       'line-height': lineHeight === undefined ? undefined : `${lineHeight}px`,
       'white-space': labelCaption() ? 'pre' : undefined,
       '--taxi-choice-title-width': width === undefined ? undefined : `${width + Number(radio())}px` };
@@ -1037,6 +1044,7 @@ function LabelDecoration(props) {
     } : {}),
     color: color(node().presentation.foreground),
     'background-color': property(node(), 'BackColor') ? color(node().presentation.background) : undefined,
+    '--eska-form-link-text': usesVersion85Layout(state) && property(node(), 'TextColor') ? color(node().presentation.foreground) : undefined,
     'white-space': metrics() ? 'pre' : flag(node(), 'Wrap', true) ? 'pre-wrap' : 'pre',
   });
   return <span class={{ 'taxi-label': true, 'taxi-hyperlink': flag(node(), 'Hyperlink', false) }}

@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, onSettled } from 'solid-js';
-import { color, flag, font as fontStyle, fontPixels, number, property } from './model.mjs';
+import { color, flag, font as fontStyle, fontPixels, number, property, usesVersion85Layout } from './model.mjs';
 import { controlCaptionWidth } from './font-metrics.mjs';
 import { inputBorderPixels } from './input-border.mjs';
 import { searchClearPixels, searchHintGray } from './search-control.mjs';
@@ -20,6 +20,7 @@ function fitHint(text, font, available) {
 export function TableSearch(props) {
   let surface, clear, input;
   const state = props.controller.state, layout = useFormLayout(), owner = {};
+  const native = () => state.os === 'linux' && !usesVersion85Layout(state);
   const [paint, setPaint] = createSignal();
   const standalone = () => props.placement === 'standalone';
   const font = () => standalone() || property(props.node, 'Font') ? props.node.presentation.font : state.model.root.presentation.font;
@@ -27,7 +28,7 @@ export function TableSearch(props) {
   const authoredText = () => standalone() && property(props.node, 'TextColor');
   const calibrated = () => font().points === 10 && font().weight === 400;
   // Native toolbar hints use the smaller face until this preview pane is laid out again.
-  const compact = () => state.os === 'linux' && !props.placement && calibrated() && layout && !layout.viewportResized();
+  const compact = () => native() && !props.placement && calibrated() && layout && !layout.viewportResized();
   const placeholder = () => state.strings.searchShortcut;
   const style = () => {
     const limit = !flag(props.node, 'AutoMaxWidth') ? number(props.node, 'MaxWidth') : 0;
@@ -42,11 +43,11 @@ export function TableSearch(props) {
       '--taxi-search-hint': paint()?.hintColor,
     };
   };
-  createEffect(() => [state.os, state.modelSequence, compact()], () => {
+  createEffect(() => [native(), state.modelSequence, compact()], () => {
     const runtime = props.controller.nativeText;
     runtime?.issue(owner, false);
     setPaint();
-    if (state.os !== 'linux') return;
+    if (!native()) return;
     const draw = () => {
       const css = getComputedStyle(surface);
       const border = rgb(css.borderTopColor), background = rgb(css.backgroundColor);
@@ -86,7 +87,7 @@ export function TableSearch(props) {
           width="1" height="1" fill={`rgb(${pixel.join(',')})`}/>}</For>
       </svg></Show>
     </span>
-    <NativeLabel text={paint()?.hint ?? placeholder()} placement="tableSearch" enabled={state.os === 'linux'} calibrated={calibrated()}
+    <NativeLabel text={paint()?.hint ?? placeholder()} placement="tableSearch" enabled={native()} calibrated={calibrated()}
       font={compact() ? { ...font(), points: 8.25 } : font()} runtime={props.controller.nativeText}/>
     <NativeInputCorners paint={paint()} rightOffset="-1px"/>
   </div>;

@@ -1,86 +1,200 @@
-/* Preview theme follows VS Code only in automatic mode; explicit overrides stay fixed. */
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) {
+/* Designer XML palette colors, measured on 1C 8.5.4.2072. */
+.taxi-preview {
+  --taxi-PaletteGray: #e8e8e8;
+  --taxi-PaletteLightBlue: #b8ebff;
+  --taxi-PaletteGreen: #abf7be;
+  --taxi-PaletteYellow: #fff1ab;
+  --taxi-PaletteBlue: #abd3ff;
+  --taxi-PaletteOrange: #ffdfb3;
+  --taxi-PaletteRed: #ffbbb8;
+  --taxi-PalettePurple: #e7b8ff;
+}
+
+.preview-scroll:has(> .taxi-preview[data-profile="version-8.5"]) {
+  color-scheme: light;
+  color: #4d4d4d;
+}
+
+/* The profile uses measured 1C colors. The VS Code body class selects the mode. */
+:is(
+  .preview-scroll:has(> .taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"]),
+  body:is(.vscode-dark, .vscode-high-contrast)
+    .preview-scroll:has(> .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"])
+) {
+  --eska-form-surface: #1a1a1a;
+  --eska-form-toolbar: #404040;
+  --eska-form-text: #ededf2;
+  --eska-form-muted: #84848c;
+  --eska-form-focus: #9fccfc;
+  background: var(--eska-form-surface);
+  color: var(--eska-form-text);
   color-scheme: dark;
-  color: #e5e7eb;
-  background: #202328;
-  scrollbar-color: #737a84 #292e35;
-  --taxi-TextColor: #e5e7eb;
-  --taxi-FormTextColor: #e5e7eb;
-  --taxi-BackColor: #202328;
-  --taxi-FormBackColor: #202328;
-  --taxi-BorderColor: #737a84;
-  --taxi-ButtonTextColor: #e5e7eb;
-  --taxi-ButtonBackColor: #343941;
-  --taxi-ButtonBorderColor: #737a84;
-  --taxi-FieldTextColor: #e5e7eb;
-  --taxi-FieldBackColor: #292e35;
-  --taxi-FieldBorderColor: #737a84;
-  --taxi-HyperlinkTextColor: #8ebcff;
-  --taxi-SpecialTextColor: #b3bac4;
-  --taxi-GroupTitleTextColor: #8dd4b0;
-  --taxi-SelectionBackColor: #354f70;
-  --taxi-SelectionTextColor: #fff;
-  --taxi-FieldSelectionBackColor: #354f70;
-  --taxi-LinesColor: #515861;
-  --taxi-HeaderBackColor: #343941;
-  --taxi-HeaderTextColor: #e5e7eb;
-  --taxi-TableFooterBackColor: #343941;
-  --taxi-tab-border: #737a84;
-  --eska-form-command-background: #30353c;
-}
-.preview-scroll:has(> :is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"])) { background: #202328; }
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(.taxi-form-frame, .taxi-form-title, .taxi-input, .taxi-table, .taxi-tabs > button) {
-  background-color: var(--taxi-FormBackColor);
-  color: var(--taxi-FormTextColor);
-  border-color: var(--taxi-BorderColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(th, .taxi-form-title) {
-  background-color: var(--taxi-HeaderBackColor);
-  color: var(--taxi-HeaderTextColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-button {
-  background: var(--taxi-ButtonBackColor);
-  color: var(--taxi-ButtonTextColor);
-  border-color: var(--taxi-ButtonBorderColor);
-  box-shadow: none;
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-button--default {
-  --taxi-ButtonTextColor: #242125;
-  color: var(--taxi-ButtonTextColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-input > .taxi-input-button {
-  background-color: transparent;
-  color: var(--taxi-FieldTextColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-chip {
-  background-color: #253b46;
-  color: #d4e8f5;
-  border-color: #515861;
-  box-shadow: none;
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-chip[data-native-view-status=ready] > :not(canvas) {
-  visibility: visible;
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-paint {
-  display: none;
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(.taxi-menu, .taxi-menu button[role=menuitem], .taxi-table-search, .taxi-table-scrollbar) {
-  background-color: var(--taxi-FieldBackColor);
-  color: var(--taxi-FieldTextColor);
-  border-color: var(--taxi-FieldBorderColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-menu button[role=menuitem].active {
-  background-color: var(--taxi-SelectionBackColor);
-  color: var(--taxi-SelectionTextColor);
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .form-required-marker {
-  color: #ff8484;
-}
-:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) {
-  --taxi-tab-fill: #343941;
-  --taxi-tab-stroke: #737a84;
-  --taxi-disabled-tab-text: #9ca4af;
-  --taxi-TooltipBackColor: #343941;
-  --taxi-ToolTipBackColor: #343941;
-  --taxi-TooltipTextColor: #e5e7eb;
+  scrollbar-color: #828282 var(--eska-form-surface);
+
+  > .taxi-preview {
+    color-scheme: inherit;
+    color: var(--taxi-FormTextColor);
+    background: var(--taxi-FormBackColor);
+    --taxi-TextColor: #b8b8bf;
+    --taxi-FormTextColor: var(--eska-form-text);
+    --taxi-BackColor: var(--eska-form-surface);
+    --taxi-FormBackColor: var(--eska-form-surface);
+    --taxi-BorderColor: #999;
+    --taxi-ButtonTextColor: var(--eska-form-text);
+    --taxi-ButtonBackColor: #575757;
+    --taxi-ButtonBorderColor: transparent;
+    --taxi-FieldTextColor: var(--taxi-TextColor);
+    --taxi-FieldBackColor: var(--eska-form-surface);
+    --taxi-FieldBorderColor: var(--taxi-BorderColor);
+    --taxi-HyperlinkTextColor: #3395ff;
+    --eska-form-link-text: var(--taxi-HyperlinkTextColor);
+    --taxi-SpecialTextColor: var(--eska-form-muted);
+    --taxi-GroupTitleTextColor: var(--eska-form-text);
+    --taxi-ImportantColor: #ffe433;
+    --taxi-SelectionBackColor: var(--eska-form-toolbar);
+    --taxi-SelectionTextColor: var(--eska-form-text);
+    --taxi-FieldSelectionBackColor: #274a70;
+    --taxi-LinesColor: #575757;
+    --taxi-HeaderBackColor: var(--eska-form-surface);
+    --taxi-HeaderTextColor: var(--eska-form-text);
+    --taxi-TableFooterBackColor: var(--eska-form-surface);
+    --taxi-TooltipBackColor: var(--eska-form-surface);
+    --taxi-ToolTipBackColor: var(--taxi-TooltipBackColor);
+    --taxi-TooltipTextColor: var(--taxi-TextColor);
+    --taxi-PaletteGray: #4d4d4d;
+    --taxi-PaletteLightBlue: #2c5b6e;
+    --taxi-PaletteGreen: #256635;
+    --taxi-PaletteYellow: #706427;
+    --taxi-PaletteBlue: #274a70;
+    --taxi-PaletteOrange: #70532b;
+    --taxi-PaletteRed: #70302d;
+    --taxi-PalettePurple: #5a2d70;
+    --taxi-tab-border: #828282;
+    --taxi-tab-fill: var(--eska-form-toolbar);
+    --taxi-tab-stroke: var(--taxi-tab-border);
+    --taxi-disabled-tab-text: var(--eska-form-muted);
+    --eska-form-command-background: var(--eska-form-toolbar);
+    --eska-form-primary-text: #403b19;
+    --eska-form-field-label: var(--eska-form-muted);
+    --eska-form-disabled-field: var(--eska-form-toolbar);
+    --eska-form-disabled-text: var(--eska-form-muted);
+    --eska-form-disabled-border: #6e6e6e;
+    --eska-form-table-outline: #828282;
+
+    & :is(.taxi-form-frame, .taxi-input, .taxi-table-search, .taxi-table-scrollbar, .taxi-table-horizontal-scrollbar) {
+      background-color: var(--taxi-FormBackColor);
+      color: var(--taxi-FieldTextColor);
+      border-color: var(--taxi-FieldBorderColor);
+    }
+
+    & .taxi-form-title {
+      background-color: var(--eska-form-command-background);
+      color: var(--taxi-FormTextColor);
+      box-shadow: none;
+    }
+
+    & .taxi-input:not(.taxi-input--read-only):focus-within {
+      --taxi-BorderColor: var(--eska-form-focus);
+      box-shadow: inset 0 0 0 1px var(--eska-form-focus);
+    }
+
+    & .taxi-input--read-only {
+      --taxi-BackColor: var(--eska-form-disabled-field);
+      --taxi-FieldBackColor: var(--eska-form-disabled-field);
+    }
+
+    & :is(.taxi-input, .taxi-table-search) > :is(input, textarea)::placeholder {
+      color: var(--eska-form-muted);
+    }
+
+    & .taxi-input-button {
+      background-color: transparent;
+    }
+
+    & .taxi-input-glyphs {
+      color: var(--eska-form-muted);
+    }
+
+    & .taxi-input > :is(input, textarea)::selection {
+      color: var(--taxi-SelectionTextColor);
+      background-color: var(--taxi-FieldSelectionBackColor);
+    }
+
+    & :is(.taxi-root-commands, .taxi-table-command-bar) {
+      --taxi-ButtonBackColor: var(--eska-form-command-background);
+    }
+
+    & .taxi-button {
+      background: var(--taxi-ButtonBackColor);
+      color: var(--taxi-ButtonTextColor);
+      border-color: var(--taxi-ButtonBorderColor);
+      box-shadow: none;
+    }
+
+    & .taxi-button--default {
+      --taxi-ButtonTextColor: var(--eska-form-primary-text);
+      background-color: var(--taxi-ImportantColor);
+    }
+
+    & :is(.taxi-button--link, .taxi-field-tooltip) {
+      color: var(--taxi-HyperlinkTextColor);
+    }
+
+    & .taxi-popup > button[aria-expanded=true] {
+      background: #575757;
+    }
+
+    & .taxi-table-horizontal-track {
+      background-color: var(--taxi-LinesColor);
+    }
+
+    & .taxi-tabs > button {
+      background-color: var(--taxi-tab-fill);
+      color: var(--taxi-FormTextColor);
+      border-color: var(--taxi-tab-stroke);
+    }
+
+    & .taxi-tabs > button.active {
+      background-color: var(--taxi-FormBackColor);
+    }
+
+    & .taxi-view-status-chip {
+      background-color: var(--eska-form-toolbar);
+      color: var(--taxi-FormTextColor);
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    & .taxi-view-status-chip i {
+      background-color: var(--taxi-TextColor);
+      color: var(--eska-form-surface);
+    }
+
+    /* The form's command menus use a light surface in both 1C themes. */
+    & .taxi-menu {
+      color-scheme: light;
+      background-color: #f2f2f2;
+      color: #222226;
+      border-color: #999;
+      box-shadow: 2px 2px #1a1a1a;
+    }
+
+    & .taxi-menu button[role=menuitem] {
+      background-color: transparent;
+      color: inherit;
+
+      &.active {
+        background-color: #dbdbdb;
+        box-shadow: none;
+      }
+
+      &[aria-disabled=true] {
+        color: #6b6b73;
+      }
+    }
+
+    & .form-required-marker {
+      color: #ff8484;
+    }
+  }
 }

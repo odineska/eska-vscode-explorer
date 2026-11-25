@@ -1,4 +1,5 @@
 import { createCaptionRaster } from './caption-raster.js';
+import { usesVersion85Layout } from './model.mjs';
 import { paintCanvas, rgb, solidBackdrop } from './native-control-paint.js';
 import { viewStatusChipPixels } from './view-status-paint.mjs';
 
@@ -7,7 +8,7 @@ export function ViewStatusChip(props) {
   const state = props.controller.state;
   const status = createCaptionRaster({
     get runtime() { return props.controller.nativeText; },
-    get enabled() { return state.os === 'linux' && props.width >= props.preferred && props.preferred > 0; },
+    get enabled() { return state.os === 'linux' && !usesVersion85Layout(state) && props.width >= props.preferred && props.preferred > 0; },
     get text() { return props.label.label; },
     get font() { return props.font; },
     get foreground() { return props.foreground; },

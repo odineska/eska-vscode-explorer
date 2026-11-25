@@ -71,8 +71,8 @@ button { cursor: default; }
 .taxi-preview[data-os=linux] .taxi-element[data-kind=InputField].taxi-selected::after { top: -2px; bottom: -2px; }
 .taxi-preview[data-os=linux] .taxi-tabs > button.taxi-selected::after { top: -4px; left: -4px; right: -4px; }
 .taxi-disabled { color: #a0a0a0 !important; }
-.taxi-disabled .taxi-input { background: #fff !important; border-color: #d7d7d7 !important; }
-.taxi-disabled[data-kind=InputField] .taxi-field-label, .taxi-disabled .taxi-input input { color: #aaa !important; }
+.taxi-disabled .taxi-input { background-color: var(--eska-form-disabled-field, #fff) !important; border-color: var(--eska-form-disabled-border, #d7d7d7) !important; }
+.taxi-disabled[data-kind=InputField] .taxi-field-label, .taxi-disabled .taxi-input input { color: var(--eska-form-disabled-text, #aaa) !important; }
 .taxi-field-row { display: grid; grid-template-columns: var(--taxi-field-columns, subgrid); grid-column: 1 / -1; align-items: center; min-height: var(--taxi-inline-label-height, 19px); gap: 0 4px; }
 .taxi-element[data-kind=InputField] > .taxi-field-row { min-height: 25px; }
 .taxi-element[data-kind=ProgressBarField] > .taxi-field-row { min-height: 23px; }
@@ -129,7 +129,7 @@ button { cursor: default; }
 .taxi-field-row--large .taxi-field-label { align-self: start; }
 .taxi-input { display: flex; align-items: stretch; position: relative; height: 23px; min-width: 20px; max-width: 100%; border: 1px solid #a0a0a0; border-radius: 2px; background: #fff; overflow: hidden; }
 .taxi-input--incomplete::after { content: ''; position: absolute; bottom: 2px; left: 3px; right: 3px; border-bottom: 1px dotted #f00; pointer-events: none; }
-.taxi-input--read-only { border-color: #d7d7d7 !important; }
+.taxi-input--read-only { border-color: var(--eska-form-disabled-border, #d7d7d7) !important; }
 .taxi-input input, .taxi-input textarea { width: 0; flex: 1; border: none; background: transparent; padding: 2px 4px; outline: none; box-shadow: none; border-radius: 0; line-height: 17px; resize: none; min-width: 0; }
 .taxi-input-button { display: flex; align-items: center; justify-content: center; width: 21px; flex: 0 0 21px; border-left: 1px solid #aaa; color: #555; font-size: 11px; line-height: 12px; }
 .taxi-preview[data-os=linux] .taxi-input:has(> .taxi-input-button--number) { overflow: visible; }
@@ -463,7 +463,7 @@ button { cursor: default; }
 .taxi-picture-field .taxi-picture-template { width: 100%; height: 100%; }
 .taxi-disabled :is(.taxi-picture-resource, .taxi-picture-template) { filter: grayscale(1); opacity: .5; }
 .taxi-picture-template > .taxi-picture-resource { opacity: 0; }
-.taxi-hyperlink { text-decoration: underline; color: #0066a3 !important; }
+.taxi-hyperlink { text-decoration: underline; color: var(--eska-form-link-text, #0066a3) !important; }
 .taxi-table-field { max-width: 100%; }
 /* The table model supplies the minimum width; the search field shrinks within it. */
 .taxi-table-command-bar { gap: 9px; height: 26px; min-height: 26px; margin-bottom: 9px; contain: inline-size; }
@@ -1388,7 +1388,12 @@ button { cursor: default; }
   --eska-form-row-gap: 16px;
   --eska-form-command-height: 53px;
   --eska-form-control-radius: 8px;
-  --eska-form-command-background: #f0f1f2;
+  --eska-form-command-background: #f2f2f2;
+  --eska-form-primary-text: #403700;
+  --taxi-ImportantColor: #ffdd00;
+  --taxi-BorderColor: #999;
+  --taxi-HyperlinkTextColor: #007aff;
+  --eska-form-link-text: var(--taxi-HyperlinkTextColor);
   --taxi-HeaderBackColor: transparent;
   font-size: 16px;
 }
@@ -1438,6 +1443,11 @@ button { cursor: default; }
   box-shadow: none;
   background-image: none;
 }
+.taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-button--default {
+  --taxi-ButtonTextColor: var(--eska-form-primary-text);
+  color: var(--taxi-ButtonTextColor);
+  border-color: transparent;
+}
 .taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-root-commands, .taxi-table-command-bar) {
   min-height: var(--eska-form-command-height);
   margin-block-end: var(--eska-form-row-gap);
@@ -1453,10 +1463,11 @@ button { cursor: default; }
   background-color: transparent;
 }
 .taxi-preview[data-os=linux][data-profile="version-8.5"] .taxi-table-scroll {
-  border-color: transparent;
+  border-color: var(--eska-form-table-outline, transparent);
 }
-.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-table-header-cell, .taxi-table-footer-cell) {
+.taxi-preview[data-os=linux][data-profile="version-8.5"] :is(.taxi-table-head > .taxi-table-header-cell:last-child, .taxi-table-header-cell, .taxi-table-footer-cell) {
   border-color: transparent;
+  border-image: none;
   box-shadow: none;
   padding-block: 9px 0;
 }
