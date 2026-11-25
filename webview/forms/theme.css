@@ -3,6 +3,7 @@
   color-scheme: dark;
   color: #e5e7eb;
   background: #202328;
+  scrollbar-color: #737a84 #292e35;
   --taxi-TextColor: #e5e7eb;
   --taxi-FormTextColor: #e5e7eb;
   --taxi-BackColor: #202328;
@@ -42,6 +43,26 @@
   color: var(--taxi-ButtonTextColor);
   border-color: var(--taxi-ButtonBorderColor);
   box-shadow: none;
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-button--default {
+  --taxi-ButtonTextColor: #242125;
+  color: var(--taxi-ButtonTextColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-input > .taxi-input-button {
+  background-color: transparent;
+  color: var(--taxi-FieldTextColor);
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-chip {
+  background-color: #253b46;
+  color: #d4e8f5;
+  border-color: #515861;
+  box-shadow: none;
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-chip[data-native-view-status=ready] > :not(canvas) {
+  visibility: visible;
+}
+:is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) .taxi-view-status-paint {
+  display: none;
 }
 :is(.taxi-preview[data-profile="version-8.5"][data-preview-theme="dark"], body:is(.vscode-dark, .vscode-high-contrast) .taxi-preview[data-profile="version-8.5"][data-preview-theme="vscode"]) :is(.taxi-menu, .taxi-menu button[role=menuitem], .taxi-table-search, .taxi-table-scrollbar) {
   background-color: var(--taxi-FieldBackColor);
