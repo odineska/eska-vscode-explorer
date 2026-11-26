@@ -6,37 +6,37 @@
 
 ## Пять действий в редакторе
 
-Нажмите на изображение для просмотра с паузой и перемоткой. В первом ролике показаны Explorer 0.1.32 и ESKA 0.38.0, в остальных четырёх — Explorer 0.1.23 и ESKA 0.32.0.
+Каждый ролик снят на двух копиях «Демонстрационного приложения» 2.0.0.21 для платформы 8.5.4.2072. Сначала показан интерфейс «Такси», затем «Воздушный». Нажмите на изображение, чтобы открыть видео с паузой и перемоткой.
 
 ### Посмотреть тип стандартного реквизита
 
-В справочнике «Товары» раскройте стандартные реквизиты. В свойствах «Пометки удаления» виден тип «Булево» и доступность поля для редактирования.
+В справочнике «Товары» раскройте стандартные реквизиты. В свойствах реквизита «Код» видны тип «Строка» и длина 9.
 
-[![Посмотреть тип стандартного реквизита. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-standard-attributes.gif)](https://odineska.tech/eska/docs/#demo-standard-attributes)
+[![Посмотреть тип стандартного реквизита. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-standard-attributes.gif)](https://odineska.tech/eska/docs/#demo-standard-attributes)
 
 ### Перейти от свойства к его записи в XML
 
-Выберите свойство «Имя» в карточке документа и откройте его определение в выгрузке.
+В карточке справочника «Товары» перейдите от свойства «Имя» к его определению в XML.
 
-[![Перейти от свойства к его записи в XML. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
+[![Перейти от свойства к его записи в XML. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-properties.gif)](https://odineska.tech/eska/docs/#demo-properties)
 
-### Переименовать поле на форме и увидеть результат
+### Изменить заголовок поля на форме заказа
 
-Измените заголовок «Покупатель» на «Клиент» в редакторе формы. В ролике видно, как меняется предпросмотр при правке, отмене и повторе.
+Измените заголовок «Покупатель» на «Клиент» в редакторе формы. Посмотрите, как меняется предпросмотр, затем отмените правку.
 
-[![Переименовать поле на форме и увидеть результат. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
+[![Изменить заголовок поля на форме заказа. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
 
 ### Отредактировать запрос внутри модуля BSL
 
-Откройте текст запроса в отдельной вкладке, измените сортировку и нажмите Ctrl+S. Изменение появится в строковом литерале модуля.
+Откройте запрос из общего модуля «Пользователи», добавьте сортировку по наименованию и сохраните её в исходном BSL.
 
-[![Отредактировать запрос внутри модуля BSL. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
+[![Отредактировать запрос внутри модуля BSL. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-query.gif)](https://odineska.tech/eska/docs/#demo-query)
 
 ### Различить два изменённых файла ObjectModule.bsl
 
-Панель Git показывает имена объектов 1С. Выберите объект и откройте изменения именно его модуля.
+В панели Git откройте изменения модулей справочников «Контрагенты» и «Товары».
 
-[![Различить два изменённых файла ObjectModule.bsl. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-21/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
+[![Различить два изменённых файла ObjectModule.bsl. Скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-scm.gif)](https://odineska.tech/eska/docs/#demo-scm)
 
 ## Первый проект
 

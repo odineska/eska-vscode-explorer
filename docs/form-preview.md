@@ -4,9 +4,11 @@
 
 Предпросмотр показывает статическое состояние управляемой формы. Для «Такси» используется профиль 8.3.27. Платформа линейки 8.5.4 с соответствующим режимом XML открывает [профиль интерфейса 8.5](#профиль-интерфейса-85). BSL и команды выполняются в клиенте 1С. Для просмотра требуется совместимая возможность `formPreview`, для редактирования — Metadata API 1.53, для создания обработчиков — 1.54.
 
-[![Открыть управляемую форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-forms.gif)](https://odineska.tech/eska/docs/#demo-forms)
+В роликах открыта одна и та же форма документа «Заказ» из демобазы 8.5.4.2072. Для первой части у копии конфигурации выбран режим «Такси», для второй — «Воздушный».
 
-[![Изменить заголовок поля формы — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-18/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
+[![Открыть управляемую форму — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-forms.gif)](https://odineska.tech/eska/docs/#demo-forms)
+
+[![Изменить заголовок поля формы — скринкаст без звука](https://raw.githubusercontent.com/odineska/odineska.github.io/main/assets/demos/2026-11-26/explorer-form-edit.gif)](https://odineska.tech/eska/docs/#demo-form-edit)
 
 ## Интерактивное редактирование
 
