@@ -39,6 +39,10 @@ export function PreviewToolbar(props) {
       onChange={event => c.ui('zoom', Number(event.currentTarget.value))}>
       <For each={[50, 75, 100, 125, 150, 200]}>{value => <option value={value}>{value}%</option>}</For>
     </select></label>
+    <Show when={state.profile === 'version-8.5'}><label class="form-zoom">{s.previewTheme}<select aria-label={s.previewTheme}
+      value={state.ui.previewTheme} onChange={event => c.ui('previewTheme', event.currentTarget.value)}>
+      <option value="vscode">{s.previewVscode}</option><option value="light">{s.previewLight}</option><option value="dark">{s.previewDark}</option>
+    </select></label></Show>
     <Show when={state.role === 'preview'}><InspectorIconButton icon="pip" label={s.dock} action="dockPreview"
       onClick={() => c.post({ type: 'dock' })}/></Show>
   </div>;

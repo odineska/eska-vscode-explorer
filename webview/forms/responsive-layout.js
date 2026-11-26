@@ -391,7 +391,7 @@ export function createFormLayout(controller, viewport, preview, frame, commandPo
       for (const child of [...node.children, ...node.auxiliary]) visit(child);
     };
     visit(state.model.root); JSON.stringify(state.ui.collapsed);
-    state.model.scriptVariant; state.locale; state.culture; state.os;
+    state.model.scriptVariant; state.locale; state.culture; state.os; state.profile;
   }, invalidatePreferred);
   const invalidateMinimum = () => { needsMinimum = true; schedule(); };
   createEffect(() => state.ui.zoom, invalidateMinimum);

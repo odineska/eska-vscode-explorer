@@ -46,7 +46,7 @@ export function App(props) {
     measure();
     return () => { observer.disconnect(); drag.clear(); };
   });
-  return <main class="form-shell" ref={shell} data-view-role={state.role} data-form-title={state.title} aria-busy={String(c.replaying())}
+  return <main class="form-shell" ref={shell} data-preview-profile={state.profile ?? "taxi-8.3.27"} data-view-role={state.role} data-form-title={state.title} aria-busy={String(c.replaying())}
     onDragStart={drag.start} onDragEnd={drag.clear} onDragOver={drag.over} onDragLeave={drag.leave} onDrop={drag.drop} onKeyDown={c.historyKey}>
     <div class="form-toolbar" ref={toolbar} hidden={state.role !== 'main'}>
       <FormToolbar controller={c} index={index()}/>
@@ -62,6 +62,9 @@ export function App(props) {
     </Show>
     <FormMenu controller={c.menu}/>
     <Show when={c.edit()} keyed>{draft => <FormEditor controller={c} draft={draft}/>}</Show>
-    <footer ref={status} class={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status"><span>{state.notice || state.strings[c.editStatus()] || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.authoring ? state.strings.editClean : state.strings.readOnly)}</span><span>{state.strings.beta} · 1С 8.3.27 · {state.strings.taxi} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span></footer>
+    <footer ref={status} class={{ 'form-status': true, 'form-status--stale': state.phase === 'stale' || state.phase === 'disconnected' }} role="status">
+      <span>{state.notice || state.strings[c.editStatus()] || (state.phase === 'loading' ? state.strings.loading : c.nativeText?.failed() ? state.strings.nativeTextApproximate : state.authoring ? state.strings.editClean : state.strings.readOnly)}</span>
+      <span>{state.strings.beta} · {state.profile === 'version-8.5' ? state.strings.interface85 : `1С 8.3.27 · ${state.strings.taxi}`} · {state.os === 'win32' ? 'Windows' : 'Linux'}</span>
+    </footer>
   </main>;
 }

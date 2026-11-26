@@ -218,7 +218,20 @@ export class FormPreviewService implements vscode.Disposable {
     }
     if (value.type === "inspectorState" && frame.role === "main" && view.frames.get("main") === frame) {
       const state = parseInspectorState(value);
-      if (state) this.rememberInspector(view, state);
+      if (state) {
+        // Layout snapshots may predate a theme accepted from either panel.
+        state.ui.previewTheme = view.inspectorState?.ui.previewTheme ?? "vscode";
+        this.rememberInspector(view, state);
+      }
+      return;
+    }
+    if (value.type === "previewTheme" && (value.previewTheme === "vscode" || value.previewTheme === "light" || value.previewTheme === "dark")) {
+      if (view.frames.get(frame.role) !== frame) return;
+      const ui: InspectorState["ui"] = { ...(view.inspectorState?.ui ?? defaultInspectorUi()), previewTheme: value.previewTheme };
+      this.rememberInspector(view, { ...view.inspectorState, ui });
+      // A queued model publication can carry the previous choice back to the sender.
+      for (const target of view.frames.values()) if (target.ready)
+        void target.panel.webview.postMessage({ type: "previewTheme", previewTheme: ui.previewTheme });
       return;
     }
     if (value.type === "previewNavigation") {
@@ -514,7 +527,7 @@ export class FormPreviewService implements vscode.Disposable {
       const updateSchema = frame.role === "main" && (frame === initializeNavigation || frame.editSchema !== schema);
       frame.editSchema = schema;
       void frame.panel.webview.postMessage({ type: "state", sequence: ++view.sequence, title: frame.panel.title,
-      role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, handlerAuthoring: view.client?.limits.handlerAuthoring === true, referenceData: view.client?.limits.referenceData === true,
+      previewTheme: view.inspectorState?.ui.previewTheme ?? "vscode", role: frame.role, phase: view.phase, notice: view.notice, locale: this.locale(), culture: Intl.DateTimeFormat().resolvedOptions().locale, os: process.platform, strings: this.strings(), detached: view.frames.has("preview"), handlerNavigation: view.client?.limits.handlerNavigation === true, handlerAuthoring: view.client?.limits.handlerAuthoring === true, referenceData: view.client?.limits.referenceData === true,
       ...(frame === initializeNavigation ? { previewNavigation: view.previewNavigation,
         ...(frame.role === "main" && view.inspectorState ? { inspectorState: view.inspectorState } : {}) } : {}),
       restore: { path: view.path, application: view.application ?? view.snapshot?.application ?? undefined, role: frame.role },
@@ -526,7 +539,7 @@ export class FormPreviewService implements vscode.Disposable {
       ...(frame.role === "main" ? { palette: view.palette ?? null } : {}),
       // Status and palette updates can race with selection messages from another frame.
       ...((model || frame === initializeNavigation) && view.selected ? { selection: view.selected } : {}),
-      ...(model && view.snapshot ? { model: view.snapshot.model, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
+      ...(model && view.snapshot ? { model: view.snapshot.model, profile: view.snapshot.profile, compatibilityMode: view.snapshot.compatibilityMode, interfaceCompatibilityMode: view.snapshot.interfaceCompatibilityMode, revision: view.snapshot.revision, formSessionId: view.snapshot.formSessionId } : {}) });
     }
   }
   private failure(view: View, error: unknown): void {
@@ -669,6 +682,8 @@ export class FormPreviewService implements vscode.Disposable {
       if (role === "main") {
         const inspector = parseInspectorState(state);
         if (inspector) {
+          // Workspace state can contain a newer choice made in the detached panel.
+          inspector.ui.previewTheme = view.inspectorState?.ui.previewTheme ?? inspector.ui.previewTheme;
           view.inspectorState = inspector;
           if (inspector.selection && !view.snapshot) view.selected = inspector.selection;
         }

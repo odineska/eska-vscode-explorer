@@ -203,6 +203,11 @@ export function controller(api) {
     if (!value || typeof value !== 'object') return;
 
     try {
+      if (value.type === 'previewTheme' && ['vscode', 'light', 'dark'].includes(value.previewTheme)) {
+        set(draft => { draft.ui.previewTheme = value.previewTheme; });
+        persist();
+        return;
+      }
       if (value.type === 'formDraftResult' || value.type === 'formHandlerResult') {
         const resolve = pending.get(value.id);
         pending.delete(value.id);
@@ -271,7 +276,8 @@ export function controller(api) {
       let reveal = '';
       set(draft => {
         if (inspector) Object.assign(draft.ui, inspector.ui);
-        for (const field of ['role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
+        if (['vscode', 'light', 'dark'].includes(value.previewTheme)) draft.ui.previewTheme = value.previewTheme;
+        for (const field of ['profile', 'compatibilityMode', 'interfaceCompatibilityMode', 'role', 'phase', 'sequence', 'locale', 'culture', 'os', 'strings', 'detached', 'handlerNavigation', 'handlerAuthoring', 'referenceData', 'authoring', 'formLayout', 'draftStatus', 'propertySearch', 'notice', 'restore', 'title']) {
           if (value[field] !== undefined) draft[field] = value[field];
         }
         if (model) {
@@ -332,7 +338,8 @@ export function controller(api) {
     set(draft => { draft.ui[name] = value; });
     const shared = name === 'pages' || name === 'collapsed';
     if (shared) shareNavigation();
-    persist(!shared);
+    if (name === 'previewTheme' && ['vscode', 'light', 'dark'].includes(value)) post({ type: 'previewTheme', previewTheme: value });
+    persist(!shared && name !== 'previewTheme');
     flush();
   };
   post({ type: 'ready', ...(Object.keys(navigation.pages).length||Object.keys(navigation.collapsed).length?{previewNavigation:navigation}:{}) });

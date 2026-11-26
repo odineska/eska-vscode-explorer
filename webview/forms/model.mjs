@@ -84,10 +84,29 @@ export function orderedCommands(items, state) {
     return children === item.items ? item : { ...item, items: children };
   });
 }
-export function font(value, os) {
+export function usesVersion85Layout({ profile, os }) {
+  return profile === 'version-8.5' && os === 'linux';
+}
+
+export function childInputTitlePlacement(node, inherited = 'Top') {
+  const placement = scalar(node, 'ChildItemsTitleLocation');
+  if (placement === 'Left' || placement === 'LeftIfPossible') return 'Left';
+  return placement === 'Top' ? placement : inherited;
+}
+
+export function inputTitlePlacement(node, inherited) {
+  const placement = node.presentation.titleLocation;
+  const input = node.kind === 'InputField' || node.kind === 'RadioButtonField' && scalar(node, 'RadioButtonType') === 'Tumbler';
+  return inherited && input && placement === 'Left' && scalar(node, 'TitleLocation', 'Auto') === 'Auto'
+    ? inherited : placement;
+}
+
+export function font(value, os, profile) {
   const aliases = { Arial: 'ESKA Taxi Sans', 'Liberation Sans': 'ESKA Taxi Sans', 'Times New Roman': 'ESKA Taxi Serif', 'Liberation Serif': 'ESKA Taxi Serif', 'Courier New': 'ESKA Taxi Mono', 'Liberation Mono': 'ESKA Taxi Mono' };
   const face = value?.face ? os === 'linux' ? aliases[value.face] ?? value.face : value.face : os === 'linux' ? 'ESKA Taxi Sans' : 'Arial';
-  return { 'font-family': `${JSON.stringify(face)}, Arial, sans-serif`, 'font-size': `${(value?.points ?? 10) * 4 / 3}px`, 'font-weight': value?.weight ?? 400,
+  const points = value?.points ?? 10;
+  const default85 = usesVersion85Layout({ profile, os }) && points === 10 && !value?.origins?.length;
+  return { 'font-family': `${JSON.stringify(face)}, Arial, sans-serif`, 'font-size': `${default85 ? 16 : points * 4 / 3}px`, 'font-weight': value?.weight ?? 400,
     'font-style': value?.italic ? 'italic' : 'normal', 'text-decoration': [value?.underline && 'underline', value?.strikeout && 'line-through'].filter(Boolean).join(' ') || 'none' };
 }
 const system = { Window: '#fff', WindowText: '#000', ButtonFace: '#f0f0f0', ButtonText: '#000', GrayText: '#808080', Highlight: '#0078d7', HighlightText: '#fff', InfoBackground: '#ffffe1', InfoText: '#000', ActiveBorder: '#b4b4b4', InactiveBorder: '#f4f7fc', AppWorkspace: '#ababab' };
@@ -258,8 +277,9 @@ export function numericLabelMetrics(node, os) {
   };
 }
 
-export function inputHeight(node, os) {
+export function inputHeight(node, os, profile) {
   const line = fontLineHeight(node.presentation.font);
+  if (usesVersion85Layout({ profile, os })) return Math.max(40, line + 20);
   // Native Taxi scales the line allocation by 20/13, then rounds to a pixel.
   return os === 'linux' ? Math.round(line * 20 / 13) : Math.ceil(line * 1.5);
 }
@@ -273,14 +293,16 @@ export function inputHeightUnit(node, os) {
   const single = inputHeight(node, os);
   return os === 'linux' ? single + (single < 29 ? 5 : 6) : 20;
 }
-export function inputControlHeight(node, os, rows = inputRows(node)) {
-  const single = inputHeight(node, os);
+export function inputControlHeight(node, os, rows = inputRows(node), profile) {
+  const single = inputHeight(node, os, profile);
   if (os !== 'linux') return flag(node, 'MultiLine', false) ? Math.max(2, number(node, 'Height', 3)) * 20 : single;
   // Linux Designer height units use the control height plus a gap measured at 8–20pt.
   return single + (rows - 1) * inputHeightUnit(node, os);
 }
-export function inputRowHeight(node, os, captioned = true) {
-  const height=inputHeight(node,os)+2;
+export function inputRowHeight(node, os, captioned = true, profile) {
+  const single = inputHeight(node, os, profile);
+  if (usesVersion85Layout({ profile, os })) return single;
+  const height = single + 2;
   return os==='linux'&&captioned&&['Left','Right'].includes(node.presentation.titleLocation)
     ? Math.max(height,fontLineHeight(node.presentation.titleFont)+2) : height;
 }

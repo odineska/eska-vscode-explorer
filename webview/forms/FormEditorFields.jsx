@@ -1,5 +1,7 @@
 import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js';
 import { CORE_NS, XS_NS, addType, defaultLanguage, localized, property, scalar } from './editor-model.mjs';
+import { FormFontEditor } from './FormFontEditor.jsx';
+import { editableFont, fontReferences } from './editor-font.mjs';
 import { FORM_NS } from './model.mjs';
 import { FormTypeEditor, formTypeId } from './FormTypeEditor.jsx';
 
@@ -68,6 +70,7 @@ export function declaredFormProperty(node, field) {
 export function canEditFormProperty(node, field, current) {
   if (!['event', 'property', 'qualifier'].includes(field.source) || current?.writable === false) return false;
   if (field.name === 'ConditionalAppearance') return false;
+  if (field.editor === 'font') return editableFont(current?.property);
   const type = field.name === 'Type' && ['Attribute', 'Column', 'Parameter'].includes(node.kind);
   if (type) return true;
   if (!supported.has(field.editor) || field.editor === 'enum' && !field.values.length) return false;
@@ -113,6 +116,8 @@ function ValueEditor(props) {
     }</Show>;
   }
   switch (field.editor) {
+    case 'font':
+      return <FormFontEditor strings={s} qualifiers={props.qualifiers} change={props.change} invalid={props.invalid}/>;
     case 'boolean':
       return <input type="checkbox" aria-label={props.label} checked={['true', '1'].includes(text())}
         onChange={event => changeText(String(event.currentTarget.checked))}/>;
@@ -150,6 +155,7 @@ export function InlineFormProperty(props) {
   const current = () => declaredFormProperty(props.node, field);
   const composite = () => field.name === 'Type' && ['Attribute', 'Column', 'Parameter'].includes(props.node.kind);
   const value = () => local() ? local().value : current()?.property.value;
+  const qualifiers = () => local() ? local().qualifiers : current()?.property.qualifiers ?? [];
   const label = () => formPropertyLabel(field, props);
   const key = Symbol(field.id);
   let session, ticket = 0, sent = 0, focused = false, element;
@@ -168,7 +174,7 @@ export function InlineFormProperty(props) {
       if (!focused && !result.message) setLocal(null);
     });
   }
-  function update(value) {
+  function update(value, annotations = qualifiers()) {
     if (!c.writable()) {
       setError(c.state.draftStatus?.conflict ? 'editConflict' : 'editLocked');
       return;
@@ -177,10 +183,10 @@ export function InlineFormProperty(props) {
     session ??= 'field-' + c.nextFieldId();
     const group = session;
     setError('');
-    setLocal({ value });
+    setLocal({ value, qualifiers: annotations });
     const delay = field.editor === 'boolean' || field.editor === 'enum' ? 0 : 150;
-    const target = props.node.target, qualifiers = current()?.property.qualifiers ?? [];
-    c.scheduleField(key, () => send(value, version, group, target, qualifiers), delay);
+    const target = props.node.target;
+    c.scheduleField(key, () => send(value, version, group, target, annotations), delay);
   }
   function invalid() {
     ticket++;
@@ -198,11 +204,11 @@ export function InlineFormProperty(props) {
   return <div ref={element} class="form-inline-property" data-edit-property={field.name} data-edit-field={field.id}
     onFocusIn={() => { focused = true; }} onFocusOut={blur} aria-invalid={String(!!error())}>
     <Show when={composite()} fallback={
-      <ValueEditor {...props} field={field} label={label()} value={value()} change={update} invalid={invalid}/>
+      <ValueEditor {...props} field={field} label={label()} value={value()} qualifiers={qualifiers()} change={update} invalid={invalid}/>
     }>
       <details class="form-inline-type">
         <summary>{props.typeLabel || s.editType}</summary>
-        <ValueEditor {...props} field={field} label={label()} value={value()} change={update} invalid={invalid}/>
+        <ValueEditor {...props} field={field} label={label()} value={value()} qualifiers={qualifiers()} change={update} invalid={invalid}/>
       </details>
     </Show>
     <Show when={current() && !composite()}><button type="button" class="form-icon-button form-inline-reset"
@@ -213,6 +219,7 @@ export function InlineFormProperty(props) {
 
 export function FormPropertyChoices(props) {
   return <>
+    <datalist id="form-edit-font-references"><For each={fontReferences}>{reference => <option value={reference}/>}</For></datalist>
     <datalist id="form-edit-data-paths"><For each={props.paths}>{path => <option value={path}/>}</For></datalist>
     <datalist id="form-edit-commands"><For each={props.schema.nodes.filter(node => node.target.kind === 'command')}>
       {node => <option value={'Form.Command.' + node.name}/>}

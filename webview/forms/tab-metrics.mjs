@@ -15,11 +15,20 @@ export function sideTabRepresentation(value) {
   return value === 'TabsOnLeftHorizontal' || value === 'TabsOnRightHorizontal';
 }
 
+/** Designer 8.5 keeps the authored enum even when its preview uses another placement. */
+export function previewTabRepresentation(authored, version85) {
+  if (version85) {
+    if (authored === 'TabsOnBottom') return 'TabsOnTop';
+    if (authored === 'TabsOnRightHorizontal') return 'TabsOnLeftHorizontal';
+  }
+  return authored;
+}
+
 export function tabMetrics(fonts, pictureHeight = 0) {
   const largest = fonts.reduce((value, font) => (font?.points ?? 10) > (value?.points ?? 10) ? font : value, fonts[0]);
+  const lineHeight = fontLineHeight(largest);
   const [height, horizontalPadding, padding, fitMinimum, inset, spacing, emptyWidth] = measured.get(largest?.points ?? 10) ?? [];
   const calibrated = height !== undefined && fonts.every(font => measured.has(font?.points ?? 10));
-  const lineHeight = fontLineHeight(largest);
   const captionHeight = height ?? Math.ceil(lineHeight * 1.75);
   const captionPadding = horizontalPadding ?? Math.max(1, Math.floor(lineHeight * .7) - 1);
   // Side buttons add two borders and have a separate painted minimum.

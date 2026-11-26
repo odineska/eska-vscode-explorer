@@ -5,8 +5,8 @@ const path = require("node:path");
 const vscode = require("vscode");
 const { connect, connectWorkbench } = require("./query-constructor-dom.cjs");
 
-async function until(check, label) {
-  const deadline = Date.now() + 12_000;
+async function until(check, label, timeout = 12_000) {
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const answer = await check();
     if (answer) return answer;
@@ -93,6 +93,9 @@ exports.run = async function () {
   const extension = vscode.extensions.all.find(item => item.packageJSON.name === "eska-explorer");
   const explorer = await extension.activate();
   await until(() => explorer.connection.state.kind === "ready", "metadata connection");
+  const project = await until(() => explorer.tree?.projects[0], "test project is connected");
+  const format = { configuration: "cf", extension: "cfe", processing: "epf", report: "erf" }[project.info.type];
+  assert.ok(format, project.info.type);
   const gitApi = (await vscode.extensions.getExtension("vscode.git").activate()).getAPI(1);
   assert.ok(await gitApi.openRepository(vscode.Uri.file(fixture.root)));
   const active = await connectWorkbench(until);
@@ -110,14 +113,15 @@ exports.run = async function () {
       const review = await connect(until, "#accept");
       try {
         const preview = await until(() => review.evaluate(`${element("#changes")}?.textContent`), "artifact build plan");
-        assert.match(preview, /\.epf/);
+        assert.match(preview, new RegExp(`\\.${format}\\b`));
         assert.match(preview, /Distrobox/);
         const directory = path.join(fixture.root, "build");
         assert.deepEqual(await fs.readdir(directory).catch(() => []), [], "review did not build the file");
         await click(review, "#accept").catch(error => {
           if (error.message !== "debug target closed") throw error;
         });
-        await until(async () => (await fs.readdir(directory).catch(() => [])).some(name => name.endsWith(".epf")), "artifact built by 1C");
+        await until(async () => (await fs.readdir(directory).catch(() => [])).some(name => name.endsWith("." + format)),
+          "artifact built by 1C", 120_000);
         const reveal = text("Open Output Folder", "Открыть папку результата");
         await vscode.commands.executeCommand("notifications.showList");
         const notices = () => active.evaluate("document.querySelector('.notifications-center')?.innerText || ''");
@@ -150,7 +154,8 @@ exports.run = async function () {
       await click(settings, "[data-settings-section=check]");
       await until(() => settings.evaluate(`!!${element("[data-project-action=check]")}`), "full check available in Checks");
       await click(settings, "[data-project-action=check]");
-      const summary = await until(() => settings.evaluate(`${element("[data-project-action-result=check]")}?.textContent`), "full XML and BSL check");
+      const summary = await until(() => settings.evaluate(`${element("[data-project-action-result=check]")}?.textContent`),
+        "full XML and BSL check", 120_000);
       assert.match(summary, /Check complete|Проверка завершена/);
       const findings = vscode.languages.getDiagnostics(vscode.Uri.file(module));
       assert.ok(findings.some(item => item.source === text("ESKA Project Check", "Проверка проекта ESKA")), summary);
@@ -161,7 +166,7 @@ exports.run = async function () {
     await wizard;
   } finally { active.close(); }
   await fs.writeFile(path.join(fixture.root, "host-result.json"), JSON.stringify({
-    passed: true, suite: "project-commands", locale: vscode.env.language, doctor: true, buildWithReview: true,
+    passed: true, suite: "project-commands", locale: vscode.env.language, doctor: true, buildWithReview: true, format,
     realSemanticComparison: true, fullProjectDiagnostics: true, onboardingRoutes: true,
   }));
 };

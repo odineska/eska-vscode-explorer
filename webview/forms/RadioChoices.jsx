@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, scalar, text } from './model.mjs';
+import { buttonMetrics, caption, color, flag, font, fontLineMetrics, number, property, scalar, text, usesVersion85Layout } from './model.mjs';
 import { controlCaptionWidth, wordCaptionWidth, linuxControlFont, firstFontFamily, supportsNativeSans } from './font-metrics.mjs';
 import { NativeLabel } from './NativeLabel.jsx';
 import { radioGlyph } from './choice-glyph.mjs';
@@ -16,12 +16,13 @@ export function RadioChoices(props) {
   const valueFont = () => node().presentation.font;
   const foreground = () => node().presentation.foreground;
   const segments = () => scalar(node(), 'RadioButtonType') === 'Tumbler';
+  const version85 = () => segments() && usesVersion85Layout(state);
   const inactive = () => !flag(node(), 'Enabled') || flag(node(), 'ReadOnly', false);
   const fallback = [1, 2, 3].map(value => ({ kind: 'name', text: state.strings.sampleValue.replace('{0}', value) }));
   const choices = () => node().presentation.choices.length ? node().presentation.choices : fallback;
   const columns = () => Math.min(choices().length, Math.max(0, Math.trunc(number(node(), 'ColumnsCount'))) || choices().length);
   const labels = createMemo(() => choices().map(choice => text(choice, state.locale, state.strings).trimEnd()));
-  const layout = createMemo(() => linux && segments() ? radioTumblerLayout(labels(), columns(), valueFont()) : undefined);
+  const layout = createMemo(() => linux && segments() && !version85() ? radioTumblerLayout(labels(), columns(), valueFont()) : undefined);
   const positions = createMemo(() => {
     const count = choices().length, width = columns();
     if (segments()) return choices().map((_, index) => ({ row: Math.floor(index / width), column: index % width }));
@@ -34,13 +35,16 @@ export function RadioChoices(props) {
   const rows = () => Math.ceil(choices().length / columns());
   const style = () => {
     const metrics = buttonMetrics(valueFont());
-    return { ...(linux ? linuxControlFont(valueFont()) : font(valueFont(), state.os)),
-      color: color(foreground()),
+    return { ...(linux && !version85() ? linuxControlFont(valueFont()) : font(valueFont(), state.os, state.profile)),
+      color: !version85() || property(node(), 'TextColor') ? color(foreground()) : undefined,
       '--taxi-radio-inactive-text': inactiveColor(),
-      '--taxi-radio-segment-fill': linux && segments() ? color(node().presentation.background) : undefined,
-      '--taxi-radio-segment-border': linux && segments() ? color(node().presentation.border) : undefined,
+      '--taxi-radio-segment-fill': linux && segments() && (!version85() || property(node(), 'BackColor'))
+        ? color(node().presentation.background) : undefined,
+      '--taxi-radio-segment-border': linux && segments() && (!version85() || property(node(), 'BorderColor'))
+        ? color(node().presentation.border) : undefined,
       '--taxi-radio-height': `${Math.max(19, metrics.lineHeight + 2)}px`,
-      '--taxi-segment-height': `${Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
+      '--taxi-segment-height': `${version85() ? Math.max(36, metrics.lineHeight + 12)
+        : Math.max(24, metrics.lineHeight + 2 * metrics.verticalPadding + 3)}px` };
   };
 
   createEffect(() => [state.modelSequence, segments(), inactive()], () => {
@@ -81,19 +85,20 @@ export function RadioChoices(props) {
   });
 
   return <div ref={surface} class="taxi-radios" data-representation={segments() ? 'segments' : 'buttons'} data-rows={rows()}
+    data-rounded-tumbler={version85() ? '' : undefined}
     data-native-segments={painted() ? 'ready' : undefined}
     role="radiogroup" aria-label={caption(node(), state)} aria-disabled={String(inactive())} style={style()}>
     <For each={choices()}>{(_choice, index) => {
       const label = () => labels()[index()];
-      const width = createMemo(() => linux
+      const width = createMemo(() => linux && !version85()
         ? layout()?.advances[index()] ?? (segments() ? controlCaptionWidth : wordCaptionWidth)(label(), valueFont()) : undefined);
       const checked = () => !segments() && index() === 0;
       const position = () => positions()[index()];
-      const edge = (match) => segments() && match ? '' : undefined;
+      const edge = (match) => segments() && !version85() && match ? '' : undefined;
       const optionStyle = () => {
         const { row, column } = position();
         const grid = { 'grid-row': row + 1, 'grid-column': column + 1 };
-        if (!segments()) return grid;
+        if (!segments() || version85()) return grid;
         const padding = Math.round(fontLineMetrics(valueFont()).pixels * 9 / 13);
         // Shared native dividers leave more of the intrinsic padding at the last cell.
         const adjustment = columns() === 1 ? 0 : column === 0 ? -1 : column < columns() - 1 ? -.5 : columns() / 2;

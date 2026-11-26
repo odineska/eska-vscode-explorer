@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { createFontRaster } from '../webview/forms/font-raster.mjs';
 import { lcdCaptionPixels } from '../webview/forms/lcd-caption.mjs';
 import { fontLineMetrics } from '../webview/forms/model.mjs';
-import { tabMetrics, tabPictureLayout } from '../webview/forms/tab-metrics.mjs';
+import { previewTabRepresentation, tabMetrics, tabPictureLayout } from '../webview/forms/tab-metrics.mjs';
 
 test('shared tab metrics and LCD pixels match native individual fonts, colors and inherited page titles', async () => {
   const reference = JSON.parse(await readFile(new URL('tests/fixtures/forms/native-tab-appearance/metrics.json',formReferenceRoot)));
@@ -48,4 +48,15 @@ test('empty tabs use the largest caption font and tall pictures enlarge the stri
   assert.equal(tabMetrics([{ points: 8 }], 24).height, 34);
   assert.equal(tabMetrics([{ points: 14 }], 24).height, 41);
   assert.equal(tabMetrics([{ points: 10 }], 64).height, 76);
+});
+
+test('8.5 resolves legacy tab positions to the top or left in the preview', () => {
+  for (const [authored, rendered] of [
+    ['TabsOnBottom', 'TabsOnTop'],
+    ['TabsOnRightHorizontal', 'TabsOnLeftHorizontal'],
+    ...['Auto', 'None', 'TabsOnTop', 'TabsOnLeftHorizontal', 'Swipe'].map(value => [value, value]),
+  ]) {
+    assert.equal(previewTabRepresentation(authored, true), rendered);
+    assert.equal(previewTabRepresentation(authored, false), authored);
+  }
 });

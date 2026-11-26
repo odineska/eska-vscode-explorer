@@ -109,7 +109,11 @@ try {
     const fields = Array.from({ length: 48 }, (_, index) => `${index} AS КолонкаРезультата${index}WithLongEnglishName`).join(',\r\n|');
     await writeFile(fixture.module, `\ufeffПроцедура Test()\r\nQ = "SELECT ${fields}\r\n|FROM (SELECT 1 AS NestedValue) AS Child";\r\nКонецПроцедуры\r\n`);
   }
-  if (["form-editor-host.cjs", "form-preview-window-host.cjs", "form-handler-authoring-host.cjs", "form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs", "form-detached-space-host.cjs", "form-property-catalogue-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
+  if (["form-profile-host.cjs", "form-editor-host.cjs", "form-preview-window-host.cjs", "form-handler-authoring-host.cjs", "form-preview-host.cjs", "form-multiple-windows-host.cjs", "form-lifecycle-host.cjs", "form-reconnect-host.cjs", "form-restore-host.cjs", "form-detached-space-host.cjs", "form-property-catalogue-host.cjs"].includes(basename(suite))) fixture.form = await (await import("./form-fixture.mjs")).createFormSource(fixture);
+  if (basename(suite) === "form-profile-host.cjs") {
+    const projectFile = join(fixture.root, "eska.toml");
+    await appendFile(projectFile, '\n[build]\nplatform_version="8.5.4"\n');
+  }
   if (basename(suite) === "form-inspectors-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createFormInspectorSource(fixture);
   if (basename(suite) === "form-header-layout-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createHeaderLayoutSource(fixture);
   if (basename(suite) === "form-inspector-navigation-host.cjs") fixture.form = await (await import("./form-fixture.mjs")).createInspectorNavigationSource(fixture);
@@ -379,7 +383,10 @@ try {
     const suiteBodyMs = performance.now() - bodyStarted;
     const fs = require('node:fs/promises'), file = ${JSON.stringify(join(fixture.root, "host-result.json"))};
     const result = JSON.parse(await fs.readFile(file, 'utf8'));
-    await fs.writeFile(file, JSON.stringify({ ...result, locale: vscode.env.language, hostDriver:{suiteBodyMs} }));
+    // Multiple normal windows share this result; readers must only observe complete JSON.
+    const temporary = file + '.' + process.pid;
+    await fs.writeFile(temporary, JSON.stringify({ ...result, locale: vscode.env.language, hostDriver:{suiteBodyMs} }));
+    await fs.rename(temporary, file);
   };\n`);
   const hostArguments = [`--extensionTestsPath=${hostSuite}`];
   let languageWarmup;
@@ -416,7 +423,11 @@ ${basename(suite) === "run-debug-presence-normal-host.cjs"
     let reported;
     try { reported = JSON.parse(await fs.readFile(file, 'utf8')); } catch {}
     // Keep the suite's precise failure evidence, including UI state and completed assertions.
-    if (reported?.passed !== false) await fs.writeFile(file, JSON.stringify({ passed: false, error: String(error.stack ?? error) }));
+    if (reported?.passed !== false) {
+      const temporary = file + '.' + process.pid;
+      await fs.writeFile(temporary, JSON.stringify({ passed: false, error: String(error.stack ?? error) }));
+      await fs.rename(temporary, file);
+    }
   }
   await vscode.commands.executeCommand('workbench.action.closeWindow');
 };\n`);

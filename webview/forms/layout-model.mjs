@@ -131,17 +131,17 @@ function automaticMultilineMaximum(node, os) {
   return Math.max(fieldWidth(node, os), automaticTextWidth(node));
 }
 
-function inputMinimum(node, axis, os, authoredHeight) {
+function inputMinimum(node, axis, os, authoredHeight, profile) {
   if (axis === 'x') return Math.min(80, fieldWidth(node, os));
   if (os === 'linux') {
     // An authored container height can compress the input to one line. Viewport overflow keeps its XML height.
-    return authoredHeight ? inputHeight(node, os) : inputControlHeight(node, os);
+    return authoredHeight ? inputHeight(node, os, profile) : inputControlHeight(node, os, undefined, profile);
   }
   return flag(node, 'MultiLine', false) ? 40 : inputHeight(node, os);
 }
 
 /** Pixel bounds apply to the control area; titles and auxiliary bars are allocated separately. */
-export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false } = {}) {
+export function controlBounds(node, axis, preferred, os, { atPreferred = false, authoredHeight = false, profile } = {}) {
   const dimension = axis === 'x' ? 'Width' : 'Height';
   const explicit = axis === 'x' && node.kind === 'Button' ? buttonAuthoredWidth(node, os) : number(node, dimension);
   const stretch = stretches(node, axis);
@@ -152,7 +152,7 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
   const unit = axis === 'x' ? os === 'linux' ? 10 : 8 : node.kind === 'InputField' ? 20 : os === 'linux' ? 25 : 20;
   // 8.3.27 calculates minima itself; unknown MinWidth/MinHeight XML must not become invented properties.
   const numericLabel = axis === 'x' ? numericLabelMetrics(node, os) : undefined;
-  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight) : 0);
+  const minimum = numericLabel?.minimum ?? (node.kind === 'InputField' ? inputMinimum(node, axis, os, authoredHeight, profile) : 0);
   const nativeMultiline = axis === 'x' && linuxFixedInputWidth(node, os) && inputRows(node) > 1;
   const nativeHeight = axis === 'y' && authoredHeight && os === 'linux'
     && node.kind === 'InputField' && flag(node, 'MultiLine', false);
@@ -162,7 +162,7 @@ export function controlBounds(node, axis, preferred, os, { atPreferred = false, 
     if (manual) {
       const limit = positive(number(node, `Max${dimension}`));
       // Designer measures multiline limits in text rows even at an authored form height.
-      if (limit && nativeHeight) maximum = inputControlHeight(node, os, limit);
+      if (limit && nativeHeight) maximum = inputControlHeight(node, os, limit, profile);
       else if (limit && !atPreferred) maximum = limit * unit + (numericLabel?.widthOutset ?? 0);
     } else if (numericLabel) {
       maximum = numericLabel.maximum;

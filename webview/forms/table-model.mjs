@@ -1,4 +1,4 @@
-import { flag, number, scalar, caption, fieldWidth, fontLineHeight, inputHeightUnit, viewStatusAddition } from './model.mjs';
+import { flag, number, scalar, caption, fieldWidth, fontLineHeight, inputHeightUnit, viewStatusAddition, usesVersion85Layout } from './model.mjs';
 import { designCaptionWidth } from './font-metrics.mjs';
 
 const defaultBandHeight = 30;
@@ -28,11 +28,11 @@ function mergeColumnRows(children, vertical) {
     .map(key => [key, combine(key)]));
 }
 
-function linuxTableHeight(table, header, footer, depth, dynamic, rows) {
-  const unit = inputHeightUnit(table, 'linux'), baseBand = bandHeight(table.presentation.font);
+function linuxTableHeight(table, header, footer, depth, dynamic, rows, bandsProfile) {
+  const unit = inputHeightUnit(table, 'linux'), { baseBand, referenceBand } = bandsProfile;
   const rowCount = number(table, 'HeightInTableRows'), authored = number(table, 'Height');
   const edge = Number(dynamic), deep = rows.rowSpan - 1;
-  const baseline = rows.rowSpan * allocateBand(baseBand, baseBand);
+  const baseline = rows.rowSpan * allocateBand(baseBand, baseBand, referenceBand);
   const headerGrowth = header ? Math.max(0, rows.rowHeaderHeight - baseline) : 0;
   const footerGrowth = footer ? Math.max(0, rows.rowFooterHeight - baseline) : 0;
   const bands = (header ? rows.rowHeaderHeight : 0) + (footer ? rows.rowFooterHeight : 0);
@@ -222,16 +222,22 @@ function column(node, readOnly, dynamic, native, state) {
   const standard = node.presentation.caption?.kind === 'standard' ? node.presentation.caption.key : '';
   const regular = !['attribute.Code', 'attribute.Number'].includes(standard);
   const result = (width, growthWeight = 0) => ({ node, fields: [node], width, growthWeight });
+  const stretch = flag(node, 'HorizontalStretch', null);
   if (standard === 'table.LineNumber' && explicit <= 0) {
     return result(Math.max(native ? 87 : 0, Math.round((type.digits ?? 9) * 7.4 + 30)));
   }
+  if (state.version85 && explicit <= 0 && node.kind !== 'CheckBoxField') {
+    // The 8.5 Designer allocates 160 px for ordinary columns at 96 dpi.
+    const title = flag(node, 'ShowInHeader') ? designCaptionWidth(caption(node, state), node.presentation.titleFont) : 0;
+    const width = Math.max(160, (title ?? 0) + 24);
+    return result(width, stretch === true ? width : 0);
+  }
   if (native) {
-    const stretch = flag(node, 'HorizontalStretch', null);
     const width = linuxColumnWidth(node, readOnly, explicit, stretch, state);
     if (width !== undefined) {
       const automatic = type.kind === 'string' && (!type.length || type.length > 10)
         || type.kind === 'number' && type.digits === 0 || type.kind === 'reference';
-      const grows = node.kind !== 'CheckBoxField' && (stretch ?? (automatic && regular));
+      const grows = node.kind !== 'CheckBoxField' && (stretch ?? (!state.version85 && automatic && regular));
       return result(Math.floor(width), grows ? width : 0);
     }
   }
@@ -251,6 +257,8 @@ export function tableTracks(layout, available) {
   const { columns } = layout;
   const extra = available - layout.contentMinWidth;
   const flexibleWidth = columns.reduce((sum, item) => sum + item.growthWeight, 0);
+  // In 8.5, the area after the last fixed column can stay empty.
+  if (!flexibleWidth && layout.fillUnusedSpace === false) return layout.tracks;
   const firstNumber = flexibleWidth ? -1 : columns.findIndex(item => item.node.presentation.valueType?.kind === 'number');
   const fallback = firstNumber < 0 ? columns.length - 1 : firstNumber;
   let used = 0, weight = 0;
@@ -273,34 +281,39 @@ export function tableLayout(table, state = {}, additions) {
   const linux = os === 'linux';
   const nativeColumns = linux && !dynamic;
   const nativeDynamicList = linux && dynamic;
-  const captions = { locale, strings: state.strings };
+  const version85 = usesVersion85Layout(state);
+  const captions = { locale, strings: state.strings, version85 };
   const metrics = node => column(node, readOnly, dynamic, linux, captions);
-  const baseBand = bandHeight(table.presentation.font);
+  const referenceBand = version85 ? 40 : defaultBandHeight;
+  const measureBand = value => Math.max(version85 ? referenceBand : 0, bandHeight(value));
+  const baseBand = measureBand(table.presentation.font);
   const rowMetrics = (node, height) => {
-    const footerHeight = bandHeight(tableFooterFont(table, node));
-    return { rowSpan: 1, rowHeaderHeight: allocateBand(height, baseBand),
-      rowFooterHeight: allocateBand(footerHeight, baseBand), footerHeight };
+    const footerHeight = measureBand(tableFooterFont(table, node));
+    return { rowSpan: 1, rowHeaderHeight: allocateBand(height, baseBand, referenceBand),
+      rowFooterHeight: allocateBand(footerHeight, baseBand, referenceBand), footerHeight };
   };
   function visit(node) {
-    const titleHeight = bandHeight(node.presentation.titleFont);
+    const titleHeight = measureBand(node.presentation.titleFont);
     if (node.kind !== 'ColumnGroup') {
-      const height = flag(node, 'ShowInHeader') ? titleHeight : defaultBandHeight;
+      const height = flag(node, 'ShowInHeader') ? titleHeight : referenceBand;
       return { node, mode: 'field', depth: 1, height, ...rowMetrics(node, height),
         columns: [metrics(node)], children: [] };
     }
     const children = node.children.filter(visible).map(visit), show = flag(node, 'ShowInHeader', false), mode = scalar(node, 'Group', 'Vertical');
-    const captionHeight = show ? titleHeight : 0;
+    // Version 8.5 displays the InCell group's caption in its single header band.
+    const groupCaptionInCell = version85 && mode === 'InCell' && show;
+    const captionHeight = show && !groupCaptionInCell ? titleHeight : 0;
     const rows = children.length ? mergeColumnRows(children, mode === 'Vertical') : rowMetrics(node, titleHeight);
     if (mode === 'Horizontal') return { node, mode: 'horizontal', show, captionHeight, children, ...rows,
-      height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight),
+      height: captionHeight + (children.length ? Math.max(...children.map(child => child.height)) : referenceBand),
       depth: (show ? 1 : 0) + Math.max(1, ...children.map(child => child.depth)), columns: children.flatMap(child => child.columns) };
     const fields = children.flatMap(child => child.columns.flatMap(column => column.fields)), parts = fields.map(metrics);
     const width = mode === 'InCell' ? parts.reduce((sum, part) => sum + part.width, 0) : Math.max(20, ...parts.map(part => part.width));
     const growthWeight = parts.some(part => part.growthWeight) ? width : 0;
-    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show, captionHeight, children,
+    return { node, mode: mode === 'InCell' ? 'inCell' : 'vertical', show: !!captionHeight, groupCaptionInCell, captionHeight, children,
       ...(mode === 'InCell' ? rowMetrics(node, titleHeight) : rows),
       height: captionHeight + (mode === 'InCell' ? titleHeight : children.reduce((sum, child) => sum + child.height, 0)),
-      depth: (show ? 1 : 0) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
+      depth: Number(!!captionHeight) + (mode === 'InCell' ? 1 : children.reduce((sum, child) => sum + child.depth, 0)),
       columns: [{ node, fields, width, growthWeight }] };
   }
   const children = table.children.filter(visible).map(visit), columns = children.flatMap(child => child.columns);
@@ -328,15 +341,15 @@ export function tableLayout(table, state = {}, additions) {
   const search = additions?.search || topSearch || autoManualSearch ? undefined : searchField;
   const chips = viewStatusAddition(table);
   const searchControl = dynamic && !additions?.control ? tableSearchControl(table) : undefined;
-  let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : defaultBandHeight : 0;
+  let header = flag(table, 'Header') ? children.length ? Math.max(...children.map(child => child.height)) : referenceBand : 0;
   let footer = flag(table, 'Footer', false)
-    ? children.length ? Math.max(...children.map(child => child.footerHeight)) : defaultBandHeight : 0;
+    ? children.length ? Math.max(...children.map(child => child.footerHeight)) : referenceBand : 0;
   const rowCount = number(table, 'HeightInTableRows');
   let height = dynamic ? 452 : 227 + Number(depth === 3), groupMinimumHeight;
   let clipHeader = false;
   if (linux) {
-    const rows = children.length ? mergeColumnRows(children, false) : rowMetrics(table, defaultBandHeight);
-    const geometry = linuxTableHeight(table, header, footer, depth, dynamic, rows);
+    const rows = children.length ? mergeColumnRows(children, false) : rowMetrics(table, referenceBand);
+    const geometry = linuxTableHeight(table, header, footer, depth, dynamic, rows, { baseBand, referenceBand });
     ({ height, header, footer } = geometry);
     clipHeader = geometry.clipHeader ?? false;
     groupMinimumHeight = geometry.minimum;
@@ -366,17 +379,18 @@ export function tableLayout(table, state = {}, additions) {
   const controlMinWidth = nativeWidth
     ? Math.max(viewStatusMinimum, Math.min(nativeWidth, toolbarMinimum)) : toolbarMinimum;
   // A fixed grid can be narrower than the bands above it, even with automatic Width.
-  const nativeGridWidth = nativeColumns ? Math.max(400, Math.min(880, 40 + columns.length * 120))
-    : Math.max(400, contentMinWidth + 2);
+  const nativeGridWidth = nativeColumns && !version85 ? Math.max(400, Math.min(880, 40 + columns.length * 120))
+    : Math.max(400, contentMinWidth + (nativeColumns ? 16 : 2));
   const automaticWidth = nativeColumns ? Math.max(controlMinWidth, nativeGridWidth)
     : Math.max(controlMinWidth, explicit * 8 + 4, contentMinWidth + (dynamic ? 2 : 16));
   const preferredWidth = nativeWidth ? Math.max(nativeWidth, viewStatusMinimum) : automaticWidth;
   const fixedGridWidth = linux && flag(table, 'HorizontalStretch', null) === false
     ? nativeWidth || nativeGridWidth : undefined;
   const flexible = columns.some(column => column.growthWeight);
-  const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || !flexible && index === 0)
+  const fillUnusedSpace = !version85;
+  const tracks = columns.map((column, index) => !nativeColumns && (column.growthWeight || fillUnusedSpace && !flexible && index === 0)
     ? `minmax(${column.width}px, 1fr)` : `${column.width}px`).join(' ');
-  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, autofill, inlineAuthored, menuAuthored, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
+  return { children, columns, depth, header, footer, height, clipHeader, groupMinimumHeight, preferredWidth, fixedGridWidth, controlMinWidth, contentMinWidth, tracks, fillUnusedSpace, toolbar, adaptiveToolbar, adaptiveAuthoredToolbar, foldableToolbar, commands, bar, autofill, inlineAuthored, menuAuthored, more, search, topSearch, searchControl, chips, dynamic, nativeColumns, nativeDynamicList };
 }
 
 function visibleAddition(node) { return node.presentation.displayed !== false && flag(node, 'Visible'); }
