@@ -203,3 +203,12 @@ Metadata API 1.53 enables editing form elements and conditional appearance from
 the main form tab. The same changes are available through CLI `metadata form-edit`.
 Apply infobase updates separately.
 [Workflow and limitations (Russian)](usage.md#создание-копирование-и-удаление-объектов).
+
+
+During long builds and infobase updates, Explorer displays the current phase,
+recognized platform step, elapsed time and time since the last platform message.
+The clock describes waiting; it does not estimate database progress. The last
+300 phase changes and observed database-file changes are available in **Output → ESKA Operations**. Running 1C
+sessions appear in the status bar without adding a cancellation action.
+
+Observed database-file changes show their own age and do not reset native-message silence or imply a completed restructuring step.

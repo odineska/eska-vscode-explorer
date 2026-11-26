@@ -68,8 +68,8 @@ export class ProjectCheck implements vscode.Disposable {
       const analyzer = await this.analyzer.executable().catch(() => undefined);
       if (analyzer) args.push("--analyzer", analyzer);
       this.diagnostics.clear();
-      const response = await projectProgress(message(vscode.env.language, "projectCheckRunning"), async signal => {
-        const invoke = () => runtimeJson(binary, args, { signal, timeout: 0, maxOutputBytes: 64 * 1024 * 1024, resultExitCodes: [1] });
+      const response = await projectProgress(message(vscode.env.language, "projectCheckRunning"), async (signal, progress) => {
+        const invoke = () => runtimeJson(binary, args, { signal, timeout: 0, onProgress: event => progress.event(event), maxOutputBytes: 64 * 1024 * 1024, resultExitCodes: [1] });
         let report = await invoke();
         if (!signal.aborted && isRecord(report) && isRecord(report.error) && report.error.code === "busy") {
           const restore = await this.analyzer.release(target.root);

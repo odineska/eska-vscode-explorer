@@ -46,6 +46,8 @@
 
 [Дерево и свойства](https://odineska.tech/eska/docs/explorer/#tree) · [Запросы](https://odineska.tech/eska/docs/explorer/#queries) · [Запуск и отладка](https://odineska.tech/eska/docs/explorer/#runtime) · [Соответствующие команды CLI](https://odineska.tech/eska/docs/cli/)
 
+При длительном обновлении базы Explorer показывает текущий этап, сообщения платформы и время ожидания. История этапов доступна в **Output → ESKA Operations**. Прошедшее время не означает продвижение реструктуризации.
+
 Спасибо команде [bsl-analyzer](https://github.com/itrous/bsl-analyzer) за открытый анализатор BSL. Его языковой сервер даёт Explorer переходы к определениям, подсказки и диагностику. Тот же анализатор проверяет код при запуске `eska check`. [Выпуски bsl-analyzer](https://github.com/itrous/bsl-analyzer/releases)
 
 В предпросмотре форм используются два значка БСП из 1C:Jet, © 2024 ООО «1С-Софт», CC BY 4.0. [Источники и лицензии](https://github.com/odineska/eska-vscode-explorer/blob/main/resources/forms/jet/NOTICE.md)
