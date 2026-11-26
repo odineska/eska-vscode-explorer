@@ -218,12 +218,16 @@ export class FormPreviewService implements vscode.Disposable {
     }
     if (value.type === "inspectorState" && frame.role === "main" && view.frames.get("main") === frame) {
       const state = parseInspectorState(value);
-      if (state) this.rememberInspector(view, state);
+      if (state) {
+        // Layout snapshots may predate a theme accepted from either panel.
+        state.ui.previewTheme = view.inspectorState?.ui.previewTheme ?? "vscode";
+        this.rememberInspector(view, state);
+      }
       return;
     }
     if (value.type === "previewTheme" && (value.previewTheme === "vscode" || value.previewTheme === "light" || value.previewTheme === "dark")) {
       if (view.frames.get(frame.role) !== frame) return;
-      const ui = { ...(view.inspectorState?.ui ?? defaultInspectorUi()), previewTheme: value.previewTheme as "vscode" | "light" | "dark" };
+      const ui: InspectorState["ui"] = { ...(view.inspectorState?.ui ?? defaultInspectorUi()), previewTheme: value.previewTheme };
       this.rememberInspector(view, { ...view.inspectorState, ui });
       // A queued model publication can carry the previous choice back to the sender.
       for (const target of view.frames.values()) if (target.ready)
@@ -678,6 +682,8 @@ export class FormPreviewService implements vscode.Disposable {
       if (role === "main") {
         const inspector = parseInspectorState(state);
         if (inspector) {
+          // Workspace state can contain a newer choice made in the detached panel.
+          inspector.ui.previewTheme = view.inspectorState?.ui.previewTheme ?? inspector.ui.previewTheme;
           view.inspectorState = inspector;
           if (inspector.selection && !view.snapshot) view.selected = inspector.selection;
         }
