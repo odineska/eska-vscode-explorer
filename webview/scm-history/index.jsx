@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js';
 import { render } from '@solidjs/web';
 import { historyGraph, historyDate } from './model.mjs';
 import './style.css';
@@ -29,13 +29,22 @@ function keyboard(event, index) {
   event.preventDefault();
   document.querySelectorAll('.history-row')[Math.max(0, Math.min(rows().length - 1, next))]?.focus();
 }
+function RepositorySelect() {
+  let select;
+  // Replacing options can reset the browser selection even when the ID is unchanged.
+  // Apply the value after Solid commits both the selection and the option list.
+  createEffect(() => ({ repository: state().repository, repositories: state().repositories }), value => {
+    select.value = value.repository ?? '';
+  });
+  return <select ref={select} id="history-repository" onChange={event => send('repository', { repository: event.currentTarget.value })}>
+    <For each={state().repositories}>{repository => <option value={repository.id}>{repository.label}</option>}</For>
+  </select>;
+}
 render(() => <>
   <Show when={state().repositories.length > 1} fallback={<Show when={state().repositories.length === 1}><div class="history-repository-name">{state().repositories[0]?.label}</div></Show>}>
   <div class="history-toolbar">
     <label for="history-repository">{label('repository')}</label>
-    <select id="history-repository" value={state().repository ?? ''} onChange={event => send('repository', { repository: event.currentTarget.value })}>
-      <For each={state().repositories}>{repository => <option value={repository.id}>{repository.label}</option>}</For>
-    </select>
+    <RepositorySelect />
   </div></Show>
   <Show when={state().error}><div class="history-error" role="alert">{state().error} <button type="button" onClick={() => send(state().more ? 'more' : 'refresh')}>{label('retry')}</button></div></Show>
   <div class="history-status" role="status" aria-live="polite">

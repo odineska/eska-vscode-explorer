@@ -166,6 +166,24 @@ exports.run = async function () {
     assert.equal(await ui.webview(`document.querySelector('.history-row')?.getAttribute('aria-pressed')`), 'true', 'selected merge retained');
     await until(() => ui.webview(`(() => { const node = document.querySelector('.history-details'); const rect = node?.getBoundingClientRect(); return !!rect && rect.height > 0 && rect.top >= -1 && rect.bottom <= innerHeight + 1 && ${JSON.stringify([merge, main, feature])}.every(id => node.textContent.includes(id)); })()`), 'selected details remain visible after second page');
     checks.push('load-more-retains-first-page-and-visible-details');
+    // Exercise the real Solid DOM lifecycle, including fresh option identities on
+    // every backend snapshot, unchanged selected IDs, and selector remounts.
+    const selectionState = async (repositories, repository) => {
+      await ui.webview(`window.postMessage(${JSON.stringify({ type: 'state', labels: {}, repositories, repository, busy: false })}, '*')`);
+      await until(() => ui.webview(`document.querySelector('#history-repository')?.value === ${JSON.stringify(repository)}`), 'repository label follows graph selection after options commit');
+      assert.equal(await ui.webview(`document.querySelector('#history-repository').selectedOptions[0]?.textContent`), repositories.find(item => item.id === repository).label);
+    };
+    const repositories = [{ id: 'first', label: 'First repository' }, { id: 'second', label: 'Second repository' }];
+    await selectionState(repositories, 'first');
+    await ui.webview(`document.querySelector('#history-repository').value = 'second'`);
+    await selectionState(repositories, 'second');
+    await selectionState(repositories, 'second');
+    await selectionState([{ id: 'third', label: 'Third repository' }, repositories[1]], 'second');
+    await selectionState([repositories[1], { id: 'third', label: 'Third repository' }], 'third');
+    await ui.webview(`window.postMessage({ type: 'state', labels: {}, repositories: [{ id: 'third', label: 'Third repository' }], repository: 'third', busy: false }, '*')`);
+    await until(() => ui.webview(`!document.querySelector('#history-repository')`), 'single repository removes selector');
+    await selectionState(repositories, 'second');
+    checks.push('repository-selection-after-option-replacement-and-remount');
     assert.equal(vscode.workspace.getConfiguration('git').get('enabled'), false);
     checks.push('native-git-disabled');
     await vscode.workspace.getConfiguration('git').update('enabled', true, vscode.ConfigurationTarget.Workspace);
