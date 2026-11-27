@@ -192,7 +192,7 @@ function Repository(props) {
   function toolbar(actionId) {
     if (disabled()) return;
     const { key, repositoryToken } = repo();
-    if (actionId === 'refresh') { action(key, actionId); return; }
+    if (actionId === 'git.commit') { commit(); return; }
     vscode.postMessage({ type: 'toolbar', repository: key, repositoryToken, action: actionId });
   }
 

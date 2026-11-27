@@ -445,6 +445,7 @@ export class GitRepositories implements vscode.Disposable {
           continue;
         }
       }
+      if (native?.kind) repository.kind = native.kind;
       desired.add(key);
       if (native && mode === "eska" && target.mutationsAvailable && this.allowed(target.root)) {
         repository.inputBox.value = native.inputBox.value;

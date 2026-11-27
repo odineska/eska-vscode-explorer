@@ -366,3 +366,11 @@ test('restoring the original shared draft is optional and checks for later edits
   await h.settled();
   assert.equal(target.inputBox.value, 'later user edit');
 });
+
+test('ESKA retains the native repository kind for worktree menus', async t => {
+  const h = setup();
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.repositories[0].kind = 'worktree';
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
+  assert.equal(h.owner.repositories[0].kind, 'worktree');
+});

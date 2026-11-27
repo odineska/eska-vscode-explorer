@@ -77,6 +77,7 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
 
 export class EskaRepository implements GitRepository, vscode.Disposable {
   readonly scmProvider = "eska";
+  kind?: NonNullable<GitRepository["kind"]>;
   readonly rootUri: vscode.Uri;
   readonly inputBox: { value: string };
   private draft = "";

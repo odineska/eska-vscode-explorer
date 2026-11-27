@@ -741,3 +741,79 @@ test('repository toolbar reads installed menus and targets the selected checkout
   assert.equal(second.inputBox.value, 'Сгенерировано');
   assert.equal(first.inputBox.value, '');
 });
+
+test('remote shortcuts follow each repository state and Git action button settings', async t => {
+  const local = repository(), tracking = repository(root + '-tracking', []);
+  local.state.remotes = [{ isReadOnly: false }];
+  tracking.state.HEAD = { name: 'feature', upstream: { remote: 'origin' }, behind: 2 };
+  const ids = ['git.publish', 'git.sync'];
+  const manifests = new Map([['vscode.git', { contributes: {
+    commands: ids.map(command => ({ command, title: command })), menus: { 'scm/title': ids.map(command => ({ command })) },
+  } }]]);
+  const h = setup([local, tracking], [context(), context(tracking.rootUri.fsPath)], manifests);
+  t.after(() => h.provider.dispose());
+  const settings = new Map();
+  h.vscode.workspace.getConfiguration = (_section, uri) => ({
+    get: (name, fallback) => name === 'showActionButton' ? settings.get(uri.fsPath) : fallback,
+  });
+  const shortcuts = () => Array.from(h.snapshot().repositories, row => row.actions.map(action => action.id).join(','));
+  await h.ready();
+  assert.deepEqual(shortcuts(), ['git.publish', 'git.sync']);
+  settings.set(local.rootUri.fsPath, { publish: false });
+  settings.set(tracking.rootUri.fsPath, { sync: false });
+  await h.ready();
+  assert.deepEqual(shortcuts(), ['', '']);
+  assert.ok(h.snapshot().repositories.every(row => row.hasMenu));
+  settings.clear();
+  local.state.remotes[0].isReadOnly = true;
+  tracking.state.HEAD.behind = 0;
+  await h.ready();
+  assert.deepEqual(shortcuts(), ['', '']);
+});
+
+test('checkout uses the contribution conditions and never infers an unknown repository kind', async t => {
+  const repo = repository(), manifests = new Map([['vscode.git', { contributes: {
+    commands: [{ command: 'git.checkout', title: 'Checkout' }],
+    menus: { 'scm/title': [{ command: 'git.checkout', when: 'scmProviderContext == worktree' }] },
+  } }]]);
+  const h = setup([repo], [context()], manifests);
+  t.after(() => h.provider.dispose());
+  const row = () => h.snapshot().repositories[0];
+  const run = () => h.send({ type: 'toolbar', repository: row().key, repositoryToken: row().repositoryToken, action: 'git.checkout' });
+  await h.ready();
+  assert.equal(row().canCheckout, false);
+  await run();
+  assert.equal(h.invoked.length, 0);
+  repo.kind = 'worktree';
+  await h.ready();
+  assert.equal(row().canCheckout, true);
+  await run();
+  assert.deepEqual(h.invoked.at(-1), ['git.checkout', root]);
+  repo.scmProvider = 'eska';
+  h.git.canUseNativeToolbar = () => false;
+  manifests.clear();
+  await h.ready();
+  assert.equal(row().canCheckout, true);
+  assert.equal(row().hasMenu, false);
+  assert.equal(row().actions.map(item => item.id).join(','), 'git.commit,git.refresh');
+  await run();
+  assert.deepEqual(h.invoked.at(-1), ['eska.explorer.scm.checkout', root]);
+});
+
+test('a native command selected from a submenu is rechecked if Git becomes unavailable', async t => {
+  const repo = repository(), ids = ['git.commit', 'git.fetch'];
+  const manifests = new Map([['vscode.git', { contributes: {
+    commands: ids.map(command => ({ command, title: command })), submenus: [{ id: 'branch', label: 'Branch' }],
+    menus: { 'scm/title': [{ submenu: 'branch' }], branch: ids.map(command => ({ command })) },
+  } }]]);
+  const h = setup([repo], [context()], manifests);
+  t.after(() => h.provider.dispose());
+  h.vscode.window.showQuickPick = async items => {
+    h.git.canUseNativeToolbar = () => false;
+    return items.find(item => item.command?.id === 'git.fetch');
+  };
+  await h.ready();
+  const [row] = h.snapshot().repositories;
+  await h.send({ type: 'toolbar', repository: row.key, repositoryToken: row.repositoryToken, action: 'menu' });
+  assert.equal(h.invoked.length, 0);
+});
