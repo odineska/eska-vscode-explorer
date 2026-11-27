@@ -190,11 +190,16 @@ exports.run = async function () {
     const gitExtension = await vscode.extensions.getExtension('vscode.git').activate();
     let nativeGit;
     await until(() => { try { nativeGit = gitExtension.getAPI(1); return true; } catch { return false; } }, 'native Git model initializes');
-    await nativeGit.openRepository(vscode.Uri.file(fixture.root));
-    await until(() => gitExtension.enabled && nativeGit.repositories.some(repo => repo.rootUri.fsPath === fixture.root), 'native Git enabled and repository open');
-    checks.push('native-git-enabled');
+    await until(() => gitExtension.enabled, 'native Git enabled');
+    await command('eska.explorer.scmHistory.refresh');
+    await until(() => ui.webview(`document.querySelector('.history-row')?.dataset.id === ${JSON.stringify(merge)}`), 'ESKA graph remains available with native Git enabled');
+    checks.push('native-git-enabled', 'graph-with-native-git-enabled');
     for (const mode of ['both', 'vscode']) {
       await config.update('scm.mode', mode, vscode.ConfigurationTarget.Workspace);
+      // ESKA owns and closes the native root in eska mode; both restores it.
+      await nativeGit.openRepository(vscode.Uri.file(fixture.root));
+      await until(() => nativeGit.repositories.some(repo => repo.rootUri.fsPath === fixture.root), `native repository open in ${mode}`);
+      checks.push(`native-repository-${mode}`);
       await until(() => ui.workbench(`![...document.querySelectorAll('.pane-header')].some(node => node.innerText.toLowerCase().includes(${JSON.stringify(vscode.env.language.startsWith('ru') ? 'eska: граф коммитов' : 'eska: commit graph')}) && node.parentElement.getBoundingClientRect().height > 0)`), `history hidden in ${mode}`);
       checks.push(`hidden-${mode}`);
     }
