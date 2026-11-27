@@ -11,12 +11,20 @@ import zipfile
 MIB = 1024 * 1024
 SIZE_LIMITS = {'archive': 5 * MIB, 'installed': 10 * MIB, 'javascript': 7 * MIB // 2}
 SETTINGS_BUNDLE = 'out/project-settings.js'
-SCM_ASSETS = ('out/scm-view.js', 'out/scm-view.css')
+SCM_BUNDLES = {
+    'eska.explorer.scm.commit': ('out/scm-view.js', 'out/scm-view.css'),
+    'eska.explorer.scmHistory.refresh': ('out/scm-history.js', 'out/scm-history.css'),
+}
 
 
 def contributes_command(manifest, command):
     return any(entry.get('command') == command
                for entry in manifest.get('contributes', {}).get('commands', []))
+
+
+def scm_assets(manifest):
+    return [name for command, names in SCM_BUNDLES.items() if contributes_command(manifest, command)
+            for name in names]
 
 
 def check_sizes(archive, entries):
@@ -40,8 +48,7 @@ def form_runtime_assets(root, manifest):
     outputs = set(json.loads((root / 'out/query-designer-meta.json').read_text(encoding='utf-8'))['outputs'])
     if contributes_command(manifest, 'eska.explorer.configureProject'):
         outputs.discard(SETTINGS_BUNDLE)
-    if contributes_command(manifest, 'eska.explorer.scm.commit'):
-        outputs.difference_update(SCM_ASSETS)
+    outputs.difference_update(scm_assets(manifest))
     entrypoints = {'out/query-designer.js', 'out/form-preview.js'}
     required = entrypoints | {'out/form-preview.css'}
     assert required <= outputs, 'Missing form browser output metadata'
@@ -81,8 +88,7 @@ def check(archive, source=None):
         required += form_runtime_assets(root, manifest)
         if contributes_command(manifest, 'eska.explorer.configureProject'):
             required += [SETTINGS_BUNDLE, 'resources/settings/settings.css']
-        if contributes_command(manifest, 'eska.explorer.scm.commit'):
-            required += list(SCM_ASSETS)
+        required += scm_assets(manifest)
         # vsce publishes a LICENSE without an extension as LICENSE.txt.
         packaged = {name: 'extension/' + ('LICENSE.txt' if name == 'LICENSE' else name) for name in required}
         expected = set(packaged.values()) | {'extension.vsixmanifest', '[Content_Types].xml'}
