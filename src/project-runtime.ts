@@ -1,3 +1,5 @@
+import { operationHistory } from "./operation-output.js";
+import { OperationProgress } from "./operation-progress.js";
 import { ApplyReview } from "./apply-review.js";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute } from "node:path";
@@ -163,7 +165,12 @@ export class ProjectRuntime implements vscode.Disposable {
     if (!build) { void vscode.window.showErrorMessage(this.text("runtimeBuildMissing")); return; }
     const args = ["run", "--format", "json"];
     if (expected) args.push("--expected-infobase", expected);
-    const result = await this.invoke(project, build, args, 0);
+    const result = await vscode.window.withProgress({ title: this.text("operationSessionRunning"),
+      location: vscode.ProgressLocation.Window, cancellable: false }, async progress => {
+      const live = new OperationProgress(vscode.env.language, message => progress.report({ message }), undefined, line => operationHistory(vscode, line));
+      try { return await this.invoke(project, build, args, 0, undefined, event => live.event(event)); }
+      finally { live.dispose(); }
+    });
     if (!isRecord(result) || result.status !== "finished") this.failure(result);
   }
 
@@ -434,19 +441,14 @@ export class ProjectRuntime implements vscode.Disposable {
   private executeWithProgress(project: RuntimeProject, build: string, args: string[], title: MessageKey = "runtimeApplyWorking"): Thenable<{ result?: unknown; cancelled: boolean }> {
     return vscode.window.withProgress({ title: this.text(title),
       location: vscode.ProgressLocation.Notification, cancellable: true }, async (progress, cancel) => {
+      const live = new OperationProgress(vscode.env.language, message => progress.report({ message }), undefined, line => operationHistory(vscode, line));
       const abort = new AbortController();
       const subscription = cancel.onCancellationRequested(() => abort.abort());
       try {
         if (cancel.isCancellationRequested) return { cancelled: true };
-        const result = await this.invoke(project, build, args, 0, abort.signal, event => {
-          if (!isRecord(event) || event.schema_version !== 1 || (event.kind !== "apply_progress" && event.kind !== "extension_progress")) return;
-          const key = event.phase === "import" ? "runtimeImporting" : event.phase === "apply" ? "runtimeApplying" : undefined;
-          if (!key) return;
-          const message = this.text(key);
-          progress.report({ message: typeof event.component === "string" ? `${event.component} — ${message}` : message });
-        });
+        const result = await this.invoke(project, build, args, 0, abort.signal, event => live.event(event));
         return { result, cancelled: abort.signal.aborted };
-      } finally { subscription.dispose(); }
+      } finally { live.dispose(); subscription.dispose(); }
     });
   }
 

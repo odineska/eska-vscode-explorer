@@ -7,6 +7,9 @@ import { changeCaption, changeGroups, changeIdentity, changes, insideRepository,
 import { button, fileActions, fileInline, fileMenu, groupActions, groupCommands, isFileAction, isFileMutation, isGroupAction, type FileAction, type ScmAction } from "./scm-actions.js";
 import { executeFileAction, openGroupChanges } from "./scm-file-actions.js";
 import { ScmMonitors } from "./scm-monitor.js";
+import { SCM_CHECKOUT } from "./scm-repository.js";
+import { GIGACODE_EXTENSION, GIGACODE_GENERATE, GIT_EXTENSION, findToolbarCommand, toolbarFromManifest,
+  type Toolbar, type ToolbarCommand, type ToolbarItem } from "./scm-toolbar.js";
 import { stageSelectedLines } from "./scm-line-staging.js";
 import { saveScmScope, ScmSaveError } from "./scm-save.js";
 import type { ProjectCommandTarget } from "./project-command.js";
@@ -27,6 +30,7 @@ const groupLabels: Record<ChangeGroup, MessageKey> = { merge: "scmMerge", index:
 const prefix = "eska.explorer.scm";
 const pageLimit = 200;
 const cachedCaptionLimit = 4096;
+interface RepositoryToolbar extends Toolbar { checkout: ToolbarCommand | undefined }
 
 function rowsByGroup(rows: readonly ChangeEntry[]): Map<GroupEntry, ChangeEntry[]> {
   const groups = new Map<GroupEntry, ChangeEntry[]>();
@@ -70,6 +74,7 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("eska.explorer.treeLanguage") || event.affectsConfiguration("git")) this.invalidate();
       }));
+    this.subscriptions.push(vscode.extensions.onDidChange(() => this.invalidate()));
     for (const action of [...fileActions, ...Object.keys(groupCommands), "openChange", "commit"] as ScmAction[]) {
       this.subscriptions.push(vscode.commands.registerCommand(`${prefix}.${action}`, (entry?: unknown, selected?: unknown) => this.execute(action, entry, selected)));
     }
@@ -344,6 +349,84 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     await view.webview.postMessage({ type: "rows", revision, group, start, rows: this.rowData(entry, rows) });
   }
 
+  private toolbar(repository: GitRepository): RepositoryToolbar {
+    const native = this.git.canUseNativeToolbar(repository);
+    const config = vscode.workspace.getConfiguration("git", repository.rootUri);
+    const own = repository.scmProvider === "eska";
+    const supports = (id: string) => native || id === "git.commit" || id === "git.refresh" || own && id === "git.checkout";
+    const context = (key: string): unknown => {
+      if (key === "scmProvider") return "git";
+      if (key === "scmProviderContext") return repository.kind;
+      if (key === "operationInProgress") return false; // ESKA disables the entire toolbar while executing.
+      if (key === "gitRebaseInProgress") return repository.state.rebaseCommit !== undefined;
+      if (key === "gitState") return native ? "idle" : undefined;
+      const version = /^gitVersion(\d+)\.(\d+)$/.exec(key);
+      if (version) return this.git.nativeGitAtLeast(Number(version[1]), Number(version[2]));
+      if (key.startsWith("config.git.")) return config.get(key.slice("config.git.".length));
+      return undefined;
+    };
+    const git = vscode.extensions.getExtension(GIT_EXTENSION);
+    const giga = native ? vscode.extensions.getExtension(GIGACODE_EXTENSION) : undefined;
+    const fromGit = toolbarFromManifest(git?.packageJSON, GIT_EXTENSION, context, id => {
+      if (id === "git.commit") return this.text("scmCommit");
+      if (id === "git.refresh") return this.text("scmRefresh");
+      if (id === "git.checkout") return this.text("scmCheckout");
+      return undefined;
+    }, supports);
+    const fromGiga = toolbarFromManifest(giga?.packageJSON, GIGACODE_EXTENSION, context,
+      () => this.text("scmGenerateCommitMessage"));
+    if (!git) {
+      fromGit.inline.push({ id: "git.commit", title: this.text("scmCommit"), icon: "check", extension: GIT_EXTENSION },
+        { id: "git.refresh", title: this.text("scmRefresh"), icon: "refresh", extension: GIT_EXTENSION });
+    }
+    const head = repository.state.HEAD;
+    const buttons = config.get<{ sync?: boolean; publish?: boolean }>("showActionButton");
+    let shortcut: ToolbarCommand | undefined;
+    if (native && head?.name) {
+      if (head.upstream && (head.ahead || head.behind) && buttons?.sync !== false) {
+        shortcut = findToolbarCommand(fromGit.overflow, "git.sync");
+      } else if (!head.upstream && buttons?.publish !== false && repository.state.remotes?.some(remote => !remote.isReadOnly)) {
+        shortcut = findToolbarCommand(fromGit.overflow, "git.publish");
+      }
+    }
+    const inline = [...fromGit.inline, ...fromGiga.inline];
+    if (shortcut && !inline.some(item => item.id === shortcut.id)) inline.unshift(shortcut);
+    const checkout = own ? { id: "git.checkout", title: this.text("scmCheckout"), extension: GIT_EXTENSION } as const
+      : findToolbarCommand(fromGit.overflow, "git.checkout") ?? fromGit.inline.find(item => item.id === "git.checkout");
+    return { inline, overflow: [...fromGit.overflow, ...fromGiga.overflow], checkout };
+  }
+
+  private async executeToolbar(root: RepositoryEntry, command: ToolbarCommand): Promise<void> {
+    const repository = this.validRepository(root);
+    if (command.id === "git.commit" || command.id === "git.refresh") {
+      await this.execute(command.id === "git.commit" ? "commit" : "refresh", root);
+      return;
+    }
+    await this.runAction(async () => {
+      this.validRepository(root);
+      if (!vscode.workspace.isTrusted) throw new Error(this.text("scmUntrusted"));
+      void this.publish();
+      if (command.id === "git.checkout" && repository.scmProvider === "eska") {
+        await vscode.commands.executeCommand(SCM_CHECKOUT, repository.rootUri.fsPath);
+      } else await this.git.runNativeToolbarCommand(repository, command.id);
+    });
+  }
+
+  private async selectToolbarCommand(repository: GitRepository, menu: ToolbarItem[]): Promise<ToolbarCommand | undefined> {
+    const items: (vscode.QuickPickItem & { command?: ToolbarCommand })[] = [];
+    const visit = (group: ToolbarItem[], heading?: string) => {
+      const available = group.filter((item): item is ToolbarCommand => "id" in item);
+      if (available.length && heading) items.push({ label: heading, kind: vscode.QuickPickItemKind.Separator });
+      items.push(...available.map(command => ({ label: command.title, command })));
+      for (const item of group) if ("items" in item) visit(item.items, item.title);
+    };
+    visit(menu);
+    if (items.length) return (await vscode.window.showQuickPick(items, {
+      title: this.text("scmRepositoryActions"), placeHolder: basename(repository.rootUri.fsPath),
+    }))?.command;
+    return undefined;
+  }
+
   private async publish(): Promise<void> {
     if (!this.view?.visible || !this.ready || this.disposed) return;
     const revision = this.revision, roots = await this.getChildren();
@@ -352,10 +435,16 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     const repositories = (roots as RepositoryEntry[]).map(root => {
       const options = this.options(root), repository = root.repository;
       const context = { webviewSection: "scmRepository", eskaScmKey: root.key };
+      const toolbar = this.toolbar(repository);
+      const actions = toolbar.inline.map(({ id, title, icon }) => ({ id,
+        title: id === GIGACODE_GENERATE ? text("scmGenerateCommitMessage") : id === "git.refresh" ? text("scmRefresh") : title,
+        icon: id === GIGACODE_GENERATE ? "sparkle" : id === "git.sync" ? "sync" : icon }));
       return { key: root.key, label: basename(repository.rootUri.fsPath), description: repository.rootUri.fsPath,
         repositoryToken: this.token(repository), branch: root.branch, message: this.deferredDrafts.get(repository)?.value ?? repository.inputBox.value, acknowledgedEditId: this.draftAcks.get(repository) ?? 0,
         acknowledgedCommitId: this.commitAcks.get(repository) ?? 0, busy: this.busy || !vscode.workspace.isTrusted,
-        actions: [button("refresh", text)], context, groups: root.groups.map(group => {
+        actions, hasMenu: toolbar.overflow.length > 0,
+        canCheckout: !!toolbar.checkout,
+        context, groups: root.groups.map(group => {
           return { key: group.key, kind: group.group, label: this.text(groupLabels[group.group]), count: group.entries.length,
             actions: groupActions(group.group, options.mixed).map(action => button(action, text)),
             context: { eskaScmGroup: group.group, eskaScmUntrackedMixed: options.mixed, webviewSection: "scmGroup", eskaScmKey: group.key },
@@ -365,7 +454,8 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     await this.view.webview.postMessage({ type: "snapshot", revision, busy: this.busy, notice: this.notice, repositories,
       labels: { commit: this.text("scmCommit"), message: this.text("scmMessage"), repository: this.text("scmRepository"),
         commitHint: this.text("scmSaveHint"), noChanges: this.text("scmNoChanges"), changes: this.text("scmWorking"),
-        collapse: this.text("scmCollapse"), expand: this.text("scmExpand") } });
+        collapse: this.text("scmCollapse"), expand: this.text("scmExpand"),
+        repositoryActions: text("scmRepositoryActions"), checkout: text("scmCheckout") } });
   }
 
   private async receive(value: unknown): Promise<void> {
@@ -373,6 +463,22 @@ export class MetadataChanges implements vscode.WebviewViewProvider, vscode.Dispo
     try {
       if (value.type === "ready") { this.ready = true; await this.connect(); await this.publish(); return; }
       if (value.type === "rows") { await this.publishPage(value); return; }
+      if (value.type === "toolbar") {
+        const root = typeof value.repository === "string" ? this.entries.get(value.repository) : undefined;
+        if (this.busy || !root || root.kind !== "repository" || value.repositoryToken !== this.token(root.repository)) return;
+        const repository = this.validRepository(root), toolbar = this.toolbar(repository);
+        let command: ToolbarCommand | undefined;
+        if (value.action === "menu") command = await this.selectToolbarCommand(repository, toolbar.overflow);
+        else if (value.action === "git.checkout") command = toolbar.checkout;
+        else command = toolbar.inline.find(item => item.id === value.action);
+        const current = this.entries.get(root.key);
+        if (command && current?.kind === "repository" && current.repository === repository && !this.disposed) {
+          if (value.action === "menu" &&
+            findToolbarCommand(this.toolbar(repository).overflow, command.id)?.extension !== command.extension) return;
+          await this.executeToolbar(current, command);
+        }
+        return;
+      }
       if (value.type === "action" && typeof value.action === "string") {
         const action = value.action;
         if (isFileAction(action) || isGroupAction(action) || action === "openChange" || action === "refresh") {

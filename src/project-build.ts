@@ -46,7 +46,7 @@ export class ProjectBuild implements vscode.Disposable {
       if (!await saveProjectFiles(target.root)) return;
       const args = projectArgs(target.root, "build", "--format", "json");
       const planned = await projectProgress(text("projectBuildPlanning"),
-        async signal => await runtimeJson(binary, [...args, "--dry-run"], { signal, timeout: 60_000 }) ?? null,
+        async (signal, progress) => await runtimeJson(binary, [...args, "--dry-run"], { signal, timeout: 60_000, onProgress: event => progress.event(event) }) ?? null,
         this.lifetime.signal);
       if (planned === undefined) return;
       const plan = buildPlan(planned, target.root);
@@ -63,11 +63,11 @@ export class ProjectBuild implements vscode.Disposable {
         void vscode.window.showWarningMessage(text("projectBuildPlanChanged"));
         return;
       }
-      const result = await projectProgress(text("projectBuildRunning"), async signal => {
-        const current = await runtimeJson(binary, [...args, "--dry-run"], { signal, timeout: 60_000 });
+      const result = await projectProgress(text("projectBuildRunning"), async (signal, progress) => {
+        const current = await runtimeJson(binary, [...args, "--dry-run"], { signal, timeout: 60_000, onProgress: event => progress.event(event) });
         const next = buildPlan(current, target.root);
         if (!next || JSON.stringify(next) !== JSON.stringify(plan) || dirtyProjectFiles(target.root).length) return { changed: true };
-        const document = await runtimeJson(binary, [...args, "--output", plan.path], { signal, timeout: 0 });
+        const document = await runtimeJson(binary, [...args, "--output", plan.path], { signal, timeout: 0, onProgress: event => progress.event(event) });
         return { changed: false, document };
       }, this.lifetime.signal);
       if (!result) return;

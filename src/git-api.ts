@@ -5,6 +5,8 @@ import { discoverScmRoot, EskaRepository, EskaScmFileSystemProvider, SCM_SCHEME,
 import { ScmMonitors } from "./scm-monitor.js";
 import { pickBranchAction } from "./scm-branches.js";
 import { sourceKey } from "./source.js";
+import { GIGACODE_GENERATE } from "./scm-toolbar.js";
+import { runtimeOutput } from "./runtime-tools.js";
 
 // Public subset of vscode.git API v1; never depend on its internal Resource implementation.
 export interface GitChange { readonly uri: vscode.Uri; readonly originalUri: vscode.Uri; readonly renameUri?: vscode.Uri; readonly status: number }
@@ -14,8 +16,9 @@ export interface GitRepository {
   readonly rootUri: vscode.Uri;
   readonly kind?: "repository" | "submodule" | "worktree";
   readonly inputBox: { value: string };
-  readonly state: { readonly HEAD?: { readonly commit?: string; readonly name?: string }; readonly indexChanges: readonly GitChange[]; readonly workingTreeChanges: readonly GitChange[];
-    readonly mergeChanges: readonly GitChange[]; readonly untrackedChanges?: readonly GitChange[]; readonly onDidChange: vscode.Event<void>; readonly worktrees?: readonly { readonly main: boolean; readonly path: string }[] };
+  readonly state: { readonly HEAD?: { readonly commit?: string; readonly name?: string; readonly upstream?: unknown;
+    readonly ahead?: number; readonly behind?: number }; readonly remotes?: readonly { readonly isReadOnly: boolean }[]; readonly indexChanges: readonly GitChange[]; readonly workingTreeChanges: readonly GitChange[];
+    readonly mergeChanges: readonly GitChange[]; readonly rebaseCommit?: unknown; readonly untrackedChanges?: readonly GitChange[]; readonly onDidChange: vscode.Event<void>; readonly worktrees?: readonly { readonly main: boolean; readonly path: string }[] };
   status(): Promise<void>;
   add(paths: string[]): Promise<void>;
   revert(paths: string[]): Promise<void>;
@@ -23,6 +26,7 @@ export interface GitRepository {
 }
 export interface GitApi {
   readonly repositories: readonly GitRepository[];
+  readonly git?: { readonly path: string };
   readonly onDidOpenRepository: vscode.Event<GitRepository>;
   readonly onDidCloseRepository: vscode.Event<GitRepository>;
   getRepository(uri: vscode.Uri): GitRepository | null;
@@ -33,7 +37,7 @@ interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<b
 export type ScmMode = "eska" | "vscode" | "both";
 export interface ScmProject { root: string; projectExecutable: string; mode: ScmMode }
 interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean;
-  lineStagingAvailable: boolean; branchActionsAvailable: boolean; safeSwitchAvailable: boolean; supported: boolean; projects: ScmProject[] }
+  lineStagingAvailable: boolean; branchActionsAvailable: boolean; safeSwitchAvailable: boolean; historyAvailable: boolean; supported: boolean; projects: ScmProject[] }
 type Text = (key: MessageKey, ...values: string[]) => string;
 const branchPickerMessages: Readonly<Record<string, MessageKey | undefined>> = {
   create: "scmBranchCreate", createFrom: "scmBranchCreateFrom", checkoutDetached: "scmBranchCheckoutDetached", checkout: "scmBranchPickRef",
@@ -55,6 +59,7 @@ export class GitRepositories implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[] = [];
   private nativeSubscriptions: vscode.Disposable[] = [];
   private native: ReturnType<GitExtension["getAPI"]> | undefined;
+  private nativeVersion: readonly [number, number] | undefined;
   private readonly natives = new Map<string, GitRepository>();
   private readonly own = new Map<string, EskaRepository>();
   private readonly readers = new Map<string, EskaRepository>();
@@ -82,6 +87,7 @@ export class GitRepositories implements vscode.Disposable {
   private pending: Promise<void> = Promise.resolve();
   private storagePending: Promise<void> = Promise.resolve();
   private signature = "";
+  private borrowedRoot: string | undefined;
   private releasing = false;
   private disposed = false;
   readonly api: GitApi;
@@ -106,6 +112,10 @@ export class GitRepositories implements vscode.Disposable {
     void this.attach();
   }
   get repositories(): readonly GitRepository[] { return [...this.visible.values()]; }
+  get historyRepositories(): EskaRepository[] {
+    return [...this.own].filter(([key, owner]) => this.visible.get(key) === owner && this.modes.get(key) === "eska")
+      .map(([, owner]) => owner);
+  }
   configureScm(context: vscode.ExtensionContext, text: Text, log: (message: string) => void): void {
     this.context = context; this.text = text; this.log = log;
     const recovery = context.workspaceState.get<unknown[]>(RECOVERY_KEY, []);
@@ -234,7 +244,7 @@ export class GitRepositories implements vscode.Disposable {
   }
   private discoveryKey(project: ScmProject): string { return JSON.stringify([sourceKey(project.root), project.projectExecutable]); }
   private schedule(): void {
-    if (this.disposed || this.releasing) return;
+    if (this.disposed || this.releasing || this.borrowedRoot !== undefined) return;
     const generation = ++this.generation;
     this.abort.abort(); this.abort = new AbortController();
     this.pending = this.pending.catch(error => this.log(String(error))).then(() => this.reconcile(generation)).catch(error => this.log(String(error)));
@@ -254,17 +264,100 @@ export class GitRepositories implements vscode.Disposable {
     return !ignored.some(path => isAbsolute(path) ? sourceKey(path) === sourceKey(root)
       : (vscode.workspace.workspaceFolders ?? []).some(folder => sourceKey(vscode.Uri.joinPath(folder.uri, path).fsPath) === sourceKey(root)));
   }
-  private async restore(root: string, draft?: string): Promise<void> {
-    if (!this.recovery.has(root) || !this.native || !this.allowed(root)) return;
-    const uri = vscode.Uri.file(root);
-    let repository = await this.native.openRepository(uri);
+  nativeGitAtLeast(major: number, minor: number): boolean {
+    const version = this.nativeVersion;
+    return version !== undefined && (version[0] > major || version[0] === major && version[1] >= minor);
+  }
+  canUseNativeToolbar(repository: GitRepository): boolean {
+    return !!this.native && !this.disposed && !this.releasing && this.allowed(repository.rootUri.fsPath);
+  }
+  async runNativeToolbarCommand(repository: GitRepository, command: string): Promise<void> {
+    await this.pending;
+    const uri = repository.rootUri, key = sourceKey(uri.fsPath);
+    if (!this.canUseNativeToolbar(repository) || this.visible.get(key) !== repository || this.borrowedRoot !== undefined) {
+      throw new Error(this.text("scmRepositoryUnavailable"));
+    }
+    if (command === "git.clone" || command === "git.showOutput") {
+      await vscode.commands.executeCommand(command); return;
+    }
+    const execute = async () => {
+      // Git commands accept a URI. GigaCode's SCM command takes an object with a rootUri.
+      await vscode.commands.executeCommand(command, command === GIGACODE_GENERATE ? { rootUri: uri } : uri);
+    };
+    if (this.natives.get(key) === repository) {
+      const draft = repository.inputBox.value;
+      try { await execute(); }
+      catch (error) {
+        const current = repository.inputBox.value;
+        if (command === GIGACODE_GENERATE && this.natives.get(key) === repository && current !== draft) {
+          const restore = this.text("scmRestoreCommitDraft");
+          const reason = error instanceof Error ? error.message : String(error);
+          void vscode.window.showWarningMessage(
+            this.text("scmGenerationFailedDraftChanged", reason), restore,
+          ).then(choice => {
+            if (choice === restore && !this.disposed && !this.releasing && this.natives.get(key) === repository
+              && this.visible.get(key) === repository && repository.inputBox.value === current) {
+              repository.inputBox.value = draft;
+              this.changed.fire(repository);
+            }
+          }, notificationError => this.log(String(notificationError)));
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    // In ESKA mode the built-in repository is normally closed. Borrow it only
+    // while the explicit action is running and keep the ESKA row/draft alive.
+    this.borrowedRoot = key;
+    let native: GitRepository | undefined;
+    let inputReady = false;
+    let completed = false;
+    const draft = repository.inputBox.value;
+    try {
+      const opened = await this.openNative(uri);
+      // The Git API can return a new wrapper for the same repository on every call.
+      // Hold the wrapper stored by the open event so a later close/reopen is distinguishable.
+      native = this.natives.get(key);
+      if (!opened || !native || !this.canUseNativeToolbar(repository) || this.visible.get(key) !== repository) {
+        throw new Error(this.text("scmRepositoryUnavailable"));
+      }
+      native.inputBox.value = draft; inputReady = true;
+      await execute(); completed = true;
+    } finally {
+      try {
+        if (native && this.natives.get(key) === native) {
+          if (inputReady && (completed || command !== GIGACODE_GENERATE) && this.visible.get(key) === repository && repository.inputBox.value === draft) {
+            repository.inputBox.value = native.inputBox.value;
+          }
+          if (!this.releasing && this.modeFor(uri.fsPath) === "eska") {
+            await vscode.commands.executeCommand("git.close", uri);
+          }
+        }
+      } finally {
+        this.borrowedRoot = undefined;
+        this.publish(); this.schedule();
+      }
+    }
+  }
+  private async openNative(uri: vscode.Uri): Promise<GitRepository | undefined> {
+    const api = this.native;
+    if (!api) return;
+    let repository = await api.openRepository(uri);
     if (!repository) {
       // VS Code 1.109's API keeps the closed marker. The targeted command takes
       // a filesystem path and explicitly reopens that one checkout without a picker.
-      await vscode.commands.executeCommand("git.openRepository", root);
-      repository = this.native?.getRepository(uri) ?? null;
+      await vscode.commands.executeCommand("git.openRepository", uri.fsPath);
+      repository = api.getRepository(uri);
     }
-    if (!repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(root)) return;
+    if (api !== this.native || !repository || sourceKey(repository.rootUri.fsPath) !== sourceKey(uri.fsPath)) return;
+    return repository;
+  }
+  private async restore(root: string, draft?: string): Promise<void> {
+    if (!this.recovery.has(root) || !this.allowed(root)) return;
+    const repository = await this.openNative(vscode.Uri.file(root));
+    if (!repository) return;
     const message = draft ?? this.drafts.get(sourceKey(root));
     if (message !== undefined) repository.inputBox.value = message;
     this.recovery.delete(root); await this.persist();
@@ -295,7 +388,7 @@ export class GitRepositories implements vscode.Disposable {
       } else roots.set(key, { root, executable: target?.executable ?? project.projectExecutable,
         mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false,
         lineStagingAvailable: target?.lineStagingAvailable ?? false, branchActionsAvailable: target?.branchActionsAvailable ?? false,
-        safeSwitchAvailable: target?.safeSwitchAvailable ?? false,
+        safeSwitchAvailable: target?.safeSwitchAvailable ?? false, historyAvailable: target?.historyAvailable ?? false,
         supported: target !== undefined, projects: [project] });
     }
     return roots;
@@ -356,6 +449,8 @@ export class GitRepositories implements vscode.Disposable {
           continue;
         }
       }
+      repository.historyAvailable = target.historyAvailable;
+      if (native?.kind) repository.kind = native.kind;
       desired.add(key);
       if (native && mode === "eska" && target.mutationsAvailable && this.allowed(target.root)) {
         repository.inputBox.value = native.inputBox.value;
@@ -397,7 +492,7 @@ export class GitRepositories implements vscode.Disposable {
   private publish(): void {
     if (this.disposed) return;
     const next = new Map(this.natives);
-    for (const [key, repository] of this.own) if (!next.has(key)) next.set(key, repository);
+    for (const [key, repository] of this.own) if (!next.has(key) || key === this.borrowedRoot) next.set(key, repository);
     for (const [key, previous] of this.visible) if (next.get(key) !== previous) {
       this.watches.get(previous)?.dispose(); this.watches.delete(previous); this.closed.fire(previous);
     }
@@ -422,7 +517,17 @@ export class GitRepositories implements vscode.Disposable {
       const enable = (): void => {
         for (const subscription of this.nativeSubscriptions.splice(0)) subscription.dispose();
         this.natives.clear(); this.native = git.enabled ? git.getAPI(1) : undefined;
+        this.nativeVersion = undefined;
         if (this.native) {
+          const api = this.native;
+          const path = api.git?.path;
+          if (path && (isAbsolute(path) || path === "git" || path === "git.exe")) {
+            void runtimeOutput(path, ["--version"], { timeout: 3000, maxOutputBytes: 1024 }).then(output => {
+              if (api !== this.native || this.disposed || this.releasing || output?.code !== 0) return;
+              const version = /^git version (\d+)\.(\d+)/.exec(output.stdout);
+              if (version) { this.nativeVersion = [Number(version[1]), Number(version[2])]; this.changed.fire(undefined); }
+            });
+          }
           for (const repository of this.native.repositories) this.natives.set(sourceKey(repository.rootUri.fsPath), repository);
           this.nativeSubscriptions.push(this.native.onDidOpenRepository(repository => {
             const key = sourceKey(repository.rootUri.fsPath);

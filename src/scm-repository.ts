@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { Status } from "./git-status.js";
 import { SCM_EMPTY } from "./scm-actions.js";
 import type { GitRepository } from "./git-api.js";
+import { parseHistoryPage, type HistoryPage } from "./scm-history-page.js";
 import { parseScmSnapshot, type ScmMonitorSnapshot } from "./scm-monitor.js";
 import { isRecord, MAX_RESPONSE } from "./protocol.js";
 import { nativePath, sourceKey } from "./source.js";
@@ -60,7 +61,7 @@ export async function scmBridge(executable: string, root: string, operation: str
 /** Discover the Git root through a read-only backend capability probe. */
 export async function discoverScmRoot(projectRoot: string, projectExecutable: string, signal?: AbortSignal): Promise<{
   root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean; lineStagingAvailable: boolean; branchActionsAvailable: boolean;
-  safeSwitchAvailable: boolean;
+  safeSwitchAvailable: boolean; historyAvailable: boolean;
 } | undefined> {
   try {
     const executable = await findTool("eska-vcs", "eska-vcs", dirname(projectExecutable));
@@ -71,12 +72,15 @@ export async function discoverScmRoot(projectRoot: string, projectExecutable: st
     if (!isAbsolute(root) || sourceKey(root) !== sourceKey(projectRoot) && !relativeFile(root, projectRoot)) return;
     return { root, executable, mutationsAvailable: data.mutations_available === true,
       branchesAvailable: data.branches_available === true, lineStagingAvailable: data.line_staging_available === true,
-      branchActionsAvailable: data.branch_actions_available === true, safeSwitchAvailable: data.safe_switch_available === true };
+      branchActionsAvailable: data.branch_actions_available === true, safeSwitchAvailable: data.safe_switch_available === true,
+      historyAvailable: data.history_available === true };
   } catch { return; }
 }
 
 export class EskaRepository implements GitRepository, vscode.Disposable {
   readonly scmProvider = "eska";
+  kind?: NonNullable<GitRepository["kind"]>;
+  historyAvailable = false;
   readonly rootUri: vscode.Uri;
   readonly inputBox: { value: string };
   private draft = "";
@@ -142,6 +146,22 @@ export class EskaRepository implements GitRepository, vscode.Disposable {
       tooltip: `${this.text("scmCheckout")} — ${this.rootUri.fsPath}`,
       arguments: [this.rootUri.fsPath],
     }] : [];
+  }
+  async history(cursor: string | undefined, signal: AbortSignal): Promise<HistoryPage> {
+    if (!this.historyAvailable) throw new Error(this.text("scmHistoryUpdateRequired"));
+    const scope = AbortSignal.any([signal, this.abort.signal]);
+    try {
+      const args = cursor ? ["--cursor", cursor] : [];
+      const data = await scmBridge(this.executable, this.rootUri.fsPath, "scm-history", args, scope, undefined, 0);
+      scope.throwIfAborted();
+      return parseHistoryPage(data);
+    } catch (cause) {
+      scope.throwIfAborted();
+      if (cause instanceof ScmBridgeError && cause.code === "stale_cursor") {
+        throw Object.assign(new Error(this.text("scmHistoryChanged")), { code: cause.code });
+      }
+      throw new Error(this.text("scmHistoryFailed"), { cause });
+    }
   }
   async branches(): Promise<string[]> {
     if (!this.branchesAvailable) throw new Error(this.text("scmBranchUpdateRequired"));

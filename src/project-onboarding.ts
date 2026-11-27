@@ -1,3 +1,5 @@
+import { operationHistory } from "./operation-output.js";
+import { OperationProgress } from "./operation-progress.js";
 import * as vscode from "vscode";
 import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -146,10 +148,11 @@ export function registerProjectOnboarding(_context: vscode.ExtensionContext): vs
       if (disposed || operation.signal.aborted) return;
       if (!vscode.workspace.isTrusted) throw new Error(text("trust"));
       if (await exists(plan.action === "init" ? join(plan.target, "eska.toml") : plan.target)) throw new Error(text(plan.action === "init" ? "manifest" : "exists"));
-      const output = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: text("running"), cancellable: true }, async (_progress, token) => {
+      const output = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: text("running"), cancellable: true }, async (reporter, token) => {
+        const progress = new OperationProgress(vscode.env.language, message => reporter.report({ message }), undefined, line => operationHistory(vscode, line));
         const listener = token.onCancellationRequested(() => operation.abort());
-        try { return await runtimeOutput(component, ["--project-dir", plan.action === "init" ? plan.target : dirname(plan.target), "--lang", vscode.env.language.startsWith("ru") ? "ru-RU" : "en-US", ...args], { timeout: 600_000, signal: operation.signal }); }
-        finally { listener.dispose(); }
+        try { return await runtimeOutput(component, ["--project-dir", plan.action === "init" ? plan.target : dirname(plan.target), "--lang", vscode.env.language.startsWith("ru") ? "ru-RU" : "en-US", ...args], { timeout: 0, signal: operation.signal, onProgress: event => progress.event(event) }); }
+        finally { progress.dispose(); listener.dispose(); }
       });
       if (disposed) return;
       if (operation.signal.aborted) throw new Error(text("cancelled"));

@@ -34,11 +34,12 @@ try {
     "workbench.startupEditor": "none", "onboarding.enabled": false,
     "telemetry.telemetryLevel": "off", "extensions.autoUpdate": false,
     "extensions.autoCheckUpdates": false, "update.mode": "none",
-    ...(basename(suite) === "scm-lines-host.cjs" ? { "git.enabled": false, "eska.explorer.scm.mode": "eska" } : {}),
+    ...(["scm-lines-host.cjs", "scm-history-host.cjs"].includes(basename(suite)) ? { "git.enabled": false, "eska.explorer.scm.mode": "eska" } : {}),
     ...(["scm-view-host.cjs", "scm-host.cjs", "decorations-host.cjs", "project-commands-host.cjs", "support-visual-host.cjs"].includes(basename(suite))
       ? { "eska.explorer.scm.mode": "both" } : {}),
   }));
   const fixture = await createTreeProject(join(root, "project"), ["language-reference-host.cjs", "language-library-host.cjs", "language-add-host.cjs"].includes(basename(suite)) ? "processing" : process.env.ESKA_HOST_PROJECT_TYPE ?? "configuration");
+  if (basename(suite) === "scm-history-host.cjs") await (await import(suite)).prepare(fixture);
   // Auto-activation can open metadata before the suite starts; publish this fixture first.
   if (basename(suite) === "module-tab-labels-host.cjs") {
     fixture.documentModules = await addDocumentModules(fixture);

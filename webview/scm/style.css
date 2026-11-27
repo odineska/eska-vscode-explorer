@@ -145,7 +145,7 @@ body {
   pointer-events: none;
 }
 
-.scm-heading:hover .scm-actions, .scm-heading:focus-within .scm-actions,
+.scm-repo-heading .scm-actions, .scm-heading:hover .scm-actions, .scm-heading:focus-within .scm-actions,
 .scm-row:hover .scm-actions, .scm-row:focus-within .scm-actions {
   opacity: 1;
   pointer-events: auto;

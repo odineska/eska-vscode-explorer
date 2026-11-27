@@ -1,5 +1,7 @@
 import { dirname } from "node:path";
 import * as vscode from "vscode";
+import { operationHistory } from "./operation-output.js";
+import { OperationProgress } from "./operation-progress.js";
 import { message } from "./messages.js";
 import { relativeFile } from "./reveal.js";
 import { findTool } from "./tooling/inspect.js";
@@ -22,17 +24,19 @@ export function projectComponent(target: ProjectCommandTarget, kind: "build" | "
   return findTool(configured, binary, dirname(target.executable)).catch(() => undefined);
 }
 
-export function projectProgress<T>(title: string, operation: (signal: AbortSignal) => Promise<T>, owner: AbortSignal):
+export function projectProgress<T>(title: string, operation: (signal: AbortSignal, progress: OperationProgress) => Promise<T>, owner: AbortSignal):
   Thenable<T | undefined> {
-  return vscode.window.withProgress({ title, location: vscode.ProgressLocation.Notification, cancellable: true }, async (_, token) => {
+  return vscode.window.withProgress({ title, location: vscode.ProgressLocation.Notification, cancellable: true }, async (reporter, token) => {
+    const progress = new OperationProgress(vscode.env.language, message => reporter.report({ message }), undefined, line => operationHistory(vscode, line));
     const controller = new AbortController();
     const cancellation = token.onCancellationRequested(() => controller.abort());
     const signal = AbortSignal.any([owner, controller.signal]);
     try {
       if (token.isCancellationRequested || signal.aborted) return;
-      const value = await operation(signal);
+      const value = await operation(signal, progress);
       if (!signal.aborted) return value;
     } finally {
+      progress.dispose();
       cancellation.dispose();
     }
   });

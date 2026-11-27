@@ -173,6 +173,8 @@
   "createObject": "Добавить…",
   "copyObject": "Копировать объект метаданных…",
   "deleteObject": "Удалить объект метаданных…",
+  "scmHistoryView": "ESKA: граф коммитов",
+  "scmHistoryRefresh": "Обновить граф коммитов",
   "scmView": "ESKA: изменения 1С",
   "scmOpen": "Открыть файл",
   "scmDiff": "Открыть изменения",

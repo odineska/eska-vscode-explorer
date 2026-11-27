@@ -9,6 +9,8 @@
 !out/project-settings.js
 !out/scm-view.js
 !out/scm-view.css
+!out/scm-history.js
+!out/scm-history.css
 !out/form-preview.js
 !out/THIRD-PARTY-NOTICES.txt
 !resources/analyzer-notices/*
