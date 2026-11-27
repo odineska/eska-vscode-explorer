@@ -122,6 +122,9 @@ const paths = {
   'diff-multiple': ['M3 11H2V2h7v1m-5 1h7l2 2v8H4zM11 4v3h2M6 9h4m-2-2v4m-2 1h4'],
   refresh: ['M13 6a5.5 5.5 0 1 0 0 4M13 2v4H9'],
   ellipsis: ['M3 8h1m3.5 0h1m3.5 0h1'],
+  sync: ['M13 5a5 5 0 0 0-9-1L2 6m0-4v4h4m-3 5a5 5 0 0 0 9 1l2-2m0 4v-4h-4'],
+  'cloud-upload': ['M4 12H3a2.5 2.5 0 1 1 .4-5 4.5 4.5 0 0 1 8.8.4A2.4 2.4 0 0 1 12 12h-1M8 14V8m-2 2 2-2 2 2'],
+  sparkle: ['M7 2c0 3-2 5-5 5 3 0 5 2 5 5 0-3 2-5 5-5-3 0-5-2-5-5M12.5 9v5M10 11.5h5'],
   branch: ['M4 5v6m7-6v1a4 4 0 0 1-4 4H4M2 3a2 2 0 1 1 4 0 2 2 0 0 1-4 0m7 0a2 2 0 1 1 4 0 2 2 0 0 1-4 0M2 13a2 2 0 1 1 4 0 2 2 0 0 1-4 0']
 };
 const aliases = { 'arrow-up': 'up', 'arrow-down': 'down', 'git-commit': 'check',
@@ -186,6 +189,13 @@ function Repository(props) {
     if (input.value !== value) input.value = value;
   });
 
+  function toolbar(actionId) {
+    if (disabled()) return;
+    const { key, repositoryToken } = repo();
+    if (actionId === 'refresh') { action(key, actionId); return; }
+    vscode.postMessage({ type: 'toolbar', repository: key, repositoryToken, action: actionId });
+  }
+
   function commit() {
     if (disabled()) return;
     const { key, repositoryToken, acknowledgedCommitId } = repo();
@@ -200,10 +210,16 @@ function Repository(props) {
     <header class="scm-heading scm-repo-heading" title={repo().description}>
       <Icon name="repo" /><span class="scm-label">{repo().label}</span>
       <Show when={repo().branch}>
-        <span class="scm-branch" title={repo().branch}><Icon name="branch" /><span>{repo().branch}</span></span>
+        <Show when={repo().canCheckout} fallback={<span class="scm-branch" title={repo().branch}>
+          <Icon name="branch" /><span>{repo().branch}</span>
+        </span>}>
+          <Button quiet class="scm-branch" title={state.labels.checkout} disabled={disabled()} onClick={() => toolbar('git.checkout')}>
+            <Icon name="branch" /><span>{repo().branch}</span>
+          </Button>
+        </Show>
       </Show>
-      <ActionButtons actions={repo().actions} label={repo().label} disabled={disabled()}
-        run={id => action(repo().key, id)} />
+      <ActionButtons actions={repo().hasMenu ? [...repo().actions, { id: 'menu', title: state.labels.repositoryActions, icon: 'ellipsis' }] : repo().actions}
+        label={state.labels.repositoryActions} disabled={disabled()} run={toolbar} />
     </header>
     <div class="scm-editor">
       <textarea ref={input} rows="2" aria-label={state.labels.message} placeholder={state.labels.message}

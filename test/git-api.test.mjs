@@ -3,20 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
-function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true, fail = false, ignored = [], gitEnabled = true, nativeAvailable = true, apiKeepsClosed = false, oldCli = false, safeSwitch = true, trusted = true, recovery = [] } = {}) {
+function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true, fail = false, ignored = [], gitEnabled = true, nativeAvailable = true, apiKeepsClosed = false, wrapNativeRepository = false, oldCli = false, safeSwitch = true, trusted = true, recovery = [] } = {}) {
   class Emitter {
     listeners = new Set(); event = callback => { this.listeners.add(callback); return { dispose: () => this.listeners.delete(callback) }; };
     fire(value) { for (const callback of this.listeners) callback(value); } dispose() { this.listeners.clear(); }
   }
   class Uri { constructor(fsPath) { this.fsPath = fsPath; this.scheme = 'file'; } static file(path) { return new Uri(path); } static joinPath(uri, path) { return Uri.file(uri.fsPath + '/' + path); } }
-  const commands = new Map(), notices = [], picks = []; let pick;
+  const commands = new Map(), notices = [], picks = []; let pick, generate;
   const open = new Emitter(), close = new Emitter(), calls = [], storage = new Map([["eska.scm.closedRepositories.v1", recovery]]);
   let monitor, discoveries = 0, providerOptions, resolveReader;
   const closedRoots = new Set(recovery.map(value => typeof value === 'string' ? value : value.root));
   const repo = root => { const changed = new Emitter(); return { rootUri: Uri.file(root), inputBox: { value: '' }, state: { onDidChange: changed.event }, emitState() { changed.fire(); } }; };
   const repositories = nativeRoots.map(repo);
-  const native = { getRepository(uri) { return repositories.find(repo => repo.rootUri.fsPath === uri.fsPath) ?? null; }, repositories, onDidOpenRepository: open.event, onDidCloseRepository: close.event,
-    async openRepository(uri) { calls.push(['open', uri.fsPath]); if (apiKeepsClosed && closedRoots.has(uri.fsPath)) return null; let value = repositories.find(item => item.rootUri.fsPath === uri.fsPath); if (!value) { value = repo(uri.fsPath); repositories.push(value); open.fire(value); } return value; },
+  const wrap = repo => repo && wrapNativeRepository ? { ...repo } : repo;
+  const native = { getRepository(uri) { return wrap(repositories.find(repo => repo.rootUri.fsPath === uri.fsPath)) ?? null; }, repositories, onDidOpenRepository: open.event, onDidCloseRepository: close.event,
+    async openRepository(uri) { calls.push(['open', uri.fsPath]); if (apiKeepsClosed && closedRoots.has(uri.fsPath)) return null; let value = repositories.find(item => item.rootUri.fsPath === uri.fsPath); if (!value) { value = repo(uri.fsPath); repositories.push(value); open.fire(value); } return wrap(value); },
     toGitUri(uri) { return { ...uri, scheme: 'git' }; } };
   const vscode = { Uri, EventEmitter: Emitter, ProgressLocation: { Notification: 15 }, workspace: {
     isTrusted: trusted, textDocuments: [], onDidGrantWorkspaceTrust: new Emitter().event, onDidChangeConfiguration: new Emitter().event, onDidChangeWorkspaceFolders: new Emitter().event, workspaceFolders: folders.map(path => ({ uri: Uri.file(path) })), registerFileSystemProvider(scheme, provider, options) { providerOptions = options; return { dispose() {} }; },
@@ -24,12 +25,20 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
   }, extensions: { getExtension() { return nativeAvailable ? { activate: async () => ({ enabled: true, getAPI: () => native, onDidChangeEnablement: new Emitter().event }) } : undefined; } },
     window: { withProgress(_options, callback) { return callback(); }, async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message) { notices.push(message); }, showInformationMessage(message) { notices.push(message); } },
     commands: { registerCommand(name, handler) { commands.set(name, handler); return { dispose() { commands.delete(name); } }; }, async executeCommand(command, uri) {
-      const path = typeof uri === 'string' ? uri : uri.fsPath;
+      const path = typeof uri === 'string' ? uri : (uri.rootUri ?? uri).fsPath;
       calls.push([command, path]);
       if (command === 'git.openRepository') {
         assert.equal(typeof uri, 'string'); closedRoots.delete(path);
         const value = repo(path); repositories.push(value); open.fire(value); return;
       }
+      if (command === 'gigacode.new.generateCommitMessage') {
+        assert.equal(uri.rootUri.fsPath, path);
+        const target = native.getRepository(uri.rootUri);
+        if (generate) await generate(target);
+        else target.inputBox.value = 'generated';
+        return;
+      }
+      if (command !== 'git.close') return;
       closedRoots.add(path);
       const i = repositories.findIndex(value => value.rootUri.fsPath === path); if (i >= 0) close.fire(repositories.splice(i, 1)[0]);
     } } };
@@ -50,7 +59,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
   const owner = new module.exports.GitRepositories();
   owner.configureScm({ workspaceState: { get: (key, fallback) => storage.get(key) ?? fallback, update: async (key, value) => { storage.set(key, value); } } }, key => key, () => {});
   const settled = async () => { for (let i = 0; i < 25; i++) await new Promise(resolve => setImmediate(resolve)); };
-  return { owner, calls, repositories, settled, EskaRepository, Uri, commands, notices, picks, vscode, reader: root => resolveReader(root), setPick(value) { pick = value; }, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
+  return { owner, calls, repositories, setGenerate(value) { generate = value; }, settled, EskaRepository, Uri, commands, notices, picks, vscode, reader: root => resolveReader(root), setPick(value) { pick = value; }, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
 }
 test('takes ownership only after valid status and restores draft on mode change', async () => {
   const { owner, calls, repositories, settled, EskaRepository } = setup();
@@ -270,4 +279,40 @@ test('restored readers reuse the ready monitored owner and fall back across mode
   assert.equal(await reader('/repo'), owner.repositories[0]); assert.notEqual(await reader('/repo'), fallback);
   assert.equal(await reader('/outside'), undefined); assert.equal(discoveryCount(), count);
   await owner.releaseScm(); owner.dispose();
+});
+
+
+test('GigaCode generates a draft for exactly the borrowed ESKA repository and closes it afterward', async t => {
+  const h = setup({ nativeRoots: ['/other', '/repo'], apiKeepsClosed: true, wrapNativeRepository: true });
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
+  const target = h.owner.api.getRepository(h.Uri.file('/repo'));
+  assert.ok(target instanceof h.EskaRepository);
+  target.inputBox.value = 'draft';
+  h.repositories[0].inputBox.value = 'other';
+  h.setGenerate(native => {
+    assert.equal(native.inputBox.value, 'draft');
+    assert.equal(h.owner.api.getRepository(h.Uri.file('/repo')), target);
+    native.inputBox.value = 'GigaCode draft';
+  });
+  await h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage');
+  await h.settled();
+  assert.deepEqual(h.calls.slice(-3), [['git.openRepository', '/repo'], ['gigacode.new.generateCommitMessage', '/repo'], ['git.close', '/repo']]);
+  assert.equal(h.owner.api.getRepository(h.Uri.file('/repo')), target);
+  assert.equal(target.inputBox.value, 'GigaCode draft');
+  assert.equal(h.repositories[0].inputBox.value, 'other');
+  assert.equal(h.repositories.length, 1);
+});
+
+test('a failed generator leaves an ESKA draft intact and releases the temporary repository', async t => {
+  const h = setup({ apiKeepsClosed: true });
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
+  const target = h.owner.repositories[0];
+  target.inputBox.value = 'draft';
+  h.setGenerate(() => { throw new Error('generator failed'); });
+  await assert.rejects(h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage'), /generator failed/);
+  assert.equal(target.inputBox.value, 'draft');
+  assert.equal(h.repositories.length, 0);
+  assert.equal(h.owner.repositories[0], target);
 });

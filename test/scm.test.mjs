@@ -49,11 +49,14 @@ function context(base = root) {
 const viewId = 'eska.explorer.scm';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function setup(repositories = [repository()], trees = [context()]) {
+function setup(repositories = [repository()], trees = [context()], manifests = new Map()) {
   const registered = new Map(), invoked = [], warnings = [], errors = [], snapshots = [];
   const gitChanged = new EventEmitter(), received = new EventEmitter();
   const projects = trees.map(tree => tree.connection.state.target).map(target => ({ root: target.path, projectExecutable: target.executable, mode: 'both' }));
-  const git = { retryScm() {}, modeFor: root => projects.find(project => project.root === root || project.root.startsWith(root + '/'))?.mode, onDidChange: gitChanged.event, get repositories() { return this.api.repositories; },
+  const git = { canUseNativeToolbar: () => true, async runNativeToolbarCommand(repo, id) {
+    invoked.push([id, repo.rootUri.fsPath]);
+    if (id.startsWith('gigacode.')) repo.inputBox.value = 'Сгенерировано';
+  }, retryScm() {}, modeFor: root => projects.find(project => project.root === root || project.root.startsWith(root + '/'))?.mode, onDidChange: gitChanged.event, get repositories() { return this.api.repositories; },
     api: { repositories, getRepository(value) {
       return [...this.repositories].sort((a, b) => b.rootUri.fsPath.length - a.rootUri.fsPath.length).find(repo =>
         value.fsPath === repo.rootUri.fsPath || value.fsPath.startsWith(repo.rootUri.fsPath + '/'));
@@ -63,10 +66,13 @@ function setup(repositories = [repository()], trees = [context()]) {
     webview: { cspSource: 'test-webview', asWebviewUri: value => value, onDidReceiveMessage: received.event,
       postMessage: async value => { snapshots.push(value); return true; } } };
   let registeredView;
-  const vscode = { env: { language: 'ru' }, ViewColumn: { Active: -1 }, Uri: { file: uri, joinPath: (base, ...parts) => uri(join(base.fsPath, ...parts)) },
+  const extensionsChanged = new EventEmitter();
+  const vscode = { extensions: { getExtension: id => manifests.has(id) ? { packageJSON: manifests.get(id) } : undefined,
+    onDidChange: extensionsChanged.event }, QuickPickItemKind: { Separator: -1 }, env: { language: 'ru' }, ViewColumn: { Active: -1 }, Uri: { file: uri, joinPath: (base, ...parts) => uri(join(base.fsPath, ...parts)) },
     workspace: { isTrusted: true, textDocuments: [], onDidChangeConfiguration: () => disposable,
       getConfiguration: () => ({ get: (_key, fallback) => fallback }) },
     window: { registerWebviewViewProvider: (id, provider) => { registeredView = { id, provider }; return disposable; },
+      showQuickPick: async items => items.find(item => item.command?.id === 'git.fetch'),
       showErrorMessage: async text => { errors.push(text); },
       showWarningMessage: async (...args) => { warnings.push(args); return args.at(-1); } },
     commands: { registerCommand: (name, callback) => { registered.set(name, callback); return disposable; },
@@ -80,7 +86,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     restart() {}
     dispose() {}
   }
-  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions, './scm-line-staging.js': {},
+  const { MetadataChanges } = load('scm', { vscode, './git-api.js': {}, './scm-file-actions.js': fileActions, './scm-repository.js': { SCM_CHECKOUT: 'eska.explorer.scm.checkout' }, './scm-line-staging.js': {},
     './scm-monitor.js': { ScmMonitors }, './scm-save.js': { ScmSaveError: class extends Error {}, async saveScmScope(scope, input) {
       scope.validate(); save.calls.push([scope, input]); const saved = await save.run(scope, input);
       if (saved) { save.modes.push(await scope.refresh()); scope.validate(); }
@@ -108,7 +114,7 @@ function setup(repositories = [repository()], trees = [context()]) {
     revision: snapshot().revision,
   });
   return { provider, vscode, git, gitChanged, invoked, warnings, errors, view, trees, snapshot, input, rows, pages, requestRows, command, send, save, monitor, visibility,
-    ready: () => send({ type: 'ready' }),
+    ready: () => send({ type: 'ready' }), extensionsChanged,
     refresh: () => registered.get(`${viewId}.refresh`)(),
     edit: (repository, value, editId, overrides) => send({ type: 'message', ...payload(repository, value, editId), ...overrides }),
     commit: (repository, value, editId, commitId, overrides) => send({ type: 'commit', ...payload(repository, value, editId), commitId, ...overrides }),
@@ -698,4 +704,40 @@ test('autonomous group opens one changes editor for modified, added and deleted 
   assert.deepEqual(Array.from(rows, ([uri, left, right]) => [uri.fsPath, left?.ref, right?.scheme]), [
     [join(source, 'a.bsl'), '~', 'file'], [join(source, 'b.bsl'), undefined, 'file'], [join(source, 'c.bsl'), '~', undefined],
   ]);
+});
+
+
+test('repository toolbar reads installed menus and targets the selected checkout', async t => {
+  const first = repository(), second = repository(root + '-second', []);
+  const manifests = new Map([['vscode.git', { contributes: {
+    commands: [{ command: 'git.commit', title: 'Fixer' }, { command: 'git.fetch', title: 'Récupérer' }],
+    menus: { 'scm/title': [{ command: 'git.commit', group: 'navigation', when: 'scmProvider == git' },
+      { command: 'git.fetch', group: '1_header' }] }
+  } }]]);
+  const h = setup([first, second], [context(root), context(second.rootUri.fsPath)], manifests);
+  t.after(() => h.provider.dispose());
+  await h.ready();
+  const action = async (id, overrides = {}) => {
+    const snap = h.snapshot(), repo = snap.repositories.find(row => row.key === second.rootUri.toString());
+    await h.send({ type: 'toolbar', repository: repo.key, repositoryToken: repo.repositoryToken, revision: snap.revision, action: id, ...overrides });
+  };
+  assert.ok(h.snapshot().repositories.every(repo => repo.hasMenu && repo.actions.some(item => item.title === 'Fixer')));
+  await action('menu');
+  assert.deepEqual(h.invoked.at(-1), ['git.fetch', second.rootUri.fsPath]);
+  const generator = 'gigacode.new.generateCommitMessage';
+  await action(generator);
+  assert.equal(second.inputBox.value, '');
+  manifests.set('gigacode.gigacode-vscode', { contributes: {
+    commands: [{ command: generator, title: '%generate%' }],
+    menus: { 'scm/title': [{ command: generator, group: 'navigation', when: 'scmProvider == git' }],
+      'scm/input': [{ command: generator, group: 'navigation', when: 'scmProvider == git' }] }
+  } });
+  h.extensionsChanged.fire();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(h.snapshot().repositories[0].actions.filter(item => item.id === generator).length, 1);
+  await action(generator, { repositoryToken: 'another checkout' });
+  assert.equal(second.inputBox.value, '');
+  await action(generator);
+  assert.equal(second.inputBox.value, 'Сгенерировано');
+  assert.equal(first.inputBox.value, '');
 });
