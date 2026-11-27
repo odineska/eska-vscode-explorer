@@ -280,13 +280,36 @@ export class GitRepositories implements vscode.Disposable {
       // Git commands accept a URI. GigaCode's SCM command takes an object with a rootUri.
       await vscode.commands.executeCommand(command, command === GIGACODE_GENERATE ? { rootUri: uri } : uri);
     };
-    if (this.natives.get(key) === repository) { await execute(); return; }
+    if (this.natives.get(key) === repository) {
+      const draft = repository.inputBox.value;
+      try { await execute(); }
+      catch (error) {
+        const current = repository.inputBox.value;
+        if (command === GIGACODE_GENERATE && this.natives.get(key) === repository && current !== draft) {
+          const restore = this.text("scmRestoreCommitDraft");
+          const reason = error instanceof Error ? error.message : String(error);
+          void vscode.window.showWarningMessage(
+            this.text("scmGenerationFailedDraftChanged", reason), restore,
+          ).then(choice => {
+            if (choice === restore && !this.disposed && !this.releasing && this.natives.get(key) === repository
+              && this.visible.get(key) === repository && repository.inputBox.value === current) {
+              repository.inputBox.value = draft;
+              this.changed.fire(repository);
+            }
+          }, notificationError => this.log(String(notificationError)));
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
 
     // In ESKA mode the built-in repository is normally closed. Borrow it only
     // while the explicit action is running and keep the ESKA row/draft alive.
     this.borrowedRoot = key;
     let native: GitRepository | undefined;
     let inputReady = false;
+    let completed = false;
     const draft = repository.inputBox.value;
     try {
       const opened = await this.openNative(uri);
@@ -297,11 +320,11 @@ export class GitRepositories implements vscode.Disposable {
         throw new Error(this.text("scmRepositoryUnavailable"));
       }
       native.inputBox.value = draft; inputReady = true;
-      await execute();
+      await execute(); completed = true;
     } finally {
       try {
         if (native && this.natives.get(key) === native) {
-          if (inputReady && this.visible.get(key) === repository && repository.inputBox.value === draft) {
+          if (inputReady && (completed || command !== GIGACODE_GENERATE) && this.visible.get(key) === repository && repository.inputBox.value === draft) {
             repository.inputBox.value = native.inputBox.value;
           }
           if (!this.releasing && this.modeFor(uri.fsPath) === "eska") {

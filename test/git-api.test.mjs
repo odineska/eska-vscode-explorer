@@ -9,7 +9,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
     fire(value) { for (const callback of this.listeners) callback(value); } dispose() { this.listeners.clear(); }
   }
   class Uri { constructor(fsPath) { this.fsPath = fsPath; this.scheme = 'file'; } static file(path) { return new Uri(path); } static joinPath(uri, path) { return Uri.file(uri.fsPath + '/' + path); } }
-  const commands = new Map(), notices = [], picks = []; let pick, generate;
+  const commands = new Map(), notices = [], picks = []; let pick, generate, warning;
   const open = new Emitter(), close = new Emitter(), calls = [], storage = new Map([["eska.scm.closedRepositories.v1", recovery]]);
   let monitor, discoveries = 0, providerOptions, resolveReader;
   const closedRoots = new Set(recovery.map(value => typeof value === 'string' ? value : value.root));
@@ -23,7 +23,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
     isTrusted: trusted, textDocuments: [], onDidGrantWorkspaceTrust: new Emitter().event, onDidChangeConfiguration: new Emitter().event, onDidChangeWorkspaceFolders: new Emitter().event, workspaceFolders: folders.map(path => ({ uri: Uri.file(path) })), registerFileSystemProvider(scheme, provider, options) { providerOptions = options; return { dispose() {} }; },
     getConfiguration() { return { get(key, fallback) { return key === 'enabled' ? gitEnabled : key === 'ignoredRepositories' ? ignored : fallback; } }; },
   }, extensions: { getExtension() { return nativeAvailable ? { activate: async () => ({ enabled: true, getAPI: () => native, onDidChangeEnablement: new Emitter().event }) } : undefined; } },
-    window: { withProgress(_options, callback) { return callback(); }, async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message) { notices.push(message); }, showInformationMessage(message) { notices.push(message); } },
+    window: { withProgress(_options, callback) { return callback(); }, async showQuickPick(items, options) { picks.push({ items, options }); return typeof pick === 'function' ? pick(items) : items.find(item => item.name === pick); }, showErrorMessage(message) { notices.push(message); }, showWarningMessage(message, action) { notices.push(message); return Promise.resolve(warning?.(action)); }, showInformationMessage(message) { notices.push(message); } },
     commands: { registerCommand(name, handler) { commands.set(name, handler); return { dispose() { commands.delete(name); } }; }, async executeCommand(command, uri) {
       const path = typeof uri === 'string' ? uri : (uri.rootUri ?? uri).fsPath;
       calls.push([command, path]);
@@ -59,7 +59,7 @@ function setup({ folders = ['/repo'], nativeRoots = ['/repo'], mutations = true,
   const owner = new module.exports.GitRepositories();
   owner.configureScm({ workspaceState: { get: (key, fallback) => storage.get(key) ?? fallback, update: async (key, value) => { storage.set(key, value); } } }, key => key, () => {});
   const settled = async () => { for (let i = 0; i < 25; i++) await new Promise(resolve => setImmediate(resolve)); };
-  return { owner, calls, repositories, setGenerate(value) { generate = value; }, settled, EskaRepository, Uri, commands, notices, picks, vscode, reader: root => resolveReader(root), setPick(value) { pick = value; }, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
+  return { owner, calls, repositories, setGenerate(value) { generate = value; }, setWarning(value) { warning = value; }, settled, EskaRepository, Uri, commands, notices, picks, vscode, reader: root => resolveReader(root), setPick(value) { pick = value; }, providerOptions: () => providerOptions, discoveryCount: () => discoveries, openNative: root => native.openRepository(Uri.file(root)), duplicateNative: root => open.fire(repo(root)), setOldCli: value => { oldCli = value; }, setFailure: value => { fail = value; }, failMonitor(root) { monitor.snapshots.delete(root); monitor.changed(root); }, contains: module.exports.containsScmRoot };
 }
 test('takes ownership only after valid status and restores draft on mode change', async () => {
   const { owner, calls, repositories, settled, EskaRepository } = setup();
@@ -310,9 +310,59 @@ test('a failed generator leaves an ESKA draft intact and releases the temporary 
   h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
   const target = h.owner.repositories[0];
   target.inputBox.value = 'draft';
-  h.setGenerate(() => { throw new Error('generator failed'); });
+  h.setGenerate(native => { native.inputBox.value = 'incomplete generation'; throw new Error('generator failed'); });
   await assert.rejects(h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage'), /generator failed/);
   assert.equal(target.inputBox.value, 'draft');
   assert.equal(h.repositories.length, 0);
   assert.equal(h.owner.repositories[0], target);
+});
+
+test('an edit during generation wins over the generated draft', async t => {
+  const h = setup({ apiKeepsClosed: true });
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
+  const target = h.owner.repositories[0];
+  target.inputBox.value = 'original';
+  h.setGenerate(native => {
+    target.inputBox.value = 'edited during generation';
+    native.inputBox.value = 'generated';
+  });
+  await h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage');
+  await h.settled();
+  assert.equal(target.inputBox.value, 'edited during generation');
+  assert.equal(h.repositories.length, 0);
+});
+
+test('a failed generation keeps the changed shared draft until restoration is requested', async t => {
+  const h = setup();
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'both' }]); await h.settled();
+  const target = h.owner.repositories[0];
+  target.inputBox.value = 'existing draft';
+  h.setGenerate(native => { native.inputBox.value = 'partial'; throw new Error('failed'); });
+  await h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage');
+  assert.equal(target.inputBox.value, 'partial');
+  assert.equal(h.notices.at(-1), 'scmGenerationFailedDraftChanged');
+  assert.equal(h.repositories.length, 1);
+});
+
+test('restoring the original shared draft is optional and checks for later edits', async t => {
+  const h = setup();
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'both' }]); await h.settled();
+  const target = h.owner.repositories[0];
+  h.setGenerate(native => { native.inputBox.value = 'partial'; throw new Error('failed'); });
+  target.inputBox.value = 'original';
+  h.setWarning(action => action);
+  await h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage');
+  await h.settled();
+  assert.equal(target.inputBox.value, 'original');
+  let answer;
+  h.setWarning(() => new Promise(resolve => { answer = resolve; }));
+  await h.owner.runNativeToolbarCommand(target, 'gigacode.new.generateCommitMessage');
+  assert.equal(target.inputBox.value, 'partial');
+  target.inputBox.value = 'later user edit';
+  answer('scmRestoreCommitDraft');
+  await h.settled();
+  assert.equal(target.inputBox.value, 'later user edit');
 });
