@@ -37,7 +37,7 @@ interface GitExtension { enabled: boolean; onDidChangeEnablement: vscode.Event<b
 export type ScmMode = "eska" | "vscode" | "both";
 export interface ScmProject { root: string; projectExecutable: string; mode: ScmMode }
 interface ScmCheckout { root: string; executable: string; mutationsAvailable: boolean; branchesAvailable: boolean;
-  lineStagingAvailable: boolean; branchActionsAvailable: boolean; safeSwitchAvailable: boolean; supported: boolean; projects: ScmProject[] }
+  lineStagingAvailable: boolean; branchActionsAvailable: boolean; safeSwitchAvailable: boolean; historyAvailable: boolean; supported: boolean; projects: ScmProject[] }
 type Text = (key: MessageKey, ...values: string[]) => string;
 const branchPickerMessages: Readonly<Record<string, MessageKey | undefined>> = {
   create: "scmBranchCreate", createFrom: "scmBranchCreateFrom", checkoutDetached: "scmBranchCheckoutDetached", checkout: "scmBranchPickRef",
@@ -112,6 +112,10 @@ export class GitRepositories implements vscode.Disposable {
     void this.attach();
   }
   get repositories(): readonly GitRepository[] { return [...this.visible.values()]; }
+  get historyRepositories(): EskaRepository[] {
+    return [...this.own].filter(([key, owner]) => this.visible.get(key) === owner && this.modes.get(key) === "eska")
+      .map(([, owner]) => owner);
+  }
   configureScm(context: vscode.ExtensionContext, text: Text, log: (message: string) => void): void {
     this.context = context; this.text = text; this.log = log;
     const recovery = context.workspaceState.get<unknown[]>(RECOVERY_KEY, []);
@@ -384,7 +388,7 @@ export class GitRepositories implements vscode.Disposable {
       } else roots.set(key, { root, executable: target?.executable ?? project.projectExecutable,
         mutationsAvailable: target?.mutationsAvailable ?? false, branchesAvailable: target?.branchesAvailable ?? false,
         lineStagingAvailable: target?.lineStagingAvailable ?? false, branchActionsAvailable: target?.branchActionsAvailable ?? false,
-        safeSwitchAvailable: target?.safeSwitchAvailable ?? false,
+        safeSwitchAvailable: target?.safeSwitchAvailable ?? false, historyAvailable: target?.historyAvailable ?? false,
         supported: target !== undefined, projects: [project] });
     }
     return roots;
@@ -445,6 +449,7 @@ export class GitRepositories implements vscode.Disposable {
           continue;
         }
       }
+      repository.historyAvailable = target.historyAvailable;
       if (native?.kind) repository.kind = native.kind;
       desired.add(key);
       if (native && mode === "eska" && target.mutationsAvailable && this.allowed(target.root)) {

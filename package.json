@@ -543,6 +543,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "eska.explorer.scmHistory.refresh",
+        "title": "%scmHistoryRefresh%",
+        "category": "ESKA",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "eska.explorer.scm.head",
         "title": "%scmHead%",
         "category": "ESKA"
@@ -689,6 +695,13 @@
           "when": "eska.hasProject && !eska.scmNativeOnly",
           "visibility": "visible",
           "type": "webview"
+        },
+        {
+          "id": "eska.explorer.scmHistory",
+          "name": "%scmHistoryView%",
+          "when": "eska.hasAutonomousScm",
+          "visibility": "visible",
+          "type": "webview"
         }
       ]
     },
@@ -784,6 +797,11 @@
         {
           "command": "eska.explorer.scm.refresh",
           "when": "view == eska.explorer.scm",
+          "group": "navigation"
+        },
+        {
+          "command": "eska.explorer.scmHistory.refresh",
+          "when": "view == eska.explorer.scmHistory",
           "group": "navigation"
         }
       ],
@@ -1001,6 +1019,10 @@
         {
           "command": "eska.explorer.scm.refresh",
           "when": "eska.hasProject && !eska.scmNativeOnly"
+        },
+        {
+          "command": "eska.explorer.scmHistory.refresh",
+          "when": "eska.hasAutonomousScm"
         },
         {
           "command": "eska.explorer.scm.head",

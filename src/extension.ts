@@ -21,6 +21,7 @@ import { QueryLanguage } from "./query/language.js";
 import { GitDecorations } from "./decorations.js";
 import { GitRepositories, type ScmMode } from "./git-api.js";
 import { MetadataChanges } from "./scm.js";
+import { registerScmHistory } from "./scm-history.js";
 import { revealFile, relativeFile } from "./reveal.js";
 import { iconName } from "./icons.js";
 import { SearchView } from "./search-view.js";
@@ -159,6 +160,7 @@ class Explorer implements vscode.TreeDataProvider<Element>, vscode.Disposable {
     this.status.name = "ESKA Explorer";
     this.status.command = "eska.explorer.updateTools";
     this.disposables.push(this.status, this.scm, this.decorations, this.protectedSources, this.projects, this.runDebug,
+      registerScmHistory(context.extensionUri, this.git, key => this.text(key)),
       watchScmLineStageContext(this.git, text => this.output.warn(text)),
       vscode.window.registerTreeDataProvider("eska.explorer.runDebug", this.runDebug));
     this.disposables.push(new ProtectedLanguageFeatures(error => this.output.warn(String(error))));

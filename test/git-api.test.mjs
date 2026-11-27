@@ -374,3 +374,14 @@ test('ESKA retains the native repository kind for worktree menus', async t => {
   h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode: 'eska' }]); await h.settled();
   assert.equal(h.owner.repositories[0].kind, 'worktree');
 });
+
+test('history belongs only to repositories owned by the autonomous ESKA mode', async t => {
+  const h = setup();
+  t.after(async () => { await h.owner.releaseScm(); h.owner.dispose(); });
+  for (const mode of ['eska', 'both', 'vscode', 'eska']) {
+    h.owner.setScmProjects([{ root: '/repo', projectExecutable: '/project', mode }]);
+    await h.settled();
+    assert.equal(h.owner.historyRepositories.length, mode === 'eska' ? 1 : 0);
+    if (mode === 'eska') assert.equal(h.owner.historyRepositories[0], h.owner.repositories[0]);
+  }
+});

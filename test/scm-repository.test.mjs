@@ -17,7 +17,7 @@ function load(real = false, content = Buffer.from([255, 254, 65, 0]).toString("b
   }
   class EventEmitter { listeners = new Set(); event = fn => { this.listeners.add(fn); return { dispose: () => this.listeners.delete(fn) }; }; fire(value) { for (const fn of this.listeners) fn(value); } dispose() { this.listeners.clear(); } }
   const vscode = { scm: { createSourceControl(id, label, rootUri) { const control = { id, label, rootUri, inputBox: {}, disposed: false, dispose() { this.disposed = true; } }; controls.push(control); return control; } }, Uri, EventEmitter, workspace: { getConfiguration: () => ({ get: (_key, fallback) => fallback }) }, Disposable: class { constructor(fn) { this.dispose = fn; } }, FileType: { File: 1 }, FilePermission: { Readonly: 1 }, FileChangeType: { Changed: 1, Deleted: 3 }, FileSystemError: { NoPermissions: () => new Error('readonly'), FileNotFound: () => new Error('missing') } };
-  runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, AbortController, Uint8Array })(name => {
+  runInNewContext('(function(require,module,exports){' + readFileSync(url, 'utf8') + '\n})', { process, Buffer, AbortController, AbortSignal, Uint8Array })(name => {
     if (name === 'vscode') return vscode;
     if (name === './scm-monitor.js') {
       if (!real) return { parseScmSnapshot: data => data };
@@ -305,4 +305,23 @@ test('extended branch bridge is capability gated and uses typed literal argument
   assert.equal(result.saved, true);
   assert.deepEqual(Array.from(calls[1]), ['--project-dir', root, '__bridge', 'scm-switch', '--kind', 'remote', '--branch', 'new/ветка', '--', 'origin/topic']);
   assert.equal(calls[2][3], 'scm-status');
+});
+
+test('history keeps old backends usable and distinguishes a stale cursor from a damaged reply', async t => {
+  const { EskaRepository, calls } = load(false, '', async args => {
+    if (args.includes('stale')) return { schema_version: 1, operation: 'scm_history', error: 'stale_cursor', data: null };
+    if (args.includes('bad')) return { commits: [{ id: 1 }], next_cursor: null };
+    return { commits: [], next_cursor: null };
+  });
+  const root = resolve('history project');
+  const repo = new EskaRepository(root, '/bin/eska-vcs', key => key);
+  t.after(() => repo.dispose());
+  const signal = new AbortController().signal;
+  await assert.rejects(repo.history(undefined, signal), { message: 'scmHistoryUpdateRequired' });
+  assert.equal(calls.length, 0);
+  repo.historyAvailable = true;
+  assert.equal((await repo.history(undefined, signal)).commits.length, 0);
+  await assert.rejects(repo.history('stale', signal), { code: 'stale_cursor' });
+  assert.deepEqual(Array.from(calls.at(-1)), ['--project-dir', root, '__bridge', 'scm-history', '--cursor', 'stale']);
+  await assert.rejects(repo.history('bad', signal), { message: 'scmHistoryFailed' });
 });

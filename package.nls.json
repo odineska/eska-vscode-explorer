@@ -173,6 +173,8 @@
   "createObject": "Add…",
   "copyObject": "Copy metadata object…",
   "deleteObject": "Delete metadata object…",
+  "scmHistoryView": "ESKA: Commit Graph",
+  "scmHistoryRefresh": "Refresh Commit Graph",
   "scmView": "ESKA: 1C Changes",
   "scmOpen": "Open File",
   "scmDiff": "Open Changes",
